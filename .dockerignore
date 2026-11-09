@@ -1,0 +1,10 @@
+target
+shots
+*.log
+jar.txt
+data.db
+data.db-wal
+data.db-shm
+uploads
+graphify-out
+.git

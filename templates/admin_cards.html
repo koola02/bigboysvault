@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}My cards · Admin{% endblock %}
+{% block content %}
+<section class="wrap admin wide mc" id="cardsRoot" data-sort="{{ sort }}">
+  {% include "admin_tabs.html" %}
+  <div class="mc-head">
+    <div class="mc-title">
+      <h1 class="h1 a-title">My cards</h1>
+      <p class="mc-how">Change the <b>price</b>, <b>condition</b>, <b>description</b> or number of copies right here. It saves by itself.</p>
+    </div>
+    <a class="btn mc-add" href="/admin/quick"><span aria-hidden="true">＋</span> Add cards</a>
+  </div>
+
+  <form class="mc-find" action="/admin" method="get" hx-get="/admin" hx-target="#rows-wrap" hx-select="#rows-wrap" hx-swap="outerHTML" hx-push-url="true" hx-trigger="input delay:250ms from:#aq, change from:#ab, change from:#as">
+    <input id="aq" type="search" name="q" value="{{ q }}" placeholder="Find a card by name, number or tag" aria-label="Search your cards" autocomplete="off">
+    <select id="as" name="sort" aria-label="Order">
+      <option value="" {% if sort.is_empty() %}selected{% endif %}>Your order (drag to arrange)</option>
+      <option value="newest" {% if sort == "newest" %}selected{% endif %}>Newest first</option>
+      <option value="price-desc" {% if sort == "price-desc" %}selected{% endif %}>Most valuable first</option>
+      <option value="price-asc" {% if sort == "price-asc" %}selected{% endif %}>Cheapest first</option>
+      <option value="title" {% if sort == "title" %}selected{% endif %}>A to Z</option>
+    </select>
+    <select id="ab" name="binder" aria-label="Binder" hidden>
+      <option value="">All binders</option>
+      {% for b in binders %}<option value="{{ b.handle }}" {% if b.on %}selected{% endif %}>{{ b.title }}</option>{% endfor %}
+    </select>
+  </form>
+  <div class="mc-binders" role="group" aria-label="Show cards from a binder">
+    <button type="button" class="mc-b{% if binder.is_empty() %} on{% endif %}" data-binder=""><span class="mc-b-pic mc-b-all">★</span><span>All cards</span></button>
+    {% for c in nav.links %}<button type="button" class="mc-b{% if binder == c.handle %} on{% endif %}" data-binder="{{ c.handle }}"><span class="mc-b-pic">{% if c.has_image() %}<img src="{{ c.img(240) }}" alt="" loading="lazy">{% endif %}</span><span>{{ c.title }}</span><small>{{ c.count }}</small></button>{% endfor %}
+  </div>
+
+  <div id="rows-wrap" data-total="{{ total }}" data-q="{{ q }}" data-binder="{{ binder }}">
+    <div class="listhead">
+      <label class="chk-all"><input type="checkbox" id="selAll" class="sr"><span class="chk-box"></span><span class="chk-txt">Select all</span></label>
+      <p class="sub" id="countLine">{{ total }} card{% if total != 1 %}s{% endif %}{% if !q.is_empty() %} matching “{{ q }}”{% endif %}</p>
+    </div>
+    <p class="selnote" id="selNote" hidden></p>
+    <ul class="rows mc-grid" id="rows">
+      {% for p in items %}
+      <li class="crow ctile" data-id="{{ p.id }}" data-title="{{ p.title }}" data-ids="{{ p.copy_ids }}" data-c="{{ p.cond_class() }}">
+        <button type="button" class="ct-grip" aria-label="Drag to move {{ p.title }}" title="Drag to move"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></button>
+        <label class="chk ct-chk" title="Select"><input type="checkbox" class="sr" data-sel="{{ p.id }}" data-ids="{{ p.copy_ids }}" aria-label="Select {{ p.title }}"><span class="chk-box"></span></label>
+        <a class="ct-img" href="/admin/edit/{{ p.id }}" aria-label="Edit {{ p.title }}">
+          {% if p.has_image() %}<img src="{{ p.img(360) }}" alt="" loading="lazy" decoding="async">{% else %}<span class="thumb-empty">No photo</span>{% endif %}
+          {% if let Some(g) = p.grade() %}<span class="grade">{{ g }}</span>{% endif %}
+          <span class="qty" data-qty-badge {% if p.qty < 2 %}hidden{% endif %}>×{{ p.qty }}</span>
+        </a>
+        <label class="ct-photo" title="Change photo" aria-label="Change the photo of {{ p.title }}">📷<input class="sr" type="file" accept="image/*" data-photo2="{{ p.id }}"></label>
+        <div class="ct-info">
+          <strong class="ct-t">{{ p.short_title() }}</strong>
+          <span class="ct-meta">{% if !p.set_text().is_empty() %}<span class="ct-set">{{ p.set_text() }}</span>{% endif %}{% if !p.finish_shown().is_empty() %}<span class="ct-var">{{ p.finish_shown() }}</span>{% endif %}</span>
+        </div>
+        <label class="ct-pricebox"><span aria-hidden="true">₱</span><input type="text" inputmode="decimal" autocomplete="off" value="{{ p.price_input() }}" data-price aria-label="Price of {{ p.title }}"></label>
+        <select class="ct-cond" data-cond aria-label="Condition of {{ p.title }}">{% for o in p.condition_choices() %}<option value="{{ o.0 }}"{% if o.2 %} selected{% endif %}{% if o.0.is_empty() %} disabled{% endif %}>{{ o.1 }}</option>{% endfor %}</select>
+        <textarea class="ct-desc" rows="2" maxlength="4000" placeholder="Add a description" aria-label="Description of {{ p.title }}" data-notes>{{ p.notes() }}</textarea>
+        <div class="tag-box ct-tags" data-tag-box data-tags="{{ p.shown_tags().join("|") }}" aria-label="Tags for {{ p.title }}"></div>
+        <div class="ct-acts">
+          <div class="ct-qty" role="group" aria-label="Copies of {{ p.title }}">
+            <button type="button" data-minus aria-label="One copy fewer">−</button>
+            <span data-n>{{ p.qty }}</span>
+            <button type="button" data-plus aria-label="One more copy">＋</button>
+          </div>
+          <a class="ct-edit" href="/admin/edit/{{ p.id }}">✎ Edit</a>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+    {% if items.is_empty() %}<div class="mc-empty"><p>No cards here yet.</p><a class="btn" href="/admin/quick">＋ Add cards</a></div>{% endif %}
+    {% if let Some(n) = next %}<p class="mc-flow"><a class="mc-more" href="/admin?q={{ q|urlencode }}&amp;binder={{ binder }}&amp;sort={{ sort }}&amp;page={{ n }}"><i aria-hidden="true"></i>Loading more cards…</a></p>{% else %}{% if !items.is_empty() %}<p class="mc-flow mc-end">That's all {{ total }} card{% if total != 1 %}s{% endif %}.</p>{% endif %}{% endif %}
+  </div>
+</section>
+<div class="selbar" id="selbar" hidden role="toolbar" aria-label="Bulk actions">
+  <span class="selbar-n" id="selCount">0 selected</span>
+  <div class="selbar-acts">
+    <button type="button" class="pbtn" data-bulk="binder">Binder</button>
+    <button type="button" class="pbtn" data-bulk="grade">Grade</button>
+    <button type="button" class="pbtn" data-bulk="value">Value</button>
+    <button type="button" class="pbtn danger" data-bulk="delete">Delete</button>
+    <button type="button" class="ibtn" data-bulk="clear" aria-label="Clear selection" title="Clear selection">✕</button>
+  </div>
+</div>
+<script src="/static/admin-ui.js?v=6" defer></script>
+<script src="/static/dragsort.js?v=5" defer></script>
+<script src="/static/tag-editor.js?v=1" defer></script>
+<script src="/static/my-cards.js?v=4" defer></script>
+<script src="/static/admin.js?v=7" defer></script>
+<script src="/static/admin-float.js?v=7" defer></script>
+{% endblock %}

@@ -1,0 +1,13 @@
+<article class="vouch" id="vouch-{{ v.id }}" data-vouch="{{ v.id }}" data-owner="{{ v.member_id }}" data-name="{{ v.name }}"{% if !v.role.is_empty() %} data-staff{% endif %}>
+  <header class="v-head">
+    <a class="v-who" data-role="{{ v.role }}" href="/trainers/{{ v.member_id }}">{% if v.has_avatar() %}<img class="av" src="{{ v.avatar }}" width="56" height="56" alt="" loading="lazy">{% else %}<span class="av">{{ v.initial() }}</span>{% endif %}<span class="v-name"><b>{{ v.name }}</b>{% if !v.role_text().is_empty() %}<span class="role" data-role="{{ v.role }}">{{ v.role_text() }}</span>{% endif %}{% if v.stars > 0 %}<span class="stars">★ {{ v.stars }}</span>{% endif %}{% if v.worth > 0.0 %}<span class="worth">{{ v.worth_text() }}</span>{% endif %}{% for g in v.tag_list() %}<span class="tag-hl mtag">{{ g }}</span>{% endfor %}</span></a>
+    <time data-at="{{ v.created_at }}">{{ v.when() }}</time>
+  </header>
+  {% if !v.text.is_empty() %}<blockquote>{{ v.text }}</blockquote>{% endif %}
+  {% if !v.images.is_empty() %}<div class="v-pics" data-n="{{ v.pics_shown() }}">{% for i in v.images %}<button type="button" class="v-pic" data-zoom="{{ i.path }}" aria-label="See this photo bigger"{% if loop.index == 6 && v.images.len() > 6 %} data-more="+{{ v.images.len() - 5 }}"{% endif %}><img src="{{ i.thumb }}" width="{{ i.w }}" height="{{ i.h }}" loading="lazy" decoding="async" alt=""></button>{% endfor %}</div>{% endif %}
+  <div class="v-acts" data-acts></div>
+  <div class="v-replies" data-replies>
+    {% if !v.older_replies().is_empty() %}<details class="v-older"><summary>Show {{ v.older_replies().len() }} earlier repl{% if v.older_replies().len() == 1 %}y{% else %}ies{% endif %}</summary>{% for r in v.older_replies() %}{% include "vouch_reply.html" %}{% endfor %}</details>{% endif %}
+    {% for r in v.latest_replies() %}{% include "vouch_reply.html" %}{% endfor %}
+  </div>
+</article>

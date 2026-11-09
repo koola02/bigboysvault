@@ -1,0 +1,12 @@
+<a class="card" href="/products/{{ p.handle }}" data-foil="{{ p.foil_class() }}" data-c="{{ p.cond_class() }}">
+  <div class="card-img">
+    {% if p.has_image() %}<img src="{{ p.img(360) }}" srcset="{{ p.srcset() }}" sizes="(min-width:1100px) 220px, (min-width:700px) 25vw, 46vw" width="{{ p.image_w }}" height="{{ p.image_h }}" loading="lazy" decoding="async" alt="{{ p.title }}">{% endif %}
+    {% if let Some(g) = p.grade() %}<span class="grade">{{ g }}</span>{% endif %}
+    {% if p.qty > 1 %}<span class="qty" title="{{ p.qty }} copies in the vault">×{{ p.qty }}</span>{% endif %}
+  </div>
+  <div class="card-t">{{ p.short_title() }}</div>
+  <div class="card-m">{% if !p.set_text().is_empty() %}<span class="card-set">{% if !p.symbol().is_empty() %}<img class="card-sym" src="{{ p.symbol() }}" width="16" height="16" loading="lazy" decoding="async" alt="">{% endif %}{{ p.set_text() }}</span>{% endif %}{% if !p.tile_cond().is_empty() %}<span class="card-cond" data-c="{{ p.cond_class() }}">{{ p.tile_cond() }}</span>{% endif %}</div>
+  {% if !p.shown_tags().is_empty() %}<div class="card-tags">{% for t in p.shown_tags() %}<span class="tag-hl">{{ t }}</span>{% endfor %}</div>{% endif %}
+  {% if !p.note_line().is_empty() %}<div class="card-note">{{ p.note_line() }}</div>{% endif %}
+  <div class="card-p">{{ p.price_text() }}</div>
+</a>

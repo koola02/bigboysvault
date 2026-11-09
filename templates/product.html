@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+{% include "product_body.html" %}
+<script>
+// Count a view when the page is really seen, not when the browser prepared it in advance.
+(function () { function seen() { if (navigator.sendBeacon) navigator.sendBeacon("/hit/{{ p.id }}"); }
+  if (document.prerendering) document.addEventListener("prerenderingchange", seen, { once: true }); else seen(); })();
+</script>
+<script type="module" src="/static/holo.js?v=6"></script>
+<script type="module" src="/static/card-lang.js?v=4"></script>
+{% endblock %}

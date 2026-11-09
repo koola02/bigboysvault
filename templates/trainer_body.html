@@ -1,0 +1,52 @@
+<section class="wrap trainer" data-card-title="{{ t.name }}" data-trainer="{{ t.id }}" data-owner-role="{{ t.role }}">
+  {% if is_me && !t.profile_ok %}<p class="tr-wait">Your picture, description and binder wait for the vault owner's approval. Your vouches are already up.</p>{% endif %}
+  {% if t.blocked %}<p class="tr-wait">Blocked. Only you can see this page.</p>{% endif %}
+  <header class="tp-head" data-role="{{ t.role }}">
+    {% if t.has_avatar() %}<button type="button" class="tp-pic" data-zoom="{{ t.avatar }}" data-zoom-back="Back to {{ t.name }}" aria-label="See {{ t.name }}'s picture bigger"><img class="av av-xl" src="{{ t.avatar }}" width="160" height="160" alt=""></button>{% else %}<span class="av av-xl">{{ t.initial() }}</span>{% endif %}
+    <div class="tp-who">
+      <p class="eyebrow">Trainer</p>
+      <h1 class="h1">{{ t.name }}</h1>
+      {% if !t.role_text().is_empty() %}<span class="role" data-role="{{ t.role }}">{{ t.role_text() }}</span>{% endif %}{% for g in t.tag_list() %}<span class="tag-hl mtag">{{ g }}</span>{% endfor %}
+      {% if t.stars > 0 || t.worth > 0.0 %}<p class="tp-stars">{% if t.stars > 0 %}<span class="stars stars-lg">★ {{ t.stars }}</span>{% endif %}{% if t.worth > 0.0 %}<span class="worth worth-lg">{{ t.worth_text() }}</span>{% endif %}</p>{% endif %}
+      {% if !t.bio.is_empty() %}<p class="tp-bio">{{ t.bio }}</p>{% endif %}
+      {% if is_me %}<a class="linkbtn tp-edit" href="/me">Edit my trainer</a>{% endif %}
+    </div>
+  </header>
+  {% if !awards.is_empty() %}
+  <ul class="tp-awards">
+    {% for a in awards %}<li><span class="stars">★ +{{ a.points }}</span><span>{{ a.reason }}</span><time data-at="{{ a.created_at }}">{{ a.when() }}</time></li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if let Some(c) = highlight %}
+  <div class="tp-hl">
+    <p class="eyebrow plate">Highlighted card</p>
+    <a class="tp-hl-card" href="/trainers/{{ t.id }}/cards/{{ c.id }}" data-float data-c="{{ c.cond_class() }}">
+      {% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" alt="{{ c.title }}">{% endif %}
+      <span class="tp-hl-t">{{ c.title }}</span>
+      <span class="card-m">{% if !c.card_set.is_empty() %}<span class="card-set">{% if !c.symbol().is_empty() %}<img class="card-sym" src="{{ c.symbol() }}" width="16" height="16" loading="lazy" decoding="async" alt="">{% endif %}{{ c.card_set }}</span>{% endif %}<span class="card-cond" data-c="{{ c.cond_class() }}">{{ c.cond }}</span></span>
+      {% if c.worth() > 0.0 %}<span class="worth">{{ c.worth_text() }}</span>{% endif %}
+    </a>
+  </div>
+  {% endif %}
+  {% if !vouches.is_empty() || is_me %}
+  <h2 class="h2 tp-binder-h">Vouches</h2>
+  <div class="vouch-grid" data-trainer="{{ t.id }}">
+    {% for v in vouches %}{% include "vouch_card.html" %}{% endfor %}
+  </div>
+  {% endif %}
+  {% if full %}
+  <h2 class="h2 tp-binder-h">{{ t.name }}'s binder <small>{{ t.cards }} of 50</small></h2>
+  {% if cards.is_empty() %}<p class="empty">No cards in this binder yet.</p>{% else %}
+  <div class="grid tp-grid">
+    {% for c in cards %}
+    <a class="card" href="/trainers/{{ t.id }}/cards/{{ c.id }}" data-float data-c="{{ c.cond_class() }}">
+      <div class="card-img">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="{{ c.title }}">{% endif %}</div>
+      <div class="card-t">{{ c.title }}{% if !c.number.is_empty() %} - {{ c.number }}{% endif %}</div>
+      <div class="card-m">{% if !c.card_set.is_empty() %}<span class="card-set">{% if !c.symbol().is_empty() %}<img class="card-sym" src="{{ c.symbol() }}" width="16" height="16" loading="lazy" decoding="async" alt="">{% endif %}{{ c.card_set }}</span>{% endif %}<span class="card-cond" data-c="{{ c.cond_class() }}">{{ c.cond }}</span></div>
+      {% if c.worth() > 0.0 %}<div class="card-p"><span class="worth">{{ c.worth_text() }}</span></div>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% endif %}
+</section>

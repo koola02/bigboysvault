@@ -1,0 +1,7 @@
+target/
+uploads/
+data.db
+data.db-*
+shots/
+graphify-out/
+*.log

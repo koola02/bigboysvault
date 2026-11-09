@@ -1,0 +1,2 @@
+{% for p in items %}{% include "card.html" %}{% endfor %}
+{% if let Some(n) = next %}<div class="more" hx-get="{{ base }}?page={{ n }}&amp;q={{ q|urlencode }}&amp;sort={{ sort }}{% if in_stock %}&amp;stock=1{% endif %}" hx-trigger="revealed" hx-swap="outerHTML"><span class="spin"></span></div>{% endif %}

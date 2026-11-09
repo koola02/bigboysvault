@@ -1,0 +1,45 @@
+<section class="wrap detail" data-card-title="{{ p.title }}" data-hit="{{ p.id }}" data-c="{{ p.cond_class() }}">
+  <div class="detail-img"{% if p.has_image() %} data-holo="detail" data-holo-src="{{ p.img(900) }}"{% endif %}>
+    {% if p.has_image() %}<img fetchpriority="high" src="{{ p.img(900) }}" srcset="{{ p.img(600) }} 600w, {{ p.img(900) }} 900w, {{ p.img(1400) }} 1400w" sizes="(min-width:900px) 50vw, 100vw" alt="{{ p.title }}">{% endif %}
+  </div>
+  <div class="detail-info" data-translate>
+    <h1 class="h1" data-tr="title" lang="{{ p.lang() }}">{{ p.title }}</h1>
+    <p class="price">{{ p.price_text() }}{% if copies > 1 %} <span class="copies" data-tr="copies" data-n="{{ copies }}">×{{ copies }} in the vault</span>{% endif %}</p>
+    {% if !p.price_updated.is_empty() %}<p class="hint" data-tr="market" data-date="{{ p.price_updated }}">Market value as of {{ p.price_updated }}</p>{% endif %}
+    {% if p.lang() != "en" %}<div class="lang-sw" data-lang-switch data-original="{{ p.lang() }}" data-handle="{{ p.handle }}" role="group" aria-label="Read this card in">
+      {% if p.lang() == "zh" %}<button type="button" data-to="zh" lang="zh-Hant" aria-pressed="true">中文</button>{% else %}<button type="button" data-to="ja" lang="ja" aria-pressed="true">日本語</button>{% endif %}
+      <button type="button" data-to="en" lang="en" aria-pressed="false">English</button>
+    </div>{% endif %}
+    {% if p.has_image() %}<button type="button" class="inspect" data-zoom="{{ p.img(1400) }}" data-loupe data-zoom-back="Back to the card"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4M11 8v6M8 11h6"/></svg>Inspect up close</button>{% endif %}
+    <dl class="facts">
+      {% if !p.plate_condition().is_empty() %}<div class="fact fact-cond"><dt data-tr="lab_condition">Condition</dt><dd data-tr="cond">{{ p.plate_condition() }}</dd></div>{% endif %}
+      {% if !p.plate_finish().is_empty() %}<div class="fact"><dt data-tr="lab_finish">Finish</dt><dd data-tr="finish">{{ p.plate_finish() }}</dd></div>{% endif %}
+      {% if !p.set_text().is_empty() %}<div class="fact"><dt data-tr="lab_set">Set</dt><dd><span class="fact-set">{% if !p.symbol().is_empty() %}<img class="card-sym" src="{{ p.symbol() }}" width="16" height="16" loading="lazy" decoding="async" alt="">{% endif %}<span data-tr="set">{{ p.set_text() }}</span></span>{% if !p.card_no.is_empty() %}<small>#{{ p.card_no }}</small>{% endif %}</dd></div>{% endif %}
+      {% if !p.plate_rarity().is_empty() %}<div class="fact fact-rare"><dt data-tr="lab_rarity">Rarity</dt><dd data-tr="rarity">{{ p.plate_rarity() }}</dd></div>{% endif %}
+    </dl>
+    {% if !p.notes_shown().is_empty() %}<div class="note-box"><p class="note-h" data-tr="lab_notes">Notes</p><div class="prose" data-tr="notes">{{ p.notes_shown() }}</div></div>{% endif %}
+    {% if versions.len() > 1 %}
+    <div class="vers">
+      <h2 class="vers-h" data-tr="versions">Versions in the vault</h2>
+      <ol class="vers-list">
+        {% for v in versions %}
+        <li><a class="ver{% if v.current %} on{% endif %}" href="/products/{{ v.handle }}"{% if v.current %} aria-current="true"{% endif %}>
+          <span class="ver-n"><span data-tr="card">Card</span> {{ loop.index }}</span>
+          <span class="ver-tags" data-version="{{ v.handle }}">{% if !v.condition.is_empty() %}<span>{{ v.condition }}</span>{% endif %}{% if !v.finish.is_empty() %}<span>{{ v.finish }}</span>{% endif %}{% if !v.rarity.is_empty() %}<span>{{ v.rarity }}</span>{% endif %}</span>
+          <span class="ver-p">{{ v.price }}{% if v.qty > 1 %} <small>×{{ v.qty }}</small>{% endif %}</span>
+        </a></li>
+        {% endfor %}
+      </ol>
+    </div>
+    {% endif %}
+    {% if p.price > 0.0 %}<p class="standing" style="--pct:{{ standing }}%"><span class="standing-bar" aria-hidden="true"><i></i></span><span>{% if standing >= 50 %}More valuable than <b>{{ standing }}%</b> of the vault{% else %}Cheaper than <b>{{ 100 - standing }}%</b> of the vault, an easy one to start with{% endif %}</span></p>{% endif %}
+    {% if let Some(g) = p.grade() %}<p class="stock in">{{ g }}</p>{% endif %}
+    <div class="tags card-tags">{% for t in p.tag_list() %}{% if crate::db::tag_for_people(t) %}<a class="tag-hl" href="/search?q={{ t|urlencode }}" data-tr="tag" data-i="{{ loop.index0 }}">{{ t }}</a>{% endif %}{% endfor %}</div>
+  </div>
+</section>
+{% if !related.is_empty() %}
+<section class="wrap">
+  <h2 class="h2" data-tr="more">More like this</h2>
+  <div class="rail">{% for p in related %}{% include "card.html" %}{% endfor %}</div>
+</section>
+{% endif %}

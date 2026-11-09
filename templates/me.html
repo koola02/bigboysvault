@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}My trainer · {{ nav.brand }}{% endblock %}
+{% block content %}
+<section class="wrap me" id="me" data-max="{{ max }}" data-highlight="{% if let Some(h) = m.highlight %}{{ h }}{% endif %}">
+  <div class="me-top">
+    <h1 class="h1">My trainer</h1>
+    <div class="me-top-acts">
+      <a class="linkbtn" href="/trainers/{{ m.id }}">See my page</a>
+      <form method="post" action="/signout"><button class="linkbtn" type="submit">Sign out</button></form>
+    </div>
+  </div>
+  <p class="me-status {% if m.profile_ok %}ok{% endif %}" id="meStatus">{% if m.profile_ok %}✓ Your page is live.{% else %}⏳ The vault owner still has to approve your picture, description and binder. Your vouches go up straight away.{% endif %}</p>
+  {% if m.is_staff() %}<p class="me-staff"><span class="role" data-role="{{ m.role }}">{{ m.role_text() }}</span><span>{% if m.role == "admin" %}You can do everything the vault owner can, including editing the site.{% else %}You can hide or delete vouches, and block or remove trainers.{% endif %}</span><a class="btn ghost" href="{% if m.role == "admin" %}/admin{% else %}/admin/trainers{% endif %}">Open admin</a></p>{% endif %}
+  {% if m.locked() %}<p class="me-locked">🔒 Your trainer is locked for another {{ m.lock_left() }}. You can't post or change anything until then.</p>{% endif %}
+  <p class="tp-stars">{% if m.stars > 0 %}<span class="stars stars-lg">★ {{ m.stars }}</span>{% endif %}<span class="worth worth-lg" id="meWorth"{% if m.worth <= 0.0 %} hidden{% endif %}>{{ m.worth_text() }}</span></p>
+
+  <form class="me-card me-profile" id="meProfile">
+    <label class="me-av" title="Change your picture">
+      {% if m.has_avatar() %}<img class="av av-xl" id="meAvatar" src="{{ m.avatar }}" width="160" height="160" alt="">{% else %}<span class="av av-xl" id="meAvatar">{{ m.initial() }}</span>{% endif %}
+      <span class="me-av-btn">📷 Change picture</span>
+      <input class="sr" type="file" accept="image/*" id="meFile" aria-label="Change your picture">
+    </label>
+    <div class="me-fields">
+      <label>Trainer name<input name="name" value="{{ m.name }}" maxlength="24" autocomplete="off" required></label>
+      <label>About you <small><span id="bioCount">0</span> of 300</small><textarea name="bio" maxlength="300" rows="3" placeholder="What do you collect? Who's your favorite Pokémon?">{{ m.bio }}</textarea></label>
+      <button class="btn" type="submit">Save</button>
+    </div>
+  </form>
+
+  <section class="me-card">
+    <h2 class="h2">My binder <small><span id="meCount">{{ m.cards }}</span> of {{ max }}</small></h2>
+    <p class="me-how">★ picks the card shown on the home page. Drag to change the order. Values come from today's market prices. Type your own if you know better, or leave it empty.</p>
+    <ul class="me-binder" id="meBinder">
+      {% for c in cards %}
+      <li class="me-c" data-id="{{ c.id }}">
+        <span class="me-c-pic">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" alt="" draggable="false">{% endif %}
+          <button type="button" class="me-star" data-nodrag data-star aria-label="Highlight {{ c.title }}">★</button>
+          <button type="button" class="me-x" data-nodrag data-remove aria-label="Take {{ c.title }} out">✕</button>
+        </span>
+        <b class="me-c-t">{{ c.title }}</b>
+        <small class="me-c-s">{{ c.card_set }}{% if !c.number.is_empty() %} · {{ c.number }}{% endif %}</small>
+        <select data-nodrag data-cond aria-label="Condition of {{ c.title }}">{% for o in conditions %}<option{% if *o == c.cond %} selected{% endif %}>{{ o }}</option>{% endfor %}</select>
+        <label class="me-val" data-nodrag><span>Value ₱</span><input data-value type="number" min="0" step="1" inputmode="numeric" value="{{ c.own_text() }}" placeholder="{% if c.value > 0.0 %}{{ c.market_text() }}{% else %}Not known yet{% endif %}" aria-label="Value of {{ c.title }} in pesos"></label>
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="me-empty" id="meEmpty"{% if !cards.is_empty() %} hidden{% endif %}>Your binder is empty. Find your first card below.</p>
+
+    <h3 class="me-add-h">Add a card you own</h3>
+    <div class="me-find">
+      <input type="search" id="meQ" placeholder="Card name, like Pikachu" aria-label="Find a card" autocomplete="off" enterkeyhint="search">
+      <div class="lang-sw me-lang" id="meLang" role="group" aria-label="Card language">
+        <button type="button" data-lang="en" aria-pressed="true">English</button>
+        <button type="button" data-lang="ja" aria-pressed="false">日本語</button>
+        <button type="button" data-lang="zh" aria-pressed="false">中文</button>
+      </div>
+    </div>
+    <p class="me-state" id="meState" aria-live="polite">Type a name and tap the card you own.</p>
+    <div class="me-results" id="meResults"></div>
+
+    <details class="me-own" id="meOwn">
+      <summary><span>📷</span> Not in the list? Add your own photo of a card</summary>
+      <form id="meUpload" class="me-up">
+        <label class="me-up-pic"><input type="file" name="photo" accept="image/*" required class="sr" id="meUpPhoto"><img id="meUpShot" alt="" hidden><span id="meUpHint"><b>Add a photo</b><small>Take one or choose one</small></span></label>
+        <div class="me-fields">
+          <label>Card name<input name="name" maxlength="120" required placeholder="Like Charizard ex" autocomplete="off"></label>
+          <label>Set <small>if you know it</small><input name="set" maxlength="80" autocomplete="off"></label>
+          <label>Condition<select name="cond">{% for o in conditions %}<option>{{ o }}</option>{% endfor %}</select></label>
+          <label>Value ₱ <small>if you like</small><input name="value" type="number" min="0" step="1" inputmode="numeric"></label>
+          <button class="btn" type="submit">Add to my binder</button>
+          <p class="me-how">It shows on your page with your binder. It isn't added to the vault.</p>
+        </div>
+      </form>
+    </details>
+  </section>
+
+  <section class="me-card">
+    <h2 class="h2">My vouches</h2>
+    <p class="me-how">Tap the Vouch button on any page. Your words and photos go up straight away, and you can delete them any time.</p>
+    <a class="btn ghost" href="/trainers/{{ m.id }}">See my vouches</a>
+  </section>
+
+  <details class="me-card me-account">
+    <summary>Password and account</summary>
+    <form id="mePass" class="me-fields">
+      <label>Current password<input name="current" type="password" autocomplete="current-password" required></label>
+      <label>New password <small>at least 8 characters</small><input name="new" type="password" minlength="8" autocomplete="new-password" required></label>
+      <button class="btn ghost" type="submit">Change password</button>
+    </form>
+    <button type="button" class="me-danger" id="meDelete">Delete my trainer</button>
+  </details>
+</section>
+<script src="/static/dragsort.js?v=5" defer></script>
+<script src="/static/me.js?v=5" defer></script>
+{% endblock %}

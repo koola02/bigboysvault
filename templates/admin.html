@@ -1,0 +1,155 @@
+{% extends "base.html" %}
+{% block title %}{% if editing %}Edit card{% else %}Add card{% endif %} · Admin<script>
+// Back goes where you came from on this site, even after saving a few cards in a row.
+(() => {
+  const a = document.querySelector('[data-back]'); if (!a) return;
+  const key = 'bbvBack:' + location.pathname.replace(/\/\d+$/, '');
+  try {
+    const from = document.referrer && new URL(document.referrer);
+    if (from && from.origin === location.origin && from.pathname !== location.pathname) sessionStorage.setItem(key, from.pathname + from.search);
+    const back = sessionStorage.getItem(key);
+    if (back) { a.href = back; a.textContent = '‹ Back'; }
+  } catch (_) {}
+})();
+</script>
+<script src="/static/tag-editor.js?v=1" defer></script>
+{% endblock %}
+{% block content %}
+<section class="wrap admin" data-editing="{% if editing %}1{% else %}0{% endif %}" data-id="{{ id }}">
+  {% include "admin_tabs.html" %}
+  <header class="a-head">
+    <a class="a-back" href="{% if editing %}/admin{% else %}/admin/quick{% endif %}" data-back>‹ Back{% if editing %} to My cards{% else %} to Quick add{% endif %}</a>
+    <h1 class="h1">{% if editing %}Edit card{% else %}Add a card{% endif %}</h1>
+    <p class="sub"><span id="total">{{ total }}</span> in your collection{% if !saved.is_empty() %} · <strong class="ok">Saved “{{ saved }}”</strong>{% endif %}</p>
+    {% if !editing %}<p class="a-faster">Faster: find the card by name in <a href="/admin/quick">Quick add</a>, or tick a whole set in <a href="/admin/sets">Add by set</a>. Use this page for cards that aren’t listed there.</p>{% endif %}
+  </header>
+
+  <div class="a-grid">
+    <form id="entry" class="form" method="post" action="/admin/save" enctype="multipart/form-data" novalidate autocomplete="off">
+      <input type="hidden" name="id" value="{{ id }}">
+
+      <div class="step">
+        <p class="step-n">1 · Photo</p>
+        <label class="drop" for="photo" id="drop">
+          <img id="shot" alt="" {% if image.is_empty() %}hidden{% else %}src="{{ image }}"{% endif %}>
+          <span class="drop-t" id="dropT" {% if !image.is_empty() %}hidden{% endif %}>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>
+            <strong>Add photo</strong><small>Take a picture or choose one</small>
+          </span>
+        </label>
+        <input class="sr" id="photo" type="file" name="photo" accept="image/*">
+        <div class="photo-acts">
+          <button type="button" class="pbtn" id="retake" {% if image.is_empty() %}hidden{% endif %}>Change photo</button>
+          <button type="button" class="pbtn danger" id="rmphoto" data-id="{{ id }}" {% if image.is_empty() || !editing %}hidden{% endif %}>Remove photo</button>
+        </div>
+      </div>
+
+      <div class="step">
+        <p class="step-n">2 · Details</p>
+        <label class="field">Name
+          <input id="title" name="title" value="{{ title }}" placeholder="Pikachu ex" required enterkeyhint="next" autocapitalize="words" {% if !editing %}autofocus{% endif %}>
+          <span class="hint" id="titleHint" role="status"></span>
+        </label>
+        <label class="field">Card number
+          <input id="cardno" name="card_no" value="{{ card_no }}" placeholder="057/191" autocapitalize="characters" enterkeyhint="next" autocomplete="off">
+          <span class="hint show">Type the number printed on the card. We’ll find it and fill in today’s value.</span>
+        </label>
+        <div class="field">
+          <span class="lab">Grade or condition</span>
+          <div class="chips" id="chips" role="group" aria-label="Quick pick">
+            <button type="button" data-v="Near Mint">Near Mint</button>
+            <button type="button" data-v="Lightly Played">Lightly Played</button>
+            <button type="button" data-v="LP-NM">LP-NM</button>
+            <button type="button" data-v="Moderately Played">Mod. Played</button>
+            <button type="button" data-v="MP-LP">MP-LP</button>
+            <button type="button" data-v="HP-MP">HP-MP</button>
+            <button type="button" data-v="Damaged-HP">Damaged-HP</button>
+            <button type="button" data-v="Sealed">Sealed</button>
+            <button type="button" data-v="PSA 10">PSA 10</button>
+            <button type="button" data-v="PSA 9">PSA 9</button>
+            <button type="button" data-v="CGC 10">CGC 10</button>
+            <button type="button" data-v="CGC 9.5">CGC 9.5</button>
+            <button type="button" data-v="BGS 9.5">BGS 9.5</button>
+          </div>
+          <input id="variant" name="variant" value="{{ variant }}" placeholder="Or type your own" enterkeyhint="next" autocapitalize="characters">
+        </div>
+        <label class="field">Value (₱)
+          <input id="price" name="price" value="{{ price }}" inputmode="decimal" placeholder="0" enterkeyhint="next">
+        </label>
+        <div class="market" id="market" hidden aria-live="polite">
+          <p class="mk-state" id="mkState"></p>
+          <div class="mk-card" id="mkCard" hidden>
+            <img id="mkImg" alt="" width="84" height="117">
+            <div class="mk-info">
+              <strong id="mkName"></strong><small id="mkSet"></small>
+              <div class="chips" id="mkFinish" role="group" aria-label="Finish"></div>
+              <p class="mk-price" id="mkPrice"></p>
+              <div class="mk-acts"><button type="button" class="pbtn" id="mkUse" hidden>Use this value</button><button type="button" class="pbtn" id="mkPhoto">Use this card image</button></div>
+            </div>
+          </div>
+          <ul class="mk-list" id="mkList" hidden></ul>
+        </div>
+        <input type="hidden" name="api_id" id="apiId" value="{{ api_id }}">
+        <input type="hidden" name="card_set" id="cardSet" value="{{ card_set }}">
+        <input type="hidden" name="finish" id="finishKey" value="{{ finish }}">
+        <input type="hidden" name="price_src" id="priceSrc" value="">
+        <input type="hidden" name="photo_url" id="photoUrl" value="">
+      </div>
+
+      <div class="step">
+        <p class="step-n">3 · Binders</p>
+        <div class="pills" id="binders">
+          {% for b in binders %}<label class="pill"><input type="checkbox" name="binder" value="{{ b.handle }}" {% if b.on %}checked{% endif %}><span>{{ b.title }}</span></label>{% endfor %}
+        </div>
+        <p class="hint" id="binderHint" role="status"></p>
+      </div>
+
+      <details class="step more" {% if !notes.is_empty() || !tags.is_empty() %}open{% endif %}>
+        <summary>More details <small>(optional)</small></summary>
+        <label class="field">Notes<textarea id="notes" name="notes" rows="3" placeholder="Where you got it, pull story…">{{ notes }}</textarea></label>
+        <div class="field"><span class="lab">Tags <small>Shown on the card, glowing. Type one and press Enter.</small></span><input id="tags" name="tags" value="{{ tags }}" placeholder="fire, vstar, holo"><div class="tag-box" data-tag-box data-target="#tags"></div></div>
+      </details>
+
+      <div class="bar-actions">
+        <p class="status" id="status" role="status" aria-live="polite"></p>
+        <div class="actions">
+          {% if !editing %}<button class="btn" type="submit" name="again" value="1" id="saveAgain">Save &amp; add another</button>{% endif %}
+          <button class="btn {% if !editing %}ghost{% endif %}" type="submit" id="save">{% if editing %}Save changes{% else %}Save{% endif %}</button>
+        </div>
+      </div>
+      {% if !editing %}<p class="hint draft" id="draft" hidden>Draft restored · <button type="button" class="linkbtn inline" id="discard">Discard</button></p>{% endif %}
+    </form>
+
+    <aside class="a-side" aria-label="Preview">
+      <p class="step-n">Preview</p>
+      <div class="card" id="pv">
+        <div class="card-img"><img id="pvImg" alt="" hidden><span class="pv-empty" id="pvEmpty">No photo</span><span class="grade" id="pvGrade" hidden></span></div>
+        <div class="card-t" id="pvTitle">Card name</div>
+        <div class="card-p" id="pvPrice">₱0</div>
+      </div>
+      {% if editing %}
+      <form method="post" action="/admin/delete/{{ id }}" onsubmit="return confirm('Delete this card? This can’t be undone.')" class="danger">
+        <button type="submit">Delete card</button>
+      </form>
+      {% else %}
+      <a class="pbtn" href="/admin">Manage all cards</a>
+      {% endif %}
+    </aside>
+  </div>
+</section>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="/static/admin.js?v=7" defer></script>
+<script>
+// Back goes where you came from on this site, even after saving a few cards in a row.
+(() => {
+  const a = document.querySelector('[data-back]'); if (!a) return;
+  const key = 'bbvBack:' + location.pathname.replace(/\/\d+$/, '');
+  try {
+    const from = document.referrer && new URL(document.referrer);
+    if (from && from.origin === location.origin && from.pathname !== location.pathname) sessionStorage.setItem(key, from.pathname + from.search);
+    const back = sessionStorage.getItem(key);
+    if (back) { a.href = back; a.textContent = '‹ Back'; }
+  } catch (_) {}
+})();
+</script>
+{% endblock %}

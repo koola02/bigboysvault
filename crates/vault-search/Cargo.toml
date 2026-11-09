@@ -1,0 +1,7 @@
+[package]
+name = "vault-search"
+version = "0.1.0"
+edition = "2021"
+
+# No dependencies on purpose: this same code runs on the server and, compiled to WebAssembly, in the visitor's browser.
+[dependencies]

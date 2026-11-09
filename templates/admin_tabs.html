@@ -1,0 +1,13 @@
+<div class="adm-top">
+  <nav class="seg" aria-label="Admin sections">
+    <a href="/admin/dashboard" class="{% if tab == "dash" %}on{% endif %}">Dashboard</a>
+    <a href="/admin/quick" class="{% if tab == "quick" %}on{% endif %}">Quick add</a>
+    <a href="/admin/sets" class="{% if tab == "sets" %}on{% endif %}">Add by set</a>
+    <a href="/admin" class="{% if tab == "cards" %}on{% endif %}">My cards</a>
+    <a href="/admin/binders" class="{% if tab == "binders" %}on{% endif %}">Binders</a>
+    <a href="/admin/page" class="{% if tab == "page" %}on{% endif %}">Home page</a>
+    <a href="/admin/trainers" class="{% if tab == "trainers" %}on{% endif %}">Trainers{% if nav.pending > 0 %} <span class="seg-n">{{ nav.pending }}</span>{% endif %}</a>
+  </nav>
+  <a class="linkbtn" href="/" target="_blank" rel="noopener">View site ↗</a>
+</div>
+<script>{ const s = document.querySelector('.adm-top .seg'), a = s && s.querySelector('a.on'); if (a && s.scrollWidth > s.clientWidth) s.scrollLeft = a.getBoundingClientRect().left - s.getBoundingClientRect().left + s.scrollLeft - (s.clientWidth - a.offsetWidth) / 2; }</script>

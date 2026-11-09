@@ -1,0 +1,27 @@
+<section class="bf" data-card-title="{{ title }}" data-handle="{{ handle }}" data-tiles="{{ tiles }}">
+  <div class="bf-top">
+    <div class="bf-id"><h1>{{ title }}</h1><p>{{ total }} card{% if total != 1 %}s{% endif %}</p></div>
+    <div class="bf-finder fd"><p class="bf-wait">Getting search ready…</p></div>
+  </div>
+  <div class="bf-book" data-tone="{{ tone }}">
+    <div class="bf-left" aria-live="polite">
+      <div class="bf-intro">
+        <img class="bf-emb" src="/static/img/logo-sm.png" width="72" height="72" alt="" decoding="async">
+        <b>{{ title }}</b>
+        <small>{{ total }} card{% if total != 1 %}s{% endif %}</small>
+        <p>Tap a card to see it here.</p>
+      </div>
+      <div class="bf-detail" hidden></div>
+    </div>
+    <div class="bf-spine" aria-hidden="true"><i></i><i></i><i></i></div>
+    <div class="bf-right">
+      <div class="bf-pk">
+        <div class="bf-sleeves" aria-hidden="true">{% for _ in 0..9 %}<span></span>{% endfor %}</div>
+        <div class="grid bf-grid">{% for p in items %}{% include "card.html" %}{% endfor %}</div>
+      </div>
+      {% if items.is_empty() %}<p class="bf-empty">No cards in this binder yet.</p>{% endif %}
+      <div class="bf-none" hidden><p>No cards in this binder match that.</p><button type="button" class="btn bf-reset">Show all cards</button></div>
+    </div>
+  </div>
+  {% if let Some(n) = next %}<button type="button" class="linkbtn bf-more" hidden data-more="/collections/{{ handle|urlencode }}?part=1&amp;page={{ n }}">Show more cards</button>{% endif %}
+</section>

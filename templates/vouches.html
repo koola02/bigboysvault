@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}Vouches · {{ nav.brand }}{% endblock %}
+{% block content %}
+<section class="wrap vouch-wall">
+  <div class="tr-head">
+    <p class="eyebrow plate">The community</p>
+    <h1 class="h1">Vouches</h1>
+    <p class="tr-sub">What trainers say about the vault.</p>
+    {% if me.is_none() %}<a class="btn" href="/join">Become a trainer to vouch</a>{% endif %}
+  </div>
+  {% if vouches.is_empty() %}<p class="empty" data-empty>No vouches yet. Be the first.</p>{% endif %}
+  <div class="vouch-grid" data-wall>
+    {% for v in vouches %}{% include "vouch_card.html" %}{% endfor %}
+  </div>
+  {% if let Some(n) = next %}<div class="v-load-row"><button type="button" class="btn ghost v-load" data-before="{{ n }}">Show more</button></div>{% endif %}
+</section>
+{% endblock %}

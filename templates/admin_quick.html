@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == "set" %}Add by set{% else %}Quick add{% endif %} · Admin{% endblock %}
+{% block content %}
+<section class="wrap admin qa" id="qa" data-total="{{ total }}" data-mode="{{ mode }}">
+  {% include "admin_tabs.html" %}
+  <header class="qa-hero">
+    <div class="qa-hero-copy">
+      {% if mode == "set" %}
+      <p class="eyebrow plate">Add a whole set</p>
+      <h1 class="qa-hero-t">Add by set</h1>
+      <p class="qa-hero-s">Pick a set, then tap the cards you have. <b>−</b> and <b>＋</b> under a card change how many.</p>
+      {% else %}
+      <p class="eyebrow plate">Fastest way to add</p>
+      <h1 class="qa-hero-t">Quick add</h1>
+      <p class="qa-hero-s">Type a name, tap the card you have. <b>−</b> and <b>＋</b> under a card change how many.</p>
+      {% endif %}
+      <p class="qa-hero-n"><b id="qaTotal">{{ total }}</b> cards in your vault</p>
+    </div>
+    <img class="qa-hero-art" src="/static/img/{% if mode == "set" %}slaking{% else %}snorlax{% endif %}.png?v=5" alt="" width="220" height="176">
+  </header>
+
+  <div class="qa-search">
+    {% if mode == "set" %}
+    <input id="qaQ" type="search" placeholder="Set name, e.g. 30th, Ascended Heroes, Pitch Black" aria-label="Search sets" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="search">
+    {% else %}
+    <input id="qaQ" type="search" placeholder="Card name, e.g. Slaking or Pikachu 57" aria-label="Search all Pokémon cards" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="search">
+    {% endif %}
+  </div>
+  <div class="qa-lang" id="qaLang" role="group" aria-label="Card language">
+    <span class="qa-lang-l">Cards in</span>
+    <button type="button" data-l="en" aria-pressed="true">English</button>
+    <button type="button" data-l="ja" aria-pressed="false">Japanese <span lang="ja">日本語</span></button>
+    <button type="button" data-l="zh" aria-pressed="false">Chinese <span lang="zh">中文</span></button>
+  </div>
+  {% if mode == "set" %}
+  <div class="qa-sethead" id="qaSetHead" hidden>
+    <button type="button" class="qa-back" id="qaBack">← All sets</button>
+    <div class="qa-setid"><img id="qaSetLogo" alt="" hidden><div><b id="qaSetName"></b><small id="qaSetMeta"></small></div></div>
+  </div>
+  <p class="qa-state" id="qaState" role="status" aria-live="polite">Newest sets first. Type part of a name to find older ones.</p>
+  <div class="qa-sets" id="qaSets"></div>
+  {% else %}
+  <p class="qa-state" id="qaState" role="status" aria-live="polite">Every printing shows up with its picture, newest sets first. Add a number to narrow it down.</p>
+  {% endif %}
+  {% if mode != "set" %}
+  <div class="qa-start" id="qaStart">
+    <div class="qs-block">
+      <h2 class="qs-h">Try a name</h2>
+      <div class="qs-chips">{% for n in ["Pikachu", "Charizard", "Umbreon", "Mew", "Gengar", "Snorlax", "Slaking", "Eevee", "Rayquaza", "Lugia", "Gardevoir", "Mewtwo"] %}<button type="button" class="qs-chip" data-q="{{ n }}">{{ n }}</button>{% endfor %}</div>
+    </div>
+    <div class="qs-block">
+      <h2 class="qs-h">You added recently</h2>
+      <p class="qs-sub">Tap one to find more printings of it.</p>
+      <div class="qs-recent" id="qsRecent"></div>
+    </div>
+    <div class="qs-block">
+      <h2 class="qs-h">Newest sets</h2>
+      <p class="qs-sub">Tap a set to tick off every card you have from it.</p>
+      <div class="qs-sets" id="qsSets"></div>
+    </div>
+  </div>
+  {% endif %}
+  <div class="qa-grid" id="qaGrid"></div>
+  <p class="qa-more" id="qaMore" hidden></p>
+  <p class="qa-manual"><a href="/admin/new">Card not listed? Add it by hand →</a></p>
+</section>
+
+<div class="qa-bar" id="qaBar" hidden>
+  <div class="qa-bar-in">
+    <div class="qa-thumbs" id="qaThumbs" aria-hidden="true"></div>
+    <div class="qa-sum"><b id="qaCount">0 cards</b><small id="qaValue">₱0</small></div>
+    <button type="button" class="btn" id="qaOpen">Review &amp; save</button>
+  </div>
+</div>
+
+<div class="qa-sheet" id="qaSheet" hidden role="dialog" aria-modal="true" aria-labelledby="qaSheetT">
+  <div class="qa-sheet-bg" data-close></div>
+  <div class="qa-sheet-panel">
+    <div class="qa-sheet-h">
+      <h2 id="qaSheetT">Your tray</h2>
+      <button type="button" class="qa-clear" id="qaClear">Remove all</button>
+      <button type="button" class="ibtn" data-close aria-label="Close">✕</button>
+    </div>
+    <div class="qa-sheet-body">
+      <div class="qa-defaults">
+        <p class="step-n">Binders</p>
+        <div class="pills" id="qaBinders">
+          {% for b in binders %}<label class="pill"><input type="checkbox" value="{{ b.handle }}"><span>{{ b.title }}</span></label>{% endfor %}
+        </div>
+      </div>
+      <ul class="qa-list" id="qaList"></ul>
+    </div>
+    <div class="qa-sheet-f">
+      <p class="qa-prog" id="qaProg" role="status" aria-live="polite"></p>
+      <button type="button" class="btn" id="qaSave">Save all</button>
+    </div>
+  </div>
+</div>
+<script src="/static/admin-ui.js?v=6" defer></script>
+<script src="/static/quick.js?v=14" defer></script>
+{% endblock %}

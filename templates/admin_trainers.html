@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}Trainers · Admin{% endblock %}
+{% block content %}
+<section class="wrap admin wide at" id="atRoot">
+  {% if full %}{% include "admin_tabs.html" %}{% else %}<div class="adm-top"><span class="role" data-role="mod">Moderator</span><a class="linkbtn" href="/" target="_blank" rel="noopener">View site ↗</a></div>{% endif %}
+  <h1 class="h1 a-title">Trainers</h1>
+  <nav class="seg at-view" aria-label="Show">
+    <a href="/admin/trainers"{% if !showing_vouches %} class="on" aria-current="page"{% endif %}>Trainers</a>
+    <a href="/admin/trainers?view=vouches"{% if showing_vouches %} class="on" aria-current="page"{% endif %}>Vouches and replies{% if hidden_vouches > 0 %} <span class="seg-n">{{ hidden_vouches }} hidden</span>{% endif %}</a>
+  </nav>
+  {% if showing_vouches %}
+  <p class="mc-how">Everything here is already public unless it says Hidden. Hide takes it down and you can bring it back. Delete is for good. Photos use {{ photo_mb }} MB of {{ photo_cap_mb }} MB.</p>
+  {% if feed.is_empty() %}<div class="mc-empty"><p>No vouches yet.</p></div>{% endif %}
+  <ul class="at-feed">
+    {% for v in feed %}
+    <li class="at-post{% if v.hidden %} is-hidden{% endif %}" data-vouch="{{ v.id }}">
+      <div class="at-post-h">
+        {% if v.has_avatar() %}<img class="av" src="{{ v.avatar }}" width="56" height="56" alt="" loading="lazy">{% else %}<span class="av">{{ v.initial() }}</span>{% endif %}
+        <b>{{ v.name }}</b>
+        {% if v.parent_id.is_some() %}<span class="me-tag">Reply</span>{% endif %}
+        {% if v.hidden %}<span class="me-tag">Hidden</span>{% endif %}
+        <time data-at="{{ v.created_at }}">{{ v.when() }}</time>
+      </div>
+      {% if !v.text.is_empty() %}<blockquote>{{ v.text }}</blockquote>{% endif %}
+      {% if !v.images.is_empty() %}<div class="at-pics">{% for i in v.images %}<span class="at-pic"><a href="{{ i.path }}" target="_blank" rel="noopener"><img src="{{ i.thumb }}" width="{{ i.w }}" height="{{ i.h }}" alt="" loading="lazy"></a><button type="button" data-photo="{{ i.id }}" aria-label="Delete this photo">✕</button></span>{% endfor %}</div>{% endif %}
+      <div class="at-acts">
+        {% if v.hidden %}<button type="button" class="btn" data-post="show">Show again</button>{% else %}<button type="button" class="pbtn" data-post="hide">Hide</button>{% endif %}
+        <button type="button" class="pbtn danger" data-post="delete">Delete</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="mc-how">{% if full %}A trainer's picture, description and binder wait for your approval. Vouches, replies and photos go up straight away, and you can take them down from the Vouches view.{% else %}You can block or remove a trainer here, and hide or delete vouches in the Vouches view.{% endif %}</p>
+  {% if rows.is_empty() %}<div class="mc-empty"><p>No trainers yet. They sign up from the Trainers page.</p><a class="btn" href="/trainers" target="_blank" rel="noopener">See the Trainers page ↗</a></div>{% endif %}
+  <ul class="at-list">
+    {% for r in rows %}
+    <li id="trainer-{{ r.m.id }}" class="at-row{% if r.profile_waiting %} waiting{% endif %}{% if r.m.blocked %} is-blocked{% endif %}" data-id="{{ r.m.id }}" data-name="{{ r.m.name }}">
+      <div class="at-who">
+        {% if r.m.has_avatar() %}<img class="av av-lg" src="{{ r.m.avatar }}" width="120" height="120" alt="" loading="lazy">{% else %}<span class="av av-lg">{{ r.m.initial() }}</span>{% endif %}
+        <div class="at-txt">
+          <b>{{ r.m.name }}</b>{% if !r.m.role_text().is_empty() %} <span class="role" data-role="{{ r.m.role }}">{{ r.m.role_text() }}</span>{% endif %}{% if r.is_self %} <span class="me-tag">You</span>{% endif %}
+          <small>{{ r.m.cards }} card{% if r.m.cards != 1 %}s{% endif %}</small>
+          {% if !r.m.bio.is_empty() %}<p>{{ r.m.bio }}</p>{% endif %}
+          <span class="at-chips">
+            <span class="stars stars-lg">★ {{ r.m.stars }}</span>{% if r.m.worth > 0.0 %}<span class="worth">{{ r.m.worth_text() }}</span>{% endif %}
+            {% if r.m.blocked %}<span class="me-tag bad">⛔ Blocked</span>{% else if r.profile_waiting %}<span class="me-tag">⏳ Waiting for approval</span>{% else %}<span class="me-tag ok">✓ Live</span>{% endif %}
+            {% if r.m.locked() %}<span class="me-tag bad">🔒 Locked for {{ r.m.lock_left() }}</span>{% endif %}
+          </span>
+          {% if full %}<div class="at-tags"><span class="at-tags-h">Tags everyone sees <small>type one, then Enter</small></span><div class="tag-box" data-tag-box data-tags="{{ r.m.tag_list().join("|") }}"></div></div>
+          {% else if !r.m.tags.is_empty() %}<span class="mtags">{% for g in r.m.tag_list() %}<span class="tag-hl">{{ g }}</span>{% endfor %}</span>{% endif %}
+        </div>
+        {% if let Some(c) = r.highlight %}{% if !c.image.is_empty() %}<img class="at-card" src="{{ c.image }}" width="245" height="342" alt="{{ c.title }}" loading="lazy">{% endif %}{% endif %}
+      </div>
+      {% if !r.can_act %}
+      <p class="at-off">{% if r.is_self %}This is you. Nobody can change their own trainer here.{% else %}This is another staff member, so only an admin can change anything.{% endif %}</p>
+      {% else %}
+      <div class="at-acts">
+        {% if full %}{% if r.profile_waiting %}<button type="button" class="btn" data-act="approve">✓ Approve page</button>{% else %}<button type="button" class="pbtn" data-act="hide">Hide page</button>{% endif %}{% endif %}
+        <a class="pbtn" href="/trainers/{{ r.m.id }}" target="_blank" rel="noopener">Open ↗</a>
+        {% if full %}<button type="button" class="pbtn" data-act="password">New password</button>{% endif %}
+      </div>
+      {% if full %}
+      <div class="at-tool at-role" role="group" aria-label="Role">
+        <b>Role</b>
+        <div class="at-role-opts">
+          <button type="button" data-role-set="" class="{% if r.m.role.is_empty() %}on{% endif %}" aria-pressed="{{ r.m.role.is_empty() }}"><b>Trainer</b><small>No extra powers</small></button>
+          <button type="button" data-role-set="mod" class="{% if r.m.role == "mod" %}on{% endif %}" aria-pressed="{{ r.m.role == "mod" }}"><b>Moderator</b><small>Hide or delete vouches, block or remove trainers</small></button>
+          <button type="button" data-role-set="admin" class="{% if r.m.role == "admin" %}on{% endif %}" aria-pressed="{{ r.m.role == "admin" }}"><b>Admin</b><small>Everything, including the site</small></button>
+        </div>
+      </div>
+      <form class="at-tool at-stars" data-form="stars">
+        <b>★ Give star points</b>
+        <span class="at-quick"><button type="button" data-amt="1">+1</button><button type="button" data-amt="5">+5</button><button type="button" data-amt="10">+10</button></span>
+        <input name="points" type="number" min="1" max="1000000" inputmode="numeric" value="5" aria-label="How many star points">
+        <input name="reason" maxlength="120" placeholder="What for? (optional, shown on their page)" aria-label="What the star points are for">
+        <button class="btn" type="submit">Give</button>
+      </form>
+      {% if !r.awards.is_empty() %}
+      <details class="at-awards"><summary>Stars given</summary>
+        <ul>{% for a in r.awards %}<li><span class="stars">★ +{{ a.points }}</span><span>{% if a.reason.is_empty() %}No reason given{% else %}{{ a.reason }}{% endif %}</span><time data-at="{{ a.created_at }}">{{ a.when() }}</time><button type="button" class="pbtn" data-undo="{{ a.id }}">Take back</button></li>{% endfor %}</ul>
+      </details>
+      {% endif %}
+      <form class="at-tool at-lock" data-form="lock">
+        <b>🔒 Lock</b>
+        {% if r.m.locked() %}
+        <button type="button" class="btn" data-act="unlock">Unlock now</button>
+        <span class="at-or">or change it to</span>
+        {% else %}
+        <span class="at-or">No posting or changes for</span>
+        {% endif %}
+        <input name="n" type="number" min="1" max="3650" inputmode="numeric" value="1" aria-label="How long">
+        <select name="unit" aria-label="Hours or days"><option value="1">hours</option><option value="24" selected>days</option></select>
+        <button class="pbtn" type="submit">Lock</button>
+      </form>
+      {% endif %}
+      <div class="at-tool at-end">
+        {% if r.m.blocked %}<button type="button" class="btn" data-act="unblock">Unblock</button>{% else %}<button type="button" class="pbtn danger" data-act="block">⛔ Block</button>{% endif %}
+        <button type="button" class="pbtn danger" data-act="delete">Remove trainer</button>
+      </div>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+<script src="/static/admin-ui.js?v=6" defer></script>
+<script src="/static/tag-editor.js?v=1" defer></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const A = window.Admin, root = document.getElementById('atRoot');
+  // A trainer's tags save as soon as they change.
+  root?.addEventListener('tags:change', async (e) => {
+    const row = e.target.closest('.at-row'); if (!row) return;
+    try { await A.postJSON(`/admin/trainers/${row.dataset.id}`, { action: 'tags', tags: e.detail.tags }); A.toast('Tags saved ✓', { kind: 'ok' }); }
+    catch (err) { A.toast(err.message, { kind: 'err' }); }
+  });
+  const send = async (row, body) => {
+    const j = await A.postJSON(`/admin/trainers/${row.dataset.id}`, body);
+    if (j.password) { prompt(`New password for ${row.dataset.name}. Copy it and send it to them. It won't be shown again.`, j.password); return; }
+    location.reload();
+  };
+  root.addEventListener('click', async (e) => {
+    try {
+      const setRole = e.target.closest('[data-role-set]');
+      if (setRole) {
+        const row = setRole.closest('.at-row'), role = setRole.dataset.roleSet, name = row.dataset.name;
+        if (setRole.classList.contains('on')) return;
+        if (role === 'admin' && !confirm(`Make ${name} an admin? They can do everything you can: edit the site, change or delete cards, and make more staff.`)) return;
+        if (role === 'mod' && !confirm(`Make ${name} a moderator? They can hide or delete vouches, and block or remove trainers. Nothing else.`)) return;
+        if (role === '' && !confirm(`Take ${name}'s powers away? This works straight away.`)) return;
+        await send(row, { action: 'role', role });
+        return;
+      }
+      const amt = e.target.closest('[data-amt]');
+      if (amt) { amt.closest('form').elements.points.value = amt.dataset.amt; return; }
+      const undo = e.target.closest('[data-undo]');
+      if (undo) { if (confirm('Take these star points back?')) await send(undo.closest('.at-row'), { action: 'stars-undo', award: Number(undo.dataset.undo) }); return; }
+      const photo = e.target.closest('[data-photo]');
+      if (photo) { if (confirm('Delete this photo for good?')) { await A.postJSON(`/admin/vouch-photos/${photo.dataset.photo}/delete`, {}); location.reload(); } return; }
+      const post = e.target.closest('[data-post]');
+      if (post) {
+        if (post.dataset.post === 'delete' && !confirm('Delete this for good? Replies under it go too.')) return;
+        await A.postJSON(`/vouches/${post.closest('[data-vouch]').dataset.vouch}/act`, { action: post.dataset.post });
+        location.reload();
+        return;
+      }
+      const b = e.target.closest('[data-act]'); if (!b) return;
+      const row = b.closest('.at-row'), act = b.dataset.act, name = row.dataset.name;
+      if (act === 'delete' && !confirm(`Remove ${name}, with their binder, vouches, replies and photos? This can't be undone.`)) return;
+      if (act === 'block' && !confirm(`Block ${name}? They're signed out, can't sign in, and everything of theirs comes off the site until you unblock them.`)) return;
+      if (act === 'password' && !confirm(`Make a new password for ${name}? Their old one stops working.`)) return;
+      await send(row, { action: act });
+    } catch (err) { A.toast(err.message, { kind: 'err' }); }
+  });
+  root.addEventListener('submit', async (e) => {
+    const f = e.target.closest('[data-form]'); if (!f) return;
+    e.preventDefault();
+    const row = f.closest('.at-row');
+    try {
+      if (f.dataset.form === 'stars') await send(row, { action: 'stars', points: Number(f.elements.points.value), reason: f.elements.reason.value });
+      else await send(row, { action: 'lock', hours: Number(f.elements.n.value) * Number(f.elements.unit.value) });
+    } catch (err) { A.toast(err.message, { kind: 'err' }); }
+  });
+});
+</script>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Join · {{ nav.brand }}{% endblock %}
+{% block content %}
+<section class="wrap join">
+  <div class="join-card">
+    <img class="join-mark" src="/static/img/logo-sm.png" width="88" height="88" alt="">
+    <h1 class="h1">{% if mode == "signin" %}Welcome back{% else %}Become a trainer{% endif %}</h1>
+    <p class="join-sub">{% if mode == "signin" %}Sign in to your trainer.{% else %}Get a profile and a binder for your 50 favorite cards. No email needed.{% endif %}</p>
+    {% if !error.is_empty() %}<p class="join-err" role="alert">{{ error }}</p>{% endif %}
+    {% if mode == "signin" %}
+    <form class="join-form" method="post" action="/signin">
+      <label>Trainer name<input name="name" value="{{ name }}" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn" type="submit">Sign in</button>
+    </form>
+    <p class="join-switch">New here? <a href="/join">Become a trainer</a></p>
+    <p class="join-note">Forgot your password? Ask the vault owner for a new one.</p>
+    {% else %}
+    <form class="join-form" method="post" action="/join">
+      <label>Trainer name<input name="name" value="{{ name }}" maxlength="24" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
+      <label>Password <small>at least 8 characters</small><input name="password" type="password" minlength="8" autocomplete="new-password" required></label>
+      <label class="join-trap" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
+      <button class="btn" type="submit">Create my trainer</button>
+    </form>
+    <p class="join-switch">Already a trainer? <a href="/join?signin=1">Sign in</a></p>
+    <p class="join-note">Write down your password. There's no email, so only the vault owner can reset it.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

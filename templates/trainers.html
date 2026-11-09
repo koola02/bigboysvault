@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Trainers · {{ nav.brand }}{% endblock %}
+{% block content %}
+<section class="wrap trainers">
+  <div class="tr-head">
+    <p class="eyebrow plate">The community</p>
+    <h1 class="h1">Trainers</h1>
+    <p class="tr-sub">Collectors who share their favorite cards here.</p>
+    {% if let Some(m) = me %}<a class="btn" href="/me">My trainer: {{ m.name }}</a>{% else %}<a class="btn" href="/join">Become a trainer</a><a class="linkbtn" href="/join?signin=1">Sign in</a>{% endif %}
+    <a class="linkbtn" href="/vouches">Read the vouches</a>
+  </div>
+  {% if trainers.is_empty() %}
+  <p class="empty">No trainers yet. Be the first.</p>
+  {% else %}
+  <ul class="tr-grid">
+    {% for t in trainers %}
+    <li><a class="tr-tile" data-role="{{ t.role }}" href="/trainers/{{ t.id }}">
+      {% if t.has_avatar() %}<img class="av av-lg" src="{{ t.avatar }}" width="120" height="120" alt="" loading="lazy">{% else %}<span class="av av-lg">{{ t.initial() }}</span>{% endif %}
+      <b>{{ t.name }}</b>
+      {% if !t.role_text().is_empty() %}<span class="role" data-role="{{ t.role }}">{{ t.role_text() }}</span>{% endif %}{% for g in t.tag_list() %}<span class="tag-hl mtag">{{ g }}</span>{% endfor %}
+      {% if t.stars > 0 %}<span class="stars">★ {{ t.stars }}</span>{% endif %}{% if t.worth > 0.0 %}<span class="worth">{{ t.worth_text() }}</span>{% endif %}
+      <small>{{ t.cards }} card{% if t.cards != 1 %}s{% endif %}</small>
+    </a></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</section>
+{% endblock %}

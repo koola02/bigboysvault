@@ -1,0 +1,2 @@
+{% for v in vouches %}{% include "vouch_card.html" %}{% endfor %}
+{% if let Some(n) = next %}<button type="button" class="btn ghost v-load" data-before="{{ n }}">Show more</button>{% endif %}

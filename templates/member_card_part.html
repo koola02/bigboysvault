@@ -1,0 +1,22 @@
+<section class="wrap detail" data-card-title="{{ c.title }}" data-c="{{ c.cond_class() }}" data-mcard="{{ c.id }}" data-owner="{{ t.id }}" data-owner-role="{{ t.role }}">
+  <div class="detail-img"{% if !c.big().is_empty() %} data-holo="detail" data-holo-src="{{ c.big() }}"{% endif %}>
+    {% if !c.big().is_empty() %}<img src="{{ c.big() }}" alt="{{ c.title }}">{% endif %}
+  </div>
+  <div class="detail-info" data-translate>
+    <h1 class="h1">{{ c.title }}</h1>
+    {% if !c.big().is_empty() %}<button type="button" class="inspect" data-zoom="{{ c.big() }}" data-loupe data-zoom-back="Back to the card"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4M11 8v6M8 11h6"/></svg>Inspect up close</button>{% endif %}
+    <dl class="facts">
+      <div class="fact fact-cond"><dt>Condition</dt><dd>{{ c.cond }}</dd></div>
+      {% if c.own_photo() %}<div class="fact"><dt>Photo</dt><dd>{{ t.name }}'s own photo<small>Not part of the vault</small></dd></div>{% endif %}
+      {% if c.worth() > 0.0 %}<div class="fact fact-worth"><dt>Value</dt><dd><span class="worth worth-lg">{{ c.worth_text() }}</span><small>{% if c.value_own > 0.0 %}Set by {{ t.name }}{% else %}Today's market price for this condition{% endif %}</small></dd></div>{% endif %}
+      {% if !c.card_set.is_empty() %}<div class="fact"><dt>Set</dt><dd><span class="fact-set">{% if !c.symbol().is_empty() %}<img class="card-sym" src="{{ c.symbol() }}" width="16" height="16" loading="lazy" decoding="async" alt="">{% endif %}<span>{{ c.card_set }}</span></span>{% if !c.number.is_empty() %}<small>#{{ c.number }}</small>{% endif %}</dd></div>{% endif %}
+    </dl>
+    <a class="mc-owner" data-role="{{ t.role }}" href="/trainers/{{ t.id }}">
+      {% if t.has_avatar() %}<img class="av" src="{{ t.avatar }}" width="56" height="56" alt="">{% else %}<span class="av">{{ t.initial() }}</span>{% endif %}
+      <span class="mco-t"><small>In the binder of</small><b class="mco-name">{{ t.name }}</b>
+        <span class="mco-chips">{% if !t.role_text().is_empty() %}<span class="role" data-role="{{ t.role }}">{{ t.role_text() }}</span>{% endif %}{% if t.stars > 0 %}<span class="stars">★ {{ t.stars }}</span>{% endif %}{% if t.worth > 0.0 %}<span class="worth">{{ t.worth_text() }}</span>{% endif %}{% for g in t.tag_list() %}<span class="tag-hl mtag">{{ g }}</span>{% endfor %}</span>
+      </span>
+      <span class="mco-go" aria-hidden="true">›</span>
+    </a>
+  </div>
+</section>

@@ -1,0 +1,273 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SelxJames — 10 brand directions</title>
+<style>
+  :root { --bg:#f1efec; --text:#1d1d1f; --muted:#6e6e73; --line:rgba(0,0,0,.1); }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:400 17px/1.47 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",system-ui,sans-serif; -webkit-font-smoothing:antialiased; }
+  .page { max-width: 1240px; margin: 0 auto; padding: 56px 20px 96px; }
+  h1 { font-size: clamp(30px,4vw,44px); letter-spacing:-.03em; line-height:1.1; margin:0 0 12px; }
+  .intro { color:var(--muted); max-width:740px; margin:0 0 28px; }
+  .jump { display:flex; flex-wrap:wrap; gap:8px; margin:0 0 56px; padding:0; list-style:none; }
+  .jump a { display:inline-block; background:#fff; border:.5px solid var(--line); border-radius:980px; padding:6px 14px; font-size:14px; color:inherit; text-decoration:none; }
+  .theme { margin:0 0 84px; scroll-margin-top:20px; }
+  .theme-h { display:flex; align-items:baseline; gap:14px; margin-bottom:6px; }
+  .num { font-size:14px; font-weight:700; color:var(--muted); letter-spacing:.06em; }
+  .theme-h h2 { font-size:28px; letter-spacing:-.02em; margin:0; }
+  .concept { color:var(--muted); margin:0 0 16px; max-width:780px; }
+  .grid { display:grid; gap:20px; grid-template-columns:1fr; }
+  @media (min-width:1080px) { .grid { grid-template-columns: 1fr 260px; align-items:start; } }
+  .spec { background:#fff; border-radius:16px; padding:18px 20px; font-size:14px; border:.5px solid var(--line); }
+  .spec dt { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); margin-top:12px; }
+  .spec dt:first-child { margin-top:0; } .spec dd { margin:2px 0 0; }
+  .sw { display:flex; gap:6px; margin-top:4px; flex-wrap:wrap; } .sw i { width:30px; height:30px; border-radius:8px; border:.5px solid rgba(0,0,0,.15); display:block; }
+  .say { font-style:normal; display:block; }
+
+  /* ================= shared mock structure ================= */
+  .mock { position:relative; border-radius:16px; overflow:hidden; border:.5px solid rgba(0,0,0,.2); box-shadow:0 14px 50px rgba(0,0,0,.10); background:var(--m-bg); color:var(--m-fg); font-family:var(--m-font); isolation:isolate; }
+  .mock img { display:block; }
+  .m-nav { position:relative; z-index:5; display:flex; align-items:center; gap:16px; padding:12px 22px; background:var(--m-nav); border-bottom:var(--m-navline); font-size:13px; }
+  .m-brand { font-weight:var(--m-bw); font-family:var(--m-hfont); letter-spacing:var(--m-bls); font-size:19px; white-space:nowrap; }
+  .m-brand b { color:var(--m-a1); font-weight:inherit; } .m-brand em { color:var(--m-a2); font-style:normal; } .m-brand span { opacity:.65; font-weight:300; margin:0 .06em; }
+  .m-links { display:flex; gap:14px; color:var(--m-muted); flex:1; overflow:hidden; white-space:nowrap; }
+  .m-search { flex:0 0 220px; height:34px; border-radius:var(--m-sr); border:2px solid var(--m-a2); background:var(--m-sbg); padding:0 12px 0 34px; display:flex; align-items:center; color:var(--m-muted); font-size:12.5px; position:relative; }
+  .m-search::before { content:""; position:absolute; left:11px; width:11px; height:11px; border:2px solid var(--m-a2); border-radius:50%; } .m-search::after { content:""; position:absolute; left:23px; top:21px; width:6px; height:2px; background:var(--m-a2); transform:rotate(45deg); }
+  .m-sec { position:relative; z-index:2; padding:26px 28px 6px; }
+  .m-sec h4 { margin:0 0 12px; font:var(--m-hw2) 20px/1.1 var(--m-hfont); letter-spacing:var(--m-hls2); text-transform:var(--m-h4tt); display:flex; justify-content:space-between; align-items:baseline; }
+  .m-sec h4 small { font:500 12px var(--m-font); color:var(--m-muted); text-transform:none; letter-spacing:0; }
+  .m-copy h3 { margin:0 0 10px; font:var(--m-hw) clamp(30px,4vw,52px)/1.04 var(--m-hfont); letter-spacing:var(--m-hls); text-transform:var(--m-htt); }
+  .m-copy p { margin:0 0 16px; color:var(--m-muted); font-size:15.5px; max-width:440px; }
+  .m-copy .k { font-size:11px; letter-spacing:.14em; text-transform:uppercase; color:var(--m-muted); margin-bottom:10px; font-weight:700; }
+  .m-btn { display:inline-block; padding:11px 22px; border-radius:var(--m-btnr); background:var(--m-btn); color:var(--m-btnfg); font-size:14px; font-weight:700; border:var(--m-btnb); box-shadow:var(--m-btnsh); }
+  .m-hero { position:relative; z-index:2; }
+  .sl { width:var(--sl,200px); } .pa { width:var(--pa,170px); }
+  .ground { position:relative; } .ground::after { content:""; position:absolute; left:6%; right:6%; bottom:-5px; height:11px; border-radius:50%; background:radial-gradient(closest-side, rgba(0,0,0,.28), transparent); z-index:0; } .ground img { position:relative; z-index:1; }
+  .flip { transform:scaleX(-1); }
+  .abs { position:absolute; }
+
+  /* stats */
+  .m-stats { display:grid; grid-template-columns:repeat(4,1fr); gap:var(--m-gap,12px); }
+  .m-stats div { padding:14px 16px; background:var(--m-sbox); border:var(--m-cardb); border-radius:var(--m-r); box-shadow:var(--m-cardsh); }
+  .m-stats small { display:block; font-size:11.5px; color:var(--m-muted); font-weight:600; }
+  .m-stats b { font:var(--m-hw2) clamp(20px,2.6vw,30px)/1.1 var(--m-hfont); letter-spacing:var(--m-hls2); font-variant-numeric:tabular-nums; }
+  /* binders */
+  .m-binders { display:grid; grid-template-columns:repeat(3,1fr); gap:var(--m-gap,12px); }
+  .bt { position:relative; aspect-ratio:1.55; border-radius:var(--m-r); overflow:hidden; border:var(--m-cardb); box-shadow:var(--m-cardsh); background:var(--m-ph); }
+  .bt img { width:100%; height:100%; object-fit:cover; }
+  .bt::after { content:""; position:absolute; inset:0; background:linear-gradient(transparent 40%, rgba(0,0,0,.62)); }
+  .bt span { position:absolute; left:12px; bottom:9px; z-index:1; color:#fff; font:700 14px/1.15 var(--m-font); } .bt small { display:block; font-weight:400; opacity:.8; font-size:11.5px; }
+  /* graded + card rows */
+  .m-row { display:grid; grid-template-columns:repeat(4,1fr); gap:var(--m-gap,12px); }
+  .gc { background:var(--m-card); border:var(--m-cardb); border-radius:var(--m-r); box-shadow:var(--m-cardsh); padding:8px; font-size:12px; }
+  .gc .gi { position:relative; aspect-ratio:5/7; border-radius:calc(var(--m-r) - 4px); background:var(--m-ph); display:grid; place-items:center; overflow:hidden; margin-bottom:7px; }
+  .gc .gi img { max-width:100%; max-height:100%; object-fit:contain; }
+  .gc em { position:absolute; left:6px; bottom:6px; font-style:normal; font-weight:800; font-size:10px; padding:2px 8px; border-radius:980px; background:var(--m-grade); color:var(--m-gradefg); }
+  .gc b { display:block; font-weight:600; line-height:1.25; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; } .gc small { color:var(--m-muted); font-weight:600; }
+  .m-foot { position:relative; z-index:2; padding:22px 28px 26px; font-size:12.5px; color:var(--m-muted); display:flex; justify-content:space-between; }
+  @media (max-width:760px) { .m-stats, .m-row { grid-template-columns:repeat(2,1fr); } .m-binders { grid-template-columns:repeat(2,1fr); } .m-links { display:none; } .m-search { flex:1; } }
+
+  /* ================= theme tokens ================= */
+  .t1 { --m-bg:#f5f5f7; --m-fg:#1d1d1f; --m-muted:#6e6e73; --m-nav:rgba(255,255,255,.8); --m-navline:.5px solid #e2e2e7; --m-font:-apple-system,"Segoe UI",sans-serif; --m-hfont:-apple-system,"Segoe UI",sans-serif; --m-hw:700; --m-hls:-.04em; --m-htt:none; --m-hw2:700; --m-hls2:-.03em; --m-h4tt:none; --m-bw:700; --m-bls:-.035em; --m-a1:#1d1d1f; --m-a2:#0a7e95; --m-btn:#0a7e95; --m-btnfg:#fff; --m-btnr:980px; --m-btnb:0; --m-btnsh:none; --m-sr:980px; --m-sbg:#fff; --m-card:#fff; --m-cardb:0; --m-r:16px; --m-cardsh:none; --m-ph:#ececf0; --m-sbox:#fff; --m-grade:linear-gradient(135deg,#f3dc9a,#c9a24a); --m-gradefg:#2a2110; }
+  .t2 { --m-bg:#f4ecdf; --m-fg:#3a2a1d; --m-muted:#7a6551; --m-nav:#f4ecdf; --m-navline:1px solid #e2d3bd; --m-font:ui-rounded,"SF Pro Rounded",system-ui,sans-serif; --m-hfont:ui-rounded,"SF Pro Rounded",system-ui,sans-serif; --m-hw:800; --m-hls:-.035em; --m-htt:none; --m-hw2:800; --m-hls2:-.02em; --m-h4tt:none; --m-bw:800; --m-bls:-.03em; --m-a1:#8a5a3b; --m-a2:#1a97ab; --m-btn:#3a2a1d; --m-btnfg:#f4ecdf; --m-btnr:16px; --m-btnb:0; --m-btnsh:none; --m-sr:16px; --m-sbg:#fffaf1; --m-card:#fffaf1; --m-cardb:1.5px solid #e2d3bd; --m-r:20px; --m-cardsh:none; --m-ph:#efe3d0; --m-sbox:#fffaf1; --m-grade:#1a97ab; --m-gradefg:#fff; }
+  .t3 { --m-bg:#fff; --m-fg:#111; --m-muted:#4a4a4a; --m-nav:#fff; --m-navline:3px solid #111; --m-font:-apple-system,"Segoe UI",sans-serif; --m-hfont:-apple-system,"Segoe UI",sans-serif; --m-hw:900; --m-hls:-.045em; --m-htt:none; --m-hw2:900; --m-hls2:-.03em; --m-h4tt:uppercase; --m-bw:900; --m-bls:-.04em; --m-a1:#a9754c; --m-a2:#0b9ab0; --m-btn:#111; --m-btnfg:#fff; --m-btnr:0; --m-btnb:0; --m-btnsh:4px 4px 0 #7fd3e0; --m-sr:0; --m-sbg:#fff; --m-card:#fff; --m-cardb:3px solid #111; --m-r:0; --m-cardsh:5px 5px 0 #111; --m-ph:#f1f1f1; --m-sbox:#fff; --m-grade:#111; --m-gradefg:#fff; --m-gap:16px; }
+  .t4 { --m-bg:#faf7f0; --m-fg:#1f1b16; --m-muted:#766d60; --m-nav:#faf7f0; --m-navline:1.5px solid #1f1b16; --m-font:ui-serif,Georgia,"Times New Roman",serif; --m-hfont:ui-serif,Georgia,"Times New Roman",serif; --m-hw:600; --m-hls:-.02em; --m-htt:none; --m-hw2:600; --m-hls2:-.01em; --m-h4tt:none; --m-bw:700; --m-bls:-.01em; --m-a1:#1f1b16; --m-a2:#7a2e1d; --m-btn:transparent; --m-btnfg:#1f1b16; --m-btnr:0; --m-btnb:1.5px solid #1f1b16; --m-btnsh:none; --m-sr:0; --m-sbg:#fff; --m-card:transparent; --m-cardb:0; --m-r:0; --m-cardsh:none; --m-ph:#efe9db; --m-sbox:transparent; --m-grade:#7a2e1d; --m-gradefg:#fff; }
+  .t5 { --m-bg:#e7f5fa; --m-fg:#12394a; --m-muted:#4f7a8c; --m-nav:transparent; --m-navline:0 solid transparent; --m-font:ui-rounded,"SF Pro Rounded",system-ui,sans-serif; --m-hfont:ui-rounded,"SF Pro Rounded",system-ui,sans-serif; --m-hw:800; --m-hls:-.03em; --m-htt:none; --m-hw2:800; --m-hls2:-.02em; --m-h4tt:none; --m-bw:800; --m-bls:-.03em; --m-a1:#e8743b; --m-a2:#1a97ab; --m-btn:#1a97ab; --m-btnfg:#fff; --m-btnr:980px; --m-btnb:0; --m-btnsh:0 6px 16px rgba(26,151,171,.35); --m-sr:980px; --m-sbg:#fff; --m-card:#fff; --m-cardb:0; --m-r:26px; --m-cardsh:0 8px 22px rgba(26,151,171,.14); --m-ph:#d8eef5; --m-sbox:#fff; --m-grade:#e8743b; --m-gradefg:#fff; }
+  .t6 { --m-bg:#211812; --m-fg:#efe3d3; --m-muted:#b8a189; --m-nav:rgba(33,24,18,.7); --m-navline:1px solid #3a2c22; --m-font:-apple-system,"Segoe UI",sans-serif; --m-hfont:-apple-system,"Segoe UI",sans-serif; --m-hw:700; --m-hls:-.035em; --m-htt:none; --m-hw2:700; --m-hls2:-.02em; --m-h4tt:none; --m-bw:700; --m-bls:-.03em; --m-a1:#d7b392; --m-a2:#7fd0dc; --m-btn:#d7b392; --m-btnfg:#211812; --m-btnr:980px; --m-btnb:0; --m-btnsh:0 6px 24px rgba(215,179,146,.28); --m-sr:980px; --m-sbg:#2c211a; --m-card:#2c211a; --m-cardb:1px solid #3d2e23; --m-r:18px; --m-cardsh:0 10px 30px rgba(0,0,0,.35); --m-ph:#3a2c22; --m-sbox:#2c211a; --m-grade:#d7b392; --m-gradefg:#211812; }
+  .t7 { --m-bg:#d9bf98; --m-fg:#3b2a1a; --m-muted:#6b5238; --m-nav:#cfb184; --m-navline:2px dashed #3b2a1a; --m-font:ui-monospace,"SF Mono",Consolas,monospace; --m-hfont:ui-monospace,"SF Mono",Consolas,monospace; --m-hw:800; --m-hls:-.03em; --m-htt:uppercase; --m-hw2:800; --m-hls2:0; --m-h4tt:uppercase; --m-bw:800; --m-bls:0; --m-a1:#3b2a1a; --m-a2:#1c6f7d; --m-btn:#3b2a1a; --m-btnfg:#ecd9b8; --m-btnr:3px; --m-btnb:0; --m-btnsh:none; --m-sr:3px; --m-sbg:#ecd9b8; --m-card:#ecd9b8; --m-cardb:2px dashed #3b2a1a; --m-r:4px; --m-cardsh:none; --m-ph:#dcc79f; --m-sbox:#ecd9b8; --m-grade:#3b2a1a; --m-gradefg:#ecd9b8; }
+  .t8 { --m-bg:#090b0e; --m-fg:#f2f5f7; --m-muted:#8a95a0; --m-nav:#090b0e; --m-navline:1px solid #202731; --m-font:-apple-system,"Segoe UI",sans-serif; --m-hfont:-apple-system,"Segoe UI",sans-serif; --m-hw:900; --m-hls:-.05em; --m-htt:none; --m-hw2:800; --m-hls2:-.03em; --m-h4tt:uppercase; --m-bw:900; --m-bls:-.04em; --m-a1:#d7b392; --m-a2:#ffd60a; --m-btn:#ffd60a; --m-btnfg:#090b0e; --m-btnr:6px; --m-btnb:0; --m-btnsh:none; --m-sr:6px; --m-sbg:#12161b; --m-card:#12161b; --m-cardb:1px solid #232b35; --m-r:6px; --m-cardsh:none; --m-ph:#1a2028; --m-sbox:#12161b; --m-grade:#ffd60a; --m-gradefg:#090b0e; }
+  .t9 { --m-bg:#fff4df; --m-fg:#2b2118; --m-muted:#7c6a58; --m-nav:#fff4df; --m-navline:0 solid transparent; --m-font:ui-rounded,"SF Pro Rounded",system-ui,sans-serif; --m-hfont:ui-rounded,"SF Pro Rounded",system-ui,sans-serif; --m-hw:900; --m-hls:-.035em; --m-htt:none; --m-hw2:800; --m-hls2:-.02em; --m-h4tt:none; --m-bw:900; --m-bls:-.03em; --m-a1:#8a5a3b; --m-a2:#1a97ab; --m-btn:#2b2118; --m-btnfg:#fff4df; --m-btnr:980px; --m-btnb:0; --m-btnsh:3px 3px 0 #1a97ab; --m-sr:980px; --m-sbg:#fff; --m-card:#fff; --m-cardb:3px solid #2b2118; --m-r:16px; --m-cardsh:4px 4px 0 #2b2118; --m-ph:#f4e6cb; --m-sbox:#fff; --m-grade:#1a97ab; --m-gradefg:#fff; --m-gap:16px; }
+  .t10 { --m-bg:#efeeea; --m-fg:#161616; --m-muted:#7b7a76; --m-nav:#efeeea; --m-navline:.5px solid #cfcdc7; --m-font:-apple-system,"Segoe UI",sans-serif; --m-hfont:-apple-system,"Segoe UI",sans-serif; --m-hw:300; --m-hls:-.025em; --m-htt:none; --m-hw2:300; --m-hls2:-.01em; --m-h4tt:none; --m-bw:600; --m-bls:-.02em; --m-a1:#161616; --m-a2:#161616; --m-btn:transparent; --m-btnfg:#161616; --m-btnr:0; --m-btnb:1px solid #161616; --m-btnsh:none; --m-sr:0; --m-sbg:#fff; --m-card:#fff; --m-cardb:.5px solid #cfcdc7; --m-r:0; --m-cardsh:0 0 0 7px #fff; --m-ph:#e9e7e2; --m-sbox:transparent; --m-grade:#161616; --m-gradefg:#fff; --m-gap:22px; }
+
+  /* ---- 1 Plain Spoken ---- */
+  .t1 .m-hero { text-align:center; padding:44px 28px 0; background:linear-gradient(#fff, #f5f5f7); }
+  .t1 .stage { display:grid; grid-template-columns:1fr minmax(0,1.3fr) 1fr; align-items:end; gap:12px; --sl:200px; --pa:168px; }
+  .t1 .fan { position:relative; height:190px; display:flex; justify-content:center; align-items:flex-end; margin-top:18px; }
+  .t1 .fan .gi2 { position:absolute; bottom:0; width:112px; aspect-ratio:5/7; border-radius:9px; overflow:hidden; box-shadow:0 14px 30px rgba(0,0,0,.22); background:#fff; } .t1 .fan img { width:100%; height:100%; object-fit:cover; }
+  .t1 .m-stats div { background:transparent; text-align:center; border-right:.5px solid #d9d9de; border-radius:0; } .t1 .m-stats div:last-child { border:0; }
+  .t1 .dark { background:#000; color:#f5f5f7; margin-top:30px; padding-bottom:20px; } .t1 .dark .m-sec h4 { color:#fff; } .t1 .dark .gc { background:#1c1c1e; } .t1 .dark .gc b { color:#f5f5f7; }
+
+  /* ---- 2 Cream & Teal ---- */
+  .t2 { background-image:radial-gradient(rgba(138,90,59,.14) 1.4px, transparent 1.6px); background-size:22px 22px; }
+  .t2 .m-hero { padding:40px 28px 8px; } .t2 .stage { display:grid; grid-template-columns:1fr 1.25fr 1fr; align-items:center; gap:10px; text-align:center; }
+  .t2 .disc { position:relative; width:min(100%,290px); aspect-ratio:1; border-radius:50%; display:grid; align-items:end; justify-items:center; margin:0 auto; }
+  .t2 .disc.s { background:#e6cfab; } .t2 .disc.p { background:#bfe8ee; } .t2 .disc img { position:relative; z-index:2; margin-bottom:6%; }
+  .t2 .ico { position:absolute; z-index:3; }
+  .t2 .band { margin:20px 28px 0; background:#e6cfab; border-radius:26px; padding:6px 0 18px; }
+
+  /* ---- 3 Fur / Spark ---- */
+  .t3 .poster { display:grid; grid-template-columns:1fr 1fr; position:relative; min-height:380px; overflow:hidden; border-bottom:3px solid #111; }
+  .t3 .half { position:relative; display:flex; align-items:flex-end; justify-content:center; overflow:hidden; background-image:radial-gradient(rgba(0,0,0,.16) 1.6px, transparent 1.8px); background-size:9px 9px; }
+  .t3 .half.l { background-color:#c7a07c; } .t3 .half.r { background-color:#7fd3e0; }
+  .t3 .half .big { position:absolute; top:6px; left:0; right:0; text-align:center; font:900 clamp(90px,14vw,190px)/1 var(--m-hfont); letter-spacing:-.06em; color:transparent; -webkit-text-stroke:3px #111; opacity:.9; z-index:0; }
+  .t3 .half img { position:relative; z-index:1; }
+  .t3 .strip { background:#111; color:#fff; display:flex; justify-content:space-between; align-items:center; gap:16px; padding:18px 28px; } .t3 .strip h3 { margin:0; font:900 clamp(22px,3vw,34px)/1.05 var(--m-hfont); letter-spacing:-.04em; } .t3 .strip p { margin:2px 0 0; color:#cfcfcf; font-size:14px; } .t3 .strip .m-btn { background:#fff; color:#111; box-shadow:4px 4px 0 #7fd3e0; }
+  .t3 .gc em { border-radius:0; } .t3 .bt { border-radius:0; }
+
+  /* ---- 4 Ledger ---- */
+  .t4 { background-image:repeating-linear-gradient(transparent 0 31px, rgba(31,27,22,.09) 31px 32px); }
+  .t4 .m-hero { padding:36px 28px 6px; display:grid; grid-template-columns:1.4fr 1fr; gap:24px; align-items:end; }
+  .t4 .m-copy h3 { font-size:clamp(34px,5vw,64px); } .t4 .stamps { display:flex; gap:16px; justify-content:center; align-items:flex-end; }
+  .t4 .stamp { width:150px; height:150px; border:2px solid #7a2e1d; border-radius:50%; display:grid; place-items:center; position:relative; transform:rotate(-6deg); background:rgba(250,247,240,.7); }
+  .t4 .stamp:nth-child(2) { transform:rotate(5deg); } .t4 .stamp::before { content:""; position:absolute; inset:6px; border:1px dashed #7a2e1d; border-radius:50%; }
+  .t4 .stamp span { position:absolute; bottom:-22px; font:600 11px var(--m-font); letter-spacing:.14em; text-transform:uppercase; color:#7a2e1d; }
+  .t4 .toc { list-style:none; margin:0; padding:0; } .t4 .toc li { display:flex; align-items:baseline; gap:6px; padding:7px 0; font-size:15px; } .t4 .toc i { flex:1; border-bottom:2px dotted #1f1b16; opacity:.35; transform:translateY(-3px); } .t4 .toc b { font-variant-numeric:tabular-nums; }
+  .t4 .two { display:grid; grid-template-columns:1fr 1.5fr; gap:30px; align-items:start; }
+  .t4 .sheet { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; } .t4 .sheet div { position:relative; } .t4 .sheet img { width:100%; aspect-ratio:5/7; object-fit:cover; border:1px solid #1f1b16; } .t4 .sheet small { position:absolute; top:4px; left:4px; background:#faf7f0; font:600 10px var(--m-font); padding:1px 5px; }
+  .t4 .m-stats div { border-top:2px solid #1f1b16; padding:10px 0; }
+  .t4 .m-row { grid-template-columns:1fr; gap:0; } .t4 .gc { display:grid; grid-template-columns:42px 1fr auto auto; gap:14px; align-items:center; border-bottom:1px solid rgba(31,27,22,.3); padding:8px 0; } .t4 .gc .gi { width:42px; margin:0; } .t4 .gc em { position:static; border-radius:0; } .t4 .gc b { -webkit-line-clamp:1; }
+
+  /* ---- 5 Cheek Pouch ---- */
+  .t5 .blob { position:absolute; border-radius:50%; z-index:0; } .t5 .m-nav { background:transparent; }
+  .t5 .m-hero { padding:28px 28px 0; display:grid; grid-template-columns:1.1fr 1fr; align-items:end; gap:10px; min-height:340px; }
+  .t5 .cheeks { position:absolute; inset:0; background-image:radial-gradient(#f4a261 5px, transparent 5.5px); background-size:56px 56px; opacity:.16; z-index:0; mask-image:linear-gradient(135deg,transparent 35%,#000); -webkit-mask-image:linear-gradient(135deg,transparent 35%,#000); }
+  .t5 .m-stats div { border-radius:999px; text-align:center; padding:14px 10px; } .t5 .m-stats div:nth-child(2) { background:#ffe7d6; } .t5 .m-stats div:nth-child(3) { background:#d9f1f6; } .t5 .m-stats div:nth-child(4) { background:#fff3c9; }
+
+  /* ---- 6 Dark Brown ---- */
+  .t6 { background-image:radial-gradient(60% 55% at 28% 30%, rgba(215,179,146,.22), transparent 70%); }
+  .t6::after { content:""; position:absolute; inset:0; z-index:0; pointer-events:none; opacity:.08; background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  .t6 .m-hero { padding:34px 28px 0; display:grid; grid-template-columns:1fr 1fr; align-items:end; gap:10px; }
+  .t6 .m-stats b { color:#d7b392; } .t6 .m-stats div { text-align:left; }
+
+  /* ---- 7 Stock List ---- */
+  .t7 { background-image:repeating-linear-gradient(90deg, rgba(59,42,26,.04) 0 2px, transparent 2px 7px); }
+  .t7 .m-hero { padding:30px 28px 4px; display:grid; grid-template-columns:1.25fr 1fr; gap:22px; align-items:center; }
+  .t7 .label { border:3px dashed #3b2a1a; padding:18px 20px; background:#ecd9b8; transform:rotate(-1.2deg); position:relative; } .t7 .label .no { position:absolute; top:-14px; right:14px; background:#3b2a1a; color:#ecd9b8; font:800 12px var(--m-font); padding:3px 10px; letter-spacing:.1em; }
+  .t7 .code { height:34px; margin-top:14px; background:repeating-linear-gradient(90deg,#3b2a1a 0 2px,transparent 2px 5px,#3b2a1a 5px 9px,transparent 9px 11px,#3b2a1a 11px 12px,transparent 12px 16px); }
+  .t7 .tags { display:flex; gap:14px; justify-content:center; align-items:flex-end; } .t7 .tag { position:relative; background:#ecd9b8; border:2px dashed #3b2a1a; padding:30px 14px 10px; display:grid; justify-items:center; clip-path:polygon(14% 0,86% 0,100% 12%,100% 100%,0 100%,0 12%); } .t7 .tag::before { content:""; position:absolute; top:10px; width:12px; height:12px; border-radius:50%; background:#d9bf98; border:2px solid #3b2a1a; }
+  .t7 .bt { aspect-ratio:auto; background:#ecd9b8; padding:0; display:grid; grid-template-columns:70px 1fr; align-items:stretch; clip-path:polygon(0 0,92% 0,100% 50%,92% 100%,0 100%); } .t7 .bt img { height:100%; width:70px; } .t7 .bt::after { display:none; } .t7 .bt span { position:static; color:#3b2a1a; padding:12px 16px; font-size:13px; text-transform:uppercase; } .t7 .bt small { color:#6b5238; font-size:12px; }
+
+  /* ---- 8 Voltage ---- */
+  .t8 { background-image:linear-gradient(rgba(255,255,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.04) 1px,transparent 1px); background-size:44px 44px; }
+  .t8 .m-hero { padding:34px 28px 0; display:grid; grid-template-columns:1.3fr 1fr; align-items:end; gap:16px; }
+  .t8 .huge { font:900 clamp(70px,13vw,160px)/.9 var(--m-hfont); letter-spacing:-.07em; color:#ffd60a; font-variant-numeric:tabular-nums; margin:4px 0 6px; }
+  .t8 .rim { filter:drop-shadow(0 0 14px rgba(255,214,10,.45)); }
+  .t8 .m-stats div { border-top:3px solid #ffd60a; background:#12161b; border-radius:0; } .t8 .m-stats b { font-family:ui-monospace,"SF Mono",Consolas,monospace; color:#fff; }
+  .t8 .bt { border-top:3px solid #ffd60a; } .t8 .gc { border-color:#ffd60a55; }
+  .t8 .m-search { box-shadow:0 0 0 3px rgba(255,214,10,.2); }
+
+  /* ---- 9 Sticker Sheet ---- */
+  .t9 { background-image:radial-gradient(#e8743b 3px,transparent 3.5px),radial-gradient(#1a97ab 3px,transparent 3.5px),radial-gradient(#f4b83f 3px,transparent 3.5px); background-size:90px 90px; background-position:0 0,30px 45px,60px 20px; background-color:#fff4df; }
+  .t9 .m-hero { padding:34px 28px 0; display:grid; grid-template-columns:1fr 1.2fr 1fr; align-items:center; gap:10px; }
+  .t9 .cut { filter:drop-shadow(5px 0 0 #fff) drop-shadow(-5px 0 0 #fff) drop-shadow(0 5px 0 #fff) drop-shadow(0 -5px 0 #fff) drop-shadow(0 0 0 #2b2118) drop-shadow(4px 6px 0 rgba(43,33,24,.9)); }
+  .t9 .blob9 { display:inline-block; background:#f4b83f; border:3px solid #2b2118; border-radius:50%; width:104px; height:104px; display:grid; place-items:center; text-align:center; font:900 13px/1.1 var(--m-font); transform:rotate(-10deg); box-shadow:4px 4px 0 #2b2118; } .t9 .blob9 b { display:block; font-size:24px; }
+  .t9 .tape { position:absolute; width:70px; height:22px; background:rgba(244,184,63,.65); transform:rotate(-8deg); z-index:3; }
+  .t9 .bt, .t9 .gc, .t9 .m-stats div { transform:rotate(var(--rot,0deg)); } .t9 .m-binders > :nth-child(odd), .t9 .m-row > :nth-child(odd), .t9 .m-stats > :nth-child(odd) { --rot:-1.4deg; } .t9 .m-binders > :nth-child(even), .t9 .m-row > :nth-child(even), .t9 .m-stats > :nth-child(even) { --rot:1.2deg; }
+  .t9 .bt { border-width:3px; }
+
+  /* ---- 10 Gallery ---- */
+  .t10 .m-hero { padding:46px 28px 0; display:grid; grid-template-columns:1fr 1.3fr 1fr; align-items:end; gap:26px; }
+  .t10 .frame { background:#fff; padding:22px; box-shadow:0 0 0 1px #161616, 0 18px 34px rgba(0,0,0,.14); display:grid; justify-items:center; } .t10 .frame .mat { width:100%; aspect-ratio:1; background:#f3f2ee; display:grid; place-items:end center; padding:12px 10px 0; }
+  .t10 .plaque { margin-top:12px; font:500 11px/1.4 var(--m-font); color:#4a4945; text-align:center; } .t10 .plaque b { display:block; font-weight:600; color:#161616; }
+  .t10 .wall { display:flex; gap:26px; align-items:flex-end; flex-wrap:wrap; justify-content:center; }
+  .t10 .wall figure { margin:0; width:150px; } .t10 .wall figure:nth-child(2n) { width:118px; } .t10 .wall img { width:100%; aspect-ratio:5/7; object-fit:cover; box-shadow:0 0 0 1px #161616, 0 0 0 7px #fff, 0 12px 24px rgba(0,0,0,.14); }
+  .t10 .wall figcaption { margin-top:16px; font:500 11px/1.35 var(--m-font); color:#4a4945; } .t10 .wall b { display:block; color:#161616; font-weight:600; }
+  .t10 .m-copy { text-align:center; } .t10 .m-copy p { margin-left:auto; margin-right:auto; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>SelxJames — 10 brand directions</h1>
+  <p class="intro">Each direction is a full home page built from your Slaking and Pachirisu art and your real cards. All copy is plain and factual: what this is, how many cards, where to click. Motion is limited to what’s listed under each direction.</p>
+  <ul class="jump" id="jump"></ul>
+  <div id="out"></div>
+</div>
+
+<script>
+const SL = '/static/img/slaking.png', PA = '/static/img/pachirisu.png';
+const BINDERS = [['Trainers', 74], ['Favorites', 390], ['Pikachu Set', 58], ['Playables', 177], ['Legendary Collections', 320], ['Japanese Collections', 43]];
+const LINKS = ['Trainers', 'Favorites', 'Pikachu Set', 'Playables', 'Legendary', 'Japanese', 'Graded', 'Figures'];
+const GRADES = ['PSA 10', 'CGC 10', 'PSA 9', 'BGS 9.5'];
+let CARDS = [];
+const C = (i) => CARDS.length ? CARDS[i % CARDS.length] : { title: 'Card', price: '₱0', img: '' };
+const im = (i, cls = '') => `<img class="${cls}" src="${C(i).img}" alt="">`;
+const bolt = (c, s = 34) => `<svg width="${s}" height="${s * 1.3}" viewBox="0 0 34 44" aria-hidden="true"><path d="M20 0 4 24h10l-4 20L30 17H19z" fill="${c}"/></svg>`;
+const acorn = (c, c2, s = 34) => `<svg width="${s}" height="${s * 1.18}" viewBox="0 0 34 40" aria-hidden="true"><ellipse cx="17" cy="25" rx="12" ry="13" fill="${c}"/><path d="M3 17c0-9 7-13 14-13s14 4 14 13z" fill="${c2}"/><rect x="15" y="0" width="4" height="7" rx="2" fill="${c2}"/></svg>`;
+const berry = (c, s = 26) => `<svg width="${s}" height="${s}" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="15" r="9" fill="${c}"/><path d="M13 6c-1-4 3-5 5-4-1 2-2 3-5 4z" fill="#3f8f5a"/></svg>`;
+const zz = (c) => `<svg width="46" height="52" viewBox="0 0 46 52" aria-hidden="true"><path d="M4 8h14L4 24h14M22 26h10L22 38h10M34 40h8l-8 9h8" fill="none" stroke="${c}" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+const star = (c, s = 30) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1l2.6 7.4L22 9l-6 4.6L18 21l-6-4.2L6 21l2-7.4L2 9l7.4-.6z" fill="${c}"/></svg>`;
+
+function nav(brand) { const [a, x, b] = ['Sel', '×', 'James']; return `<div class="m-nav"><span class="m-brand"><b>${a}</b><span>${x}</span><em>${b}</em></span><div class="m-links">${LINKS.map((l) => `<span>${l}</span>`).join('')}</div><div class="m-search">Search cards, sets, binders</div></div>`; }
+const stats = () => `<div class="m-sec"><div class="m-stats"><div><small>Cards</small><b>2,657</b></div><div><small>Graded</small><b>37</b></div><div><small>Binders</small><b>6</b></div><div><small>Collection value</small><b>₱1.36M</b></div></div></div>`;
+const binders = (h = 'Binders') => `<div class="m-sec"><h4>${h}</h4><div class="m-binders">${BINDERS.map(([n, c], i) => `<div class="bt">${im(i * 3 + 1)}<span>${n}<small>${c} cards</small></span></div>`).join('')}</div></div>`;
+const graded = (h = 'Graded cards', cls = '') => `<div class="${cls}"><div class="m-sec"><h4>${h}<small>View all 37</small></h4><div class="m-row">${[0, 1, 2, 3].map((i) => `<div class="gc"><div class="gi">${im(i + 4)}<em>${GRADES[i]}</em></div><b>${C(i + 4).title}</b><small>${C(i + 4).price}</small></div>`).join('')}</div></div></div>`;
+const foot = () => `<div class="m-foot"><span>SelxJames · Pokémon card collection</span><span>2,657 cards</span></div>`;
+const hero = (t) => `<div class="m-copy">${t.k ? `<div class="k">${t.k}</div>` : ''}<h3>${t.h}</h3><p>${t.p}</p><span class="m-btn">${t.btn}</span></div>`;
+
+const T = [
+ { n: 'Plain Spoken', cls: 't1', concept: 'Apple-plain, but full: a fan of real cards between the two characters, a black graded section for contrast, big quiet numbers. The brand is the restraint.',
+   k: 'Pokémon TCG collection', h: 'Pokémon card<br>collection.', p: '2,657 cards in 6 binders. Search by name or card number.', btn: 'Browse all cards',
+   body: (t) => `<div class="m-hero"><div class="stage"><div class="ground"><img class="sl" src="${SL}" alt="Slaking"></div><div>${hero(t)}<div class="fan">${[3, 6, 9, 12, 15].map((n, i) => `<div class="gi2" style="left:${50 + (i - 2) * 17}%;transform:translateX(-50%) rotate(${(i - 2) * 9}deg);z-index:${i < 3 ? i : 5 - i}">${im(n)}</div>`).join('')}</div></div><div class="ground"><img class="pa" src="${PA}" alt="Pachirisu"></div></div></div>${stats()}${binders()}${graded('Graded cards', 'dark')}`,
+   sw: ['#f5f5f7', '#1d1d1f', '#0a7e95', '#000000'], type: 'System sans (SF Pro). Bold, tight headlines.', say: ['Pokémon card collection.', '2,657 cards in 6 binders.', 'Browse all cards'], motion: 'None.', art: 'Both characters on one ground line with soft shadows; a fan of real cards between them; the graded row is a black Apple-style section.' },
+ { n: 'Cream & Teal', cls: 't2', concept: 'Slaking’s brown and Pachirisu’s teal on warm cream. Each character sits in its own flat colour disc, with small flat icons around them. Rounded and friendly.',
+   k: 'Collection', h: 'Pokémon card<br>collection.', p: '2,657 cards in 6 binders.', btn: 'Open the binders',
+   body: (t) => `<div class="m-hero"><div class="stage"><div class="disc s"><span class="ico" style="left:10%;top:6%">${zz('#8a5a3b')}</span><img class="sl" style="--sl:190px" src="${SL}" alt="Slaking"></div>${hero(t)}<div class="disc p"><span class="ico" style="right:10%;top:6%">${bolt('#f4b83f', 30)}</span><span class="ico" style="left:4%;bottom:12%">${berry('#e8743b')}</span><img class="pa" style="--pa:150px" src="${PA}" alt="Pachirisu"></div></div></div>${stats()}${binders()}<div class="band">${graded('Graded cards')}</div>`,
+   sw: ['#f4ecdf', '#8a5a3b', '#1a97ab', '#e6cfab'], type: 'Rounded system sans, heavy headlines.', say: ['Pokémon card collection.', '2,657 cards in 6 binders.', 'Open the binders'], motion: 'None.', art: 'Characters in flat colour discs; a Zz, a bolt and a berry as flat icons; dot-grid paper background.' },
+ { n: 'Fur / Spark', cls: 't3', concept: 'A hard split poster: Slaking’s brown left, Pachirisu’s teal right, each with its half of the name in outline type behind it. Halftone dots, black borders, hard shadows.',
+   k: '', h: '', p: '', btn: 'View the collection',
+   body: (t) => `<div class="poster"><div class="half l"><div class="big">SEL</div><div class="ground"><img class="sl" style="--sl:270px" src="${SL}" alt="Slaking"></div></div><div class="half r"><div class="big">JAMES</div><div class="ground"><img class="pa" style="--pa:225px" src="${PA}" alt="Pachirisu"></div></div></div><div class="strip"><div><h3>Pokémon cards.</h3><p>2,657 in the collection.</p></div><span class="m-btn">${t.btn}</span></div>${stats()}${binders()}${graded('Graded cards')}`,
+   sw: ['#c7a07c', '#7fd3e0', '#111111', '#ffffff'], type: 'Black-weight sans, hard offset shadows, outline display type.', say: ['Pokémon cards.', '2,657 in the collection.', 'View the collection'], motion: 'None.', art: 'Two colour blocks with halftone dots and the characters bottom-aligned; the brand name split across them in outline type.' },
+ { n: 'Collector’s Ledger', cls: 't4', concept: 'A catalogue. Ruled paper, serif type, a table-of-contents index with dotted leaders, a contact sheet of real cards and a graded register. The characters are rubber stamps.',
+   k: 'Collection ledger', h: '2,657 entries.', p: 'Indexed by binder, set and number.', btn: 'Open the index',
+   body: (t) => `<div class="m-hero">${hero(t)}<div class="stamps"><div class="stamp"><img style="width:92px" src="${SL}" alt="Slaking"><span>Slaking</span></div><div class="stamp"><img style="width:70px" src="${PA}" alt="Pachirisu"><span>Pachirisu</span></div></div></div>${stats()}<div class="m-sec"><div class="two"><div><h4>Index</h4><ul class="toc">${BINDERS.map(([n, c]) => `<li><span>${n}</span><i></i><b>${c}</b></li>`).join('')}</ul></div><div><h4>Contact sheet<small>Latest 8</small></h4><div class="sheet">${[0, 1, 2, 3, 4, 5, 6, 7].map((i) => `<div>${im(i * 2)}<small>${String(i + 1).padStart(3, '0')}</small></div>`).join('')}</div></div></div></div>${graded('Graded register')}`,
+   sw: ['#faf7f0', '#1f1b16', '#7a2e1d', '#766d60'], type: 'System serif headings, tabular numbers, hairline and dotted rules.', say: ['2,657 entries.', 'Indexed by binder, set and number.', 'Open the index'], motion: 'None.', art: 'Both characters as round rubber stamps with captions; ruled-paper background; a table-of-contents index.' },
+ { n: 'Cheek Pouch', cls: 't5', concept: 'Pachirisu leads. Pale blue page, a big white circle behind the squirrel, orange cheek-dot pattern, bolt confetti, pill-shaped stat bubbles and very round cards.',
+   k: '', h: 'Card collection.', p: '2,657 cards in 6 binders.', btn: 'See the cards',
+   body: (t) => `<div class="blob" style="width:520px;height:520px;right:-120px;top:-60px;background:#fff"></div><div class="blob" style="width:220px;height:220px;left:-60px;top:260px;background:#cdeaf2"></div><div class="cheeks"></div><div class="m-hero"><div class="m-copy" style="align-self:center">${hero(t)}<span class="abs" style="left:62%;top:30px">${bolt('#f4b83f', 26)}</span></div><div style="position:relative;display:flex;align-items:flex-end;justify-content:center;gap:0"><span class="abs" style="right:6%;top:12px;z-index:3">${bolt('#f4b83f', 34)}</span><div class="ground" style="margin-right:14px"><img class="sl" style="--sl:150px" src="${SL}" alt="Slaking"></div><div class="ground"><img class="pa" style="--pa:225px" src="${PA}" alt="Pachirisu"></div></div></div>${stats()}${binders()}${graded('Graded cards')}`,
+   sw: ['#e7f5fa', '#1a97ab', '#e8743b', '#12394a'], type: 'Rounded sans, very large radii.', say: ['Card collection.', '2,657 cards in 6 binders.', 'See the cards'], motion: 'Pachirisu’s tail tilts a few degrees on hover.', art: 'Pachirisu larger than Slaking, in front of a white circle; bolt shapes; orange cheek-dot pattern.' },
+ { n: 'Dark Brown', cls: 't6', concept: 'Slaking leads: a dark, warm page lit by a soft spotlight behind the big character, fine grain, glowing cards. Pachirisu stands on the stats bar.',
+   k: '', h: 'Our collection.', p: '2,657 cards in 6 binders.', btn: 'Browse',
+   body: (t) => `<div class="m-hero"><div class="ground" style="justify-self:center"><img class="sl" style="--sl:330px" src="${SL}" alt="Slaking"></div><div style="padding-bottom:30px">${hero(t)}</div></div><div class="m-sec" style="margin-top:-4px"><div style="position:relative"><div class="abs ground" style="right:18px;top:-84px;z-index:4"><img class="pa" style="--pa:96px" src="${PA}" alt="Pachirisu"></div><div class="m-stats"><div><small>Cards</small><b>2,657</b></div><div><small>Graded</small><b>37</b></div><div><small>Binders</small><b>6</b></div><div><small>Collection value</small><b>₱1.36M</b></div></div></div></div>${binders()}${graded('Graded cards')}`,
+   sw: ['#211812', '#d7b392', '#7fd0dc', '#efe3d3'], type: 'System sans, regular weight, generous spacing.', say: ['Our collection.', '2,657 cards in 6 binders.', 'Browse'], motion: 'None.', art: 'Large Slaking in a warm spotlight with film grain; small Pachirisu standing on the stats bar.' },
+ { n: 'Stock List', cls: 't7', concept: 'An inventory sheet on kraft paper. A taped label with a number and barcode, characters on hang-tags, binders as price-tag shapes with their counts.',
+   k: 'Inventory', h: 'Stock list.', p: '6 binders. 2,657 cards. All counted.', btn: 'Open a binder',
+   body: (t) => `<div class="m-hero"><div class="label"><span class="no">No. 2,657</span>${hero(t)}<div class="code"></div></div><div class="tags"><div class="tag"><img style="width:104px" src="${SL}" alt="Slaking"><small>SLAKING</small></div><div class="tag"><img style="width:80px" src="${PA}" alt="Pachirisu"><small>PACHIRISU</small></div></div></div>${stats()}<div class="m-sec"><h4>Binders</h4><div class="m-binders">${BINDERS.map(([n, c], i) => `<div class="bt">${im(i * 3 + 1)}<span>${n}<small>${c} cards</small></span></div>`).join('')}</div></div>${graded('Graded')}`,
+   sw: ['#d9bf98', '#3b2a1a', '#1c6f7d', '#ecd9b8'], type: 'Monospace, uppercase headings, dashed rules.', say: ['Stock list.', '6 binders. 2,657 cards. All counted.', 'Open a binder'], motion: 'None.', art: 'Kraft paper, dashed borders, hang-tags with punched holes, price-tag binder labels, a barcode strip.' },
+ { n: 'Voltage', cls: 't8', concept: 'Black grid paper with Pachirisu’s yellow as the only colour. The card count is the hero: a huge yellow number, spec-sheet stats, characters with a yellow rim light.',
+   k: 'Collection index', h: 'cards indexed', p: 'Search by name, card number or binder.', btn: 'Search',
+   body: (t) => `<div class="m-hero"><div><div class="k" style="color:#8a95a0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;font-weight:700">Collection index</div><div class="huge">2,657</div><div class="m-copy"><p style="font-size:18px;color:#f2f5f7;font-weight:600;margin-bottom:6px">cards indexed</p><p>Search by name, card number or binder.</p><span class="m-btn">${t.btn}</span></div></div><div style="display:flex;align-items:flex-end;justify-content:center;gap:6px;position:relative"><span class="abs" style="left:4%;top:0">${bolt('#ffd60a', 40)}</span><div class="ground rim"><img class="sl" style="--sl:210px" src="${SL}" alt="Slaking"></div><div class="ground rim"><img class="pa" style="--pa:150px" src="${PA}" alt="Pachirisu"></div></div></div>${stats()}${binders()}${graded('Graded cards')}`,
+   sw: ['#090b0e', '#ffd60a', '#d7b392', '#f2f5f7'], type: 'Black-weight sans, monospace numbers, small-caps labels.', say: ['2,657 cards indexed.', 'Search by name, card number or binder.', 'Search'], motion: 'None.', art: 'Grid background, yellow bolt, yellow rim light on both characters, huge tabular number.' },
+ { n: 'Sticker Sheet', cls: 't9', concept: 'Everything is a die-cut sticker: thick white outline and ink shadow on the characters, tilted cards, a round count sticker and tape. Friendly and busy, all copy still literal.',
+   k: '', h: 'Card collection.', p: '2,657 cards. Tap a binder to open it.', btn: 'Open',
+   body: (t) => `<div class="m-hero"><div style="position:relative;display:grid;justify-items:center"><span class="tape" style="top:-6px;left:20%"></span><img class="sl cut" style="--sl:210px;transform:rotate(-5deg)" src="${SL}" alt="Slaking"></div><div class="m-copy" style="text-align:center">${hero(t)}<div style="display:flex;justify-content:center;margin-top:6px"><div class="blob9"><span><b>2,657</b>cards</span></div></div></div><div style="position:relative;display:grid;justify-items:center"><span class="tape" style="top:-4px;right:18%;transform:rotate(9deg)"></span><img class="pa cut" style="--pa:170px;transform:rotate(5deg)" src="${PA}" alt="Pachirisu"></div></div>${stats()}${binders()}${graded('Graded cards')}`,
+   sw: ['#fff4df', '#2b2118', '#1a97ab', '#f4b83f'], type: 'Rounded sans, heavy weight, thick ink outlines, offset shadows.', say: ['Card collection.', '2,657 cards. Tap a binder to open it.', 'Open'], motion: 'Cards lift 2px on hover.', art: 'White die-cut outline plus ink shadow on both characters, tape pieces, a round count sticker, slightly rotated tiles, confetti dots.' },
+ { n: 'Gallery Label', cls: 't10', concept: 'A quiet gallery wall. The characters hang as framed pictures with caption plaques; the collection is a wall of framed real cards with labels. Calm, but full.',
+   k: 'Collection', h: 'Card collection.', p: '2,657 cards. 6 binders.', btn: 'Browse the collection',
+   body: (t) => `<div class="m-hero"><div><div class="frame"><div class="mat"><img style="width:88%" src="${SL}" alt="Slaking"></div><div class="plaque"><b>Slaking</b>Pokémon</div></div></div>${hero(t)}<div><div class="frame"><div class="mat"><img style="width:62%" src="${PA}" alt="Pachirisu"></div><div class="plaque"><b>Pachirisu</b>Pokémon</div></div></div></div>${stats()}<div class="m-sec"><h4>Recent additions</h4><div class="wall">${[0, 1, 2, 3, 4].map((i) => `<figure>${im(i * 2 + 2)}<figcaption><b>${C(i * 2 + 2).title.split(' - ')[0]}</b>${C(i * 2 + 2).price}</figcaption></figure>`).join('')}</div></div>${binders('Binders')}${graded('Graded cards')}`,
+   sw: ['#efeeea', '#161616', '#7b7a76', '#ffffff'], type: 'Light-weight sans headlines, small caption labels.', say: ['Card collection.', '2,657 cards. 6 binders.', 'Browse the collection'], motion: 'Images fade in once on load.', art: 'Characters framed with caption plaques; a wall of framed cards with white mats and labels.' },
+];
+
+function mock(t) { return `<div class="mock ${t.cls}">${nav()}${t.body(t)}${foot()}</div>`; }
+function render() {
+  document.getElementById('jump').innerHTML = T.map((t, i) => `<li><a href="#t${i + 1}">${String(i + 1).padStart(2, '0')} ${t.n}</a></li>`).join('');
+  document.getElementById('out').innerHTML = T.map((t, i) => `
+    <section class="theme" id="t${i + 1}">
+      <div class="theme-h"><span class="num">${String(i + 1).padStart(2, '0')}</span><h2>${t.n}</h2></div>
+      <p class="concept">${t.concept}</p>
+      <div class="grid">
+        ${mock(t)}
+        <dl class="spec">
+          <dt>Palette</dt><dd><div class="sw">${t.sw.map((c) => `<i style="background:${c}" title="${c}"></i>`).join('')}</div></dd>
+          <dt>Type</dt><dd>${t.type}</dd>
+          <dt>Copy</dt><dd>${t.say.map((s) => `<em class="say">“${s}”</em>`).join('')}</dd>
+          <dt>Art &amp; illustration</dt><dd>${t.art}</dd>
+          <dt>Motion</dt><dd>${t.motion}</dd>
+        </dl>
+      </div>
+    </section>`).join('');
+}
+// Real cards from your collection, so every mock shows real photos.
+(async () => {
+  const names = ['pikachu', 'charizard', 'greninja', 'mew', 'eevee', 'gengar', 'umbreon', 'lugia', 'rayquaza', 'mewtwo', 'snorlax', 'blastoise'];
+  try {
+    const res = await Promise.all(names.map((n) => fetch('/suggest?q=' + n).then((r) => r.json()).catch(() => ({ cards: [] }))));
+    CARDS = res.flatMap((j) => j.cards || []).filter((c) => c.img).map((c) => ({ ...c, img: c.img.replace('width=120', 'width=420') }));
+  } catch (_) {}
+  render();
+})();
+render();
+</script>
+</body>
+</html>

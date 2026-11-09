@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script>
+// Phones and low-power devices get a lighter page: no live sky, no glass blur, no endless shimmer. Decided before anything paints.
+(function () { var n = navigator, d = document.documentElement, small = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 900;
+  if (small || (n.hardwareConcurrency && n.hardwareConcurrency <= 4) || (n.deviceMemory && n.deviceMemory <= 4) || (n.connection && n.connection.saveData) || /[?&]lite=1/.test(location.search)) d.dataset.lite = '1'; })();
+</script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#03040a">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="{{ nav.brand }}">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/static/img/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="/static/img/icon-192.png" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">
+<title>{% block title %}{{ nav.page_title() }}{% endblock %}</title>
+<meta name="description" content="{{ nav.description() }}">
+{% if nav.indexed() %}<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<link rel="canonical" href="{{ nav.canonical() }}">
+<meta property="og:url" content="{{ nav.canonical() }}">
+{% else %}<meta name="robots" content="noindex, follow">
+{% endif %}<meta property="og:site_name" content="{{ nav.brand }}">
+<meta property="og:type" content="{{ nav.og_type() }}">
+<meta property="og:title" content="{{ nav.page_title() }}">
+<meta property="og:description" content="{{ nav.description() }}">
+<meta property="og:image" content="{{ nav.og_image() }}">
+<meta property="og:locale" content="en_PH">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="{{ nav.page_title() }}">
+<meta name="twitter:description" content="{{ nav.description() }}">
+<meta name="twitter:image" content="{{ nav.og_image() }}">
+{% if !nav.seo.ld.is_empty() %}<script type="application/ld+json">{{ nav.seo.ld|safe }}</script>
+{% endif %}
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@50..150,100..900&display=swap">
+<link rel="stylesheet" href="/static/app.css?v=53">
+<link rel="stylesheet" href="/static/modern.css?v=26">
+<link rel="stylesheet" href="/static/vault.css?v=42">
+{% for t in nav.trials %}<meta http-equiv="origin-trial" content="{{ t }}">
+{% endfor %}<script type="speculationrules">
+{"prefetch":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/admin*"}},{"not":{"href_matches":"/products/*"}},{"not":{"href_matches":"/me*"}},{"not":{"href_matches":"/join*"}},{"not":{"href_matches":"/chat*"}},{"not":{"href_matches":"/ask*"}},{"not":{"href_matches":"/trainers/*"}},{"not":{"href_matches":"/collections/*"}},{"not":{"href_matches":"/static/*"}},{"not":{"href_matches":"/uploads/*"}}]},"eagerness":"moderate"}],
+ "prerender":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/admin*"}},{"not":{"href_matches":"/products/*"}},{"not":{"href_matches":"/me*"}},{"not":{"href_matches":"/join*"}},{"not":{"href_matches":"/chat*"}},{"not":{"href_matches":"/ask*"}},{"not":{"href_matches":"/trainers/*"}},{"not":{"href_matches":"/collections/*"}},{"not":{"href_matches":"/search*"}},{"not":{"href_matches":"/static/*"}},{"not":{"href_matches":"/uploads/*"}}]},"eagerness":"conservative"}]}
+</script>
+<script>
+(function () {
+  // Mouse users: start preparing a page as soon as they rest on a link, so it opens instantly. On phones this would waste data.
+  if (HTMLScriptElement.supports && HTMLScriptElement.supports('speculationrules') && matchMedia('(hover: hover)').matches) {
+    var r = document.createElement('script'); r.type = 'speculationrules';
+    r.textContent = JSON.stringify({ prerender: [{ where: { and: [{ href_matches: '/*' }, { not: { href_matches: '/admin*' } }, { not: { href_matches: '/products/*' } }, { not: { href_matches: '/me*' } }, { not: { href_matches: '/join*' } }, { not: { href_matches: '/chat*' } }, { not: { href_matches: '/ask*' } }, { not: { href_matches: '/trainers/*' } }, { not: { href_matches: '/collections/*' } }, { not: { href_matches: '/search*' } }, { not: { href_matches: '/static/*' } }, { not: { href_matches: '/uploads/*' } }] }, eagerness: 'moderate' }] });
+    document.head.append(r);
+  }
+  // The first page of a visit opens from a single point of light. It never blocks anything: it ignores touches and ends by itself.
+  try {
+    if (!sessionStorage.getItem('bbvGate') && !location.pathname.startsWith('/admin') && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      sessionStorage.setItem('bbvGate', '1');
+      document.documentElement.dataset.gate = '1';
+    }
+    // A new page opens from where you tapped on the last one.
+    addEventListener('pagereveal', function () {
+      var t = (sessionStorage.getItem('bbvTap') || '').split(',');
+      if (t.length === 2) { document.documentElement.style.setProperty('--ox', t[0] + 'px'); document.documentElement.style.setProperty('--oy', t[1] + 'px'); }
+    });
+  } catch (_) {}
+  // Tools for AI assistants: only for browsers that have this feature.
+  if ('modelContext' in document) import('/static/webmcp.js?v=1');
+})();
+</script>
+<script src="/static/htmx.min.js?v=4" defer></script>
+<script src="/static/suggest.js?v=3" defer></script>
+<script src="/static/card-float.js?v=22" defer></script>
+<script src="/static/tiles.js?v=2" defer></script>
+<script src="/static/vouches.js?v=3" defer></script>
+<script src="/static/vault-core.js?v=5" defer></script>
+<script src="/static/vault-talk.js?v=5" defer></script>
+<script src="/static/vault-staff.js?v=2" defer></script>
+<script type="module" src="/static/vault-gl.js?v=2"></script>
+</head>
+<body>
+<div class="hx-gate" aria-hidden="true"><img src="/static/img/logo-768.webp" width="768" height="768" alt=""></div>
+<header class="bar">
+  <div class="bar-in">
+    <a class="brand" href="/" aria-label="{{ nav.brand }}"><img class="brand-mark" src="/static/img/logo-sm.png" width="44" height="44" alt="">{% if nav.split() %}<span class="brand-t"><span class="b1">{{ nav.left() }}</span> <span class="b2">{{ nav.right() }}</span></span>{% else %}<span class="brand-t"><span class="b2">{{ nav.brand }}</span></span>{% endif %}</a>
+    <nav class="menu" aria-label="Collections">
+      {% for c in nav.menu %}<a href="/collections/{{ c.handle }}">{{ c.title }}</a>{% endfor %}
+    </nav>
+    <form class="search" action="/search" role="search">
+      <input type="search" name="q" placeholder="Search cards, sets, binders" aria-label="Search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" data-suggest>
+    </form>
+    <a class="bar-trainers" href="/ask" data-float><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>Ask</a>
+    <a class="bar-trainers" href="/chat" data-float><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>Chat</a>
+    <a class="bar-trainers" href="/trainers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>Trainers</a>
+  </div>
+</header>
+<main id="main">{% block content %}{% endblock %}</main>
+<footer class="foot">
+  <div class="foot-in"><a class="foot-admin" href="/admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Admin</a></div>
+  <div class="foot-legal">
+    <p>Â© {{ nav.years }} {{ nav.brand }}. All rights reserved.</p>
+    <p>PokÃ©mon and all related names are trademarks of Nintendo, Creatures and GAME FREAK. {{ nav.brand }} is a private collection and isnâ€™t affiliated with them.</p>
+  </div>
+</footer>
+<nav class="tabs" aria-label="Primary">
+  <a href="/"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</a>
+  <a href="/all"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/></svg>Browse</a>
+  <a class="tab-ask" href="/ask" data-float aria-label="Ask the Vault"><img src="/static/img/logo-sm.png" width="52" height="52" alt=""><span>Ask</span></a>
+  <a href="/chat" data-float><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>Chat</a>
+  <a href="/trainers"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>Trainers</a>
+</nav>
+</body>
+</html>

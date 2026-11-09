@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ title }} · {{ nav.brand }}{% endblock %}
+{% block content %}
+<section class="wrap">
+  <h1 class="h1">{{ title }}</h1>
+  <p class="sub">{{ total }} item{% if total != 1 %}s{% endif %}</p>
+  {% if base == "/search" %}<div id="finder" class="fd"></div>{% endif %}
+  <form class="filters" action="{{ base }}" hx-get="{{ base }}" hx-target="#grid" hx-select="#grid" hx-swap="outerHTML" hx-trigger="change, input from:.q delay:250ms" hx-push-url="true">
+    <input class="q" type="search" name="q" value="{{ q }}" placeholder="Search these cards" aria-label="Search these cards" autocomplete="off" autocapitalize="off" spellcheck="false" data-suggest>
+    <select name="sort" aria-label="Sort">
+      <option value="" {% if sort == "" %}selected{% endif %}>Newest</option>
+      <option value="price-asc" {% if sort == "price-asc" %}selected{% endif %}>Price: low to high</option>
+      <option value="price-desc" {% if sort == "price-desc" %}selected{% endif %}>Price: high to low</option>
+      <option value="title" {% if sort == "title" %}selected{% endif %}>Name</option>
+    </select>
+    <label class="check"><input type="checkbox" name="stock" value="1" {% if in_stock %}checked{% endif %}> In stock</label>
+  </form>
+  <div id="grid" class="grid">
+    {% include "grid.html" %}
+    {% if items.is_empty() %}<p class="empty">Nothing here yet.</p>{% endif %}
+  </div>
+</section>
+{% if base == "/search" %}<script type="module" src="/static/finder-boot.js?v=9"></script>
+<script src="/static/browser-ai.js?v=2" defer></script>{% endif %}
+{% endblock %}

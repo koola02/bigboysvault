@@ -1,0 +1,293 @@
+{% extends "base.html" %}
+{% block content %}
+{% if edit %}
+<div class="ed-bar" id="edBar">
+  <div class="ed-bar-in">
+    {% include "admin_tabs.html" %}
+  </div>
+</div>
+<div class="mn-ed" id="mnEd">
+  <div class="mn-in">
+    <p class="ed-label"><b>① Top menu</b><span>✋ drag a name to move it</span><span>✕ take it out</span><span>＋ put one in</span><span>✎ tap the site name to rename</span></p>
+    <div class="mn-bar">
+      <span class="mn-brand"><img src="/static/img/logo-sm.png" width="36" height="36" alt=""><span class="mn-name" id="mnName" data-ph="Site name">{{ nav.brand }}</span></span>
+      <ul class="mn-list" id="mnList" aria-label="Binders in the top menu">{% for c in nav.menu %}<li class="mn-chip" data-h="{{ c.handle }}"><span class="mn-t">{{ c.title }}</span><button type="button" class="mn-x" data-nodrag aria-label="Take {{ c.title }} out of the menu">✕</button></li>{% endfor %}</ul>
+      <button type="button" class="mn-add" id="mnAdd" aria-label="Put a binder in the menu">＋</button>
+    </div>
+  </div>
+</div>
+<aside class="map" id="edMap" aria-label="Page map">
+  <div class="map-h"><b>② Page map</b><button type="button" class="map-toggle" id="mapToggle" aria-expanded="true">Hide</button></div>
+  <div class="map-body" id="mapBody">
+    <p class="map-how"><span>✋ drag to move</span><span>✕ remove</span><span>＋ add</span></p>
+    <ul class="map-list" id="edStrip" aria-label="The parts of your home page, top to bottom"></ul>
+    <p class="map-how map-how2">✎ Tap words or pictures on the page to change them.</p>
+  </div>
+</aside>
+<div id="edList" class="ed-list" data-collections="{{ collections }}">
+{% endif %}
+{% for b in blocks %}
+{% if b.kind == "showcase" && b.count <= 1 && !edit %}<script type="module" src="/static/holo.js?v=6"></script>{% endif %}
+{% if edit %}<div class="eb{% if !b.visible %} eb-off{% endif %}" data-id="{{ b.id }}" data-kind="{{ b.kind }}" data-json="{{ b.json }}" data-label="{{ b.label }}">
+  <div class="eb-tools" data-nodrag>
+    <span class="eb-name">{{ b.label }}{% if !b.visible %} <em>· hidden</em>{% endif %}</span>
+    <span class="eb-acts">
+      {% if b.kind == "showcase" %}<button type="button" class="eb-btn eb-main" data-act="settings">★ Pick cards</button>{% else if b.kind == "hero" || b.kind == "row" || b.kind == "feature" || b.kind == "ticker" || b.kind == "binders" %}<button type="button" class="eb-btn" data-act="settings" aria-label="Settings for {{ b.label }}">⚙ Settings</button>{% endif %}
+      <button type="button" class="eb-btn" data-act="vis">{% if b.visible %}👁 Hide{% else %}👁 Show{% endif %}</button>
+    </span>
+  </div>
+{% endif %}
+{% if b.kind == "hero" %}
+<section class="hero{% if !edit %} hero-x{% endif %}"{% if !edit %} id="hxHero"{% endif %}>
+  {% if !edit %}<canvas class="hx-canvas" aria-hidden="true"></canvas>
+  <div class="hx-stage">
+    <img class="hx-logo" src="/static/img/logo-768.webp" width="768" height="768" alt="{{ nav.brand }}" fetchpriority="high" decoding="async" draggable="false">
+    <p class="hx-tip" hidden></p>
+    <p class="hx-hint">Drag to spin. Tap a card or the logo.</p>
+    <div class="hx-links" aria-label="Cards in orbit">{% for p in b.items %}<a href="/products/{{ p.handle }}" data-img="{{ p.img(540) }}" data-t="{{ p.short_title() }}" data-p="{{ p.price_text() }}" data-c="{{ p.cond_class() }}" aria-label="{{ p.short_title() }}, {{ p.price_text() }}"><img alt="" width="150" height="210" loading="lazy" decoding="async"></a>{% endfor %}</div>
+  </div>
+  <script type="module" src="/static/vault-fx.js?v=5"></script>{% endif %}
+  <div class="hero-v">
+    <div class="hero-copy">
+      {% if !b.eyebrow.is_empty() || edit %}<p class="eyebrow plate" data-f="eyebrow" data-ph="Small label">{{ b.eyebrow }}</p>{% endif %}
+      <h1 data-f="title" data-ph="Big title">{{ b.title }}</h1>
+      {% if !b.subtitle.is_empty() || edit %}<p class="lede" data-f="subtitle" data-ph="A line or two about your collection">{{ b.subtitle }}</p>{% endif %}
+      {% if !b.button_label.is_empty() || edit %}<a class="btn" href="{{ b.button_link }}" data-f="button_label" data-ph="Button text">{{ b.button_label }}</a>{% endif %}
+    </div>
+    <div class="hero-art">
+      <img class="vault-ring" src="/static/img/vault-ring.svg" width="600" height="640" alt="">
+      {% if !b.sticker.is_empty() %}<span class="sticker">{{ b.sticker }}</span>{% endif %}
+      {% if !b.img_a.is_empty() %}<figure class="art art-a" data-img="img_a"><img src="{{ b.img_a }}" width="{{ b.img_a_w }}" height="{{ b.img_a_h }}" alt=""></figure>{% else if edit %}<figure class="art art-a ed-noimg" data-img="img_a"><span>+ Left picture</span></figure>{% endif %}
+      {% if !b.img_b.is_empty() %}<figure class="art art-b" data-img="img_b"><img src="{{ b.img_b }}" width="{{ b.img_b_w }}" height="{{ b.img_b_h }}" alt=""></figure>{% else if edit %}<figure class="art art-b ed-noimg" data-img="img_b"><span>+ Right picture</span></figure>{% endif %}
+    </div>
+  </div>
+</section>
+{% else if b.kind == "ticker" %}
+<div class="ticker" role="marquee" aria-label="Headlines">
+  <div class="ticker-track">{% for i in 0..2 %}{% for ph in b.phrases %}<span>{{ ph }}</span>{% endfor %}{% endfor %}{% if b.phrases.is_empty() && edit %}<span>Tap Settings to add words</span>{% endif %}</div>
+</div>
+{% else if b.kind == "stats" %}
+<section class="wrap">
+  <dl class="stats stats-{{ b.stats.len() }}">
+    {% for st in b.stats %}<div class="stat" data-stat="{{ st.0 }}"><dt data-stat-label>{{ st.1 }}</dt><dd>{{ st.2 }}</dd></div>{% endfor %}
+    {% if b.stats.is_empty() && edit %}<p class="ed-empty">No number boxes. Tap ＋ to add one.</p>{% endif %}
+  </dl>
+  {% if !edit %}{% if let Some(i) = &b.insights %}
+  <div class="iv" aria-label="Inside the vault">
+    <div class="iv-ring">
+      <h3 class="iv-h">By condition</h3>
+      <div class="iv-donut">
+        <svg viewBox="0 0 42 42" role="img" aria-label="Cards by condition"><circle class="iv-track" cx="21" cy="21" r="15.9155"/>{% for s in &i.slices %}<a href="/search?cond={{ s.key }}" aria-label="{{ s.label }}: {{ s.count }} cards"><circle class="iv-arc" data-c="{{ s.key }}" cx="21" cy="21" r="15.9155" pathLength="100" stroke-dasharray="{{ s.len }} {{ 100.0 - s.len }}" stroke-dashoffset="{{ 25.0 - s.at }}" style="--i:{{ loop.index0 }}"/></a>{% endfor %}</svg>
+        <p class="iv-mid"><b data-iv-n>{{ i.total_text }}</b><small data-iv-l>cards</small></p>
+      </div>
+      <ul class="iv-legend">{% for s in &i.slices %}<li><a href="/search?cond={{ s.key }}" data-c="{{ s.key }}" data-n="{{ s.count }}" data-l="{{ s.label }}"><i></i><span>{{ s.label }}</span><b>{{ s.pct }}%</b></a></li>{% endfor %}</ul>
+    </div>
+    <div class="iv-spots">
+      {% if let Some(t) = &i.top %}<a class="iv-spot" href="/products/{{ t.handle }}" data-c="{{ t.cond }}"><img src="{{ t.img }}" alt="" width="84" height="118" loading="lazy" decoding="async"><span><small>Most valuable</small><b>{{ t.title }}</b><em>{{ t.price }}</em></span></a>{% endif %}
+      {% if let Some(t) = &i.newest %}<a class="iv-spot" href="/products/{{ t.handle }}" data-c="{{ t.cond }}"><img src="{{ t.img }}" alt="" width="84" height="118" loading="lazy" decoding="async"><span><small>Newest arrival</small><b>{{ t.title }}</b><em>{{ t.price }}</em></span></a>{% endif %}
+    </div>
+  </div>
+  {% endif %}{% endif %}
+</section>
+{% else if b.kind == "binders" %}
+{% if !edit %}
+<section class="bx-sec" id="binders">
+  <div class="bx-head">
+    <p class="eyebrow bx-eye">The vault's binders</p>
+    {% if !b.title.is_empty() %}<h2 class="h2 bsl-title">{{ b.title }}</h2>{% endif %}
+  </div>
+  <div class="bx" data-bx tabindex="0" role="group" aria-label="Binders. Use the left and right arrow keys to turn them one at a time.">
+    <div class="bx-stage" data-stage>
+      {% for (c, pk) in b.shelf %}<a class="bk bx-i" href="/collections/{{ c.handle }}" draggable="false" data-tone="{{ c.tone() }}" data-t="{{ c.title }}" data-n="{{ c.count_text() }}" aria-label="{{ c.title }}, {{ c.count_text() }} cards">
+        <span class="bk-f bk-back" aria-hidden="true"><img class="bk-emb" src="/static/img/logo-sm.png" alt="" width="36" height="36" loading="lazy" decoding="async"></span>
+        <span class="bk-f bk-spine" aria-hidden="true"><b>{{ c.title }}</b><img class="bk-emb" src="/static/img/logo-sm.png" alt="" width="36" height="36" loading="lazy" decoding="async"></span>
+        <span class="bk-f bk-edge bk-er" aria-hidden="true"></span>
+        <span class="bk-f bk-edge bk-et" aria-hidden="true"></span>
+        <span class="bk-f bk-edge bk-eb" aria-hidden="true"></span>
+        <span class="bk-f bk-page" aria-hidden="true"><span class="bk-rings"><i></i><i></i><i></i></span><span class="bk-pk">{% for im in pk %}<span><img data-src="{{ im }}" alt="" draggable="false"></span>{% endfor %}{% for _ in pk.len()..9 %}<span></span>{% endfor %}</span></span>
+        <span class="bk-cover" aria-hidden="true">
+          <span class="bk-f bk-out"><span class="bk-win">{% if c.has_image() %}<img src="{{ c.img(400) }}" loading="lazy" decoding="async" alt="" draggable="false">{% endif %}</span><span class="bk-name">{{ c.title }}</span><span class="bk-n">{{ c.count_text() }} cards</span><img class="bk-emb" src="/static/img/logo-sm.png" alt="" width="36" height="36" loading="lazy" decoding="async"></span>
+          <span class="bk-f bk-in"><b>{{ c.title }}</b><small>Tap again to see every card</small></span>
+        </span>
+        <span class="bk-f bk-strap" aria-hidden="true"></span>
+      </a>{% endfor %}
+    </div>
+    <button type="button" class="bx-x" data-shut aria-label="Close the binder" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    {% if b.shelf.len() > 1 %}<button type="button" class="bx-btn bx-prev" data-prev aria-label="Turn back one binder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
+    <button type="button" class="bx-btn bx-next" data-next aria-label="Turn forward one binder"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button>{% endif %}
+    <div class="bx-cap" aria-live="polite">
+      <p class="bx-cap-t" data-cap-t>{% if let Some((c, _)) = b.shelf.first() %}{{ c.title }}{% endif %}</p>
+      <p class="bx-cap-n"><span data-cap-n>{% if let Some((c, _)) = b.shelf.first() %}{{ c.count_text() }}{% endif %}</span> cards</p>
+      <a class="btn bx-go" data-cap-go href="{% if let Some((c, _)) = b.shelf.first() %}/collections/{{ c.handle }}{% endif %}">See all cards <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></a>
+    </div>
+    <p class="bx-hint">Tap a binder to open it. Tap it again to go in.</p>
+    {% if b.shelf.len() > 1 %}<div class="bx-dots" data-dots role="group" aria-label="Jump to a binder">{% for (c, _) in b.shelf %}<button type="button" data-dot="{{ loop.index0 }}" aria-label="{{ c.title }}"></button>{% endfor %}</div>{% endif %}
+  </div>
+  <script src="/static/vault-binders.js?v=8" defer></script>
+</section>
+{% else %}
+<section class="bsl-sec" id="binders">
+  <div class="bsl" data-bsl>
+    {% if !b.title.is_empty() || edit %}<h2 class="h2 bsl-title" data-f="title" data-ph="Section title">{{ b.title }}</h2>{% endif %}
+    <div class="bsl-stage">
+    <div class="bsl-ghost bsl-ghost-l" data-ghost="-1" aria-hidden="true"></div>
+    <div class="bsl-ghost bsl-ghost-r" data-ghost="1" aria-hidden="true"></div>
+    {% if b.binders.len() > 4 %}<button type="button" class="bsl-btn bsl-prev" data-bsl-prev aria-label="Previous binders">‹</button>
+    <button type="button" class="bsl-btn bsl-next" data-bsl-next aria-label="More binders">›</button>{% endif %}
+    <div class="bsl-view" data-bsl-view tabindex="0" aria-label="Binders, four at a time">
+      <div class="bsl-track">
+        {% for c in b.binders %}{% if loop.index0 % 4 == 0 %}<div class="bsl-page">{% endif %}
+        <a class="binder" href="/collections/{{ c.handle }}" data-h="{{ c.handle }}">
+          {% if c.has_image() %}<img src="{{ c.img(600) }}" loading="lazy" decoding="async" alt="">{% endif %}
+          <span class="binder-t">{{ c.title }}<small>{{ c.count_text() }} cards</small></span><i class="bnd" aria-hidden="true"></i>
+        </a>
+        {% if loop.index0 % 4 == 3 || loop.last %}</div>{% endif %}{% endfor %}
+      </div>
+    </div>
+    </div>
+    {% if b.binders.len() > 4 %}
+    <div class="bsl-ctl">
+      <div class="bsl-dots" role="tablist" aria-label="Binder pages">{% for c in b.binders %}{% if loop.index0 % 4 == 0 %}<button type="button" class="bsl-dot" data-bsl-dot="{{ loop.index0 / 4 }}" aria-label="Page {{ loop.index0 / 4 + 1 }}"></button>{% endif %}{% endfor %}</div>
+    </div>
+    {% endif %}
+  </div>
+  <script>
+  (() => {
+    const root = document.currentScript.parentElement.querySelector('[data-bsl]'); if (!root || root.dataset.on) return; root.dataset.on = '1';
+    const view = root.querySelector('[data-bsl-view]'), dots = [...root.querySelectorAll('[data-bsl-dot]')];
+    // Buttons and dots glide to the next four with an eased slide; swiping uses the phone's own smooth scrolling.
+    let anim = 0;
+    const go = (i) => {
+      const n = Math.max(1, dots.length); i = ((i % n) + n) % n;   // wraps around: after the last four comes the first four
+      const from = view.scrollLeft, to = i * view.clientWidth, t0 = performance.now(), dur = 520, my = ++anim;
+      if (matchMedia('(prefers-reduced-motion: reduce)').matches) { view.scrollLeft = to; return; }
+      view.style.scrollSnapType = 'none';
+      const step = (t) => { if (my !== anim) return; const k = Math.min(1, (t - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+        view.scrollLeft = from + (to - from) * e; if (k < 1) requestAnimationFrame(step); else view.style.scrollSnapType = ''; };
+      requestAnimationFrame(step);
+    };
+    const cur = () => Math.round(view.scrollLeft / Math.max(1, view.clientWidth));
+    // Side previews (wide screens): the four before and the four after, as tilted decks you can tap.
+    const pages = [...root.querySelectorAll('.bsl-page')], ghosts = [...root.querySelectorAll('[data-ghost]')];
+    const fillGhost = (g, i) => {
+      if (pages.length < 2) {
+        g.innerHTML = g.dataset.ghost === '-1' ? '<img class="bsl-mascot" src="/static/img/slaking.png?v=5" alt="">' : '<img class="bsl-mascot" src="/static/img/snorlax.png?v=5" alt="">';
+        g.classList.add('mascot'); return;
+      }
+      const p = pages[((i % pages.length) + pages.length) % pages.length];
+      g.replaceChildren(...[...p.querySelectorAll('.binder')].map((b) => { const c = document.createElement('span'); c.className = 'bsl-gt'; const im = b.querySelector('img'); if (im) { const x = document.createElement('img'); x.src = im.currentSrc || im.src; x.alt = ''; c.append(x); } const t = document.createElement('b'); t.textContent = b.querySelector('.binder-t')?.firstChild?.textContent || ''; c.append(t); return c; }));
+    };
+    let lastGhost = -1;
+    const paint = () => { const i = cur(); dots.forEach((d, k) => d.setAttribute('aria-current', String(k === i)));
+      if (i !== lastGhost) { lastGhost = i; ghosts.forEach((g) => fillGhost(g, i + Number(g.dataset.ghost))); } };
+    ghosts.forEach((g) => g.addEventListener('click', () => { if (pages.length > 1) go(cur() + Number(g.dataset.ghost)); }));
+    root.querySelector('[data-bsl-prev]')?.addEventListener('click', () => go(cur() - 1));
+    root.querySelector('[data-bsl-next]')?.addEventListener('click', () => go(cur() + 1));
+    dots.forEach((d, k) => d.addEventListener('click', () => go(k)));
+    view.addEventListener('scroll', () => requestAnimationFrame(paint), { passive: true });
+    view.addEventListener('keydown', (e) => { if (e.key === 'ArrowRight') { e.preventDefault(); go(cur() + 1); } if (e.key === 'ArrowLeft') { e.preventDefault(); go(cur() - 1); } });
+    paint();
+  })();
+  </script>
+</section>
+{% endif %}
+{% else if b.kind == "row" %}
+{% if b.spotlight %}
+<section class="spotlight">
+  <div class="wrap">
+    <div class="row-h"><div>{% if !b.eyebrow.is_empty() || edit %}<p class="eyebrow gold" data-f="eyebrow" data-ph="Small label (optional)">{{ b.eyebrow }}</p>{% endif %}<h2 class="h2" data-f="title" data-ph="Section title">{{ b.title }}</h2></div><a href="{{ b.link }}">View all {{ b.count_fmt }}</a></div>
+    <div class="rail rail-lg"{% if edit %} data-ids="{% for p in b.items %}{{ p.copy_ids }}{% if !loop.last %}|{% endif %}{% endfor %}"{% endif %}>{% for p in b.items %}{% include "card.html" %}{% endfor %}{% if b.items.is_empty() && edit %}<p class="ed-empty">No cards in this binder yet. Visitors won’t see this row until it has cards.</p>{% endif %}</div>
+  </div>
+</section>
+{% else %}
+<section class="wrap">
+  <div class="row-h"><div>{% if !b.eyebrow.is_empty() || edit %}<p class="eyebrow" data-f="eyebrow" data-ph="Small label (optional)">{{ b.eyebrow }}</p>{% endif %}<h2 class="h2" data-f="title" data-ph="Section title">{{ b.title }}</h2></div><a href="{{ b.link }}">View all {{ b.count_fmt }}</a></div>
+  <div class="rail"{% if edit %} data-ids="{% for p in b.items %}{{ p.copy_ids }}{% if !loop.last %}|{% endif %}{% endfor %}"{% endif %}>{% for p in b.items %}{% include "card.html" %}{% endfor %}{% if b.items.is_empty() && edit %}<p class="ed-empty">No cards in this binder yet. Visitors won’t see this row until it has cards.</p>{% endif %}</div>
+</section>
+{% endif %}
+{% else if b.kind == "feature" %}
+<section class="wrap">
+  <div class="feature{% if !b.img.is_empty() || edit %} has-img{% endif %}">
+    <div class="feature-copy">
+      {% if !b.eyebrow.is_empty() || edit %}<p class="eyebrow" data-f="eyebrow" data-ph="Small label">{{ b.eyebrow }}</p>{% endif %}
+      <h2 data-f="title" data-ph="Title">{{ b.title }}</h2>
+      {% if !b.subtitle.is_empty() || edit %}<p class="lede" data-f="subtitle" data-ph="A line or two">{{ b.subtitle }}</p>{% endif %}
+      {% if !b.button_label.is_empty() || edit %}<a class="btn" href="{{ b.button_link }}" data-f="button_label" data-ph="Button text">{{ b.button_label }}</a>{% endif %}
+    </div>
+    {% if !b.img.is_empty() %}<img src="{{ b.img }}" width="{{ b.img_w }}" height="{{ b.img_h }}" loading="lazy" alt="" data-img="img">{% else if edit %}<span class="ed-noimg ed-noimg-feature" data-img="img"><span>+ Picture</span></span>{% endif %}
+  </div>
+</section>
+{% else if b.kind == "showcase" %}
+<section class="showcase sc-{% if b.count <= 1 %}1{% else if b.count == 2 %}2{% else if b.count <= 4 %}3{% else %}many{% endif %}">
+  <div class="wrap">
+    <div class="sc-head">
+      {% if !b.eyebrow.is_empty() || edit %}<p class="eyebrow plate" data-f="eyebrow" data-ph="Small label">{{ b.eyebrow }}</p>{% endif %}
+      {% if !b.title.is_empty() || edit %}<h2 class="sc-title" data-f="title" data-ph="Showcase title">{{ b.title }}</h2>{% endif %}
+    </div>
+    <div class="sc-grid">
+      {% for p in b.items %}
+      <a class="sc-card"{% if edit %} data-id="{{ p.id }}"{% endif %} data-c="{{ p.cond_class() }}" href="/products/{{ p.handle }}"{% if b.count <= 1 && !edit && p.has_image() %} data-holo="card" data-holo-src="{{ p.img(900) }}"{% endif %}>
+        <span class="sc-img">{% if p.has_image() %}<img src="{{ p.img(900) }}" alt="{{ p.title }}" loading="lazy" decoding="async">{% endif %}{% if let Some(g) = p.grade() %}<span class="grade">{{ g }}</span>{% endif %}<span class="sc-shine" aria-hidden="true"></span></span>
+        <span class="sc-t">{{ p.short_title() }}</span>
+        <span class="sc-m card-m">{% if !p.set_text().is_empty() %}<span class="card-set">{% if !p.symbol().is_empty() %}<img class="card-sym" src="{{ p.symbol() }}" width="16" height="16" loading="lazy" decoding="async" alt="">{% endif %}{{ p.set_text() }}</span>{% endif %}{% if !p.tile_cond().is_empty() %}<span class="card-cond" data-c="{{ p.cond_class() }}">{{ p.tile_cond() }}</span>{% endif %}</span>
+        {% if !p.shown_tags().is_empty() %}<span class="card-tags">{% for t in p.shown_tags() %}<span class="tag-hl">{{ t }}</span>{% endfor %}</span>{% endif %}
+        {% if !p.note_line().is_empty() %}<span class="card-note">{{ p.note_line() }}</span>{% endif %}
+        <span class="sc-p">{{ p.price_text() }}</span>
+      </a>
+      {% endfor %}
+      {% if b.items.is_empty() && edit %}<p class="ed-empty">No cards picked yet. Tap <b>Pick cards</b> above to choose the cards to show off.</p>{% endif %}
+    </div>
+  </div>
+</section>
+{% else if b.kind == "highlights" %}
+<section class="hl-sec">
+  <div class="wrap">
+    <div class="hl-head">
+      <div class="hl-title">{% if !b.eyebrow.is_empty() || edit %}<p class="eyebrow gold" data-f="eyebrow" data-ph="Small label (optional)">{{ b.eyebrow }}</p>{% endif %}<h2 class="h2" data-f="title" data-ph="Section title">{{ b.title }}</h2></div>
+      <a class="hl-count" href="/trainers" aria-label="See all {{ b.trainer_count }} trainer{% if b.trainer_count != 1 %}s{% endif %}">
+        {% if !b.trainer_faces.is_empty() %}<span class="hl-faces" aria-hidden="true">{% for m in b.trainer_faces %}{% if m.has_avatar() %}<img class="av" src="{{ m.avatar }}" width="56" height="56" alt="" loading="lazy" decoding="async">{% else %}<span class="av">{{ m.initial() }}</span>{% endif %}{% endfor %}</span>{% endif %}
+        <span class="hl-num"><b>{{ b.trainer_count }}</b><small>Trainer{% if b.trainer_count != 1 %}s{% endif %}</small></span>
+        <svg class="hl-go" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg>
+      </a>
+    </div>
+    <div class="hl-grid">
+      {% for h in b.highlights %}
+      <article class="hl" data-c="{{ h.card.cond_class() }}"{% if edit %} data-id="{{ h.member.id }}"{% endif %}>
+        <a class="hl-card" href="/trainers/{{ h.member.id }}/cards/{{ h.card.id }}" data-float>{% if !h.card.image.is_empty() %}<img src="{{ h.card.image }}" width="245" height="342" loading="lazy" decoding="async" alt="{{ h.card.title }}">{% endif %}</a>
+        <p class="hl-t">{{ h.card.title }}</p>
+        <p class="card-m">{% if !h.card.card_set.is_empty() %}<span class="card-set">{% if !h.card.symbol().is_empty() %}<img class="card-sym" src="{{ h.card.symbol() }}" width="16" height="16" loading="lazy" decoding="async" alt="">{% endif %}{{ h.card.card_set }}</span>{% endif %}<span class="card-cond" data-c="{{ h.card.cond_class() }}">{{ h.card.cond }}</span></p>
+        {% if h.card.worth() > 0.0 %}<p class="hl-worth"><span class="worth">{{ h.card.worth_text() }}</span></p>{% endif %}
+        <a class="hl-who" data-role="{{ h.member.role }}" href="/trainers/{{ h.member.id }}">{% if h.member.has_avatar() %}<img class="av" src="{{ h.member.avatar }}" width="56" height="56" alt="" loading="lazy">{% else %}<span class="av">{{ h.member.initial() }}</span>{% endif %}<b>{{ h.member.name }}</b><span class="hl-badges">{% if !h.member.role_text().is_empty() %}<span class="role" data-role="{{ h.member.role }}">{{ h.member.role_text() }}</span>{% endif %}{% if h.member.stars > 0 %}<span class="stars">★ {{ h.member.stars }}</span>{% endif %}{% if h.member.worth > 0.0 %}<span class="worth">{{ h.member.worth_text() }}</span>{% endif %}{% for g in h.member.tag_list() %}<span class="tag-hl mtag">{{ g }}</span>{% endfor %}</span></a>
+      </article>
+      {% endfor %}
+      {% if b.highlights.is_empty() && edit %}<p class="ed-empty">Trainers' highlighted cards show here once you approve them in the Trainers tab. Visitors won't see this part until then.</p>{% endif %}
+    </div>
+  </div>
+</section>
+{% else if b.kind == "vouches" %}
+<section class="wrap vouch-sec">
+  <div class="vouch-head">{% if !b.eyebrow.is_empty() || edit %}<p class="eyebrow plate" data-f="eyebrow" data-ph="Small label (optional)">{{ b.eyebrow }}</p>{% endif %}<h2 class="h2" data-f="title" data-ph="Section title">{{ b.title }}</h2></div>
+  <div class="vouch-grid" data-home>
+    {% for v in b.vouches %}{% include "vouch_card.html" %}{% endfor %}
+    {% if b.vouches.is_empty() && edit %}<p class="ed-empty">Vouches show here as soon as trainers post them. Visitors won't see this part until then.</p>{% endif %}
+  </div>
+  {% if !b.vouches.is_empty() %}<div class="v-load-row"><a class="btn ghost" href="/vouches">See all vouches</a></div>{% endif %}
+</section>
+{% else if b.kind == "text" %}
+<section class="wrap textblock">
+  {% if !b.title.is_empty() || edit %}<h2 class="h2" data-f="title" data-ph="Title">{{ b.title }}</h2>{% endif %}
+  <p class="prose" data-f="body" data-ph="Write something here">{{ b.body }}</p>
+</section>
+{% endif %}
+{% if edit %}</div>{% endif %}
+{% endfor %}
+{% if edit %}
+</div>
+<script src="/static/admin-ui.js?v=6" defer></script>
+<script src="/static/dragsort.js?v=5" defer></script>
+<script src="/static/home-edit.js?v=12" defer></script>
+{% else if blocks.is_empty() %}
+<section class="hero"><div class="hero-copy"><h1>Coming soon.</h1><p class="lede">The vault is being set up. Have a look around in the meantime.</p><a class="btn" href="/all">Browse all cards</a></div></section>
+{% endif %}
+{% if !edit %}<script src="/static/rail-arrows.js?v=1" defer></script>{% endif %}
+{% endblock %}

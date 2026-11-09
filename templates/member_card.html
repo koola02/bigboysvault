@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}{{ c.title }} · {{ t.name }} · {{ nav.brand }}{% endblock %}
+{% block content %}
+{% include "member_card_part.html" %}
+<script type="module" src="/static/holo.js?v=6"></script>
+{% endblock %}
