@@ -1050,6 +1050,8 @@ async fn main() {
         .route("/api/card/{handle}/text", get(api::card_text))
         .route("/api/binders", get(api::binders))
         .route("/api/searched", post(api::searched))
+        .route("/api/condition-shares", get(api::condition_shares))
+        .route("/api/price-suggest", get(api::price_suggest))
         // trainers
         .route("/join", get(community::join_page).post(community::join))
         .route("/signin", post(community::signin))
@@ -1114,7 +1116,8 @@ async fn main() {
         .route("/admin/page", get(home_editor))
         .route("/admin/page/list", get(admin::page_editor))
         .route("/admin/settings", post(admin::settings))
-        .route("/admin/blocks/add", post(admin::block_add))
+        .route("/admin/settings/condition-shares", post(admin::settings_condition_shares))
+        .route("/admin/block", post(admin::block_add))
         .route("/admin/blocks/order", post(admin::blocks_order))
         .route("/admin/pick", get(admin::pick))
         .route("/admin/menu", post(admin::menu_save))

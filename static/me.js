@@ -83,22 +83,45 @@
     });
     document.querySelectorAll('.me-res').forEach((b) => { b.disabled = n >= MAX && !b.classList.contains('in'); });
   }
+  function renderSugMe(c, p) {
+    if (!p) return;
+    p.replaceChildren();
+    if (c.own_photo) { p.textContent = 'No market price for your own photo. Set your own value.'; }
+    else if ((c.value || 0) <= 0) { p.textContent = 'No market price found for this card. Set your own price.'; }
+    else if (c.is_graded) { p.textContent = `Graded card: set your own price. Ungraded Near Mint is ₱${Math.round(c.value)}.`; }
+    else if (c.is_sealed) { p.textContent = `Sealed: set your own price. Ungraded Near Mint is ₱${Math.round(c.value)}.`; }
+    else if (c.suggested) {
+      if ((c.value_own || 0) > 0) {
+        p.textContent = `You set ₱${Math.round(c.value_own)}. Suggested for ${c.cond}: ₱${Math.round(c.suggested)} `;
+      } else {
+        p.textContent = `Suggested ₱${Math.round(c.suggested)} · ${c.cond} · ${Math.round((c.share || 1) * 100)}% of Near Mint ₱${Math.round(c.value)} `;
+      }
+      const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'me-use-btn';
+      btn.textContent = `Use ₱${Math.round(c.suggested)}`;
+      btn.dataset.use = Math.round(c.suggested);
+      p.append(btn);
+    }
+  }
+
   function tile(c) {
     const li = document.createElement('li'); li.className = 'me-c'; li.dataset.id = c.id; li.dataset.card = c.source || '';
     const pic = document.createElement('span'); pic.className = 'me-c-pic';
     if (c.image) { const i = document.createElement('img'); i.src = c.image; i.width = 245; i.height = 342; i.alt = ''; i.draggable = false; pic.append(i); }
-    const star = document.createElement('button'); star.type = 'button'; star.className = 'me-star'; star.dataset.nodrag = ''; star.dataset.star = ''; star.textContent = '★'; star.setAttribute('aria-label', `Highlight ${c.title}`);
-    const x = document.createElement('button'); x.type = 'button'; x.className = 'me-x'; x.dataset.nodrag = ''; x.dataset.remove = ''; x.textContent = '✕'; x.setAttribute('aria-label', `Take ${c.title} out`);
+    const star = document.createElement('button'); star.type = 'button'; star.className = 'me-star'; star.dataset.nodrag = ''; star.dataset.star = ''; star.textContent = '★'; star.setAttribute('aria-label', `Highlight ${c.title || ''}`);
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'me-x'; x.dataset.nodrag = ''; x.dataset.remove = ''; x.textContent = '✕'; x.setAttribute('aria-label', `Take ${c.title || ''} out`);
     pic.append(star, x);
-    const t = document.createElement('b'); t.className = 'me-c-t'; t.textContent = c.title;
+    const t = document.createElement('b'); t.className = 'me-c-t'; t.textContent = c.title || '';
     const s = document.createElement('small'); s.className = 'me-c-s'; s.textContent = [c.set, c.number].filter(Boolean).join(' · ');
-    const sel = document.createElement('select'); sel.dataset.nodrag = ''; sel.dataset.cond = ''; sel.setAttribute('aria-label', `Condition of ${c.title}`);
+    const sel = document.createElement('select'); sel.dataset.nodrag = ''; sel.dataset.cond = ''; sel.setAttribute('aria-label', `Condition of ${c.title || ''}`);
     conds.forEach((o) => sel.append(new Option(o, o, o === c.cond, o === c.cond)));
     const val = document.createElement('label'); val.className = 'me-val'; val.dataset.nodrag = '';
     const vl = document.createElement('span'); vl.textContent = 'Value ₱';
-    const vi = document.createElement('input'); vi.type = 'number'; vi.min = '0'; vi.step = '1'; vi.inputMode = 'numeric'; vi.dataset.value = ''; vi.placeholder = c.value && c.value !== '₱0' ? c.value : 'Not known yet'; vi.setAttribute('aria-label', `Value of ${c.title} in pesos`);
+    const vi = document.createElement('input'); vi.type = 'number'; vi.min = '0'; vi.step = '1'; vi.inputMode = 'numeric'; vi.dataset.value = ''; vi.placeholder = c.value && c.value !== '₱0' ? c.value : 'Not known yet'; vi.setAttribute('aria-label', `Value of ${c.title || ''} in pesos`);
+    if (c.value_own > 0) vi.value = Math.round(c.value_own);
     val.append(vl, vi);
-    li.append(pic, t, s, sel, val);
+    const sugP = document.createElement('p'); sugP.className = 'me-c-sug';
+    renderSugMe(c, sugP);
+    li.append(pic, t, s, sel, val, sugP);
     return li;
   }
   binder.addEventListener('click', async (e) => {
@@ -111,6 +134,16 @@
         const source = li.dataset.card; li.remove(); highlight = j.highlight; paint();
         if (source) document.querySelector(`.me-res[data-id="${CSS.escape(source)}"]`)?.classList.remove('in');
       } catch (err) { say(err.message, true); }
+    } else if (e.target.closest('.me-use-btn')) {
+      const btn = e.target.closest('.me-use-btn');
+      const val = btn.dataset.use;
+      const inp = li.querySelector('[data-value]');
+      try {
+        const j = await send(`/me/cards/${li.dataset.id}`, { action: 'value', value: Number(val) || 0 });
+        worth(j); if (inp) inp.value = val;
+        renderSugMe(j, li.querySelector('.me-c-sug'));
+        say('Saved ✓');
+      } catch (err) { say(err.message, true); }
     }
   });
   const worth = (j) => { const w = document.getElementById('meWorth'); if (w && j.worth) { w.textContent = j.worth; w.hidden = j.worth === '₱0'; } };
@@ -119,7 +152,9 @@
     if (box) {
       try {
         const j = await send(`/me/cards/${box.closest('.me-c').dataset.id}`, { action: 'value', value: Number(box.value) || 0 });
-        worth(j); if (j.card_market && j.card_market !== '₱0') box.placeholder = j.card_market; say('Saved ✓');
+        worth(j); if (j.card_market && j.card_market !== '₱0') box.placeholder = j.card_market; 
+        renderSugMe(j, box.closest('.me-c').querySelector('.me-c-sug'));
+        say('Saved ✓');
       } catch (err) { say(err.message, true); }
       return;
     }
@@ -127,7 +162,19 @@
     try {
       const li = sel.closest('.me-c');
       const j = await send(`/me/cards/${li.dataset.id}`, { action: 'condition', cond: sel.value });
-      worth(j); const vb = li.querySelector('[data-value]'); if (vb && j.card_market && j.card_market !== '₱0') vb.placeholder = j.card_market; say('Saved ✓');
+      worth(j); const vb = li.querySelector('[data-value]'); if (vb && j.card_market && j.card_market !== '₱0') vb.placeholder = j.card_market; 
+      
+      const vOwn = j.value_own || 0;
+      if (j.suggested && !j.is_graded && !j.is_sealed && vOwn === 0 && vb) {
+        // Auto-fill value
+        const newV = Math.round(j.suggested);
+        vb.value = String(newV);
+        const j2 = await send(`/me/cards/${li.dataset.id}`, { action: 'value', value: newV });
+        worth(j2); renderSugMe(j2, li.querySelector('.me-c-sug'));
+      } else {
+        renderSugMe(j, li.querySelector('.me-c-sug'));
+      }
+      say('Saved ✓');
     } catch (err) { say(err.message, true); }
   });
   if (window.dragSort) dragSort(binder, {

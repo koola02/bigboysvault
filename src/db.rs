@@ -30,6 +30,7 @@ pub struct Product {
     pub api_id: String,
     pub finish: String,
     pub price_updated: String,
+    pub price_src: String,
     /// "Illustration rare", "Full Art"... from the card catalogue.
     pub rarity: String,
     /// Copies of this same card (same card, same condition/grade) — lists show one tile with "×2".
@@ -302,7 +303,7 @@ pub fn open(path: &str) -> rusqlite::Result<Connection> {
 fn migrate(c: &Connection) -> rusqlite::Result<()> {
     let mut st = c.prepare("PRAGMA table_info(products)")?;
     let have: Vec<String> = st.query_map([], |r| r.get::<_, String>(1))?.collect::<Result<_, _>>()?;
-    for col in ["card_no", "card_set", "api_id", "finish", "price_updated", "rarity", "solo"] {
+    for col in ["card_no", "card_set", "api_id", "finish", "price_updated", "rarity", "solo", "price_src"] {
         if !have.iter().any(|h| h == col) {
             c.execute(&format!("ALTER TABLE products ADD COLUMN {col} TEXT NOT NULL DEFAULT ''"), [])?;
         }
@@ -357,7 +358,7 @@ CREATE INDEX IF NOT EXISTS idx_products_created ON products(created_at DESC);
 ";
 
 const COLS: &str =
-    "p.id,p.handle,p.title,p.body,p.tags,p.variant,p.price,p.compare_at,p.available,p.image,p.image_w,p.image_h,p.card_no,p.card_set,p.api_id,p.finish,p.price_updated,p.rarity";
+    "p.id,p.handle,p.title,p.body,p.tags,p.variant,p.price,p.compare_at,p.available,p.image,p.image_w,p.image_h,p.card_no,p.card_set,p.api_id,p.finish,p.price_updated,p.price_src,p.rarity";
 
 fn map(r: &Row) -> rusqlite::Result<Product> {
     Ok(Product {
@@ -378,7 +379,8 @@ fn map(r: &Row) -> rusqlite::Result<Product> {
         api_id: r.get(14)?,
         finish: r.get(15)?,
         price_updated: r.get(16)?,
-        rarity: r.get(17)?,
+        price_src: r.get(17)?,
+        rarity: r.get(18)?,
         qty: 1,
         copy_ids: String::new(),
     })
@@ -387,8 +389,8 @@ fn map(r: &Row) -> rusqlite::Result<Product> {
 /// A row from a grouped list: the product plus how many copies it stands for.
 fn map_grouped(r: &Row) -> rusqlite::Result<Product> {
     let mut p = map(r)?;
-    p.qty = r.get(18)?;
-    p.copy_ids = r.get(19)?;
+    p.qty = r.get(19)?;
+    p.copy_ids = r.get(20)?;
     Ok(p)
 }
 
@@ -872,8 +874,8 @@ pub fn duplicate(c: &Connection, id: i64) -> rusqlite::Result<Option<i64>> {
         let Some(p) = product_by_id(c, id)? else { return Ok(None) };
         let nid: i64 = c.query_row("SELECT MAX(COALESCE(MAX(id),0),1000000)+1 FROM products", [], |r| r.get(0))?;
         c.execute(
-            "INSERT INTO products(id,handle,title,body,tags,variant,price,compare_at,available,image,image_w,image_h,created_at,card_no,card_set,api_id,finish,price_updated,rarity,solo)
-             SELECT ?1, ?2, title,body,tags,variant,price,compare_at,available,image,image_w,image_h,strftime('%Y-%m-%dT%H:%M:%S','now'),card_no,card_set,api_id,finish,price_updated,rarity,solo FROM products WHERE id=?3",
+            "INSERT INTO products(id,handle,title,body,tags,variant,price,compare_at,available,image,image_w,image_h,created_at,card_no,card_set,api_id,finish,price_updated,price_src,rarity,solo)
+             SELECT ?1, ?2, title,body,tags,variant,price,compare_at,available,image,image_w,image_h,strftime('%Y-%m-%dT%H:%M:%S','now'),card_no,card_set,api_id,finish,price_updated,price_src,rarity,solo FROM products WHERE id=?3",
             rusqlite::params![nid, format!("{}-{nid}", slug(&p.title)), id],
         )?;
         // A copy stays beside its card in the owner's order.
@@ -912,6 +914,7 @@ pub struct Entry {
     pub api_id: String,
     pub finish: String,
     pub price_updated: Option<String>, // None = keep existing
+    pub price_src: String,
     pub rarity: String,                // empty = keep existing
     pub solo: bool,                    // edited on its own: stays a separate card from now on
 }
@@ -953,13 +956,13 @@ fn save_entry_tx(c: &Connection, e: &Entry) -> rusqlite::Result<(i64, String)> {
     let handle = format!("{}-{id}", slug(&e.title));
     let now = c.query_row("SELECT strftime('%Y-%m-%dT%H:%M:%S','now')", [], |r| r.get::<_, String>(0))?;
     c.execute(
-        "INSERT INTO products(id,handle,title,body,tags,variant,price,available,image,created_at,card_no,card_set,api_id,finish,price_updated,rarity)
-         VALUES(?1,?2,?3,?4,?5,?6,?7,1,COALESCE(?8,''),?9,?10,?11,?12,?13,COALESCE(?14,''),?15)
+        "INSERT INTO products(id,handle,title,body,tags,variant,price,available,image,created_at,card_no,card_set,api_id,finish,price_updated,price_src,rarity)
+         VALUES(?1,?2,?3,?4,?5,?6,?7,1,COALESCE(?8,''),?9,?10,?11,?12,?13,COALESCE(?14,''),?15,?16)
          ON CONFLICT(id) DO UPDATE SET handle=?2,title=?3,body=?4,tags=?5,variant=?6,price=?7,
            image=COALESCE(?8,image),card_no=?10,card_set=?11,api_id=?12,finish=?13,
-           price_updated=COALESCE(?14,price_updated),rarity=CASE WHEN ?15<>'' THEN ?15 ELSE rarity END,
-           solo=CASE WHEN ?16 THEN CAST(?1 AS TEXT) ELSE solo END",
-        rusqlite::params![id, handle, e.title, e.body, e.tags, e.variant, e.price, e.image, now, e.card_no, e.card_set, e.api_id, e.finish, e.price_updated, e.rarity, e.solo],
+           price_updated=COALESCE(?14,price_updated),price_src=?15,rarity=CASE WHEN ?16<>'' THEN ?16 ELSE rarity END,
+           solo=CASE WHEN ?17 THEN CAST(?1 AS TEXT) ELSE solo END",
+        rusqlite::params![id, handle, e.title, e.body, e.tags, e.variant, e.price, e.image, now, e.card_no, e.card_set, e.api_id, e.finish, e.price_updated, e.price_src, e.rarity, e.solo],
     )?;
     c.execute("DELETE FROM collection_products WHERE product_id=?1", [id])?;
     for b in &e.binders {
@@ -971,12 +974,14 @@ fn save_entry_tx(c: &Connection, e: &Entry) -> rusqlite::Result<(i64, String)> {
 }
 
 /// Quick edits from My cards: price, description, condition. They apply to every copy of the card, like the − and ＋ buttons. A price typed by hand isn't a market price any more.
-pub fn quick_edit(c: &Connection, ids: &[i64], price: Option<f64>, notes: Option<&str>, condition: Option<&str>, tags: Option<&[String]>) -> rusqlite::Result<()> {
+pub fn quick_edit(c: &Connection, ids: &[i64], price: Option<f64>, price_src: Option<&str>, notes: Option<&str>, condition: Option<&str>, tags: Option<&[String]>) -> rusqlite::Result<()> {
     c.execute_batch("BEGIN IMMEDIATE")?;
     let r = (|| {
         for id in ids {
             if let Some(v) = price {
-                c.execute("UPDATE products SET price=?2, price_updated='' WHERE id=?1", rusqlite::params![id, v])?;
+                let src = price_src.unwrap_or("");
+                let now: String = if src == "suggested" || src == "market" { c.query_row("SELECT strftime('%Y-%m-%d','now')", [], |r| r.get(0)).unwrap_or_default() } else { String::new() };
+                c.execute("UPDATE products SET price=?2, price_src=?3, price_updated=?4 WHERE id=?1", rusqlite::params![id, v, src, now])?;
             }
             if let Some(n) = notes {
                 c.execute("UPDATE products SET body=?2 WHERE id=?1", rusqlite::params![id, n])?;

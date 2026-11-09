@@ -117,9 +117,31 @@
       <ul class="dash-bars">{% for t in top_trainers %}<li><a href="/trainers/{{ t.0 }}" target="_blank" rel="noopener"><span class="db-t">{{ t.1 }}</span><span class="db-n">{{ t.2 }} · ★ {{ t.3 }}</span><i style="--w:{{ t.4 }}%"></i></a></li>{% endfor %}</ul>
       {% endif %}
     </article>
+
+    <article class="dash-panel dash-wide cp-panel" id="condPrices">
+      <h2 class="dash-h">Condition prices</h2>
+      <p class="dash-sub">The share of the Near Mint market price suggested for cards in each condition. Used when adding and pricing cards.</p>
+      <form id="condSharesForm" class="cp-form">
+        <div class="cp-grid">
+          {% for c in condition_shares %}
+          <label class="cp-field">
+            <span class="cp-name">{{ c.0 }}</span>
+            <span class="cp-inputwrap">
+              <input type="number" name="{{ c.0 }}" data-cond="{{ c.0 }}" min="0" max="200" step="1" value="{{ c.1 }}" required>
+              <span class="cp-unit">%</span>
+            </span>
+          </label>
+          {% endfor %}
+        </div>
+        <div class="cp-acts">
+          <button type="submit" class="btn">Save shares</button>
+          <button type="button" class="btn ghost" id="resetShares">Back to the usual shares</button>
+        </div>
+      </form>
+    </article>
   </div>
 </section>
-<script src="/static/admin-ui.js?v=6" defer></script>
+<script src="/static/admin-ui.js?v=7" defer></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   const read = document.querySelector('[data-iv-read]');
@@ -134,6 +156,30 @@ document.addEventListener('DOMContentLoaded', () => {
     try { const j = await window.Admin.postJSON('/admin/dashboard/fix-conditions', {}); window.Admin.toast(`Moved ${j.moved} ✓`, { kind: 'ok' }); setTimeout(() => location.reload(), 700); }
     catch (err) { e.target.disabled = false; window.Admin.toast(err.message, { kind: 'err' }); }
   });
+  
+  const cpForm = document.getElementById('condSharesForm');
+  if (cpForm) {
+    cpForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = cpForm.querySelector('[type="submit"]');
+      btn.disabled = true;
+      const shares = {};
+      new FormData(cpForm).forEach((v, k) => { shares[k] = v; });
+      try {
+        await window.Admin.postJSON('/admin/settings/condition-shares', { shares });
+        window.Admin.toast('Condition prices saved ✓', { kind: 'ok' });
+      } catch (err) { window.Admin.toast(err.message, { kind: 'err' }); }
+      btn.disabled = false;
+    });
+    document.getElementById('resetShares')?.addEventListener('click', async () => {
+      if (!confirm('Go back to the standard numbers?')) return;
+      try {
+        await window.Admin.postJSON('/admin/settings/condition-shares', { shares: { reset: "1" } });
+        window.Admin.toast('Reset to standard numbers ✓', { kind: 'ok' });
+        setTimeout(() => location.reload(), 700);
+      } catch (err) { window.Admin.toast(err.message, { kind: 'err' }); }
+    });
+  }
 });
 </script>
 {% endblock %}

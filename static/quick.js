@@ -31,7 +31,9 @@
   const find = (id) => st.tray.find((t) => t.id === id);
   const newCopy = (it) => {
     const f = (it.edFinish && it.finishes.find((x) => x.key === it.edFinish)) || (it.edFinish ? null : it.finishes[0]);
-    return { finish: f ? f.key : (it.edFinish || ''), price: f ? Math.round(f.php) : '', market: !!f, cond: NEAR_MINT };
+    // Uses the suggested price if the backend provided it, else falls back to Near Mint (php)
+    const price = f ? Math.round(f.suggested || f.php) : '';
+    return { finish: f ? f.key : (it.edFinish || ''), price, market: !!f, cond: NEAR_MINT };
   };
   const shown = new Map();          // id -> card from the last search
   const priceCache = new Map();     // id -> Promise<match|null>
@@ -258,24 +260,38 @@
     const n = document.createElement('span'); n.className = 'qa-copy-n'; n.textContent = `Card ${i + 1}`;
     const fin = document.createElement('select'); fin.setAttribute('aria-label', `Finish of card ${i + 1}`);
     if (!c.finish) fin.append(new Option(it.priced ? 'Pick a finish' : 'Pricing…', '', true, true));
-    it.finishes.forEach((f) => fin.append(new Option(`${f.label} · ${peso(f.php)}`, f.key, false, f.key === c.finish)));
+    it.finishes.forEach((f) => fin.append(new Option(`${f.label} · ${peso(A.suggest(f.php, c.cond) || Math.round(f.php))}`, f.key, false, f.key === c.finish)));
     FINISHES.filter(([k]) => !it.finishes.some((f) => f.key === k)).forEach(([k, label]) => fin.append(new Option(label, k, false, k === c.finish)));
     fin.onchange = () => {
       const f = it.finishes.find((x) => x.key === fin.value);
       c.finish = fin.value;
-      if (f) { c.price = Math.round(f.php); c.market = true; pr.value = c.price; } else c.market = false;
-      persist(); paintBar();
+      if (f) {
+        const sug = A.suggest(f.php, c.cond);
+        c.price = c.market ? (sug || Math.round(f.php)) : c.price;
+      }
+      persist(); paintBar(); paintTiles(); if (document.activeElement !== pr) pr.value = c.price;
     };
     const pr = document.createElement('input'); pr.className = 'qa-price'; pr.inputMode = 'decimal'; pr.placeholder = '₱0'; pr.value = c.price; pr.setAttribute('aria-label', `Value of card ${i + 1} in pesos`);
-    pr.oninput = () => { c.price = pr.value.replace(/[^\d.]/g, ''); c.market = false; persist(); paintBar(); };
+    pr.oninput = () => { c.price = pr.value.replace(/[^\d.]/g, ''); c.market = false; persist(); paintBar(); A.renderSug(pr, c.price, Math.round(it.finishes.find((x) => x.key === c.finish)?.php || 0), c.cond, it.finishes.find((x) => x.key === c.finish)?.label, it.source, it.updated, (sug) => { c.price = String(sug); c.market = true; pr.value = c.price; persist(); paintBar(); }); };
     const cond = document.createElement('select'); cond.setAttribute('aria-label', `Condition of card ${i + 1}`);
     const known = CONDS.includes(c.cond) ? CONDS : [c.cond, ...CONDS];
     known.forEach((v) => cond.append(new Option(v, v, false, v === c.cond)));
-    cond.onchange = () => { c.cond = cond.value; persist(); };
+    cond.onchange = () => {
+      c.cond = cond.value;
+      const f = it.finishes.find((x) => x.key === c.finish);
+      if (f) {
+        const sug = A.suggest(f.php, c.cond);
+        if (c.market && sug) c.price = sug;
+      }
+      persist(); paintBar(); paintTiles(); if (document.activeElement !== pr) pr.value = c.price;
+      A.renderSug(pr, c.price, Math.round(f?.php || 0), c.cond, f?.label, it.source, it.updated, (sug) => { c.price = String(sug); c.market = true; pr.value = c.price; persist(); paintBar(); });
+    };
     const x = document.createElement('button'); x.type = 'button'; x.className = 'qa-copy-x'; x.textContent = '✕'; x.setAttribute('aria-label', `Take out card ${i + 1}`);
     x.onclick = () => { it.copies.splice(it.copies.indexOf(c), 1); if (!it.copies.length) st.tray = st.tray.filter((t) => t !== it); afterChange(); };
     row.append(n, fin, pr, cond, x);
     if (c.err) { const e = document.createElement('p'); e.className = 'qa-err'; e.textContent = c.err; row.append(e); }
+    const curF = it.finishes.find((x) => x.key === c.finish);
+    A.renderSug(pr, c.price, Math.round(curF?.php || 0), c.cond, curF?.label, it.source, it.updated, (sug) => { c.price = String(sug); c.market = true; pr.value = c.price; persist(); paintBar(); });
     return row;
   }
   function paintList() {

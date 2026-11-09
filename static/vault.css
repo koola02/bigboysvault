@@ -1314,3 +1314,23 @@ html[data-lite] .foot { content-visibility: auto; contain-intrinsic-size: auto 2
 .bf-finder .fd-count { display: none !important; }
 .bf-finder .fd-status:not(:has(.fd-clear)) { display: none !important; }
 .bf-finder .fd-status { justify-content: flex-end; }
+
+/* ---------- Condition prices ---------- */
+.cp-panel { padding-bottom: var(--s4); }
+.cp-form { margin-top: var(--s2); }
+.cp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: var(--s2); margin-bottom: var(--s3); }
+.cp-field { display: flex; flex-direction: column; gap: 4px; }
+.cp-name { font: 500 .875rem/1.2 var(--body); color: var(--gold-ink); opacity: .9; }
+.cp-inputwrap { display: flex; align-items: center; background: rgba(0,0,0,.2); border: 1px solid var(--gold-dark); border-radius: 4px; overflow: hidden; max-width: 140px; }
+.cp-inputwrap input { flex: 1; min-width: 0; background: transparent; border: 0; border-radius: 0; padding: 8px 10px; color: #fff; font: 500 1rem/1 var(--body); text-align: right; }
+.cp-inputwrap input:focus { outline: none; background: rgba(255,255,255,.05); }
+.cp-unit { padding: 8px 12px 8px 4px; color: var(--gold-ink); opacity: .7; font: 400 1rem/1 var(--body); user-select: none; }
+.cp-acts { display: flex; gap: var(--s2); align-items: center; flex-wrap: wrap; }
+
+/* ---------- Suggestion Lines ---------- */
+.qa-sug { margin: 4px 0 0; font: 400 .875rem/1.3 var(--body); color: var(--gold-ink); opacity: .8; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.me-c-sug { margin: 8px 0 0; padding: 8px 12px; background: rgba(0,0,0,.3); border-radius: 6px; font: 400 .875rem/1.3 var(--body); color: var(--gold-ink); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.use-chip, .me-use-btn { background: var(--brass); color: var(--bg); border: 0; border-radius: 12px; font: 700 .75rem/1 var(--body); padding: 4px 10px; text-transform: uppercase; cursor: pointer; transition: transform .1s, opacity .2s; }
+.use-chip:hover, .me-use-btn:hover { transform: scale(1.05); }
+.use-chip:active, .me-use-btn:active { transform: scale(.95); }
+.mc-use-chip { position: absolute; bottom: 8px; right: 8px; z-index: 10; font-size: .75rem; padding: 6px 12px; box-shadow: 0 4px 12px rgba(0,0,0,.5); }

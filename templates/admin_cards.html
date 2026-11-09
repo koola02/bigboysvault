@@ -38,7 +38,7 @@
     <p class="selnote" id="selNote" hidden></p>
     <ul class="rows mc-grid" id="rows">
       {% for p in items %}
-      <li class="crow ctile" data-id="{{ p.id }}" data-title="{{ p.title }}" data-ids="{{ p.copy_ids }}" data-c="{{ p.cond_class() }}">
+      <li class="crow ctile" data-id="{{ p.id }}" data-title="{{ p.title }}" data-ids="{{ p.copy_ids }}" data-c="{{ p.cond_class() }}" data-api-id="{{ p.api_id }}" data-finish="{{ p.finish }}" data-price-src="{{ p.price_src }}">
         <button type="button" class="ct-grip" aria-label="Drag to move {{ p.title }}" title="Drag to move"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></button>
         <label class="chk ct-chk" title="Select"><input type="checkbox" class="sr" data-sel="{{ p.id }}" data-ids="{{ p.copy_ids }}" aria-label="Select {{ p.title }}"><span class="chk-box"></span></label>
         <a class="ct-img" href="/admin/edit/{{ p.id }}" aria-label="Edit {{ p.title }}">
@@ -80,10 +80,10 @@
     <button type="button" class="ibtn" data-bulk="clear" aria-label="Clear selection" title="Clear selection">✕</button>
   </div>
 </div>
-<script src="/static/admin-ui.js?v=6" defer></script>
+<script src="/static/admin-ui.js?v=7" defer></script>
 <script src="/static/dragsort.js?v=5" defer></script>
 <script src="/static/tag-editor.js?v=1" defer></script>
-<script src="/static/my-cards.js?v=4" defer></script>
-<script src="/static/admin.js?v=7" defer></script>
-<script src="/static/admin-float.js?v=7" defer></script>
+<script src="/static/my-cards.js?v=5" defer></script>
+<script src="/static/admin.js?v=8" defer></script>
+<script src="/static/admin-float.js?v=8" defer></script>
 {% endblock %}

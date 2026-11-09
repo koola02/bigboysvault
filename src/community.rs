@@ -796,8 +796,20 @@ pub async fn add_card(State(app): State<App>, h: HeaderMap, Json(req): Json<AddR
             if m.profile_ok {
                 app.forget();
             }
-            let worth = with_db(&app, move |c| members::get(c, id)).await?.map_or(0.0, |f| f.worth);
-            Ok(ok(json!({ "ok": true, "worth": vault_search::peso(worth), "card": { "id": cid, "title": title, "number": number, "set": set, "image": image, "cond": "Near Mint", "value": vault_search::peso(value), "highlight": m.highlight.is_none() } })))
+            let (worth, card) = with_db(&app, move |c| Ok((members::get(c, id)?.map_or(0.0, |f| f.worth), members::card(c, id, cid)?))).await?;
+            let mut j = json!({ "id": cid, "title": title, "number": number, "set": set, "image": image, "cond": "Near Mint", "value": value, "highlight": m.highlight.is_none() });
+            if let Some(c) = card {
+                let is_graded = c.is_graded();
+                let is_sealed = c.is_sealed();
+                let suggested = c.suggested_price();
+                let share = c.condition_share();
+                j["is_graded"] = json!(is_graded);
+                j["is_sealed"] = json!(is_sealed);
+                j["suggested"] = json!(suggested);
+                j["share"] = json!(share);
+                j["value_own"] = json!(c.value_own);
+            }
+            Ok(ok(json!({ "ok": true, "worth": vault_search::peso(worth), "card": j })))
         }
     }
 }
@@ -848,7 +860,18 @@ pub async fn card_action(State(app): State<App>, h: HeaderMap, Path(cid): Path<i
     }
     let me = with_db(&app, move |c| members::get(c, id)).await?;
     let card = with_db(&app, move |c| members::card(c, id, cid)).await?;
-    Ok(ok(json!({ "ok": true, "highlight": me.as_ref().and_then(|f| f.highlight), "worth": vault_search::peso(me.map_or(0.0, |f| f.worth)), "card_worth": card.as_ref().map(MemberCard::worth_text), "card_market": card.as_ref().map(MemberCard::market_text) })))
+    let mut out = json!({ "ok": true, "highlight": me.as_ref().and_then(|f| f.highlight), "worth": vault_search::peso(me.as_ref().map_or(0.0, |f| f.worth)), "card_worth": card.as_ref().map(members::MemberCard::worth_text), "card_market": card.as_ref().map(members::MemberCard::market_text) });
+    if let Some(c) = card {
+        out["is_graded"] = json!(c.is_graded());
+        out["is_sealed"] = json!(c.is_sealed());
+        out["suggested"] = json!(c.suggested_price());
+        out["share"] = json!(c.condition_share());
+        out["value_own"] = json!(c.value_own);
+        out["value"] = json!(c.value);
+        out["cond"] = json!(c.cond);
+        out["own_photo"] = json!(c.own_photo());
+    }
+    Ok(ok(out))
 }
 
 #[derive(Deserialize)]

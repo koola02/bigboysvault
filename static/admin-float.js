@@ -133,22 +133,40 @@
         const label = make('span', 'qa-copy-n', solo ? 'This card' : `Card ${i + 1}`);
         const fin = document.createElement('select'); fin.setAttribute('aria-label', `Finish of card ${i + 1}`);
         if (!c.finish) fin.append(new Option('Pick a finish', '', true, true));
-        finishes.forEach((f) => fin.append(new Option(`${f.label} · ${peso(f.php)}`, f.key, false, f.key === c.finish)));
+        finishes.forEach((f) => fin.append(new Option(`${f.label} · ${peso(window.Admin.suggest(f.php, c.cond) || Math.round(f.php))}`, f.key, false, f.key === c.finish)));
         const known = new Set(finishes.map((f) => f.key));
         FINISHES.filter(([k]) => !known.has(k)).forEach(([k, l]) => { known.add(k); fin.append(new Option(l, k, false, k === c.finish)); });
         if (c.finish && !known.has(c.finish)) fin.append(new Option(pretty(c.finish), c.finish, true, true));
         const pr = document.createElement('input'); pr.className = 'qa-price'; pr.inputMode = 'decimal'; pr.placeholder = '₱0'; pr.value = c.price; pr.setAttribute('aria-label', `Price of card ${i + 1} in pesos`);
-        fin.onchange = () => { c.finish = fin.value; const f = finishes.find((x) => x.key === fin.value); if (f) { c.price = String(Math.round(f.php)); c.market = true; pr.value = c.price; } else c.market = false; changed(); sync(); };
-        pr.oninput = () => { c.price = pr.value.replace(/[^\d.]/g, ''); c.market = false; changed(); sync(); };
+        
+        const rerenderSug = () => {
+          const f = finishes.find((x) => x.key === c.finish);
+          window.Admin.renderSug(pr, c.price, Math.round(f?.php || 0), c.cond, f?.label, null, null, (sug) => { c.price = String(sug); c.market = true; pr.value = c.price; changed(); sync(); paint(); });
+        };
+
+        fin.onchange = () => { 
+          c.finish = fin.value; const f = finishes.find((x) => x.key === fin.value); 
+          if (f) { 
+            const sug = window.Admin.suggest(f.php, c.cond);
+            if (c.market && sug) c.price = String(sug); 
+          } else c.market = false; 
+          changed(); sync(); paint(); 
+        };
+        pr.oninput = () => { c.price = pr.value.replace(/[^\d.]/g, ''); c.market = false; changed(); sync(); rerenderSug(); };
         const cond = document.createElement('select'); cond.setAttribute('aria-label', `Condition of card ${i + 1}`);
         if (!c.cond) cond.append(new Option('Pick a condition', '', true, true));
         else if (!CONDS.includes(c.cond)) cond.append(new Option(c.cond, c.cond, true, true));
         CONDS.forEach((v) => cond.append(new Option(v, v, false, v === c.cond)));
         cond.append(new Option('Type my own…', '__own'));
         cond.onchange = () => {
-          if (cond.value === '__own') { const v = (prompt('Condition or grade') || '').trim().slice(0, 80); if (v) c.cond = v; paint(); }
+          if (cond.value === '__own') { const v = (prompt('Condition or grade') || '').trim().slice(0, 80); if (v) c.cond = v; }
           else c.cond = cond.value;
-          changed(); sync();
+          const f = finishes.find((x) => x.key === c.finish);
+          if (f) {
+            const sug = window.Admin.suggest(f.php, c.cond);
+            if (c.market && sug) c.price = String(sug);
+          }
+          changed(); sync(); paint();
         };
         const acts = make('span', 'fc-acts');
         if (!solo && rows.length > 1 && c.id) {
@@ -162,6 +180,8 @@
           acts.append(x);
         }
         row.append(label, acts, fin, cond, pr);
+        const f = finishes.find((x) => x.key === c.finish);
+        window.Admin.renderSug(pr, c.price, Math.round(f?.php || 0), c.cond, f?.label, null, null, (sug) => { c.price = String(sug); c.market = true; pr.value = c.price; changed(); sync(); paint(); });
         return row;
       }));
       minus.disabled = rows.length < 2;

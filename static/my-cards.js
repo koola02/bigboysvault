@@ -74,6 +74,25 @@
       sel.dataset.before = sel.value; flash(sel, true); A.toast('Saved ✓', { kind: 'ok' });
       const box = tile.querySelector('.ct-img'); let badge = box.querySelector('.grade');
       if (j.grade) { if (!badge) { badge = document.createElement('span'); badge.className = 'grade'; box.append(badge); } badge.textContent = j.grade; } else badge?.remove();
+      
+      const priceSrc = tile.dataset.priceSrc;
+      if ((priceSrc === 'market' || priceSrc === 'suggested') && tile.dataset.apiId) {
+        const pr = tile.querySelector('[data-price]');
+        const r = await fetch(`/api/price-suggest?id=${encodeURIComponent(tile.dataset.apiId)}&finish=${encodeURIComponent(tile.dataset.finish || '')}&cond=${encodeURIComponent(sel.value)}`);
+        const pSug = await r.json();
+        if (pSug.suggested) {
+          tile.querySelector('.mc-use-chip')?.remove();
+          const chip = document.createElement('button'); chip.className = 'use-chip mc-use-chip'; chip.type = 'button';
+          chip.textContent = `Price → ₱${pSug.suggested}?`;
+          chip.onclick = () => {
+            pr.value = String(pSug.suggested);
+            quickSave(pr, { price: pSug.suggested, price_src: 'suggested' });
+            tile.dataset.priceSrc = 'suggested';
+            chip.remove();
+          };
+          tile.append(chip);
+        }
+      }
     } catch (err) { sel.value = before; flash(sel, false); A.toast(err.message, { kind: 'err' }); }
   });
 

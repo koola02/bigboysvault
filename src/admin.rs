@@ -531,8 +531,8 @@ async fn save_inner(app: &App, mut mp: Multipart) -> Result<Saved, (StatusCode, 
         None => None,
     };
     let value = parse_price(&price);
-    let price_updated = (price_src == "market" && !api_id.is_empty()).then(today);
-    let entry = Entry { id, title: title.clone(), variant, price: value, body: notes, tags, image, binders: binders.clone(), card_no, card_set, api_id, finish, price_updated, rarity, solo };
+    let price_updated = ((price_src == "market" || price_src == "suggested") && !api_id.is_empty()).then(today);
+    let entry = Entry { id, title: title.clone(), variant, price: value, body: notes, tags, image, binders: binders.clone(), card_no, card_set, api_id, finish, price_updated, price_src, rarity, solo };
     let (id, handle) = with_db(app, move |c| db::save_entry(c, &entry)).await?;
     if let Some(from) = image_from {
         let old = with_db(app, move |c| db::product_by_id(c, id)).await?.map(|p| p.image).unwrap_or_default();
@@ -715,6 +715,41 @@ pub async fn settings(State(app): State<App>, h: HeaderMap, Form(f): Form<Settin
     }
     with_db(&app, move |c| blocks::set_setting(c, "brand", &brand)).await?;
     app.forget();
+    Ok(ok_json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub struct ConditionSharesForm {
+    shares: std::collections::HashMap<String, String>,
+}
+
+pub async fn settings_condition_shares(State(app): State<App>, h: HeaderMap, Form(f): Form<ConditionSharesForm>) -> Res {
+    if !authed(&app, &h) {
+        return Ok(deny(&h));
+    }
+    
+    // Check if it's a reset request. (Could pass a specific key or if all are empty/reset).
+    // Let's assume if it contains "reset"="1" we clear it.
+    if f.shares.get("reset").map(|s| s.as_str()) == Some("1") {
+        with_db(&app, move |c| c.execute("DELETE FROM settings WHERE key='condition_shares'", []).map(|_| ())).await?;
+        app.forget();
+        return Ok(ok_json(json!({ "ok": true })));
+    }
+
+    let mut map = std::collections::HashMap::new();
+    for (k, v) in &f.shares {
+        if let Ok(pct) = v.parse::<f64>() {
+            if (0.0..=200.0).contains(&pct) {
+                map.insert(k.clone(), pct / 100.0);
+            }
+        }
+    }
+    
+    if !map.is_empty() {
+        let json_str = marcuru_rs::pricing::serialize_shares(&map);
+        with_db(&app, move |c| blocks::set_setting(c, "condition_shares", &json_str)).await?;
+        app.forget();
+    }
     Ok(ok_json(json!({ "ok": true })))
 }
 
@@ -1174,6 +1209,7 @@ pub async fn set_cards(State(app): State<App>, h: HeaderMap, Qs(q): Qs<SetQs>) -
 pub struct QuickEdit {
     ids: Vec<i64>,
     price: Option<f64>,
+    price_src: Option<String>,
     notes: Option<String>,
     condition: Option<String>,
     tags: Option<Vec<String>>,
@@ -1194,10 +1230,10 @@ pub async fn quick_edit(State(app): State<App>, h: HeaderMap, Json(req): Json<Qu
     }
     let tags = req.tags.map(|t| db::clean_tags(&t));
     let shown = tags.clone();
-    let (ids, price) = (req.ids, req.price);
+    let (ids, price, price_src) = (req.ids, req.price, req.price_src);
     // The tile's grade badge follows the condition, so a card set to PSA 10 shows it straight away.
     let grade = with_db(&app, move |c| {
-        db::quick_edit(c, &ids, price, notes.as_deref(), condition.as_deref(), tags.as_deref())?;
+        db::quick_edit(c, &ids, price, price_src.as_deref(), notes.as_deref(), condition.as_deref(), tags.as_deref())?;
         Ok(db::product_by_id(c, ids[0])?.and_then(|p| p.grade()))
     })
     .await?;
@@ -1640,6 +1676,8 @@ struct DashboardPage {
     chat_week: i64,
     /// (id, name, value, stars, bar width in %)
     top_trainers: Vec<(i64, String, String, i64, u32)>,
+    /// Array of condition shares: (condition_name, percentage_as_number)
+    condition_shares: Vec<(String, u32)>,
 }
 
 fn share(part: f64, whole: f64) -> u32 {
@@ -1690,10 +1728,16 @@ pub async fn dashboard(State(app): State<App>, h: HeaderMap) -> Res {
         let top_trainers = people.into_iter().filter(|m| m.worth > 0.0).take(6).map(|m| (m.id, m.name.clone(), db::peso(m.worth), m.stars, share(m.worth, richest))).collect();
         let average = if copies > 0 { db::peso(total_value / f64::from(copies)) } else { db::peso(0.0) };
         let median = insights.as_ref().map(|i| i.median.clone()).unwrap_or_else(|| db::peso(0.0));
+        let mut condition_shares = Vec::new();
+        let shares = marcuru_rs::pricing::load_shares(c);
+        for (cond, _) in marcuru_rs::pricing::DEFAULT_SHARES {
+            let pct = shares.get(cond).copied().unwrap_or(1.0);
+            condition_shares.push((cond.to_string(), (pct * 100.0).round() as u32));
+        }
         Ok(DashboardPage {
             nav, tab: "dash", value: db::peso(total_value), copies: db::thousands(i64::from(copies)), distinct: db::thousands(cards.len() as i64), average, median, top10,
             week_n, week_value: db::peso(week_v), month_n, month_value: db::peso(month_v), insights, days, days_first, binders, viewed, searches, missing_searches,
-            no_photo_n, no_photo, no_price_n, no_price, cond_notes_n, cond_notes, trainers, pending, vouches_week, chat_week, top_trainers,
+            no_photo_n, no_photo, no_price_n, no_price, cond_notes_n, cond_notes, trainers, pending, vouches_week, chat_week, top_trainers, condition_shares,
         })
     })
     .await?;

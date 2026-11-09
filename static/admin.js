@@ -178,13 +178,27 @@ window.mountCardForm = () => {
   function setPrice(php) { el.price.value = php ? Math.round(php).toLocaleString('en-US') : ''; priceDirty = false; mk.src.value = 'market'; saveDraft(); preview(); }
   function showFinish(f) {
     curFinish = f; mk.finish.value = f.key;
+    const cond = el.variant.value.trim();
     mk.fin.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.k === f.key)));
-    let t = `≈ ${peso(f.php)} today  ·  $${f.usd} at ₱${current.rate.toFixed(2)} per $1  ·  ${current.source}${current.updated ? ' ' + current.updated : ''}`;
-    if (/^(psa|cgc|bgs|sgc|ace)/i.test(el.variant.value.trim())) t += '  ·  This is the raw-card price; graded copies sell for more, so adjust if needed.';
-    mk.price.textContent = t;
-    if (!priceDirty) { setPrice(f.php); mk.use.hidden = true; }
-    else { mk.use.hidden = false; mk.use.textContent = `Use ${peso(f.php)}`; }
+    const A = window.Admin;
+    A.renderSug(mk.price, el.price.value.replace(/[^\d.]/g, ''), Math.round(f.php), cond, f.label, current.source, current.updated, (sug) => {
+      setPrice(sug); mk.src.value = 'suggested'; mk.use.hidden = true;
+    });
+    const sugNode = mk.price.nextElementSibling;
+    if (sugNode && sugNode.classList.contains('qa-sug')) {
+      const btn = sugNode.querySelector('button');
+      if (btn) mk.use = btn;
+    }
+    const sug = A.suggest(f.php, cond);
+    if (!priceDirty && sug) { setPrice(sug); mk.src.value = 'suggested'; }
   }
+  
+  $('chips').addEventListener('click', (e) => {
+    if (e.target.tagName !== 'BUTTON') return;
+    el.variant.value = e.target.dataset.v;
+    saveDraft(); preview();
+    if (curFinish) showFinish(curFinish);
+  });
   function choose(m, rate) {
     current = { ...m, rate }; mk.box.hidden = false; mk.state.hidden = true; mk.list.hidden = true; mk.card.hidden = false;
     mk.img.src = m.image || ''; mk.name.textContent = m.name; mk.set.textContent = `${m.set} · #${m.number}/${m.total}${m.rarity ? ' · ' + m.rarity : ''}`;

@@ -1,15 +1,127 @@
 //! Read-only data for the card finder (`/cards.tsv`) and for AI assistants using the site through WebMCP (`/api/*`).
 //! Everything here is public information that the pages already show. Nothing here can change anything.
-use crate::{unix_now, with_db, App, Res};
+use crate::{admin, unix_now, with_db, App, Res};
 use axum::{
-    extract::{Path, Query, State},
+    extract::{Path, Query, State, Json as AxumJson},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
-use marcuru_rs::{ask, db, market, members, suggest, translate};
+use marcuru_rs::{ask, db, market, members, suggest, translate, pricing};
 use serde::Deserialize;
+use serde_json::json;
 use std::sync::Arc;
 use vault_search::{parse, peso, read_words, search, Sort};
+
+async fn check_auth(app: &App, h: &HeaderMap) -> bool {
+    if admin::power(app, h) != admin::Power::Nothing {
+        return true;
+    }
+    let cookie = |name: &str| -> Option<String> {
+        h.get(header::COOKIE)?.to_str().ok()?.split(';').find_map(|p| p.trim().strip_prefix(&format!("{name}=")).map(str::to_owned))
+    };
+    if let Some(raw) = cookie("bbv_trainer") {
+        if let Ok(Some(_)) = with_db(app, move |c| members::from_session(c, &raw)).await {
+            return true;
+        }
+    }
+    false
+}
+
+pub async fn condition_shares(State(app): State<App>, h: HeaderMap) -> Res {
+    if !check_auth(&app, &h).await {
+        return Ok((StatusCode::NOT_FOUND, "Not found").into_response());
+    }
+    let shares = with_db(&app, |c| Ok(pricing::load_shares(c))).await?;
+    Ok(json(json!(shares)))
+}
+
+#[derive(Deserialize)]
+pub struct PriceSuggestQs {
+    id: String,
+    #[serde(default)]
+    finish: String,
+    #[serde(default)]
+    cond: String,
+}
+
+pub async fn price_suggest(State(app): State<App>, h: HeaderMap, Query(q): Query<PriceSuggestQs>) -> Res {
+    if !check_auth(&app, &h).await {
+        return Ok((StatusCode::NOT_FOUND, "Not found").into_response());
+    }
+    let who = h.get("fly-client-ip").and_then(|v| v.to_str().ok()).unwrap_or("local").to_string();
+    let key_limit = format!("price_suggest|{}", who);
+    let n = app.limits.get(&key_limit).unwrap_or(0) + 1;
+    app.limits.insert(key_limit, n);
+    if n > 600 {
+        return Ok((StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded").into_response());
+    }
+
+    let key = format!("id|{}", q.id);
+    let cached = app.prices.get(&key);
+    let m = if let Some(hit) = cached {
+        hit
+    } else {
+        match market::by_id_lang(&app.http, &app.fx, &q.id).await {
+            Ok(Some(v)) => {
+                let rate = market::fx(&app.http, &app.fx).await.map(|f| f.usd_php).unwrap_or(0.0);
+                let hit = Arc::new(json!({ "matches": [v], "rate": rate, "exact": true }));
+                app.prices.insert(key.clone(), hit.clone());
+                hit
+            }
+            Ok(None) => Arc::new(json!({ "matches": [], "exact": true })),
+            Err(_) => return Ok((StatusCode::INTERNAL_SERVER_ERROR, "Market lookup failed").into_response()),
+        }
+    };
+
+    let Some(card) = m["matches"].as_array().and_then(|arr| arr.first()) else {
+        return Ok(json(json!({
+            "near_mint": 0.0, "finish": "", "finish_label": "", "condition": q.cond,
+            "share": serde_json::Value::Null, "suggested": serde_json::Value::Null,
+            "graded": pricing::is_graded(&q.cond), "source": "", "updated": "", "finishes": []
+        })));
+    };
+
+    let source = card["source"].as_str().unwrap_or("TCGplayer");
+    let updated = card["updated"].as_str().unwrap_or("");
+    let finishes_arr = card["finishes"].as_array();
+    
+    let target_finish = finishes_arr.and_then(|arr| {
+        arr.iter().find(|f| f["key"].as_str().unwrap_or("") == q.finish)
+            .or_else(|| arr.first())
+    });
+
+    let (near_mint, finish_key, finish_label) = match target_finish {
+        Some(f) => (f["php"].as_f64().unwrap_or(0.0), f["key"].as_str().unwrap_or(""), f["label"].as_str().unwrap_or("")),
+        None => (0.0, "", ""),
+    };
+
+    let shares = with_db(&app, |c| Ok(pricing::load_shares(c))).await?;
+    let is_graded = pricing::is_graded(&q.cond);
+    let is_sealed = pricing::is_sealed(&q.cond);
+    let share = if !is_graded && !is_sealed { pricing::factor_with_shares(&shares, &q.cond) } else { None };
+    let suggested = if !is_graded && !is_sealed { pricing::suggest_with_shares(&shares, near_mint, &q.cond) } else { None };
+
+    let finishes: Vec<serde_json::Value> = finishes_arr.map(|arr| {
+        arr.iter().map(|f| {
+            let nm = f["php"].as_f64().unwrap_or(0.0);
+            let sug = if !is_graded && !is_sealed { pricing::suggest_with_shares(&shares, nm, &q.cond) } else { None };
+            json!({ "key": f["key"], "label": f["label"], "near_mint": nm, "suggested": sug })
+        }).collect()
+    }).unwrap_or_default();
+
+    Ok(json(json!({
+        "near_mint": near_mint,
+        "finish": finish_key,
+        "finish_label": finish_label,
+        "condition": q.cond,
+        "share": share,
+        "suggested": suggested,
+        "graded": is_graded,
+        "source": source,
+        "updated": updated,
+        "finishes": finishes,
+    })))
+}
 
 async fn catalogue(app: &App) -> Result<Arc<String>, (StatusCode, String)> {
     const KEY: &str = "cards.tsv";

@@ -31,6 +31,107 @@ window.Admin = (() => {
     : send(url, { body: body ? new URLSearchParams(body) : undefined, headers: body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {} });
   const postJSON = (url, obj) => send(url, { body: JSON.stringify(obj), headers: { 'Content-Type': 'application/json' } });
 
+  // Condition shares and pricing
+  let _shares = null;
+  async function loadShares() {
+    if (_shares) return _shares;
+    try { const r = await fetch('/api/condition-shares'); _shares = await r.json(); } catch (_) {}
+    return _shares || {};
+  }
+  loadShares(); // Preload
+
+  function normCond(c) {
+    if (!c) return null;
+    let t = c.split('/')[0].split('·')[0].trim().toLowerCase().replace(/[_/.]/g, ' ');
+    t = t.replace(/-/g, ' ');
+    const words = t.split(/\s+/);
+    const compact = t.replace(/\s+/g, '');
+    switch (compact) {
+      case 'nearmint': case 'nm': case 'mint': case 'pristine': return 'Near Mint';
+      case 'lpnm': case 'nmlp': return 'LP-NM';
+      case 'lightlyplayed': case 'lp': return 'Lightly Played';
+      case 'mplp': case 'lpmp': return 'MP-LP';
+      case 'moderatelyplayed': case 'mp': case 'modplayed': return 'Moderately Played';
+      case 'hpmp': case 'mphp': return 'HP-MP';
+      case 'heavilyplayed': case 'hp': case 'heavyplayed': return 'Heavily Played';
+      case 'damagedhp': case 'hpdamaged': case 'dmghp': case 'hpdmg': return 'Damaged-HP';
+      case 'damaged': case 'dmg': return 'Damaged';
+    }
+    if (words.includes('near') && words.includes('mint')) return 'Near Mint';
+    if (words.includes('mint') || words.includes('pristine')) return 'Near Mint';
+    if ((words.includes('lp') && words.includes('nm')) || (words.includes('nm') && words.includes('lp'))) return 'LP-NM';
+    if (words.includes('mp') && words.includes('lp')) return 'MP-LP';
+    if (words.includes('hp') && words.includes('mp')) return 'HP-MP';
+    if ((words.includes('damaged') || words.includes('dmg')) && words.includes('hp')) return 'Damaged-HP';
+    if (words.includes('lightly') || words[0] === 'lp') return 'Lightly Played';
+    if (words.includes('moderately') || words.includes('mod') || words[0] === 'mp') return 'Moderately Played';
+    if (words.includes('heavily') || words.includes('heavy') || words[0] === 'hp') return 'Heavily Played';
+    if (words.includes('damaged') || words[0] === 'dmg') return 'Damaged';
+    return null;
+  }
+  
+  function isGraded(c) {
+    const t = (c || '').trim().toLowerCase();
+    const words = t.split(/\s+/);
+    const first = words[0] || '';
+    if (['psa', 'cgc', 'bgs', 'sgc', 'ace', 'tag'].some(g => first === g || first.startsWith(g))) return true;
+    return t.includes('gem mt') || t.includes('gem-mt') || t.includes('graded') || t.includes('slab');
+  }
+
+  function isSealed(c) { return (c || '').trim().toLowerCase().includes('sealed'); }
+
+  function getShare(c) {
+    if (isGraded(c) || isSealed(c)) return null;
+    const std = normCond(c);
+    if (!std) return null;
+    if (_shares && _shares[std] !== undefined) return _shares[std];
+    const defs = { 'Near Mint': 1, 'LP-NM': 0.9, 'Lightly Played': 0.8, 'MP-LP': 0.7, 'Moderately Played': 0.6, 'HP-MP': 0.5, 'Heavily Played': 0.4, 'Damaged-HP': 0.32, 'Damaged': 0.25 };
+    return defs[std] || null;
+  }
+
+  function roundPhp(raw) {
+    if (raw <= 0) return 1;
+    let r;
+    if (raw < 100) r = Math.round(raw);
+    else if (raw <= 1000) r = Math.round(raw / 5) * 5;
+    else r = Math.round(raw / 10) * 10;
+    return Math.max(1, r);
+  }
+
+  function suggest(nearMint, cond) {
+    if (nearMint <= 0) return null;
+    const share = getShare(cond);
+    if (share === null) return null;
+    return roundPhp(nearMint * share);
+  }
+
+  function renderSug(priceNode, curPrice, nmValue, cond, label, source, updated, onUse) {
+    let p = priceNode.nextElementSibling;
+    if (!p || !p.classList.contains('qa-sug')) {
+      p = document.createElement('p'); p.className = 'qa-sug';
+      priceNode.after(p);
+    }
+    p.replaceChildren();
+    if (isGraded(cond)) {
+      p.textContent = `Graded card: set your own price. Ungraded Near Mint is ₱${Math.round(nmValue)}.`;
+    } else if (isSealed(cond)) {
+      p.textContent = `Sealed: set your own price. Ungraded Near Mint is ₱${Math.round(nmValue)}.`;
+    } else if (nmValue <= 0) {
+      p.textContent = `No market price found for this card. Set your own price.`;
+    } else {
+      const share = getShare(cond) || 1;
+      const sug = suggest(nmValue, cond);
+      const parts = `Suggested ₱${sug} · ${cond} · ${Math.round(share * 100)}% of Near Mint ₱${Math.round(nmValue)} (${label}, ${source || 'TCGplayer'}${updated ? ', ' + updated : ''})`;
+      p.textContent = parts;
+      if (curPrice !== sug && onUse) {
+        const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'use-chip';
+        btn.textContent = `Use ₱${sug}`;
+        btn.onclick = () => onUse(sug);
+        p.append(btn);
+      }
+    }
+  }
+
   // Resize on the device: fast uploads, handles HEIC and rotation.
   async function resize(file, max = 1600) {
     let bmp;
@@ -89,7 +190,7 @@ window.Admin = (() => {
     return { open, close, save };
   })();
 
-  return { toast, post, postJSON, resize, undoable, safe, sheet };
+  return { toast, post, postJSON, resize, undoable, safe, sheet, loadShares, isGraded, isSealed, getShare, suggest, renderSug };
 })();
 
 // ----- card manager -----

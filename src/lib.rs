@@ -5,6 +5,7 @@ pub mod db;
 pub mod market;
 pub mod insights;
 pub mod members;
+pub mod pricing;
 pub mod similar;
 pub mod stamp;
 pub mod suggest;

@@ -18,17 +18,7 @@ pub const TEXT_MAX: usize = 1000;
 
 /// A card's value in pesos falls with its condition: the usual rule of thumb among sellers.
 pub fn condition_factor(cond: &str) -> f64 {
-    match cond {
-        "LP-NM" => 0.9,
-        "Lightly Played" => 0.8,
-        "MP-LP" => 0.7,
-        "Moderately Played" => 0.6,
-        "HP-MP" => 0.5,
-        "Heavily Played" => 0.4,
-        "Damaged-HP" => 0.32,
-        "Damaged" => 0.25,
-        _ => 1.0,
-    }
+    crate::pricing::factor(cond).unwrap_or(1.0)
 }
 
 /// Everything a trainer's cards are worth. Must agree with `MemberCard::worth`.
@@ -36,6 +26,10 @@ macro_rules! worth_sql {
     () => {
         "(SELECT COALESCE(SUM(CASE WHEN x.value_own>0 THEN x.value_own ELSE x.value*CASE x.cond WHEN 'LP-NM' THEN 0.9 WHEN 'Lightly Played' THEN 0.8 WHEN 'MP-LP' THEN 0.7 WHEN 'Moderately Played' THEN 0.6 WHEN 'HP-MP' THEN 0.5 WHEN 'Heavily Played' THEN 0.4 WHEN 'Damaged-HP' THEN 0.32 WHEN 'Damaged' THEN 0.25 ELSE 1.0 END END),0) FROM member_cards x WHERE x.member_id=m.id)"
     };
+}
+
+pub fn worth_sql_clause() -> &'static str {
+    worth_sql!()
 }
 
 pub const CHAT_MAX: usize = 500;
@@ -309,6 +303,18 @@ impl MemberCard {
     /// The sharpest picture there is.
     pub fn big(&self) -> &str {
         if self.image_large.is_empty() { &self.image } else { &self.image_large }
+    }
+    pub fn is_graded(&self) -> bool {
+        crate::pricing::is_graded(&self.cond)
+    }
+    pub fn is_sealed(&self) -> bool {
+        crate::pricing::is_sealed(&self.cond)
+    }
+    pub fn suggested_price(&self) -> Option<f64> {
+        crate::pricing::suggest(self.value, &self.cond)
+    }
+    pub fn condition_share(&self) -> Option<f64> {
+        crate::pricing::factor(&self.cond)
     }
 }
 
