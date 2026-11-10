@@ -1041,8 +1041,19 @@ pub fn start_housekeeping(app: App) {
         let from = std::env::var("MAIL_FROM").unwrap_or_else(|_| "Big Boys Vault <no-reply@bigboysvault.com>".into());
         let site = crate::site();
         let mut warned = false;
+        let mut tick: u64 = 0;
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            // Release dates for any set the vault's cards use: soon after boot, then every six hours.
+            if tick % 360 == 1 {
+                crate::ops::refresh_sets(&app).await;
+            }
+            // Cards that never had a market price looked up (the SRP needs it): a polite batch every ten minutes
+            // until every card has one. The nightly job on the VM keeps them fresh after that.
+            if tick % 10 == 2 && crate::ops::market_missing(&app).await > 0 {
+                crate::ops::refresh_prices_batch(&app, 40).await.ok();
+            }
+            tick += 1;
             let swept = with_db(&app, |c| sellers::expire_due(c)).await;
             if let Ok(n) = swept {
                 if n > 0 {

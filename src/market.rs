@@ -921,6 +921,23 @@ async fn split_printings(client: &reqwest::Client, cards: Vec<Value>) -> Vec<Val
 }
 
 /// Every card in one set, in card-number order, each with its official picture (and English name for Japanese / Chinese).
+/// One set's name, series and release date ("2025-11-14"), for sorting cards by set.
+pub async fn set_info(client: &reqwest::Client, code: &str, lang: &str) -> Option<(String, String, String)> {
+    if code.is_empty() || code.len() > 40 || !code.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.')) {
+        return None;
+    }
+    let v = get_json(client, &format!("{}/sets/{code}", dex_base(lang)), &[], false).await.ok()?;
+    let txt = |x: &Value| x.as_str().unwrap_or("").to_string();
+    Some((txt(&v["name"]), txt(&v["serie"]["name"]), txt(&v["releaseDate"])))
+}
+
+/// The set code for a set name ("Surging Sparks" → "sv08"), from the catalogue's set list.
+pub async fn set_code_for_name(client: &reqwest::Client, name: &str, lang: &str) -> Option<String> {
+    let all = sets(client, lang).await;
+    let want = name.trim().to_lowercase();
+    all.iter().find(|(_, row)| row.name.trim().to_lowercase() == want).map(|(id, _)| id.clone())
+}
+
 pub async fn set_cards(client: &reqwest::Client, id: &str, cat: &str) -> Result<Value, String> {
     let cat = catalogues(cat).iter().copied().find(|c| *c == cat).unwrap_or(catalogues(cat)[0]);
     if id.is_empty() || id.len() > 40 || !id.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '.')) || pocket_set(id) {

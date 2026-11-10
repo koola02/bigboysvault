@@ -33,6 +33,8 @@ pub struct Product {
     pub price_src: String,
     /// "Illustration rare", "Full Art"... from the card catalogue.
     pub rarity: String,
+    /// Today's Near Mint market price for this card's finish, in pesos (0 = not looked up yet). The SRP is worked out from it.
+    pub market_php: f64,
     /// Copies of this same card (same card, same condition/grade) — lists show one tile with "×2".
     pub qty: i64,
     /// Every copy's id, comma-separated (lists only), so admin actions can act on all copies.
@@ -71,6 +73,37 @@ impl Product {
     /// Responsive Shopify CDN image URL at a given pixel width.
     pub fn img(&self, w: u32) -> String {
         cdn(&self.image, w)
+    }
+    /// The condition the SRP is for: what's written, or Near Mint when nothing is.
+    fn srp_condition(&self) -> &str {
+        let v = self.variant.trim();
+        if v.is_empty() { "Near Mint" } else { v }
+    }
+    /// The suggested retail price in pesos for this card's condition, from today's Near Mint market price.
+    /// None for graded and sealed cards, unknown conditions, and cards with no market price yet.
+    pub fn srp(&self) -> Option<f64> {
+        crate::pricing::suggest(self.market_php, self.srp_condition())
+    }
+    /// One line for the owner: "SRP ₱8 · Lightly Played · 80% of Near Mint ₱10". Only a guide: the owner sets the price.
+    pub fn srp_line(&self) -> String {
+        if self.api_id.is_empty() {
+            return String::new();
+        }
+        if self.market_php <= 0.0 {
+            return "SRP: no market price yet".into();
+        }
+        let nm = peso(self.market_php);
+        let cond = self.srp_condition();
+        if crate::pricing::is_graded(cond) {
+            return format!("Graded: set your own price. Ungraded Near Mint is {nm}");
+        }
+        if crate::pricing::is_sealed(cond) {
+            return format!("Sealed: set your own price. Near Mint single is {nm}");
+        }
+        match (self.srp(), crate::pricing::factor(cond), crate::pricing::read_condition(cond)) {
+            (Some(srp), Some(share), Some(std)) => format!("SRP {} · {std} · {}% of Near Mint {nm}", peso(srp), (share * 100.0).round() as i64),
+            _ => format!("SRP: condition not known. Near Mint is {nm}"),
+        }
     }
     pub fn srcset(&self) -> String {
         [240u32, 360, 540, 800]
@@ -284,12 +317,21 @@ pub fn thousands(n: i64) -> String {
 
 pub use vault_search::peso;
 
+/// `set_code(api_id)` in SQL, the same as `set_code` here, so sorting by set can use it.
+pub fn register_set_code(c: &Connection) -> rusqlite::Result<()> {
+    c.create_scalar_function("set_code", 1, rusqlite::functions::FunctionFlags::SQLITE_UTF8 | rusqlite::functions::FunctionFlags::SQLITE_DETERMINISTIC, |ctx| {
+        let s: String = ctx.get::<String>(0).unwrap_or_default();
+        Ok(set_code(&s))
+    })
+}
+
 pub fn open(path: &str) -> rusqlite::Result<Connection> {
     let c = Connection::open(path)?;
     c.execute_batch(
         "PRAGMA journal_mode=WAL; PRAGMA synchronous=NORMAL; PRAGMA mmap_size=134217728;
          PRAGMA cache_size=-16384; PRAGMA temp_store=MEMORY; PRAGMA busy_timeout=5000;",
     )?;
+    register_set_code(&c)?;
     c.execute_batch(SCHEMA)?;
     c.execute_batch(crate::blocks::SCHEMA)?;
     c.execute_batch(crate::suggest::SCHEMA)?;
@@ -306,6 +348,11 @@ fn migrate(c: &Connection) -> rusqlite::Result<()> {
     for col in ["card_no", "card_set", "api_id", "finish", "price_updated", "rarity", "solo", "price_src"] {
         if !have.iter().any(|h| h == col) {
             c.execute(&format!("ALTER TABLE products ADD COLUMN {col} TEXT NOT NULL DEFAULT ''"), [])?;
+        }
+    }
+    for (col, def) in [("market_php", "REAL NOT NULL DEFAULT 0"), ("market_at", "INTEGER NOT NULL DEFAULT 0")] {
+        if !have.iter().any(|h| h == col) {
+            c.execute(&format!("ALTER TABLE products ADD COLUMN {col} {def}"), [])?;
         }
     }
     if !have.iter().any(|h| h == "hits") {
@@ -355,14 +402,15 @@ CREATE TABLE IF NOT EXISTS collection_products(
   PRIMARY KEY(collection, product_id));
 CREATE INDEX IF NOT EXISTS idx_cp_product ON collection_products(product_id);
 CREATE INDEX IF NOT EXISTS idx_products_created ON products(created_at DESC);
+CREATE TABLE IF NOT EXISTS card_sets(code TEXT PRIMARY KEY, name TEXT NOT NULL DEFAULT '', series TEXT NOT NULL DEFAULT '', released TEXT NOT NULL DEFAULT '', fetched INTEGER NOT NULL DEFAULT 0);
 ";
 
 /// How many columns `COLS` has. Anything selected after `COLS` starts at this index.
 /// Keep it in step with `COLS` and `map` (a test checks it).
-const NCOLS: usize = 19;
+const NCOLS: usize = 20;
 
 const COLS: &str =
-    "p.id,p.handle,p.title,p.body,p.tags,p.variant,p.price,p.compare_at,p.available,p.image,p.image_w,p.image_h,p.card_no,p.card_set,p.api_id,p.finish,p.price_updated,p.price_src,p.rarity";
+    "p.id,p.handle,p.title,p.body,p.tags,p.variant,p.price,p.compare_at,p.available,p.image,p.image_w,p.image_h,p.card_no,p.card_set,p.api_id,p.finish,p.price_updated,p.price_src,p.rarity,p.market_php";
 
 fn map(r: &Row) -> rusqlite::Result<Product> {
     Ok(Product {
@@ -385,6 +433,7 @@ fn map(r: &Row) -> rusqlite::Result<Product> {
         price_updated: r.get(16)?,
         price_src: r.get(17)?,
         rarity: r.get(18)?,
+        market_php: r.get(19)?,
         qty: 1,
         copy_ids: String::new(),
     })
@@ -400,6 +449,46 @@ fn map_grouped(r: &Row) -> rusqlite::Result<Product> {
 
 /// What makes two entries "the same card": the same catalogue card and name, condition or grade, finish and price.
 /// Change any of those on a copy and it becomes its own card. `solo` marks a copy given its own notes, photo or binders, which also makes it a different card.
+/// A card's set release date ("2025-11-14"), by the set code in its catalogue id ("tcgdex:sv08-053" → "sv08"), else by the set's name. "" when unknown.
+const SET_DATE: &str = "COALESCE((SELECT s.released FROM card_sets s WHERE s.code=set_code(p.api_id)), (SELECT s.released FROM card_sets s WHERE s.name=p.card_set COLLATE NOCASE LIMIT 1), '')";
+
+/// "tcgdex:sv08-053" → "sv08". Anything else → "".
+pub fn set_code(api_id: &str) -> String {
+    let Some(rest) = api_id.strip_prefix("tcgdex:") else { return String::new() };
+    rest.rsplit_once('-').map(|(code, _)| code.to_string()).unwrap_or_default()
+}
+
+/// A set we've looked up: its code, name, series and release date.
+pub fn save_set(c: &Connection, code: &str, name: &str, series: &str, released: &str) -> rusqlite::Result<()> {
+    c.execute(
+        "INSERT INTO card_sets(code, name, series, released, fetched) VALUES(?1, ?2, ?3, ?4, strftime('%s','now'))
+         ON CONFLICT(code) DO UPDATE SET name=?2, series=?3, released=CASE WHEN ?4<>'' THEN ?4 ELSE released END, fetched=strftime('%s','now')",
+        rusqlite::params![code, name, series, released],
+    )?;
+    Ok(())
+}
+
+/// Set codes the vault's cards use that we haven't looked up yet (or looked up without finding a date, over a week ago).
+pub fn sets_to_fetch(c: &Connection) -> rusqlite::Result<Vec<String>> {
+    let mut st = c.prepare(
+        "SELECT DISTINCT set_code(p.api_id) AS code FROM products p WHERE p.api_id LIKE 'tcgdex:%'
+         AND NOT EXISTS (SELECT 1 FROM card_sets s WHERE s.code=set_code(p.api_id) AND (s.released<>'' OR s.fetched>strftime('%s','now')-7*86400))
+         ORDER BY code LIMIT 200",
+    )?;
+    let v = st.query_map([], |r| r.get(0))?.filter_map(Result::ok).filter(|s: &String| !s.is_empty()).collect();
+    Ok(v)
+}
+
+/// Set names (cards saved without a catalogue id) we have no date for.
+pub fn set_names_to_fetch(c: &Connection) -> rusqlite::Result<Vec<String>> {
+    let mut st = c.prepare(
+        "SELECT DISTINCT trim(p.card_set) FROM products p WHERE p.card_set<>'' AND (p.api_id NOT LIKE 'tcgdex:%')
+         AND NOT EXISTS (SELECT 1 FROM card_sets s WHERE s.name=trim(p.card_set) COLLATE NOCASE) LIMIT 100",
+    )?;
+    let v = st.query_map([], |r| r.get(0))?.filter_map(Result::ok).collect();
+    Ok(v)
+}
+
 const DUP_KEY: &str = "(p.api_id || '|' || lower(trim(p.title)) || '|' || lower(trim(p.variant)) || '|' || lower(trim(p.finish)) || '|' || printf('%.2f', p.price) || '|' || p.solo)";
 
 /// "holo-rare" reads as "Holo Rare" and "common" as "Common". Anything already capitalised stays as it is.
@@ -545,12 +634,15 @@ pub fn list(c: &Connection, q: &Query) -> rusqlite::Result<(Vec<Product>, i64)> 
         "price-desc" => "p.price DESC, p.id",
         "title" => "p.title COLLATE NOCASE ASC",
         "newest" => "p.created_at DESC, p.id DESC",
+        // By the set's release date (card_sets, filled from the card service). Sets with no known date go last.
+        "set-old" => "(rel=''), rel ASC, card_set COLLATE NOCASE, card_no, id",
+        "set-new" => "(rel=''), rel DESC, card_set COLLATE NOCASE, card_no, id",
         // The owner's order. Copies of a card sit where the first of them does.
         _ => "gpos ASC, p.created_at DESC, p.id DESC",
     };
     let whs = wh.join(" AND ");
     // Copies of the same card are one entry with a count ("×2"), everywhere a list is shown.
-    let matched = format!("SELECT DISTINCT {COLS}, {DUP_KEY} AS gk, p.created_at AS created, p.position AS pos FROM products p{join} WHERE {whs}");
+    let matched = format!("SELECT DISTINCT {COLS}, {DUP_KEY} AS gk, p.created_at AS created, p.position AS pos, {SET_DATE} AS rel FROM products p{join} WHERE {whs}");
     let total: i64 = c.query_row(&format!("SELECT COUNT(DISTINCT gk) FROM ({matched})"), params_from_iter(args.iter()), |r| r.get(0))?;
     let order = order.replace("p.created_at", "created").replace("p.", "");
     let mut a2 = args.clone();
@@ -878,8 +970,8 @@ pub fn duplicate(c: &Connection, id: i64) -> rusqlite::Result<Option<i64>> {
         let Some(p) = product_by_id(c, id)? else { return Ok(None) };
         let nid: i64 = c.query_row("SELECT MAX(COALESCE(MAX(id),0),1000000)+1 FROM products", [], |r| r.get(0))?;
         c.execute(
-            "INSERT INTO products(id,handle,title,body,tags,variant,price,compare_at,available,image,image_w,image_h,created_at,card_no,card_set,api_id,finish,price_updated,price_src,rarity,solo)
-             SELECT ?1, ?2, title,body,tags,variant,price,compare_at,available,image,image_w,image_h,strftime('%Y-%m-%dT%H:%M:%S','now'),card_no,card_set,api_id,finish,price_updated,price_src,rarity,solo FROM products WHERE id=?3",
+            "INSERT INTO products(id,handle,title,body,tags,variant,price,compare_at,available,image,image_w,image_h,created_at,card_no,card_set,api_id,finish,price_updated,price_src,rarity,solo,market_php,market_at)
+             SELECT ?1, ?2, title,body,tags,variant,price,compare_at,available,image,image_w,image_h,strftime('%Y-%m-%dT%H:%M:%S','now'),card_no,card_set,api_id,finish,price_updated,price_src,rarity,solo,market_php,market_at FROM products WHERE id=?3",
             rusqlite::params![nid, format!("{}-{nid}", slug(&p.title)), id],
         )?;
         // A copy stays beside its card in the owner's order.
@@ -975,6 +1067,18 @@ fn save_entry_tx(c: &Connection, e: &Entry) -> rusqlite::Result<(i64, String)> {
         }
     }
     Ok((id, handle))
+}
+
+/// Today's Near Mint market price for every copy of a catalogue card (the SRP is worked out from it).
+pub fn set_market(c: &Connection, api_id: &str, php: f64, now: i64) -> rusqlite::Result<usize> {
+    c.execute("UPDATE products SET market_php=?2, market_at=?3 WHERE api_id=?1", rusqlite::params![api_id, php, now])
+}
+
+/// Catalogue cards whose market price is the oldest (or never looked up): (api_id, finish), one per card.
+pub fn stale_market(c: &Connection, limit: i64, older_than: i64) -> rusqlite::Result<Vec<(String, String)>> {
+    let mut st = c.prepare("SELECT api_id, MIN(finish) FROM products WHERE api_id<>'' AND market_at<?2 GROUP BY api_id ORDER BY MIN(market_at), api_id LIMIT ?1")?;
+    let v = st.query_map(rusqlite::params![limit, older_than], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
+    Ok(v)
 }
 
 /// Quick edits from My cards: price, description, condition. They apply to every copy of the card, like the − and ＋ buttons. A price typed by hand isn't a market price any more.
@@ -1183,6 +1287,7 @@ mod dashboard_tests {
     #[test]
     fn the_owners_order() {
         let c = Connection::open_in_memory().unwrap();
+        register_set_code(&c).unwrap();
         c.execute_batch(SCHEMA).unwrap();
         migrate(&c).unwrap();
         for (i, t) in ["A", "B", "C", "D"].iter().enumerate() {
@@ -1208,6 +1313,7 @@ mod dashboard_tests {
     #[test]
     fn copies_group_by_card_not_by_rarity() {
         let c = Connection::open_in_memory().unwrap();
+        register_set_code(&c).unwrap();
         c.execute_batch(SCHEMA).unwrap();
         migrate(&c).unwrap();
         assert_eq!(COLS.split(',').count(), NCOLS, "NCOLS must match COLS");
@@ -1235,6 +1341,50 @@ mod dashboard_tests {
         let (rows, total) = list(&c, &Query::default()).unwrap();
         assert_eq!(total, 2);
         assert_eq!(rows.iter().map(|p| p.qty).sum::<i64>(), 3);
+    }
+
+    /// Sorting by set: release date from the set code, else the set's name; unknown sets last.
+    #[test]
+    fn sorting_by_set_release_date() {
+        let c = Connection::open_in_memory().unwrap();
+        register_set_code(&c).unwrap();
+        c.execute_batch(SCHEMA).unwrap();
+        migrate(&c).unwrap();
+        assert_eq!(set_code("tcgdex:sv08-053"), "sv08");
+        assert_eq!(set_code("tcgdex:me02.5-012"), "me02.5");
+        assert_eq!(set_code("own:abc"), "");
+        let add = |id: i64, title: &str, api: &str, set: &str| {
+            c.execute("INSERT INTO products(id,handle,title,api_id,card_set,created_at) VALUES(?1,?2,?3,?4,?5,'2026-01-01T00:00:00')", rusqlite::params![id, format!("h{id}"), title, api, set]).unwrap();
+        };
+        add(1, "New", "tcgdex:me02-001", "Phantasmal Flames");
+        add(2, "Old", "tcgdex:base1-004", "Base Set");
+        add(3, "Mid", "", "Surging Sparks");
+        add(4, "Unknown", "tcgdex:zzz-001", "Mystery");
+        save_set(&c, "me02", "Phantasmal Flames", "Mega Evolution", "2025-11-14").unwrap();
+        save_set(&c, "base1", "Base Set", "Base", "1999-01-09").unwrap();
+        save_set(&c, "sv08", "Surging Sparks", "Scarlet & Violet", "2024-11-08").unwrap();
+        let titles = |sort: &str| list(&c, &Query { sort: sort.into(), ..Default::default() }).unwrap().0.iter().map(|p| p.title.clone()).collect::<Vec<_>>().join(",");
+        assert_eq!(titles("set-old"), "Old,Mid,New,Unknown");
+        assert_eq!(titles("set-new"), "New,Mid,Old,Unknown");
+        assert_eq!(sets_to_fetch(&c).unwrap(), vec!["zzz".to_string()]);
+        assert!(set_names_to_fetch(&c).unwrap().is_empty(), "Surging Sparks is known by name");
+    }
+
+    #[test]
+    fn the_srp_follows_the_condition_and_never_the_owners_price() {
+        let mut p = Product { id: 1, handle: "x".into(), title: "Pikachu".into(), body: String::new(), tags: String::new(), variant: "Lightly Played".into(), price: 999.0, compare_at: None, available: true, image: String::new(), image_w: 0, image_h: 0, card_no: String::new(), card_set: String::new(), api_id: "tcgdex:base1-58".into(), finish: String::new(), price_updated: String::new(), price_src: String::new(), rarity: String::new(), market_php: 0.0, qty: 1, copy_ids: String::new() };
+        assert_eq!(p.srp_line(), "SRP: no market price yet");
+        p.market_php = 100.0;
+        assert_eq!(p.srp(), Some(80.0));
+        assert_eq!(p.srp_line(), "SRP ₱80 · Lightly Played · 80% of Near Mint ₱100");
+        assert_eq!(p.price, 999.0, "the owner's price is untouched");
+        p.variant = String::new();
+        assert_eq!(p.srp(), Some(100.0), "no condition written means Near Mint");
+        p.variant = "PSA 10".into();
+        assert_eq!(p.srp(), None);
+        assert!(p.srp_line().starts_with("Graded"));
+        p.api_id.clear();
+        assert_eq!(p.srp_line(), "", "own photos have no SRP");
     }
 
     #[test]

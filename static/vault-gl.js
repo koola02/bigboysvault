@@ -1,5 +1,5 @@
 // Two small pieces of live graphics, for every page:
-// the sky, slow ribbons of light from domain-warped noise, drawn small and scaled up so it costs almost nothing;
+// the sky, ribbons of light from domain-warped noise, drawn once at half size so it costs almost nothing;
 // and foil, the colours of real thin-film interference, on whichever card you're pointing at, or the one in the middle of the screen on a phone.
 const root = document.documentElement;
 const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -56,43 +56,28 @@ function sky() {
       c+=vec3(.5,.34,.13)*pow(smoothstep(.42,.86,n),3.)*.34;
       float band=pow(max(0.,1.-abs(r.x-.52)*7.),4.);
       c+=(.5+.5*cos(6.283*(n*1.6+vec3(0.,.33,.67))))*band*.1;
-      c+=(hash(gl_FragCoord.xy)-.5)/255.;
       o=vec4(c,1.);
     }`);
   } catch (e) { console.warn('Sky unavailable', e); return; }
   document.body.prepend(c);
+  // One still picture, drawn at half size (sharp enough, and a quarter of the pixels), then nothing more to pay for.
+  // It's drawn again only when the window changes size.
   const size = () => {
-    const w = Math.max(2, Math.round(innerWidth / 3.2)), h = Math.max(2, Math.round(innerHeight / 3.2));
+    const w = Math.max(2, Math.round(Math.min(innerWidth, 1920) / 2)), h = Math.max(2, Math.round(Math.min(innerHeight, 1200) / 2));
     if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
     gl.viewport(0, 0, w, h);
   };
-  size();
-  addEventListener('resize', () => { size(); draw(performance.now()); }, { passive: true });
-  const t0 = performance.now();
-  let last = 0, slow = 0, frames = 0, prev = t0;
-  function draw(now) {
+  function draw() {
     gl.uniform2f(u('uRes'), c.width, c.height);
-    gl.uniform1f(u('uT'), still ? 30 : (now - t0) / 1000 + 40);
-    gl.uniform1f(u('uS'), scrollY / Math.max(1, document.documentElement.scrollHeight));
+    gl.uniform1f(u('uT'), 30);
+    gl.uniform1f(u('uS'), 0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
   }
-  draw(t0);
+  size();
+  draw();
   c.classList.add('on');
-  if (still) return;
-  const hero = document.getElementById('hxHero');
-  let stopped = false;
-  function tick(now) {
-    if (stopped) return;
-    requestAnimationFrame(tick);
-    if (document.hidden || root.dataset.float || now - last < 46) return;
-    if (hero && scrollY < hero.offsetHeight * 0.62) return; // the opening scene is covering the sky
-    last = now;
-    draw(now);
-    // A device that can't spare it keeps the still picture rather than stutter.
-    const gap = now - prev; prev = now;
-    if (gap < 400) { slow += gap > 90 ? 1 : 0; if (++frames >= 40) { if (slow > 24) stopped = true; frames = 0; slow = 0; } }
-  }
-  requestAnimationFrame(tick);
+  let wait = 0;
+  addEventListener('resize', () => { clearTimeout(wait); wait = setTimeout(() => { size(); draw(); }, 200); }, { passive: true });
 }
 
 /* ---------- foil ---------- */

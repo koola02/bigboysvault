@@ -97,6 +97,47 @@ pub async fn catalog_cached(app: &App, q: &str, lang: &str) -> Value {
     }
 }
 
+// ---------- set release dates, for sorting cards by set ----------
+
+/// Looks up the sets the vault's cards use that we have no date for yet. Returns how many were saved.
+pub async fn refresh_sets(app: &App) -> usize {
+    let Ok(codes) = with_db(app, |c| marcuru_rs::db::sets_to_fetch(c)).await else { return 0 };
+    let Ok(names) = with_db(app, |c| marcuru_rs::db::set_names_to_fetch(c)).await else { return 0 };
+    let mut n = 0;
+    for code in codes {
+        let found = market::set_info(&app.http, &code, "en").await;
+        let (name, series, released) = found.unwrap_or_default();
+        let k = code.clone();
+        if with_db(app, move |c| marcuru_rs::db::save_set(c, &k, &name, &series, &released)).await.is_ok() {
+            n += 1;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+    }
+    for name in names {
+        let Some(code) = market::set_code_for_name(&app.http, &name, "en").await else { continue };
+        let Some((set_name, series, released)) = market::set_info(&app.http, &code, "en").await else { continue };
+        let set_name = if set_name.is_empty() { name.clone() } else { set_name };
+        if with_db(app, move |c| marcuru_rs::db::save_set(c, &code, &set_name, &series, &released)).await.is_ok() {
+            n += 1;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+    }
+    if n > 0 {
+        app.forget();
+    }
+    n
+}
+
+/// `POST /admin/sets/refresh`: the same, on demand.
+pub async fn refresh_sets_route(State(app): State<App>, h: HeaderMap) -> Res {
+    if !admin::authed(&app, &h) {
+        return Ok(deny());
+    }
+    let n = refresh_sets(&app).await;
+    let known: i64 = with_db(&app, |c| c.query_row("SELECT COUNT(*) FROM card_sets WHERE released<>''", [], |r| r.get(0))).await?;
+    Ok(([(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, "no-store")], json!({ "ok": true, "fetched": n, "known": known }).to_string()).into_response())
+}
+
 // ---------- routes for the VM's jobs (owner's token or a full admin) ----------
 
 fn deny() -> Response {
@@ -174,22 +215,28 @@ pub async fn refresh_prices(State(app): State<App>, h: HeaderMap, Query(q): Quer
         return Ok(deny());
     }
     let limit = q.limit.unwrap_or(50).clamp(1, 200);
+    let out = refresh_prices_batch(&app, limit).await?;
+    Ok(([(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, "no-store")], out.to_string()).into_response())
+}
+
+/// How many catalogue cards have never had their market price looked up (the SRP shows "no market price yet").
+pub async fn market_missing(app: &App) -> i64 {
+    with_db(app, |c| c.query_row("SELECT COUNT(DISTINCT api_id) FROM products WHERE api_id<>'' AND market_at=0", [], |r| r.get(0))).await.unwrap_or(0)
+}
+
+/// One batch of the price refresh. Returns the JSON the route answers with.
+pub async fn refresh_prices_batch(app: &App, limit: i64) -> Result<Value, (StatusCode, String)> {
+    let app = app.clone();
     let today = admin::today();
     let now = crate::unix_now();
-    // The vault's cards whose price came from the market, oldest first. Cards saved before `price_src` existed
-    // show it by a price date.
-    let products: Vec<(i64, String, String, String)> = with_db(&app, move |c| {
-        let mut st = c.prepare("SELECT id, api_id, finish, variant FROM products WHERE api_id<>'' AND (price_src IN ('market','suggested') OR (price_src='' AND price_updated<>'')) ORDER BY price_updated ASC, id LIMIT ?1")?;
-        let v = st.query_map([limit], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<Result<_, _>>()?;
-        Ok(v)
-    })
-    .await?;
+    // Every catalogue card gets today's Near Mint market price (the SRP comes from it), oldest first. Cards whose
+    // price follows the market (or that were priced from it before `price_src` existed) get the suggested price too.
+    let stale: Vec<(String, String)> = with_db(&app, move |c| marcuru_rs::db::stale_market(c, limit, now - 20 * 3600)).await?;
     let mut updated_products = 0usize;
     let mut failed = 0usize;
-    // One lookup per catalogue card, however many copies the vault and the sellers hold.
     let mut cache: std::collections::HashMap<String, Option<Value>> = std::collections::HashMap::new();
     let shares = pricing::current();
-    for (id, api_id, finish, cond) in &products {
+    for (api_id, finish) in &stale {
         let card = match cache.get(api_id).cloned().flatten() {
             Some(c) => Some(c),
             None => {
@@ -207,23 +254,31 @@ pub async fn refresh_prices(State(app): State<App>, h: HeaderMap, Query(q): Quer
                 }
             }
         };
-        let (id, today) = (*id, today.clone());
-        // No condition written means Near Mint. Graded and sealed cards keep the owner's price: the raw price isn't theirs.
-        let cond = if cond.trim().is_empty() { "Near Mint" } else { cond.as_str() };
-        let price = card.as_ref().and_then(|c| {
+        let nm = card.as_ref().and_then(|c| {
             let fin = c["finishes"].as_array().cloned().unwrap_or_default();
             let pick = fin.iter().find(|f| f["key"].as_str() == Some(finish.as_str())).or_else(|| fin.first());
-            let nm = pick.and_then(|f| f["php"].as_f64()).filter(|v| *v > 0.0)?;
-            pricing::suggest_with_shares(&shares, nm, cond)
+            pick.and_then(|f| f["php"].as_f64()).filter(|v| *v > 0.0)
         });
-        match price {
-            Some(price) => {
-                with_db(&app, move |c| c.execute("UPDATE products SET price=?2, price_updated=?3 WHERE id=?1", rusqlite::params![id, price, today]).map(|_| ())).await?;
-                updated_products += 1;
+        let (key, today, shares2) = (api_id.clone(), today.clone(), shares.clone());
+        let n = with_db(&app, move |c| {
+            // Remembered even when nothing was found (0), so the card isn't asked for again today.
+            marcuru_rs::db::set_market(c, &key, nm.unwrap_or(0.0), now)?;
+            let Some(nm) = nm else { return Ok(0usize) };
+            // Copies whose price follows the market: the suggested price for each copy's condition.
+            let mut st = c.prepare("SELECT id, variant FROM products WHERE api_id=?1 AND (price_src IN ('market','suggested') OR (price_src='' AND price_updated<>''))")?;
+            let rows: Vec<(i64, String)> = st.query_map([&key], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
+            let mut n = 0;
+            for (id, cond) in rows {
+                let cond = if cond.trim().is_empty() { "Near Mint".to_string() } else { cond };
+                if let Some(price) = pricing::suggest_with_shares(&shares2, nm, &cond) {
+                    c.execute("UPDATE products SET price=?2, price_updated=?3 WHERE id=?1", rusqlite::params![id, price, today])?;
+                    n += 1;
+                }
             }
-            // Not found, no price, graded or no answer: to the back of the queue, so the rest get their turn.
-            None => with_db(&app, move |c| c.execute("UPDATE products SET price_updated=?2 WHERE id=?1 AND price_updated<?2", rusqlite::params![id, today]).map(|_| ())).await?,
-        }
+            Ok(n)
+        })
+        .await?;
+        updated_products += n;
     }
     // Sellers' cards: one lookup per catalogue card, oldest first.
     let keys: Vec<String> = with_db(&app, move |c| {
@@ -290,16 +345,12 @@ pub async fn refresh_prices(State(app): State<App>, h: HeaderMap, Query(q): Quer
     }
     let (remaining_products, remaining_cards): (i64, i64) = with_db(&app, move |c| {
         Ok((
-            c.query_row("SELECT COUNT(*) FROM products WHERE api_id<>'' AND (price_src IN ('market','suggested') OR (price_src='' AND price_updated<>'')) AND price_updated<?1", [today], |r| r.get(0))?,
+            c.query_row("SELECT COUNT(DISTINCT api_id) FROM products WHERE api_id<>'' AND market_at<?1", [now - 20 * 3600], |r| r.get(0))?,
             c.query_row("SELECT COUNT(DISTINCT CASE WHEN instr(card_id,'#')>0 THEN substr(card_id,1,instr(card_id,'#')-1) ELSE card_id END) FROM member_cards WHERE card_id NOT LIKE 'own:%' AND value_at<?1", [now - 86400], |r| r.get(0))?,
         ))
     })
     .await?;
-    Ok((
-        [(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, "no-store")],
-        json!({ "ok": true, "products": updated_products, "cards": updated_cards, "flagged": flagged, "failed": failed, "remaining_products": remaining_products, "remaining_cards": remaining_cards, "remaining": remaining_products + remaining_cards }).to_string(),
-    )
-        .into_response())
+    Ok(json!({ "ok": true, "products": updated_products, "cards": updated_cards, "flagged": flagged, "failed": failed, "remaining_products": remaining_products, "remaining_cards": remaining_cards, "remaining": remaining_products + remaining_cards }))
 }
 
 /// `POST /admin/catalog/warm?limit=40`: looks up the names people search for most, so the first search of the

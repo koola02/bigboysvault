@@ -75,18 +75,24 @@
       const box = tile.querySelector('.ct-img'); let badge = box.querySelector('.grade');
       if (j.grade) { if (!badge) { badge = document.createElement('span'); badge.className = 'grade'; box.append(badge); } badge.textContent = j.grade; } else badge?.remove();
       
-      // A market-based price gets a "Price → ₱8?" chip for the new condition. Nothing changes until it's tapped.
+      // The SRP line follows the new condition at once (from the card's remembered market price), and a "Price → ₱8?" chip
+      // offers it. Nothing changes until the chip is tapped: the owner's price is the owner's.
       tile.querySelector('.mc-use-chip')?.remove();
-      const src = tile.dataset.priceSrc;
-      if ((src === 'market' || src === 'suggested') && tile.dataset.apiId) {
+      const market = Number(tile.dataset.market) || 0, P = window.Price;
+      const srpLine = tile.querySelector('[data-srp]');
+      if (market > 0 && P) {
+        const cond = sel.value, srp = P.suggest(market, cond), nm = '₱' + Math.round(market).toLocaleString('en-US');
+        if (srpLine) {
+          const std = P.read(cond), share = P.share(cond);
+          srpLine.textContent = P.graded(cond) ? `Graded: set your own price. Ungraded Near Mint is ${nm}` : P.sealed(cond) ? `Sealed: set your own price. Near Mint single is ${nm}`
+            : srp == null ? `SRP: condition not known. Near Mint is ${nm}` : `SRP ₱${srp.toLocaleString('en-US')} · ${std} · ${Math.round(share * 100)}% of Near Mint ${nm}`;
+        }
         const pr = tile.querySelector('[data-price]');
-        const r = await fetch(`/api/price-suggest?id=${encodeURIComponent(tile.dataset.apiId)}&finish=${encodeURIComponent(tile.dataset.finish || '')}&cond=${encodeURIComponent(sel.value)}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
-        const s = r.ok ? await r.json() : null;
         const now = Number((pr?.value || '').replace(/[^\d.]/g, ''));
-        if (pr && s?.suggested && s.suggested !== now) {
+        if (pr && srp != null && srp !== now) {
           const chip = document.createElement('button'); chip.className = 'use-chip mc-use-chip'; chip.type = 'button';
-          chip.textContent = `Price → ₱${s.suggested.toLocaleString('en-US')}?`; chip.title = `${Math.round((s.share || 0) * 100)}% of Near Mint ₱${Math.round(s.near_mint).toLocaleString('en-US')}`;
-          chip.onclick = async () => { chip.disabled = true; pr.value = String(s.suggested); await quickSave(pr, { price: s.suggested, price_src: 'suggested' }); tile.dataset.priceSrc = 'suggested'; chip.remove(); };
+          chip.textContent = `Price → ₱${srp.toLocaleString('en-US')}?`; chip.title = 'Use the SRP as the price';
+          chip.onclick = async () => { chip.disabled = true; pr.value = String(srp); await quickSave(pr, { price: srp, price_src: 'suggested' }); tile.dataset.priceSrc = 'suggested'; chip.remove(); };
           tile.querySelector('.ct-pricebox')?.after(chip) ?? tile.append(chip);
         }
       }

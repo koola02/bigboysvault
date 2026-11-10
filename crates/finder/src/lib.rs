@@ -173,7 +173,6 @@ fn Finder(binders: Vec<Binder>, cards: Vec<Arc<Card>>, embedded: bool) -> impl I
     let pmax = RwSignal::new(param("max").and_then(|v| v.parse().ok()).map_or(100, |v| pos_for(v, price_lo, price_hi)));
     let min_price = move || { let p = pmin.get(); (p > 0).then(|| price_at(p, price_lo, price_hi)) };
     let max_price = move || { let p = pmax.get(); (p < 100).then(|| price_at(p, price_lo, price_hi)) };
-    let wide = web_sys::window().and_then(|w| w.inner_width().ok()).and_then(|v| v.as_f64()).unwrap_or(0.0) >= 900.0;
     let has_url_filters = !applied.get_untracked().is_empty() || pmin.get_untracked() > 0 || pmax.get_untracked() < 100;
     let all = StoredValue::new(cards);
     let handles: Vec<String> = binders.iter().map(|b| b.handle.clone()).collect();
@@ -411,7 +410,7 @@ fn Finder(binders: Vec<Binder>, cards: Vec<Arc<Card>>, embedded: bool) -> impl I
                     </ul>
                 </Show>
             </form>
-            <details class="fd-filters" prop:open=wide || has_url_filters>
+            <details class="fd-filters" prop:open=has_url_filters>
                 <summary>
                     <span class="fd-f-t">"Filters"</span>
                     <Show when=move || { filter_count() > 0 }><span class="fd-f-n">{filter_count}</span></Show>

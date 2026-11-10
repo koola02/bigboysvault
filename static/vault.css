@@ -1338,6 +1338,8 @@ html[data-lite] .foot { content-visibility: auto; contain-intrinsic-size: auto 2
 .qa-copy .qa-sug { flex-basis: 100%; order: 9; }
 .me-c-sug { margin: 4px 0 0; }
 .me-c-sug .sug-use { min-height: 36px; padding: 0 12px; }
+.ct-srp { margin: 2px 0 4px; font-size: .75rem; color: rgba(252, 239, 201, .8); }
+.ct-srp::before { content: ""; }
 /* My cards grid: "Price → ₱8?" after a condition change. Nothing changes until it's tapped. */
 .use-chip { min-height: 36px; padding: 0 12px; margin: 4px 0; border: 1px solid var(--gold-hi); border-radius: 999px; background: var(--brass); color: var(--gold-ink); font: 800 .75rem/1 var(--font); cursor: pointer; box-shadow: 0 2px 8px rgba(0,0,0,.4); }
 .use-chip:hover { box-shadow: 0 0 14px rgba(239,200,115,.6); }

@@ -19,6 +19,8 @@
       <option value="price-desc" {% if sort == "price-desc" %}selected{% endif %}>Most valuable first</option>
       <option value="price-asc" {% if sort == "price-asc" %}selected{% endif %}>Cheapest first</option>
       <option value="title" {% if sort == "title" %}selected{% endif %}>A to Z</option>
+      <option value="set-new" {% if sort == "set-new" %}selected{% endif %}>Set: newest to oldest</option>
+      <option value="set-old" {% if sort == "set-old" %}selected{% endif %}>Set: oldest to newest</option>
     </select>
     <select id="ab" name="binder" aria-label="Binder" hidden>
       <option value="">All binders</option>
@@ -38,7 +40,7 @@
     <p class="selnote" id="selNote" hidden></p>
     <ul class="rows mc-grid" id="rows">
       {% for p in items %}
-      <li class="crow ctile" data-id="{{ p.id }}" data-title="{{ p.title }}" data-ids="{{ p.copy_ids }}" data-c="{{ p.cond_class() }}" data-api-id="{{ p.api_id }}" data-finish="{{ p.finish }}" data-price-src="{{ p.price_src }}">
+      <li class="crow ctile" data-id="{{ p.id }}" data-title="{{ p.title }}" data-ids="{{ p.copy_ids }}" data-c="{{ p.cond_class() }}" data-api-id="{{ p.api_id }}" data-finish="{{ p.finish }}" data-price-src="{{ p.price_src }}" data-market="{{ p.market_php }}">
         <button type="button" class="ct-grip" aria-label="Drag to move {{ p.title }}" title="Drag to move"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/><circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/></svg></button>
         <label class="chk ct-chk" title="Select"><input type="checkbox" class="sr" data-sel="{{ p.id }}" data-ids="{{ p.copy_ids }}" aria-label="Select {{ p.title }}"><span class="chk-box"></span></label>
         <a class="ct-img" href="/admin/edit/{{ p.id }}" aria-label="Edit {{ p.title }}">
@@ -52,6 +54,7 @@
           <span class="ct-meta">{% if !p.set_text().is_empty() %}<span class="ct-set">{{ p.set_text() }}</span>{% endif %}{% if !p.finish_shown().is_empty() %}<span class="ct-var">{{ p.finish_shown() }}</span>{% endif %}</span>
         </div>
         <label class="ct-pricebox"><span aria-hidden="true">₱</span><input type="text" inputmode="decimal" autocomplete="off" value="{{ p.price_input() }}" data-price aria-label="Price of {{ p.title }}"></label>
+        {% if !p.srp_line().is_empty() %}<p class="ct-srp sug" data-srp>{{ p.srp_line() }}</p>{% endif %}
         <select class="ct-cond" data-cond aria-label="Condition of {{ p.title }}">{% for o in p.condition_choices() %}<option value="{{ o.0 }}"{% if o.2 %} selected{% endif %}{% if o.0.is_empty() %} disabled{% endif %}>{{ o.1 }}</option>{% endfor %}</select>
         <textarea class="ct-desc" rows="2" maxlength="4000" placeholder="Add a description" aria-label="Description of {{ p.title }}" data-notes>{{ p.notes() }}</textarea>
         <div class="tag-box ct-tags" data-tag-box data-tags="{{ p.shown_tags().join("|") }}" aria-label="Tags for {{ p.title }}"></div>
@@ -84,7 +87,7 @@
 <script src="/static/admin-ui.js?v=9" defer></script>
 <script src="/static/dragsort.js?v=5" defer></script>
 <script src="/static/tag-editor.js?v=1" defer></script>
-<script src="/static/my-cards.js?v=6" defer></script>
+<script src="/static/my-cards.js?v=7" defer></script>
 <script src="/static/admin.js?v=10" defer></script>
 <script src="/static/admin-float.js?v=10" defer></script>
 {% endblock %}

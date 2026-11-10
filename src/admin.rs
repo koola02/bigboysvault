@@ -237,7 +237,7 @@ pub async fn cards(State(app): State<App>, h: HeaderMap, Qs(qs): Qs<ListQs>) -> 
     let q = qs.q.unwrap_or_default().trim().chars().take(80).collect::<String>();
     let binder = qs.binder.filter(|b| db::handle_ok(b)).unwrap_or_default();
     let page = qs.page.unwrap_or(0).min(500);
-    let sort = qs.sort.filter(|s| ["price-desc", "price-asc", "title", "newest"].contains(&s.as_str())).unwrap_or_default();
+    let sort = qs.sort.filter(|s| ["price-desc", "price-asc", "title", "newest", "set-old", "set-new"].contains(&s.as_str())).unwrap_or_default();
     let query = Query { collection: (!binder.is_empty()).then(|| binder.clone()), q: q.clone(), sort: sort.clone(), page: 0, ..Default::default() };
     let (nav, items, total, copies, distinct, value) = with_db(&app, move |c| {
         // Pages accumulate so "Show more" simply extends the list.

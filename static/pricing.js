@@ -91,8 +91,9 @@ window.Price = (() => {
     const where = [o.label, o.source, o.updated ? shortDate(o.updated) : ''].filter(Boolean).join(', ');
     const pct = Math.round(shares[std] * 100);
     const own = Number(o.own) || 0;
-    if (own > 0) txt.textContent = `You set ${peso(own)}. Suggested for ${std}: ${peso(sug)}`;
-    else { const b = document.createElement('b'); b.textContent = peso(sug); txt.append('Suggested ', b, ` · ${std} · ${pct}% of Near Mint ${peso(nm)}`); }
+    // SRP: the suggested retail price for this condition. Only a guide: the price is always the seller's.
+    if (own > 0) txt.textContent = `You set ${peso(own)}. SRP for ${std}: ${peso(sug)}`;
+    else { const b = document.createElement('b'); b.textContent = peso(sug); txt.append('SRP ', b, ` · ${std} · ${pct}% of Near Mint ${peso(nm)}`); }
     if (own <= 0 && where) txt.append(` (${where})`);
     const cur = Number(String(o.price ?? '').replace(/[^\d.]/g, '')) || 0;
     if (o.onUse && cur !== sug) {

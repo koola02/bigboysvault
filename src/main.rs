@@ -1052,6 +1052,7 @@ async fn main() {
         .route("/admin/backup/uploads", get(ops::backup_uploads))
         .route("/admin/prices/refresh", post(ops::refresh_prices))
         .route("/admin/catalog/warm", post(ops::warm_catalog))
+        .route("/admin/sets/refresh", post(ops::refresh_sets_route))
         .route("/sitemap.xml", get(sitemap))
         .route("/cards.tsv", get(api::cards_file))
         .route("/oops", post(oops).layer(axum::extract::DefaultBodyLimit::max(1024)))

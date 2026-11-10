@@ -41,7 +41,7 @@
   const fit = (n) => {
     n.style.removeProperty('font-stretch');
     n.style.removeProperty('font-size');
-    if (!n.offsetWidth) return;
+    if (!n.offsetWidth || !n.offsetHeight) return; // hidden (say, inside a closed panel): measured when it shows
     let s = parseFloat(getComputedStyle(n).fontStretch) || 100;
     for (let i = 0; i < 4 && n.scrollWidth > n.clientWidth + 0.5; i++) {
       s = Math.max(50, s * (n.clientWidth / n.scrollWidth) * 0.995);
@@ -63,6 +63,8 @@
   };
   fitSoon();
   document.fonts?.ready.then(() => fitSoon());
+  // A panel that opens (the finder's filters) shows labels that couldn't be measured while it was closed.
+  document.addEventListener('toggle', (e) => { if (e.target.matches?.('details')) fitSoon(e.target); }, true);
   let widthWas = innerWidth;
   addEventListener('resize', () => { if (innerWidth !== widthWas) { widthWas = innerWidth; fitSoon(); } }, { passive: true });
   new MutationObserver((changes) => {
