@@ -522,6 +522,8 @@ pub struct MemberCard {
     pub updated_at: i64,
     /// The seller asked the vault to look at this custom card.
     pub flagged: bool,
+    /// "own": a card they have and show off. "sale": for sale in their store. "wish": a card they're after.
+    pub kind: String,
 }
 
 impl MemberCard {
@@ -583,6 +585,27 @@ impl MemberCard {
     }
     pub fn when(&self) -> String {
         crate::sellers::ago(self.updated_at)
+    }
+    pub fn is_sale(&self) -> bool {
+        self.kind == "sale"
+    }
+    pub fn is_wish(&self) -> bool {
+        self.kind == "wish"
+    }
+    pub fn is_own(&self) -> bool {
+        !self.is_sale() && !self.is_wish()
+    }
+    /// "Highlight", "For sale" or "Wishlist".
+    pub fn kind_label(&self) -> &'static str {
+        match self.kind.as_str() {
+            "sale" => "For sale",
+            "wish" => "Wishlist",
+            _ => "Highlight",
+        }
+    }
+    /// Can be bought right now: for sale, in stock, and not already spoken for.
+    pub fn buyable(&self) -> bool {
+        self.is_sale() && self.status == "Active" && self.qty > 0
     }
     /// One of the conditions the site offers in its lists (not a typed grade like "PSA 9").
     pub fn is_standard_cond(&self) -> bool {
@@ -657,9 +680,9 @@ fn map_member(r: &Row) -> rusqlite::Result<Member> {
     })
 }
 
-pub const CARD_COLS: &str = "c.id,c.member_id,c.title,c.number,c.card_set,c.image,c.image_large,c.cond,c.card_id,c.value,c.value_own,c.binder_id,c.status,c.expires_at,c.is_custom,c.qty,c.finish,c.notes,c.sold,c.view_n,c.save_n,c.updated_at,c.review_flag";
+pub const CARD_COLS: &str = "c.id,c.member_id,c.title,c.number,c.card_set,c.image,c.image_large,c.cond,c.card_id,c.value,c.value_own,c.binder_id,c.status,c.expires_at,c.is_custom,c.qty,c.finish,c.notes,c.sold,c.view_n,c.save_n,c.updated_at,c.review_flag,c.kind";
 /// How many columns `CARD_COLS` has: anything selected after it starts here.
-pub const CARD_N: usize = 23;
+pub const CARD_N: usize = 24;
 
 pub fn map_card(r: &Row, at: usize) -> rusqlite::Result<MemberCard> {
     Ok(MemberCard {
@@ -686,6 +709,7 @@ pub fn map_card(r: &Row, at: usize) -> rusqlite::Result<MemberCard> {
         save_n: r.get(at + 20)?,
         updated_at: r.get(at + 21)?,
         flagged: r.get::<_, i64>(at + 22)? != 0,
+        kind: r.get(at + 23)?,
     })
 }
 

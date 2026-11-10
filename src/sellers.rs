@@ -8,8 +8,12 @@ use crate::members::{self, now, MemberBinder, MemberCard};
 use rusqlite::{Connection, OptionalExtension, Row};
 use serde::Serialize;
 
-/// Listing statuses, in the order a listing moves through them.
-pub const STATUSES: [&str; 5] = ["Active", "Reserved", "Sold", "Hidden", "Expired"];
+/// Listing statuses, in the order a listing moves through them. "Out of stock" is the seller's own switch.
+pub const STATUSES: [&str; 6] = ["Active", "Out of stock", "Reserved", "Sold", "Hidden", "Expired"];
+/// What a card in a binder is: shown off, for sale, or wanted.
+pub const KINDS: [&str; 3] = ["own", "sale", "wish"];
+/// Where a vault order stands.
+pub const ORDER_STATUSES: [&str; 5] = ["Pending", "Confirmed", "Paid", "Declined", "Cancelled"];
 /// Ways to pay a seller can tick.
 pub const PAY_METHODS: [&str; 6] = ["GCash", "Maya", "Bank transfer", "GoTyme", "Cash on meetup", "Other"];
 /// Reservations the seller hasn't answered expire after this long. Confirmed ones wait this long for payment.
@@ -46,9 +50,27 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         ("save_n", "INTEGER NOT NULL DEFAULT 0"),
         ("updated_at", "INTEGER NOT NULL DEFAULT 0"),
         ("review_flag", "INTEGER NOT NULL DEFAULT 0"),
+        ("kind", "TEXT NOT NULL DEFAULT 'own'"),
     ] {
         add_column(c, "member_cards", col, def)?;
     }
+    // Once: cards sellers already had on their shelves stay for sale.
+    c.execute_batch("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)")?;
+    if crate::blocks::setting(c, "kinds_v")?.as_deref() != Some("1") {
+        c.execute("UPDATE member_cards SET kind='sale' WHERE member_id IN (SELECT id FROM members WHERE seller=1)", [])?;
+        crate::blocks::set_setting(c, "kinds_v", "1")?;
+    }
+    c.execute_batch(
+        "CREATE TABLE IF NOT EXISTS vault_orders(
+           id INTEGER PRIMARY KEY AUTOINCREMENT, buyer_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'Pending', message TEXT NOT NULL DEFAULT '',
+           paid_via TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL DEFAULT 0);
+         CREATE TABLE IF NOT EXISTS vault_order_items(
+           id INTEGER PRIMARY KEY AUTOINCREMENT, order_id INTEGER NOT NULL, product_id INTEGER NOT NULL, title TEXT NOT NULL DEFAULT '',
+           price REAL NOT NULL DEFAULT 0, qty INTEGER NOT NULL DEFAULT 1, image TEXT NOT NULL DEFAULT '', handle TEXT NOT NULL DEFAULT '');
+         CREATE INDEX IF NOT EXISTS idx_vorders_buyer ON vault_orders(buyer_id, created_at);
+         CREATE INDEX IF NOT EXISTS idx_vorders_status ON vault_orders(status, created_at);
+         CREATE INDEX IF NOT EXISTS idx_vitems_order ON vault_order_items(order_id);",
+    )?;
     c.execute_batch(
         "CREATE TABLE IF NOT EXISTS reservations(
            id INTEGER PRIMARY KEY AUTOINCREMENT, buyer_id INTEGER NOT NULL, seller_id INTEGER NOT NULL, card_id INTEGER NOT NULL,
@@ -261,7 +283,8 @@ pub fn add_listing(c: &Connection, member_id: i64, card_id: &str, title: &str, n
     let id = if n == 0 { key } else { format!("{key}#{}", n + 1) };
     let added = members::add_card(c, member_id, &id, title, number, set, image, image_large)?;
     if let members::Added::Yes(cid) = added {
-        c.execute("UPDATE member_cards SET updated_at=?3 WHERE member_id=?1 AND id=?2", rusqlite::params![member_id, cid, now()])?;
+        let selling: i64 = c.query_row("SELECT seller FROM members WHERE id=?1", [member_id], |r| r.get(0)).unwrap_or(0);
+        c.execute("UPDATE member_cards SET updated_at=?3, kind=?4 WHERE member_id=?1 AND id=?2", rusqlite::params![member_id, cid, now(), if selling == 1 { "sale" } else { "own" }])?;
         log_event(c, member_id, cid, "listed", "")?;
     }
     Ok(added)
@@ -314,7 +337,9 @@ pub fn update_listing(c: &Connection, member_id: i64, id: i64, p: &Patch) -> rus
                 c.execute("UPDATE member_cards SET expires_at=0 WHERE member_id=?1 AND id=?2", [member_id, id])?;
             }
             log_event(c, member_id, id, "status", &format!("{} → {s}", before.status))?;
-            notify(c, member_id, "status", &format!("{} is now {}.", short(&before.title), s), &format!("/me/listings?id={id}"))?;
+            if s != "Out of stock" && s != "Active" {
+                notify(c, member_id, "status", &format!("{} is now {}.", short(&before.title), s), &format!("/me/listings?id={id}"))?;
+            }
         }
     }
     if let Some(f) = &p.finish {
@@ -348,6 +373,28 @@ pub fn update_listing(c: &Connection, member_id: i64, id: i64, p: &Patch) -> rus
     }
     c.execute("UPDATE member_cards SET updated_at=?3 WHERE member_id=?1 AND id=?2", rusqlite::params![member_id, id, now()])?;
     members::card(c, member_id, id)
+}
+
+/// What a card is: "own" (a highlight), "sale" (in the store) or "wish" (wanted). Only a seller can put a card up for sale.
+pub fn set_kind(c: &Connection, member_id: i64, card_id: i64, kind: &str) -> rusqlite::Result<Result<MemberCard, &'static str>> {
+    if !KINDS.contains(&kind) {
+        return Ok(Err("Pick Highlight, For sale or Wishlist."));
+    }
+    if kind == "sale" {
+        let selling: i64 = c.query_row("SELECT seller FROM members WHERE id=?1", [member_id], |r| r.get(0))?;
+        if selling == 0 {
+            return Ok(Err("Selling isn't switched on for your trainer. Ask the vault owner."));
+        }
+    }
+    let n = c.execute("UPDATE member_cards SET kind=?3, updated_at=?4 WHERE member_id=?1 AND id=?2", rusqlite::params![member_id, card_id, kind, now()])?;
+    if n == 0 {
+        return Ok(Err("That card isn't in your binder."));
+    }
+    if kind == "sale" {
+        // A card put up for sale starts in stock, with at least one copy.
+        c.execute("UPDATE member_cards SET status='Active', qty=MAX(qty, 1) WHERE member_id=?1 AND id=?2 AND status IN ('Hidden','Expired','Out of stock','Sold')", [member_id, card_id])?;
+    }
+    Ok(members::card(c, member_id, card_id)?.ok_or("That card isn't in your binder."))
 }
 
 /// The same change on many listings at once. Returns how many changed.
@@ -436,6 +483,8 @@ pub struct ListFilter {
     pub binder: Option<i64>,
     /// "newest", "price-desc", "price-asc", "title", "views", "stock", or the seller's own order.
     pub sort: String,
+    /// "own", "sale", "wish", or "" for all.
+    pub kind: String,
 }
 
 /// A seller's listings, filtered and sorted.
@@ -454,6 +503,10 @@ pub fn listings(c: &Connection, member_id: i64, f: &ListFilter) -> rusqlite::Res
         sql += &format!(" AND c.binder_id=?{}", args.len() + 1);
         args.push(b.into());
     }
+    if KINDS.contains(&f.kind.as_str()) {
+        sql += &format!(" AND c.kind=?{}", args.len() + 1);
+        args.push(f.kind.clone().into());
+    }
     sql += match f.sort.as_str() {
         "newest" => " ORDER BY c.id DESC",
         "price-desc" => " ORDER BY CASE WHEN c.value_own>0 THEN c.value_own ELSE c.value END DESC, c.id DESC",
@@ -470,7 +523,7 @@ pub fn listings(c: &Connection, member_id: i64, f: &ListFilter) -> rusqlite::Res
 
 /// What a store shows the public: cards on sale (and reserved ones, marked), in the seller's order.
 pub fn storefront_listings(c: &Connection, member_id: i64) -> rusqlite::Result<Vec<MemberCard>> {
-    let mut st = c.prepare(&format!("SELECT {} FROM member_cards c WHERE c.member_id=?1 AND c.status IN ('Active','Reserved') ORDER BY c.position, c.id", members::CARD_COLS))?;
+    let mut st = c.prepare(&format!("SELECT {} FROM member_cards c WHERE c.member_id=?1 AND c.kind='sale' AND c.status IN ('Active','Out of stock','Reserved') ORDER BY c.position, c.id", members::CARD_COLS))?;
     let v = st.query_map([member_id], |r| members::map_card(r, 0))?.collect::<Result<Vec<_>, _>>()?;
     Ok(v)
 }
@@ -620,6 +673,12 @@ fn can_buy(c: &Connection, buyer: i64, seller: i64, card_id: i64, qty: i64) -> r
     }
     if status == "Vacation" {
         return Ok(Err("This seller is on vacation. Please come back later."));
+    }
+    if !card.is_sale() {
+        return Ok(Err("That card isn't for sale."));
+    }
+    if card.status == "Out of stock" {
+        return Ok(Err("That card is out of stock right now."));
     }
     if card.status != "Active" && card.status != "Reserved" {
         return Ok(Err("That card isn't for sale right now."));
@@ -1247,7 +1306,7 @@ pub fn popular_binders(c: &Connection, seller: i64) -> rusqlite::Result<Vec<(Mem
 // ---------- notifications ----------
 
 /// Kinds of notification a seller can switch on or off, with what each means.
-pub const EVENTS: [(&str, &str); 10] = [
+pub const EVENTS: [(&str, &str); 11] = [
     ("follow", "Someone follows my store"),
     ("view", "Someone looks at or saves a card (summarised, once a day per card)"),
     ("inquiry", "Someone asks a question"),
@@ -1257,6 +1316,7 @@ pub const EVENTS: [(&str, &str); 10] = [
     ("expiry", "A listing expires"),
     ("status", "A card's status changes"),
     ("price", "A price of mine is far from today's market"),
+    ("order", "Someone orders from the vault (admins)"),
     ("announcement", "News from the vault"),
 ];
 
@@ -1422,7 +1482,7 @@ impl Dashboard {
 }
 
 pub fn dashboard(c: &Connection, seller: i64) -> rusqlite::Result<Dashboard> {
-    let count = |status: &str| -> rusqlite::Result<i64> { c.query_row("SELECT COUNT(*) FROM member_cards WHERE member_id=?1 AND status=?2", rusqlite::params![seller, status], |r| r.get(0)) };
+    let count = |status: &str| -> rusqlite::Result<i64> { c.query_row("SELECT COUNT(*) FROM member_cards WHERE member_id=?1 AND kind='sale' AND status=?2", rusqlite::params![seller, status], |r| r.get(0)) };
     let listings: i64 = c.query_row("SELECT COUNT(*) FROM member_cards WHERE member_id=?1", [seller], |r| r.get(0))?;
     let active = count("Active")?;
     let reserved = count("Reserved")?;
@@ -1507,7 +1567,7 @@ pub struct StoreStats {
 }
 
 pub fn store_stats(c: &Connection, seller: i64) -> rusqlite::Result<StoreStats> {
-    let on_sale: i64 = c.query_row("SELECT COUNT(*) FROM member_cards WHERE member_id=?1 AND status IN ('Active','Reserved')", [seller], |r| r.get(0))?;
+    let on_sale: i64 = c.query_row("SELECT COUNT(*) FROM member_cards WHERE member_id=?1 AND kind='sale' AND status IN ('Active','Reserved')", [seller], |r| r.get(0))?;
     let sold: i64 = c.query_row("SELECT COALESCE(SUM(qty),0) FROM transactions WHERE seller_id=?1 AND status='Completed'", [seller], |r| r.get(0))?;
     let sales: i64 = c.query_row("SELECT COUNT(*) FROM transactions WHERE seller_id=?1 AND status='Completed'", [seller], |r| r.get(0))?;
     let created: i64 = c.query_row("SELECT created_at FROM members WHERE id=?1", [seller], |r| r.get(0))?;
@@ -1532,6 +1592,228 @@ pub fn directory(c: &Connection) -> rusqlite::Result<Vec<(members::Member, Store
         out.push((m, stats, cards));
     }
     out.sort_by(|a, b| (b.1.sales, b.1.on_sale).cmp(&(a.1.sales, a.1.on_sale)));
+    Ok(out)
+}
+
+// ---------- the cart: orders from the vault's own cards ----------
+
+/// One line of a vault order, as it was when ordered.
+#[derive(Clone, Debug, Serialize)]
+pub struct OrderItem {
+    pub product_id: i64,
+    pub title: String,
+    pub price: f64,
+    pub qty: i64,
+    pub image: String,
+    pub handle: String,
+}
+
+impl OrderItem {
+    pub fn price_text(&self) -> String {
+        vault_search::peso(self.price)
+    }
+    pub fn line_text(&self) -> String {
+        vault_search::peso(self.price * self.qty as f64)
+    }
+}
+
+/// An order for the vault's own cards: the buyer, the lines, where it stands.
+#[derive(Clone, Debug, Serialize)]
+pub struct VaultOrder {
+    pub id: i64,
+    pub buyer_id: i64,
+    pub buyer_name: String,
+    pub status: String,
+    pub message: String,
+    pub paid_via: String,
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub items: Vec<OrderItem>,
+}
+
+impl VaultOrder {
+    pub fn total(&self) -> f64 {
+        self.items.iter().map(|i| i.price * i.qty as f64).sum()
+    }
+    pub fn total_text(&self) -> String {
+        vault_search::peso(self.total())
+    }
+    pub fn units(&self) -> i64 {
+        self.items.iter().map(|i| i.qty).sum()
+    }
+    pub fn when(&self) -> String {
+        ago(self.created_at)
+    }
+    pub fn is_open(&self) -> bool {
+        matches!(self.status.as_str(), "Pending" | "Confirmed")
+    }
+    pub fn buyer_line(&self) -> &'static str {
+        match self.status.as_str() {
+            "Pending" => "Waiting for the vault to accept.",
+            "Confirmed" => "Accepted. Pay the vault, then it's marked paid.",
+            "Paid" => "Paid. Thank you!",
+            "Declined" => "The vault declined this order.",
+            "Cancelled" => "Cancelled.",
+            _ => "",
+        }
+    }
+}
+
+fn order_items(c: &Connection, order_id: i64) -> rusqlite::Result<Vec<OrderItem>> {
+    let v = c
+        .prepare("SELECT product_id, title, price, qty, image, handle FROM vault_order_items WHERE order_id=?1 ORDER BY id")?
+        .query_map([order_id], |r| Ok(OrderItem { product_id: r.get(0)?, title: r.get(1)?, price: r.get(2)?, qty: r.get(3)?, image: r.get(4)?, handle: r.get(5)? }))?
+        .collect::<Result<_, _>>()?;
+    Ok(v)
+}
+
+fn map_vorder(c: &Connection, r: &Row) -> rusqlite::Result<VaultOrder> {
+    let id: i64 = r.get(0)?;
+    Ok(VaultOrder { id, buyer_id: r.get(1)?, buyer_name: r.get(2)?, status: r.get(3)?, message: r.get(4)?, paid_via: r.get(5)?, created_at: r.get(6)?, updated_at: r.get(7)?, items: order_items(c, id)? })
+}
+
+const VORDER: &str = "o.id, o.buyer_id, b.name, o.status, o.message, o.paid_via, o.created_at, o.updated_at FROM vault_orders o JOIN members b ON b.id=o.buyer_id";
+
+pub fn vault_order(c: &Connection, id: i64) -> rusqlite::Result<Option<VaultOrder>> {
+    let row = c.query_row(&format!("SELECT {VORDER} WHERE o.id=?1"), [id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(5)?, r.get::<_, i64>(6)?, r.get::<_, i64>(7)?))).optional()?;
+    let Some((id, buyer_id, buyer_name, status, message, paid_via, created_at, updated_at)) = row else { return Ok(None) };
+    Ok(Some(VaultOrder { id, buyer_id, buyer_name, status, message, paid_via, created_at, updated_at, items: order_items(c, id)? }))
+}
+
+fn vault_orders_where(c: &Connection, wh: &str, arg: i64) -> rusqlite::Result<Vec<VaultOrder>> {
+    let ids: Vec<i64> = c.prepare(&format!("SELECT o.id FROM vault_orders o WHERE {wh} ORDER BY (o.status IN ('Pending','Confirmed')) DESC, o.created_at DESC LIMIT 300"))?.query_map([arg], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    let _ = map_vorder;
+    ids.into_iter().filter_map(|id| vault_order(c, id).transpose()).collect()
+}
+
+pub fn vault_orders_of_buyer(c: &Connection, buyer: i64) -> rusqlite::Result<Vec<VaultOrder>> {
+    vault_orders_where(c, "o.buyer_id=?1", buyer)
+}
+
+pub fn vault_orders_all(c: &Connection) -> rusqlite::Result<Vec<VaultOrder>> {
+    vault_orders_where(c, "?1=1", 1)
+}
+
+pub fn vault_orders_open(c: &Connection) -> rusqlite::Result<i64> {
+    c.query_row("SELECT COUNT(*) FROM vault_orders WHERE status IN ('Pending','Confirmed')", [], |r| r.get(0))
+}
+
+/// A buyer orders some of the vault's cards: (product id, how many). Prices and names are taken from the vault, not the browser.
+/// Err(text) says what's wrong; a line the vault can't fill fails the whole order, so nothing is half-ordered.
+pub fn place_vault_order(c: &Connection, buyer: i64, lines: &[(i64, i64)], message: &str) -> rusqlite::Result<Result<i64, String>> {
+    if lines.is_empty() {
+        return Ok(Err("Your cart is empty.".into()));
+    }
+    let open: i64 = c.query_row("SELECT COUNT(*) FROM vault_orders WHERE buyer_id=?1 AND status='Pending'", [buyer], |r| r.get(0))?;
+    if open >= 5 {
+        return Ok(Err("You have five orders waiting already. Let the vault answer those first.".into()));
+    }
+    let mut items = vec![];
+    for (pid, qty) in lines {
+        let qty = (*qty).clamp(1, 99);
+        let Some(p) = crate::db::product_by_id(c, *pid)? else { return Ok(Err("A card in your cart isn't in the vault any more.".into())) };
+        if !p.available || p.price <= 0.0 {
+            return Ok(Err(format!("{} isn't for sale right now.", p.short_title())));
+        }
+        let have = crate::db::copies_for_sale(c, *pid)?;
+        if have < qty {
+            return Ok(Err(format!("Only {have} of {} {} left.", p.short_title(), if have == 1 { "is" } else { "are" })));
+        }
+        items.push(OrderItem { product_id: *pid, title: p.short_title(), price: p.price, qty, image: p.img(360), handle: p.handle.clone() });
+    }
+    let t = now();
+    c.execute("INSERT INTO vault_orders(buyer_id, status, message, created_at, updated_at) VALUES(?1,'Pending',?2,?3,?3)", rusqlite::params![buyer, members::clean_text(message, 300), t])?;
+    let id = c.last_insert_rowid();
+    for i in &items {
+        c.execute("INSERT INTO vault_order_items(order_id, product_id, title, price, qty, image, handle) VALUES(?1,?2,?3,?4,?5,?6,?7)", rusqlite::params![id, i.product_id, i.title, i.price, i.qty, i.image, i.handle])?;
+    }
+    let (name, _) = names(c, buyer, 0)?;
+    let total: f64 = items.iter().map(|i| i.price * i.qty as f64).sum();
+    let admins: Vec<i64> = c.prepare("SELECT id FROM members WHERE role='admin' AND blocked=0")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    for a in admins {
+        notify(c, a, "order", &format!("{name} ordered {} card{} from the vault for {}.", items.iter().map(|i| i.qty).sum::<i64>(), if items.len() == 1 && items[0].qty == 1 { "" } else { "s" }, vault_search::peso(total)), "/admin/orders")?;
+    }
+    Ok(Ok(id))
+}
+
+/// The vault answers an order: "Confirmed" (pay now), "Paid" (done: those copies are sold), "Declined".
+pub fn answer_vault_order(c: &Connection, id: i64, status: &str, paid_via: &str) -> rusqlite::Result<Result<VaultOrder, &'static str>> {
+    let Some(o) = vault_order(c, id)? else { return Ok(Err("No such order.")) };
+    let ok = matches!((o.status.as_str(), status), ("Pending", "Confirmed") | ("Pending", "Declined") | ("Pending", "Paid") | ("Confirmed", "Paid") | ("Confirmed", "Declined"));
+    if !ok {
+        return Ok(Err("That order can't change like that any more."));
+    }
+    let t = now();
+    c.execute("UPDATE vault_orders SET status=?2, updated_at=?3, paid_via=?4 WHERE id=?1", rusqlite::params![id, status, t, members::clean_line(paid_via, 40)])?;
+    match status {
+        "Paid" => {
+            for i in &o.items {
+                crate::db::mark_sold(c, i.product_id, i.qty)?;
+            }
+            notify(c, o.buyer_id, "sale", &format!("The vault marked your order of {} as paid. Enjoy your cards!", o.units()), "/me/orders?tab=buying")?;
+        }
+        "Confirmed" => notify(c, o.buyer_id, "reservation", &format!("The vault accepted your order ({}). Time to pay.", o.total_text()), "/me/orders?tab=buying")?,
+        _ => notify(c, o.buyer_id, "reservation", "The vault declined your order.", "/me/orders?tab=buying")?,
+    }
+    Ok(Ok(vault_order(c, id)?.unwrap_or(o)))
+}
+
+pub fn cancel_vault_order(c: &Connection, buyer: i64, id: i64) -> rusqlite::Result<bool> {
+    let n = c.execute("UPDATE vault_orders SET status='Cancelled', updated_at=?3 WHERE id=?1 AND buyer_id=?2 AND status IN ('Pending','Confirmed')", rusqlite::params![id, buyer, now()])?;
+    Ok(n == 1)
+}
+
+/// How buyers pay the vault: (ways to pay, how to pay), from the admin's settings.
+pub fn vault_pay(c: &Connection) -> rusqlite::Result<(String, String)> {
+    Ok((crate::blocks::setting(c, "vault_pay_methods")?.unwrap_or_default(), crate::blocks::setting(c, "vault_pay_info")?.unwrap_or_default()))
+}
+
+pub fn set_vault_pay(c: &Connection, methods: &str, info: &str) -> rusqlite::Result<()> {
+    let m: Vec<&str> = methods.split(',').map(str::trim).filter(|x| PAY_METHODS.contains(x)).collect();
+    crate::blocks::set_setting(c, "vault_pay_methods", &m.join(","))?;
+    crate::blocks::set_setting(c, "vault_pay_info", &members::clean_text(info, 600))
+}
+
+/// A cart line as the drawer should show it now: title, price, picture, whether it can still be bought.
+#[derive(Clone, Debug, Serialize)]
+pub struct CartLine {
+    pub kind: &'static str,
+    pub id: i64,
+    pub title: String,
+    pub price: f64,
+    pub image: String,
+    pub url: String,
+    pub ok: bool,
+    pub why: String,
+    pub seller_id: i64,
+    pub seller_name: String,
+    pub seller_slug: String,
+    pub left: i64,
+}
+
+pub fn cart_lines(c: &Connection, vault_ids: &[i64], card_ids: &[i64]) -> rusqlite::Result<Vec<CartLine>> {
+    let mut out = vec![];
+    for id in vault_ids.iter().take(60) {
+        match crate::db::product_by_id(c, *id)? {
+            Some(p) => {
+                let left = crate::db::copies_for_sale(c, *id)?;
+                let ok = p.available && p.price > 0.0 && left > 0;
+                out.push(CartLine { kind: "vault", id: *id, title: p.short_title(), price: p.price, image: p.img(360), url: format!("/products/{}", p.handle), ok, why: if ok { String::new() } else { "Not for sale right now".into() }, seller_id: 0, seller_name: String::new(), seller_slug: String::new(), left });
+            }
+            None => out.push(CartLine { kind: "vault", id: *id, title: "A card that's gone".into(), price: 0.0, image: String::new(), url: "/".into(), ok: false, why: "No longer in the vault".into(), seller_id: 0, seller_name: String::new(), seller_slug: String::new(), left: 0 }),
+        }
+    }
+    for id in card_ids.iter().take(60) {
+        let row = c.query_row(&format!("SELECT {}, m.name, m.slug, m.status, m.seller FROM member_cards c JOIN members m ON m.id=c.member_id WHERE c.id=?1", members::CARD_COLS), [id], |r| Ok((members::map_card(r, 0)?, r.get::<_, String>(members::CARD_N)?, r.get::<_, String>(members::CARD_N + 1)?, r.get::<_, String>(members::CARD_N + 2)?, r.get::<_, i64>(members::CARD_N + 3)?))).optional()?;
+        match row {
+            Some((k, name, slug, status, selling)) => {
+                let left = k.qty - held(c, k.id)?;
+                let why = if selling == 0 { "This trainer isn't selling" } else if !k.is_sale() { "Not for sale" } else if status == "Vacation" { "The seller is on vacation" } else if k.status == "Out of stock" { "Out of stock" } else if !k.buyable() && k.status != "Reserved" { "Not for sale right now" } else if left <= 0 { "All copies are spoken for" } else { "" };
+                out.push(CartLine { kind: "card", id: k.id, title: k.title.clone(), price: k.worth(), image: k.image.clone(), url: format!("/trainers/{}/cards/{}", k.member_id, k.id), ok: why.is_empty() && k.worth() > 0.0, why: if why.is_empty() && k.worth() <= 0.0 { "No price yet: make an offer instead".into() } else { why.into() }, seller_id: k.member_id, seller_name: name, seller_slug: slug, left: left.max(0) });
+            }
+            None => out.push(CartLine { kind: "card", id: *id, title: "A card that's gone".into(), price: 0.0, image: String::new(), url: "/stores".into(), ok: false, why: "No longer listed".into(), seller_id: 0, seller_name: String::new(), seller_slug: String::new(), left: 0 }),
+        }
+    }
     Ok(out)
 }
 
@@ -1567,10 +1849,12 @@ mod tests {
 
     fn db() -> Connection {
         let c = Connection::open_in_memory().unwrap();
+        crate::db::register_set_code(&c).unwrap();
         c.execute_batch(crate::db::SCHEMA).unwrap();
         c.execute_batch(crate::blocks::SCHEMA).unwrap();
         c.execute_batch(members::SCHEMA).unwrap();
         members::migrate(&c).unwrap();
+        crate::db::migrate(&c).unwrap();
         c
     }
 
@@ -1580,6 +1864,7 @@ mod tests {
         let b = create(c, "Buyer", "h").unwrap().unwrap();
         let Added::Yes(card) = add_listing(c, s, "tcgdex:base1-58", "Pikachu - 058/102 - Base Set", "58/102", "Base Set", "", "").unwrap() else { panic!() };
         members::set_card_value(c, "tcgdex:base1-58", 100.0, now()).unwrap();
+        set_kind(c, s, card, "sale").unwrap().unwrap();
         update_listing(c, s, card, &Patch { qty: Some(2), ..Default::default() }).unwrap();
         (s, b, card)
     }
@@ -1720,6 +2005,40 @@ mod tests {
         assert_eq!(total, 2);
         assert_eq!(page[0].kind, "announcement");
         assert_eq!(prefs_of(&c, s).unwrap().len(), EVENTS.len());
+    }
+
+    #[test]
+    fn kinds_stock_and_the_cart() {
+        let c = db();
+        let (s, b, card) = seller_with_card(&c);
+        // A seller's existing cards are for sale; a collector's are highlights, and they can't put one up for sale.
+        assert_eq!(members::card(&c, s, card).unwrap().unwrap().kind, "sale", "add_listing by a seller sells");
+        assert!(set_kind(&c, b, card, "sale").unwrap().is_err(), "not their card");
+        let Added::Yes(bc) = add_listing(&c, b, "tcgdex:x-9", "Mew", "9", "Set", "", "").unwrap() else { panic!() };
+        assert_eq!(members::card(&c, b, bc).unwrap().unwrap().kind, "own");
+        assert!(set_kind(&c, b, bc, "sale").unwrap().is_err(), "collectors can't sell");
+        assert_eq!(set_kind(&c, b, bc, "wish").unwrap().unwrap().kind_label(), "Wishlist");
+        // Out of stock: nobody can buy, back in stock they can.
+        update_listing(&c, s, card, &Patch { status: Some("Out of stock".into()), ..Default::default() }).unwrap();
+        assert!(reserve(&c, b, s, card, 1, "").unwrap().is_err());
+        assert_eq!(storefront_listings(&c, s).unwrap().len(), 1, "still shown, marked out of stock");
+        update_listing(&c, s, card, &Patch { status: Some("Active".into()), ..Default::default() }).unwrap();
+        assert!(reserve(&c, b, s, card, 1, "").unwrap().is_ok());
+        // A highlight isn't in the store.
+        set_kind(&c, s, card, "own").unwrap().unwrap();
+        assert!(storefront_listings(&c, s).unwrap().is_empty());
+        // The vault's own cards: an order, accepted, paid; the copies are sold.
+        c.execute("INSERT INTO products(id,handle,title,price,available,created_at) VALUES(1,'pika','Pikachu - 058/102 - Base Set',100,1,'2026-01-01T00:00:00'),(2,'pika-2','Pikachu - 058/102 - Base Set',100,1,'2026-01-01T00:00:00'),(3,'mew','Mew',0,1,'2026-01-01T00:00:00')", []).unwrap();
+        assert!(place_vault_order(&c, b, &[(3, 1)], "").unwrap().is_err(), "no price");
+        assert!(place_vault_order(&c, b, &[(1, 3)], "").unwrap().is_err(), "only two copies");
+        let o = place_vault_order(&c, b, &[(1, 2)], "Meet at SM?").unwrap().unwrap();
+        let lines = cart_lines(&c, &[1, 3], &[card]).unwrap();
+        assert!(lines[0].ok && !lines[1].ok && !lines[2].ok, "{lines:?}");
+        assert_eq!(vault_orders_of_buyer(&c, b).unwrap()[0].total(), 200.0);
+        assert!(answer_vault_order(&c, o, "Paid", "GCash").unwrap().is_ok());
+        assert_eq!(crate::db::copies_for_sale(&c, 1).unwrap(), 0, "both copies sold");
+        assert!(place_vault_order(&c, b, &[(1, 1)], "").unwrap().is_err(), "sold out");
+        assert!(cancel_vault_order(&c, b, o).unwrap() == false, "a paid order can't be cancelled");
     }
 
     #[test]

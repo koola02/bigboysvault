@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Orders · Admin{% endblock %}
+{% block content %}
+<section class="wrap admin wide" id="adminOrders">
+  {% include "admin_tabs.html" %}
+  <h1 class="h1 a-title">Orders</h1>
+  <p class="mc-how">Orders for the vault's own cards, from the cart. Accept one, the buyer sees how to pay you, they pay in their own app, and you mark it <b>Paid</b>: those copies come off the shelf. {{ nav.brand }} never handles the money.</p>
+
+  <details class="me-card st-form ao-pay"{% if pay_info.is_empty() %} open{% endif %}>
+    <summary><b>How buyers pay the vault</b> <small>{% if pay_info.is_empty() %}not written yet: buyers will see nothing after you accept{% else %}shown to a buyer once you accept their order{% endif %}</small></summary>
+    <form id="vaultPay" class="me-fields">
+      <div class="st-methods">{% for m in methods %}<label class="chk"><input type="checkbox" class="sr" name="method" value="{{ m }}"{% if self.has_pay(m) %} checked{% endif %}><span class="chk-box"></span> {{ m }}</label>{% endfor %}</div>
+      <label>How to pay <small>account name and number, meetup spots, your rules</small><textarea name="info" rows="4" maxlength="600" placeholder="GCash: Juan D. · 0917 123 4567&#10;Meetups: SM North, weekends">{{ pay_info }}</textarea></label>
+      <div><button class="btn" type="submit">Save</button></div>
+    </form>
+  </details>
+
+  <h2 class="h2">Orders <small>{{ open }} waiting</small></h2>
+  {% if orders.is_empty() %}<div class="me-empty st-empty"><b>No orders yet.</b><span>When someone adds the vault's cards to their cart and sends the order, it shows here.</span></div>{% endif %}
+  <ul class="st-orders">
+    {% for o in orders %}
+    <li class="st-order ao-order" data-id="{{ o.id }}" data-status="{{ o.status }}">
+      <div class="ao-pics">{% for i in o.items.iter().take(3) %}{% if !i.image.is_empty() %}<img src="{{ i.image }}" width="60" height="84" alt="" loading="lazy">{% endif %}{% endfor %}</div>
+      <div class="st-order-body">
+        <p class="st-order-who"><a href="/trainers/{{ o.buyer_id }}" data-float><b>{{ o.buyer_name }}</b></a> · {{ o.when() }} · <span class="st-status" data-s="{{ o.status }}">{{ o.status }}</span>{% if !o.paid_via.is_empty() %} · {{ o.paid_via }}{% endif %}</p>
+        <ul class="ao-lines">{% for i in o.items %}<li><a href="/products/{{ i.handle }}" data-float>{{ i.title }}</a> <span>×{{ i.qty }} · {{ i.price_text() }} each</span><b>{{ i.line_text() }}</b></li>{% endfor %}</ul>
+        {% if !o.message.is_empty() %}<p class="st-order-msg">“{{ o.message }}”</p>{% endif %}
+        <div class="st-order-acts">
+          <b class="st-total">{{ o.total_text() }}</b>
+          {% if o.status == "Pending" %}<button type="button" class="btn" data-ans="Confirmed">Accept</button><button type="button" class="btn ghost" data-ans="Declined">Decline</button>
+          {% else if o.status == "Confirmed" %}<span class="st-paidvia"><select data-via aria-label="Paid how">{% for m in methods %}<option{% if self.has_pay(m) %} selected{% endif %}>{{ m }}</option>{% endfor %}</select><button type="button" class="btn" data-ans="Paid">Mark paid ✓</button></span><button type="button" class="btn ghost" data-ans="Declined">Cancel</button>{% endif %}
+        </div>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="/static/admin-ui.js?v=9" defer></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const A = window.Admin;
+  document.getElementById('vaultPay').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target, methods = [...f.querySelectorAll('[name=method]:checked')].map((i) => i.value);
+    try { await A.postJSON('/admin/orders/pay', { methods, info: f.info.value }); A.toast('Saved ✓', { kind: 'ok' }); } catch (err) { A.toast(err.message, { kind: 'err' }); }
+  });
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-ans]'); if (!b) return;
+    const li = b.closest('.ao-order'), status = b.dataset.ans;
+    if (status === 'Declined' && !confirm('Decline this order?')) return;
+    b.disabled = true;
+    try { await A.postJSON(`/admin/orders/${li.dataset.id}`, { status, paid_via: li.querySelector('[data-via]')?.value || '' }); A.toast(status === 'Paid' ? 'Marked paid ✓ Those copies are sold.' : 'Saved ✓', { kind: 'ok' }); setTimeout(() => location.reload(), 500); }
+    catch (err) { b.disabled = false; A.toast(err.message, { kind: 'err' }); }
+  });
+});
+</script>
+{% endblock %}

@@ -8,6 +8,7 @@
     <a href="/admin/page" class="{% if tab == "page" %}on{% endif %}">Home page</a>
     <a href="/admin/trainers" class="{% if tab == "trainers" %}on{% endif %}">Trainers{% if nav.pending > 0 %} <span class="seg-n">{{ nav.pending }}</span>{% endif %}</a>
     <a href="/admin/sellers" class="{% if tab == "sellers" %}on{% endif %}">Sellers</a>
+    <a href="/admin/orders" class="{% if tab == "orders" %}on{% endif %}">Orders{% if nav.orders > 0 %} <span class="seg-n">{{ nav.orders }}</span>{% endif %}</a>
   </nav>
   <a class="linkbtn" href="/" target="_blank" rel="noopener">View site ↗</a>
 </div>

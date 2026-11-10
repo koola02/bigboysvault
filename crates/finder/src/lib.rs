@@ -105,6 +105,9 @@ fn note_search(q: &str) {
 fn Tile(card: Arc<Card>) -> impl IntoView {
     let href = format!("/products/{}", card.handle);
     let price = peso(card.price);
+    // The product's number is the tail of its handle; the cart (static/cart.js) wants it on the tile.
+    let pid: i64 = card.handle.rsplit('-').next().and_then(|t| t.parse().ok()).unwrap_or(0);
+    let (buy, buy_title, buy_price, buy_img, buy_url, buy_label) = (pid > 0 && card.price > 0.0 && card.qty > 0, title_and_set(&card.title, &card.set).0, format!("{}", card.price), card.img.clone(), format!("/products/{}", card.handle), format!("Add {} to cart", title_and_set(&card.title, &card.set).0));
     let (title, title2, img, grade, qty) = (title_and_set(&card.title, &card.set).0, card.title.clone(), card.img.clone(), card.grade.clone(), card.qty);
     let (set, cond_c, cond, sym) = (card.set.clone(), vault_search::cond_class(&card.variant), vault_search::tile_condition(&card.variant), card.sym.clone());
     let foil = vault_search::foil_class(&format!("{} {}", card.title, card.variant));
@@ -124,7 +127,7 @@ fn Tile(card: Arc<Card>) -> impl IntoView {
             </div>
             {(!tags.is_empty()).then(|| view! { <div class="card-tags">{tags.into_iter().map(|t| view! { <span class="tag-hl">{t}</span> }).collect_view()}</div> })}
             {(!notes.is_empty()).then(|| view! { <div class="card-note">{notes}</div> })}
-            <div class="card-p">{price}</div>
+            <div class="card-p">{price}{buy.then(|| view! { <span class="cart-mini" role="button" tabindex="0" data-cart-vault=pid data-title=buy_title data-price=buy_price data-image=buy_img data-url=buy_url aria-label=buy_label title="Add to cart">"+"</span> })}</div>
         </a>
     }
 }

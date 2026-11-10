@@ -73,6 +73,8 @@ struct Chrome {
     trials: Vec<String>,
     /// Trainers waiting for the owner's approval (shown on the admin tab).
     pending: i64,
+    /// Orders of the vault's cards waiting for an answer (shown on the admin tab).
+    orders: i64,
     /// The site's public address, for links that leave the page (search engines, link previews).
     site: String,
     /// What search engines and link previews read about this page. A page without a canonical path isn't indexed.
@@ -175,6 +177,7 @@ fn chrome(c: &rusqlite::Connection) -> rusqlite::Result<Chrome> {
         years: copyright_years(),
         menu: vec![],
         pending: members::pending_count(c)?,
+        orders: marcuru_rs::sellers::vault_orders_open(c).unwrap_or(0),
         trials: std::env::var("ORIGIN_TRIALS").unwrap_or_default().split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect(),
         site: site(),
         seo: Seo::default(),
@@ -1102,6 +1105,10 @@ async fn main() {
         .route("/me/notifications/prefs", post(store::save_pref))
         .route("/api/notifications/push", post(store::push_subscribe))
         .route("/api/cards/{id}/save", post(store::save_card))
+        // the cart
+        .route("/cart/lines", get(store::cart_lines))
+        .route("/cart/checkout", post(store::checkout))
+        .route("/me/orders/vault/{id}", post(store::cancel_vault_order))
         // the public storefront
         .route("/stores", get(store::directory))
         .route("/store/{slug}", get(store::storefront))
@@ -1168,6 +1175,9 @@ async fn main() {
         .route("/admin/settings", post(admin::settings))
         .route("/admin/settings/condition-shares", post(admin::settings_condition_shares))
         .route("/admin/sellers", get(store::admin_sellers))
+        .route("/admin/orders", get(store::admin_orders))
+        .route("/admin/orders/pay", post(store::admin_vault_pay))
+        .route("/admin/orders/{id}", post(store::admin_answer_order))
         .route("/admin/sellers/announce", post(store::announce))
         .route("/admin/sellers/reviews/{id}", post(store::admin_review))
         .route("/admin/sellers/flag/{id}/clear", post(store::admin_clear_flag))

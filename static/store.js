@@ -39,9 +39,12 @@
     document.addEventListener('bbv:shares', paintAll);
 
     function apply(tile, card) {
-      Object.assign(tile.dataset, { status: card.status, market: card.market, own: card.value_own, cond: card.cond, qty: card.qty });
+      Object.assign(tile.dataset, { status: card.status, market: card.market, own: card.value_own, cond: card.cond, qty: card.qty, kind: card.kind });
       const st = tile.querySelector('.st-status'); st.textContent = card.status; st.dataset.s = card.status;
       tile.querySelector('[data-status]').value = card.status;
+      tile.querySelectorAll('[data-kind]').forEach((b) => { const on = b.dataset.kind === card.kind; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
+      const sale = tile.querySelector('.ls-sale'); if (sale) sale.hidden = card.kind !== 'sale';
+      const stock = tile.querySelector('[data-stock]'); if (stock) { const off = card.status === 'Out of stock'; stock.classList.toggle('off', off); stock.setAttribute('aria-pressed', String(!off)); }
       tile.querySelector('[data-qty-in]').value = card.qty;
       const pr = tile.querySelector('[data-price]'); pr.value = card.value_own > 0 ? String(Math.round(card.value_own)) : ''; pr.placeholder = card.market > 0 ? card.price_text : 'Price';
       const renew = tile.querySelector('[data-renew]'); renew.textContent = card.status === 'Expired' ? 'Renew for 30 days' : card.expires_at > 0 ? 'Change end date' : 'Set an end date';
@@ -71,6 +74,10 @@
     rows.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('[data-price], [data-qty-in]')) { e.preventDefault(); e.target.blur(); } });
     rows.addEventListener('click', async (e) => {
       const tile = tileOf(e.target); if (!tile) return;
+      const kind = e.target.closest('[data-kind]');
+      if (kind) { if (!kind.classList.contains('on')) patch(tile, { kind: kind.dataset.kind }, kind); return; }
+      const stock = e.target.closest('[data-stock]');
+      if (stock) { patch(tile, { status: stock.classList.contains('off') ? 'Active' : 'Out of stock' }, stock); return; }
       const q = e.target.closest('[data-qty]');
       if (q) { const inp = tile.querySelector('[data-qty-in]'); const v = Math.max(0, (Number(inp.value) || 0) + Number(q.dataset.qty)); inp.value = v; patch(tile, { qty: v }, inp); return; }
       if (e.target.closest('[data-renew]')) { renewSheet([tile]); return; }
@@ -160,6 +167,13 @@
           commit: async () => { await send('/me/listings/bulk', { ids, action: 'delete' }); tiles.forEach((t) => t.remove()); clear(); count(); },
         });
         clear();
+      },
+      kind() {
+        const node = el('div', 'sheet-form'); const inp = el('input', 'sheet-input'); inp.hidden = true;
+        const chips = el('div', 'chips');
+        for (const [v, t] of [['own', 'Highlight'], ['sale', 'For sale'], ['wish', 'Wishlist']]) { const b = el('button', null, t); b.type = 'button'; b.onclick = () => { inp.value = v; chips.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); }; chips.append(b); }
+        node.append(el('p', 'hint show', 'Highlights are shown off, For sale goes in your store, Wishlist is what you’re after.'), chips);
+        A.sheet.open(`What are they · ${plural(sel.size)}`, node, async () => { if (!inp.value) throw new Error('Pick one.'); await bulk({ action: 'edit', kind: inp.value }, (j) => `Updated ${plural(j.n)}`); }, 'Apply');
       },
       clear,
     };
@@ -363,6 +377,13 @@
         off.disabled = true;
         try { await send(`/me/orders/offers/${li.dataset.id}`, { status, counter }); A.toast('Saved ✓', { kind: 'ok' }); location.reload(); }
         catch (err) { off.disabled = false; A.toast(err.message, { kind: 'err' }); }
+      }
+      const vc = e.target.closest('[data-vcancel]');
+      if (vc) {
+        if (!confirm('Cancel this order?')) return;
+        vc.disabled = true;
+        try { await send(`/me/orders/vault/${li.dataset.id}`, { status: 'Cancelled' }); location.reload(); } catch (err) { vc.disabled = false; A.toast(err.message, { kind: 'err' }); }
+        return;
       }
       const ca = e.target.closest('[data-counter-answer]');
       if (ca) {

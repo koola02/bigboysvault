@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Log in · {{ nav.brand }}{% endblock %}
 {% block content %}
-<section class="wrap join login">
+<section class="wrap join login" data-no-login>
   <div class="join-card">
     <img class="join-mark" src="/static/img/logo-sm.png" width="88" height="88" alt="">
     <h1 class="h1">Welcome back</h1>
@@ -9,11 +9,17 @@
     {% if !error.is_empty() %}<p class="join-err" role="alert">{{ error }}</p>{% endif %}
     <form class="join-form" method="post" action="/signin">
       <label>Name<input name="name" value="{{ name }}" autocomplete="username" autocapitalize="off" spellcheck="false" required autofocus></label>
-      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <label>Password<span class="pw-wrap"><input name="password" type="password" autocomplete="current-password" required id="pw"><button type="button" class="pw-eye" id="pwEye" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+      <label class="chk login-remember"><input type="checkbox" class="sr" name="remember" value="1" checked><span class="chk-box"></span> Remember me on this device</label>
       <button class="btn" type="submit">Sign in</button>
     </form>
     <p class="join-switch">New here? <a href="/join">Become a trainer</a> — a profile and a binder, no email needed.</p>
   </div>
 </section>
-<style>.foot .foot-in { display: none; }</style>
+<script>
+(() => {
+  const pw = document.getElementById('pw'), eye = document.getElementById('pwEye');
+  eye.addEventListener('click', () => { const show = pw.type === 'password'; pw.type = show ? 'text' : 'password'; eye.setAttribute('aria-pressed', String(show)); eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password'); eye.classList.toggle('on', show); pw.focus(); });
+})();
+</script>
 {% endblock %}

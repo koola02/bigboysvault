@@ -33,9 +33,11 @@ fn cookie_value(h: &HeaderMap) -> Option<String> {
     h.get(header::COOKIE)?.to_str().ok()?.split(';').find_map(|p| p.trim().strip_prefix(&format!("{COOKIE}=")).map(str::to_owned))
 }
 
+/// `max_age` 0 means "until the browser closes" (no Max-Age); a negative value removes the cookie.
 fn session_cookie(h: &HeaderMap, raw: &str, max_age: i64) -> String {
     let https = h.get("x-forwarded-proto").and_then(|v| v.to_str().ok()) == Some("https");
-    format!("{COOKIE}={raw}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}{}", if https { "; Secure" } else { "" })
+    let age = if max_age == 0 && !raw.is_empty() { String::new() } else { format!("; Max-Age={}", max_age.max(0)) };
+    format!("{COOKIE}={raw}; Path=/; HttpOnly; SameSite=Lax{age}{}", if https { "; Secure" } else { "" })
 }
 
 /// Who is signed in, if anyone.
@@ -131,6 +133,8 @@ struct TrainerPage {
     nav: Chrome,
     t: Member,
     cards: Vec<MemberCard>,
+    wishes: Vec<MemberCard>,
+    selling: Vec<MemberCard>,
     highlight: Option<MemberCard>,
     is_me: bool,
     full: bool,
@@ -143,6 +147,10 @@ struct TrainerPage {
 struct TrainerPart {
     t: Member,
     cards: Vec<MemberCard>,
+    /// Cards they're after.
+    wishes: Vec<MemberCard>,
+    /// Cards in their store (a seller).
+    selling: Vec<MemberCard>,
     highlight: Option<MemberCard>,
     is_me: bool,
     full: bool,
@@ -277,11 +285,19 @@ pub struct JoinForm {
     /// A field people never see. Only bots fill it in.
     #[serde(default)]
     website: String,
+    /// "Remember me": stay signed in for a year instead of until the browser closes.
+    #[serde(default)]
+    remember: String,
 }
 
-async fn signed_in(app: &App, h: &HeaderMap, id: i64) -> Res {
+/// How long a sign-in lasts: a year when "remember me" is ticked, else the browser session (the server keeps it a month).
+fn session_age(remember: &str) -> i64 {
+    if remember == "1" || remember == "on" { 365 * 86_400 } else { 0 }
+}
+
+async fn signed_in(app: &App, h: &HeaderMap, id: i64, age: i64) -> Res {
     let raw = with_db(app, move |c| members::new_session(c, id)).await?;
-    Ok(([(header::SET_COOKIE, session_cookie(h, &raw, members::SESSION_SECS))], Redirect::to("/me")).into_response())
+    Ok(([(header::SET_COOKIE, session_cookie(h, &raw, age))], Redirect::to("/me")).into_response())
 }
 
 pub async fn join(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm>) -> Res {
@@ -314,7 +330,7 @@ pub async fn join(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm>)
         return join_again(&app, StatusCode::CONFLICT, "join", typed, "That trainer name is taken. Please pick another.").await;
     };
     over_limit(&app, format!("joined|{ip}"), u32::MAX);
-    signed_in(&app, &h, id).await
+    signed_in(&app, &h, id, 365 * 86_400).await
 }
 
 pub async fn signin(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm>) -> Res {
@@ -338,7 +354,7 @@ pub async fn signin(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm
         }
         let raw = with_db(&app, move |c| members::new_session(c, id)).await?;
         // Two cookies: AppendHeaders keeps both (a plain array would keep only the last Set-Cookie).
-        return Ok((axum::response::AppendHeaders([(header::SET_COOKIE, session_cookie(&h, &raw, members::SESSION_SECS)), (header::SET_COOKIE, admin::admin_cookie_text(&app, &h))]), Redirect::to("/admin")).into_response());
+        return Ok((axum::response::AppendHeaders([(header::SET_COOKIE, session_cookie(&h, &raw, session_age(&f.remember))), (header::SET_COOKIE, admin::admin_cookie_text(&app, &h))]), Redirect::to("/admin")).into_response());
     }
     let n2 = typed.clone();
     let found = with_db(&app, move |c| members::for_signin(c, &n2)).await?;
@@ -356,7 +372,7 @@ pub async fn signin(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm
         Some(id) if with_db(&app, move |c| members::is_blocked(c, id)).await? => {
             join_again(&app, StatusCode::FORBIDDEN, "signin", typed, "This trainer has been blocked by the vault owner.").await
         }
-        Some(id) => signed_in(&app, &h, id).await,
+        Some(id) => signed_in(&app, &h, id, session_age(&f.remember)).await,
         None => join_again(&app, StatusCode::UNAUTHORIZED, "signin", typed, "That name and password don't match.").await,
     }
 }
@@ -369,7 +385,7 @@ pub async fn signout(State(app): State<App>, h: HeaderMap) -> Res {
         with_db(&app, move |c| members::end_session(c, &raw)).await?;
     }
     // Both cookies go: an admin signed in with name/secret holds the owner's too.
-    Ok((axum::response::AppendHeaders([(header::SET_COOKIE, session_cookie(&h, "", 0)), (header::SET_COOKIE, "marcuru_admin=; Path=/; Max-Age=0".to_string())]), Redirect::to("/")).into_response())
+    Ok((axum::response::AppendHeaders([(header::SET_COOKIE, session_cookie(&h, "", -1)), (header::SET_COOKIE, "marcuru_admin=; Path=/; Max-Age=0".to_string())]), Redirect::to("/")).into_response())
 }
 
 // ---------- public pages ----------
@@ -431,15 +447,29 @@ pub async fn seller_binder(State(app): State<App>, h: HeaderMap, Path((slug, b_s
     }).await?;
     let awards: Vec<Award> = awards.into_iter().filter(|a| !a.reason.is_empty()).collect();
     let highlight = m.highlight.and_then(|h| cards.iter().find(|c| c.id == h).cloned());
+    let (cards, wishes, selling) = split_kinds(cards);
     Ok(html(if q.part.is_some() {
-        render(TrainerPart { t: m, cards, highlight, is_me, full, vouches, awards })?
+        render(TrainerPart { t: m, cards, wishes, selling, highlight, is_me, full, vouches, awards })?
     } else {
-        render(TrainerPage { nav, t: m, cards, highlight, is_me, full, vouches, awards })?
+        render(TrainerPage { nav, t: m, cards, wishes, selling, highlight, is_me, full, vouches, awards })?
     }))
 }
 
 pub(crate) async fn not_found(app: &App) -> Res {
     Ok(crate::not_found(State(app.clone())).await)
+}
+
+/// A binder's cards by what they are: (highlights, wishlist, for sale).
+fn split_kinds(cards: Vec<MemberCard>) -> (Vec<MemberCard>, Vec<MemberCard>, Vec<MemberCard>) {
+    let (mut own, mut wish, mut sale) = (vec![], vec![], vec![]);
+    for c in cards {
+        match c.kind.as_str() {
+            "wish" => wish.push(c),
+            "sale" => sale.push(c),
+            _ => own.push(c),
+        }
+    }
+    (own, wish, sale)
 }
 
 pub async fn trainer(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Query(q): Query<PartQs>) -> Res {
@@ -464,6 +494,7 @@ pub async fn trainer(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, 
     }
     let cards = if full { cards } else { vec![] };
     let highlight = t.highlight.and_then(|h| cards.iter().find(|c| c.id == h).cloned());
+    let (cards, wishes, selling) = split_kinds(cards);
     let mut nav = nav;
     // An approved trainer's page is worth finding: a profile with their picture and binder.
     if t.profile_ok && !t.blocked {
@@ -487,9 +518,9 @@ pub async fn trainer(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, 
         };
     }
     Ok(html(if q.part.is_some() {
-        render(TrainerPart { t, cards, highlight, is_me, full, vouches, awards })?
+        render(TrainerPart { t, cards, wishes, selling, highlight, is_me, full, vouches, awards })?
     } else {
-        render(TrainerPage { nav, t, cards, highlight, is_me, full, vouches, awards })?
+        render(TrainerPage { nav, t, cards, wishes, selling, highlight, is_me, full, vouches, awards })?
     }))
 }
 
@@ -855,6 +886,8 @@ pub struct AddReq {
     image: Option<String>,
     image_large: Option<String>,
     en: Option<String>,
+    /// "own", "sale" or "wish". A seller's card is for sale unless told otherwise; a collector's is a highlight.
+    kind: Option<String>,
 }
 
 pub async fn add_card(State(app): State<App>, h: HeaderMap, Json(req): Json<AddReq>) -> Res {
@@ -893,6 +926,9 @@ pub async fn add_card(State(app): State<App>, h: HeaderMap, Json(req): Json<AddR
         Added::Full => Ok(fail(StatusCode::CONFLICT, "Your binder is full. Take a card out first.")),
         Added::Duplicate => Ok(fail(StatusCode::CONFLICT, "That card is already in your store.")),
         Added::Yes(cid) => {
+            if let Some(k) = req.kind.filter(|k| k == "own" || k == "wish" || k == "sale") {
+                with_db(&app, move |c| marcuru_rs::sellers::set_kind(c, id, cid, &k)).await?.ok();
+            }
             let (market, key) = (market_php(&info), req.id.chars().take(60).collect::<String>());
             let value = with_db(&app, move |c| {
                 let value = if market > 0.0 { market } else { members::vault_price(c, &key)? };
@@ -916,6 +952,7 @@ pub async fn add_card(State(app): State<App>, h: HeaderMap, Json(req): Json<AddR
                 j["suggested"] = json!(suggested);
                 j["share"] = json!(share);
                 j["value_own"] = json!(c.value_own);
+                j["kind"] = json!(c.kind);
             }
             Ok(ok(json!({ "ok": true, "worth": vault_search::peso(worth), "card": j })))
         }
@@ -924,11 +961,13 @@ pub async fn add_card(State(app): State<App>, h: HeaderMap, Json(req): Json<AddR
 
 #[derive(Deserialize)]
 pub struct CardAction {
-    /// "remove", "highlight", "condition", "value" or "binder"
+    /// "remove", "highlight", "condition", "value", "binder" or "kind"
     action: String,
     cond: Option<String>,
     value: Option<f64>,
     binder_id: Option<i64>,
+    /// For "kind": "own" (a highlight), "sale" or "wish".
+    kind: Option<String>,
 }
 
 pub async fn card_action(State(app): State<App>, h: HeaderMap, Path(cid): Path<i64>, Json(req): Json<CardAction>) -> Res {
@@ -969,6 +1008,12 @@ pub async fn card_action(State(app): State<App>, h: HeaderMap, Path(cid): Path<i
                 return Ok(fail(StatusCode::NOT_FOUND, "Could not move card to that binder."));
             }
         }
+        "kind" => {
+            let kind = req.kind.unwrap_or_default();
+            if let Err(e) = with_db(&app, move |c| marcuru_rs::sellers::set_kind(c, id, cid, &kind)).await? {
+                return Ok(fail(StatusCode::BAD_REQUEST, e));
+            }
+        }
         _ => return Ok(fail(StatusCode::BAD_REQUEST, "Unknown action.")),
     }
     if m.profile_ok {
@@ -987,6 +1032,8 @@ pub async fn card_action(State(app): State<App>, h: HeaderMap, Path(cid): Path<i
         out["cond"] = json!(c.cond);
         out["own_photo"] = json!(c.own_photo());
         out["binder_id"] = json!(c.binder_id);
+        out["kind"] = json!(c.kind);
+        out["status"] = json!(c.status);
     }
     Ok(ok(out))
 }

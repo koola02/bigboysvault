@@ -43,8 +43,21 @@
   </div>
   {% endif %}
   {% if full %}
-  <h2 class="h2 tp-binder-h">{{ t.name }}'s binder <small>{{ t.cards }} of 50</small></h2>
-  {% if cards.is_empty() %}<p class="empty">No cards in this binder yet.</p>{% else %}
+  {% if !selling.is_empty() && t.seller %}
+  <h2 class="h2 tp-binder-h">For sale <small>{{ selling.len() }} in <a href="{{ t.store_url() }}">the store</a></small></h2>
+  <div class="grid tp-grid">
+    {% for c in selling %}
+    <a class="card" href="/trainers/{{ t.id }}/cards/{{ c.id }}" data-float data-c="{{ c.cond_class() }}">
+      <div class="card-img">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="{{ c.title }}">{% endif %}{% if c.status == "Out of stock" %}<span class="grade">Out of stock</span>{% endif %}</div>
+      <div class="card-t">{{ c.title }}{% if !c.number.is_empty() %} - {{ c.number }}{% endif %}</div>
+      <div class="card-m">{% if !c.card_set.is_empty() %}<span class="card-set">{{ c.card_set }}</span>{% endif %}<span class="card-cond" data-c="{{ c.cond_class() }}">{{ c.cond }}</span></div>
+      <div class="card-p">{% if c.has_price() %}{{ c.price_text() }}{% else %}Ask{% endif %}{% if c.buyable() && c.has_price() %}<span class="cart-mini" role="button" tabindex="0" data-cart-card="{{ c.id }}" data-title="{{ c.title }}" data-price="{{ c.worth() }}" data-image="{{ c.image }}" data-url="/trainers/{{ t.id }}/cards/{{ c.id }}" data-seller="{{ t.store_title() }}" data-seller-slug="{{ t.slug }}" aria-label="Add {{ c.title }} to cart" title="Add to cart">+</span>{% endif %}</div>
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <h2 class="h2 tp-binder-h">{{ t.name }}'s highlights <small>{{ cards.len() }}</small></h2>
+  {% if cards.is_empty() %}<p class="empty">No highlights yet.</p>{% else %}
   <div class="grid tp-grid">
     {% for c in cards %}
     <a class="card" href="/trainers/{{ t.id }}/cards/{{ c.id }}" data-float data-c="{{ c.cond_class() }}">
@@ -52,6 +65,18 @@
       <div class="card-t">{{ c.title }}{% if !c.number.is_empty() %} - {{ c.number }}{% endif %}</div>
       <div class="card-m">{% if !c.card_set.is_empty() %}<span class="card-set">{% if !c.symbol().is_empty() %}<img class="card-sym" src="{{ c.symbol() }}" width="16" height="16" loading="lazy" decoding="async" alt="">{% endif %}{{ c.card_set }}</span>{% endif %}<span class="card-cond" data-c="{{ c.cond_class() }}">{{ c.cond }}</span></div>
       {% if c.worth() > 0.0 %}<div class="card-p"><span class="worth">{{ c.worth_text() }}</span></div>{% endif %}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if !wishes.is_empty() %}
+  <h2 class="h2 tp-binder-h">Wishlist <small>{{ wishes.len() }} card{% if wishes.len() != 1 %}s{% endif %} {{ t.name }} is after</small></h2>
+  <div class="grid tp-grid tp-wish">
+    {% for c in wishes %}
+    <a class="card" href="/trainers/{{ t.id }}/cards/{{ c.id }}" data-float data-c="{{ c.cond_class() }}">
+      <div class="card-img">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="{{ c.title }}">{% endif %}<span class="grade wish">Wanted</span></div>
+      <div class="card-t">{{ c.title }}{% if !c.number.is_empty() %} - {{ c.number }}{% endif %}</div>
+      <div class="card-m">{% if !c.card_set.is_empty() %}<span class="card-set">{{ c.card_set }}</span>{% endif %}</div>
     </a>
     {% endfor %}
   </div>

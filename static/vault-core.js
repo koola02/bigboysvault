@@ -261,6 +261,7 @@
       delete root.dataset.me;
       if (chip) chip.hidden = true;
     }
+    const login = document.getElementById('barLogin'); if (login) login.hidden = !!root.dataset.me;
   };
   // Last visit's answer first (no flash), then today's.
   let last = null;

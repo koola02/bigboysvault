@@ -30,6 +30,15 @@ prices). It is only a guide: the price is always the seller's (or the owner's), 
 Graded and sealed cards get no SRP, only the raw Near Mint price for reference. Sellers' market prices refresh
 nightly; the owner's cards remember theirs in `products.market_php`.
 
+## What a card is: Highlight, For sale, Wishlist
+
+Every card in a trainer's binder has a `kind`: `own` (a Highlight, shown off on the trainer page), `sale` (in the
+store, with stock and a price; only a seller can pick this) or `wish` (a card the trainer is after). A seller's
+`Add cards` puts cards straight on sale; `/me` adds Highlights. Change it per card with `POST /me/cards/{id}`
+`{ action: "kind", kind }` or `POST /me/listings/{id}` `{ kind }`, or many at once through the listings bulk
+sheet (`{ action: "edit", kind }`). A seller's listings page has an **In stock / Out of stock** switch: it flips the
+status between `Active` and `Out of stock` without touching the copy count.
+
 ## Listing statuses
 
 `Active` (on sale) → `Reserved` (every copy spoken for by open reservations) → `Sold` (stock is 0). Also `Hidden`
@@ -89,10 +98,29 @@ The same card can be listed more than once (say a Near Mint and a Lightly Played
 Reservations nobody answers, and accepted ones nobody pays, expire after 3 days (`sellers::RESERVATION_DAYS`)
 and free the copies again.
 
+## The cart
+
+Anyone can add a card to their cart from the vault (product page, browse tiles, home rails) or from a seller's
+store or trainer page. The cart lives in the browser (`localStorage` `bbv:cart`, `static/cart.js`) until it is sent.
+There is no checkout and no payment: sending the cart places orders, and the seller or the vault answers them.
+
+| Route | What |
+|---|---|
+| `GET /cart/lines?v=1,2&c=3` | Fresh title, price, picture and availability for vault products (`v`) and sellers' cards (`c`) |
+| `POST /cart/checkout` | `{ items: [{ kind: "vault" \| "card", id, qty }], message }` → `{ placed, failed }`. The vault's lines become one `vault_orders` row; each seller's card becomes a reservation (`sellers::reserve`). 401 when signed out. |
+| `GET /me/orders?tab=buying` | The buyer's reservations, offers and vault orders, with how to pay once accepted |
+| `POST /me/orders/vault/{id}` | `{ status: "Cancelled" }` while the order is still open |
+
+Vault orders go `Pending` → `Confirmed` (the buyer now sees how to pay the vault) → `Paid` (the copies come off the
+shelf through `db::mark_sold`), or `Declined` / `Cancelled`. Admin trainers get a notification (event `order`).
+
 ## Admin
 
 | Route | What |
 |---|---|
+| `GET /admin/orders` | Orders for the vault's own cards, pending first; the "How buyers pay the vault" form |
+| `POST /admin/orders/{id}` | `{ status: "Confirmed" \| "Paid" \| "Declined", paid_via }` |
+| `POST /admin/orders/pay` | `{ methods: [], info }` → settings `vault_pay_methods`, `vault_pay_info` |
 | `GET /admin/sellers` | Announcement form, custom cards flagged for checking, latest reviews, stores on sale |
 | `POST /admin/sellers/announce` | `{ message, link }` to every trainer (owner and full admins) |
 | `POST /admin/sellers/reviews/{id}` | `{ hidden }` |

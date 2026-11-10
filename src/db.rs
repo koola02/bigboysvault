@@ -342,7 +342,7 @@ pub fn open(path: &str) -> rusqlite::Result<Connection> {
 }
 
 /// Add columns introduced after the first release (safe to run on every open).
-fn migrate(c: &Connection) -> rusqlite::Result<()> {
+pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
     let mut st = c.prepare("PRAGMA table_info(products)")?;
     let have: Vec<String> = st.query_map([], |r| r.get::<_, String>(1))?.collect::<Result<_, _>>()?;
     for col in ["card_no", "card_set", "api_id", "finish", "price_updated", "rarity", "solo", "price_src"] {
@@ -1079,6 +1079,23 @@ pub fn stale_market(c: &Connection, limit: i64, older_than: i64) -> rusqlite::Re
     let mut st = c.prepare("SELECT api_id, MIN(finish) FROM products WHERE api_id<>'' AND market_at<?2 GROUP BY api_id ORDER BY MIN(market_at), api_id LIMIT ?1")?;
     let v = st.query_map(rusqlite::params![limit, older_than], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
     Ok(v)
+}
+
+/// Copies of this card the vault still has for sale (same card, condition, finish and price).
+pub fn copies_for_sale(c: &Connection, id: i64) -> rusqlite::Result<i64> {
+    c.query_row(
+        &format!("SELECT COUNT(*) FROM products p WHERE p.available=1 AND {DUP_KEY} = (SELECT {DUP_KEY} FROM products p WHERE p.id=?1)"),
+        [id],
+        |r| r.get(0),
+    )
+}
+
+/// `n` copies of this card are sold: they stop being for sale (the card itself stays, as the vault's record of it).
+pub fn mark_sold(c: &Connection, id: i64, n: i64) -> rusqlite::Result<usize> {
+    c.execute(
+        &format!("UPDATE products SET available=0 WHERE id IN (SELECT p.id FROM products p WHERE p.available=1 AND {DUP_KEY} = (SELECT {DUP_KEY} FROM products p WHERE p.id=?1) ORDER BY (p.id=?1) DESC, p.id LIMIT ?2)"),
+        rusqlite::params![id, n.max(0)],
+    )
 }
 
 /// Quick edits from My cards: price, description, condition. They apply to every copy of the card, like the − and ＋ buttons. A price typed by hand isn't a market price any more.

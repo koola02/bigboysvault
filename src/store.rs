@@ -12,6 +12,7 @@ use axum::{
 use marcuru_rs::members::{self, Member, MemberBinder, MemberCard, Notification};
 use marcuru_rs::sellers::{self, Dashboard, ListFilter, Order, Orders, Patch, Pref, Review, Sale, StoreStats};
 use serde::Deserialize;
+use rusqlite::OptionalExtension;
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::path::PathBuf;
@@ -107,6 +108,8 @@ pub struct ListQs {
     binder: Option<i64>,
     #[serde(default)]
     sort: String,
+    #[serde(default)]
+    kind: String,
     /// Open this listing's editor straight away (links from notifications).
     id: Option<i64>,
 }
@@ -120,7 +123,7 @@ struct ListingsPage {
     binders: Vec<MemberBinder>,
     f: ListFilter,
     conditions: [&'static str; 10],
-    statuses: [&'static str; 5],
+    statuses: [&'static str; 6],
     max: i64,
     total: i64,
     focus: i64,
@@ -132,7 +135,7 @@ pub async fn listings(State(app): State<App>, h: HeaderMap, Query(q): Query<List
         Err(r) => return Ok(r),
     };
     let id = m.id;
-    let f = ListFilter { q: q.q.chars().take(60).collect(), status: q.status, binder: q.binder, sort: q.sort };
+    let f = ListFilter { q: q.q.chars().take(60).collect(), status: q.status, binder: q.binder, sort: q.sort, kind: q.kind };
     let f2 = f.clone();
     let (nav, p, cards, binders, max, total) = with_db(&app, move |c| {
         sellers::expire_due(c)?;
@@ -150,7 +153,7 @@ fn card_json(c: &MemberCard) -> serde_json::Value {
         "qty": c.qty, "sold": c.sold, "status": c.status, "expires_at": c.expires_at, "expires_text": c.expires_text(), "binder_id": c.binder_id,
         "market": c.value, "value_own": c.value_own, "price": c.worth(), "price_text": c.price_text(), "own_photo": c.own_photo(), "is_custom": c.is_custom,
         "is_graded": c.is_graded(), "is_sealed": c.is_sealed(), "suggested": c.suggested_price(), "share": c.condition_share(), "views": c.view_n, "saves": c.save_n,
-        "flagged": c.flagged, "when": c.when()
+        "flagged": c.flagged, "when": c.when(), "kind": c.kind
     })
 }
 
@@ -171,6 +174,8 @@ pub struct PatchReq {
     set: Option<String>,
     number: Option<String>,
     flag: Option<bool>,
+    /// "own", "sale" or "wish".
+    kind: Option<String>,
 }
 
 fn double_option<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<Option<i64>>, D::Error> {
@@ -204,15 +209,23 @@ pub async fn edit_listing(State(app): State<App>, h: HeaderMap, Path(id): Path<i
         return Ok(r);
     }
     let mid = m.id;
-    let (patch, flag) = (req.patch(), req.flag);
+    let (patch, flag, kind) = (req.patch(), req.flag, req.kind.clone());
     let card = with_db(&app, move |c| {
         if let Some(f) = flag {
             sellers::flag_card(c, mid, id, f)?;
         }
-        sellers::update_listing(c, mid, id, &patch)
+        if let Some(k) = kind {
+            if let Err(e) = sellers::set_kind(c, mid, id, &k)? {
+                return Ok(Err(e));
+            }
+        }
+        Ok(sellers::update_listing(c, mid, id, &patch)?.ok_or("That card isn't in your store."))
     })
     .await?;
-    let Some(card) = card else { return Ok(fail(StatusCode::NOT_FOUND, "That card isn't in your store.")) };
+    let card = match card {
+        Ok(c) => c,
+        Err(e) => return Ok(fail(StatusCode::BAD_REQUEST, e)),
+    };
     if m.profile_ok {
         app.forget();
     }
@@ -241,7 +254,17 @@ pub async fn bulk_listings(State(app): State<App>, h: HeaderMap, Json(req): Json
     if req.ids.is_empty() {
         return Ok(fail(StatusCode::BAD_REQUEST, "Pick some cards first."));
     }
-    let (mid, ids, action, percent, patch) = (m.id, req.ids, req.action, req.percent.unwrap_or(0.0), req.fields.patch());
+    let (mid, ids, action, percent, patch, kind) = (m.id, req.ids, req.action, req.percent.unwrap_or(0.0), req.fields.patch(), req.fields.kind.clone());
+    if let Some(k) = kind.filter(|_| action == "edit") {
+        let ids2 = ids.clone();
+        with_db(&app, move |c| {
+            for id in ids2.iter().take(500) {
+                sellers::set_kind(c, mid, *id, &k)?.ok();
+            }
+            Ok(())
+        })
+        .await?;
+    }
     let n = match action.as_str() {
         "edit" => with_db(&app, move |c| sellers::bulk_update(c, mid, &ids, &patch)).await?,
         "reprice" => {
@@ -425,6 +448,10 @@ struct OrdersPage {
     /// (reservation id, ways to pay, how to pay) for the buyer's accepted reservations.
     pay: Vec<(i64, String, String)>,
     methods: [&'static str; 6],
+    /// What this trainer ordered from the vault itself.
+    vault_orders: Vec<sellers::VaultOrder>,
+    /// (ways to pay, how to pay) the vault.
+    vault_pay: (String, String),
 }
 
 pub async fn orders(State(app): State<App>, h: HeaderMap, Query(q): Query<TabQs>) -> Res {
@@ -449,7 +476,8 @@ pub async fn orders(State(app): State<App>, h: HeaderMap, Query(q): Query<TabQs>
         Ok((chrome(c)?, panel(c, m, "orders")?, sellers::orders_for_seller(c, id)?, buying, sellers::sales_of(c, id, 100)?, sellers::purchases_of(c, id, 100)?, pay))
     })
     .await?;
-    Ok(html(render(OrdersPage { nav, p, tab, selling, buying, sales, purchases, pay, methods: sellers::PAY_METHODS })?))
+    let (vault_orders, vault_pay) = with_db(&app, move |c| Ok((sellers::vault_orders_of_buyer(c, id)?, sellers::vault_pay(c)?))).await?;
+    Ok(html(render(OrdersPage { nav, p, tab, selling, buying, sales, purchases, pay, methods: sellers::PAY_METHODS, vault_orders, vault_pay })?))
 }
 
 fn order_json(o: &Order) -> serde_json::Value {
@@ -1032,6 +1060,171 @@ pub async fn save_card(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>
     let me = m.id;
     let saved = with_db(&app, move |c| sellers::toggle_save(c, me, id)).await?;
     Ok(ok(json!({ "ok": true, "saved": saved })))
+}
+
+// ---------- the cart ----------
+
+#[derive(Deserialize)]
+pub struct CartQs {
+    #[serde(default)]
+    v: String,
+    #[serde(default)]
+    c: String,
+}
+
+fn ids_of(s: &str) -> Vec<i64> {
+    s.split(',').filter_map(|x| x.trim().parse().ok()).take(60).collect()
+}
+
+/// `GET /cart/lines?v=1,2&c=3`: what's in the cart as it stands now (today's prices, still for sale?).
+pub async fn cart_lines(State(app): State<App>, Query(q): Query<CartQs>) -> Res {
+    let (v, c) = (ids_of(&q.v), ids_of(&q.c));
+    let lines = with_db(&app, move |db| sellers::cart_lines(db, &v, &c)).await?;
+    Ok(ok(json!({ "ok": true, "lines": lines })))
+}
+
+#[derive(Deserialize)]
+pub struct CartItem {
+    kind: String,
+    id: i64,
+    #[serde(default = "one")]
+    qty: i64,
+}
+
+#[derive(Deserialize)]
+pub struct CheckoutReq {
+    items: Vec<CartItem>,
+    #[serde(default)]
+    message: String,
+}
+
+/// `POST /cart/checkout`: the vault's cards become one order for the admins; each seller's cards become reservations.
+/// Lines that can't be placed come back with why, and the rest go through.
+pub async fn checkout(State(app): State<App>, h: HeaderMap, Json(req): Json<CheckoutReq>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    if over_limit(&app, format!("buy|{}", m.id), 60) {
+        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of orders in a short time. Please wait a few minutes."));
+    }
+    if req.items.is_empty() {
+        return Ok(fail(StatusCode::BAD_REQUEST, "Your cart is empty."));
+    }
+    let me = m.id;
+    let message = req.message.clone();
+    let vault: Vec<(i64, i64)> = req.items.iter().filter(|i| i.kind == "vault").map(|i| (i.id, i.qty.clamp(1, 99))).collect();
+    let cards: Vec<(i64, i64)> = req.items.iter().filter(|i| i.kind == "card").map(|i| (i.id, i.qty.clamp(1, 99))).collect();
+    let mut placed: Vec<serde_json::Value> = vec![];
+    let mut failed: Vec<serde_json::Value> = vec![];
+    if !vault.is_empty() {
+        let (v2, msg) = (vault.clone(), message.clone());
+        match with_db(&app, move |c| sellers::place_vault_order(c, me, &v2, &msg)).await? {
+            Ok(id) => placed.push(json!({ "kind": "vault", "order": id, "ids": vault.iter().map(|x| x.0).collect::<Vec<_>>() })),
+            Err(e) => failed.push(json!({ "kind": "vault", "ids": vault.iter().map(|x| x.0).collect::<Vec<_>>(), "error": e })),
+        }
+    }
+    for (cid, qty) in cards {
+        let msg = message.clone();
+        let seller: Option<i64> = with_db(&app, move |c| c.query_row("SELECT member_id FROM member_cards WHERE id=?1", [cid], |r| r.get(0)).optional()).await?;
+        let Some(sid) = seller else {
+            failed.push(json!({ "kind": "card", "id": cid, "error": "No longer listed" }));
+            continue;
+        };
+        match with_db(&app, move |c| sellers::reserve(c, me, sid, cid, qty, &msg)).await? {
+            Ok(id) => placed.push(json!({ "kind": "card", "id": cid, "reservation": id })),
+            Err(e) => failed.push(json!({ "kind": "card", "id": cid, "error": e })),
+        }
+    }
+    if !placed.is_empty() {
+        app.forget();
+    }
+    Ok(ok(json!({ "ok": true, "placed": placed, "failed": failed })))
+}
+
+#[derive(Deserialize)]
+pub struct CancelReq {
+    #[serde(default)]
+    status: String,
+}
+
+/// `POST /me/orders/vault/{id}`: the buyer cancels an order of the vault's cards.
+pub async fn cancel_vault_order(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Json(req): Json<CancelReq>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    if req.status != "Cancelled" {
+        return Ok(fail(StatusCode::BAD_REQUEST, "Only cancelling is yours to do here."));
+    }
+    let me = m.id;
+    let done = with_db(&app, move |c| sellers::cancel_vault_order(c, me, id)).await?;
+    Ok(if done { ok(json!({ "ok": true })) } else { fail(StatusCode::BAD_REQUEST, "That order can't be cancelled any more.") })
+}
+
+#[derive(Template)]
+#[template(path = "admin_orders.html")]
+struct AdminOrdersPage {
+    nav: Chrome,
+    tab: &'static str,
+    orders: Vec<sellers::VaultOrder>,
+    open: i64,
+    methods: [&'static str; 6],
+    pay_methods: String,
+    pay_info: String,
+}
+
+impl AdminOrdersPage {
+    fn has_pay(&self, m: &str) -> bool {
+        self.pay_methods.split(',').any(|x| x.trim() == m)
+    }
+}
+
+/// `GET /admin/orders`: orders for the vault's own cards, and how buyers pay the vault.
+pub async fn admin_orders(State(app): State<App>, h: HeaderMap) -> Res {
+    if !admin::authed(&app, &h) {
+        return Ok(Redirect::to("/login").into_response());
+    }
+    let (nav, orders, open, (pay_methods, pay_info)) = with_db(&app, |c| Ok((chrome(c)?, sellers::vault_orders_all(c)?, sellers::vault_orders_open(c)?, sellers::vault_pay(c)?))).await?;
+    Ok(html(render(AdminOrdersPage { nav, tab: "orders", orders, open, methods: sellers::PAY_METHODS, pay_methods, pay_info })?))
+}
+
+#[derive(Deserialize)]
+pub struct VaultAnswer {
+    status: String,
+    #[serde(default)]
+    paid_via: String,
+}
+
+pub async fn admin_answer_order(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Json(req): Json<VaultAnswer>) -> Res {
+    if !admin::authed(&app, &h) {
+        return Ok(fail(StatusCode::FORBIDDEN, "Only the vault's admins answer orders."));
+    }
+    let (status, via) = (req.status, req.paid_via);
+    match with_db(&app, move |c| sellers::answer_vault_order(c, id, &status, &via)).await? {
+        Ok(o) => {
+            app.forget();
+            Ok(ok(json!({ "ok": true, "status": o.status })))
+        }
+        Err(e) => Ok(fail(StatusCode::BAD_REQUEST, e)),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct VaultPayReq {
+    #[serde(default)]
+    methods: Vec<String>,
+    #[serde(default)]
+    info: String,
+}
+
+pub async fn admin_vault_pay(State(app): State<App>, h: HeaderMap, Json(req): Json<VaultPayReq>) -> Res {
+    if !admin::authed(&app, &h) {
+        return Ok(fail(StatusCode::FORBIDDEN, "Only the vault owner and admins can change this."));
+    }
+    let (methods, info) = (req.methods.join(","), req.info);
+    with_db(&app, move |c| sellers::set_vault_pay(c, &methods, &info)).await?;
+    Ok(ok(json!({ "ok": true })))
 }
 
 // ---------- admin ----------

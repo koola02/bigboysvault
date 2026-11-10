@@ -67,10 +67,10 @@
   document.querySelectorAll('[data-close]').forEach((n) => n.addEventListener('click', () => close(n.closest('.sheet'))));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.sheet:not([hidden])').forEach(close); });
   root.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-reserve], [data-offer]'); if (!b) return;
+    const b = e.target.closest('[data-offer]'); if (!b) return;
     if (!me) return signIn();
     const card = b.closest('.sf-card');
-    mode = b.hasAttribute('data-reserve') ? 'reserve' : 'offer'; cardId = Number(card.dataset.id);
+    mode = 'offer'; cardId = Number(card.dataset.id);
     $('buyTitle').textContent = mode === 'reserve' ? 'Reserve this card' : 'Make an offer';
     $('buyImg').src = card.querySelector('img')?.src || ''; $('buyName').textContent = card.dataset.title;
     $('buyMeta').textContent = `${card.dataset.cond} · ${Number(card.dataset.price) > 0 ? '₱' + Math.round(card.dataset.price).toLocaleString('en-US') : 'no price yet'} · ${card.dataset.qty} available`;

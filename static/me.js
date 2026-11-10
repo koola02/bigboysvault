@@ -115,6 +115,9 @@
     pic.append(star, x);
     const t = document.createElement('b'); t.className = 'me-c-t'; t.textContent = c.title || '';
     const s = document.createElement('small'); s.className = 'me-c-s'; s.textContent = [c.set, c.number].filter(Boolean).join(' · ');
+    const kind = document.createElement('select'); kind.dataset.nodrag = ''; kind.dataset.kind = ''; kind.setAttribute('aria-label', `What ${c.title || ''} is`);
+    const kinds = [['own', 'Highlight'], ...(root.dataset.seller === 'true' ? [['sale', 'For sale']] : []), ['wish', 'Wishlist']];
+    kinds.forEach(([v, t]) => kind.append(new Option(t, v, v === (c.kind || 'own'), v === (c.kind || 'own'))));
     const sel = document.createElement('select'); sel.dataset.nodrag = ''; sel.dataset.cond = ''; sel.setAttribute('aria-label', `Condition of ${c.title || ''}`);
     conds.forEach((o) => sel.append(new Option(o, o, o === c.cond, o === c.cond)));
     const val = document.createElement('label'); val.className = 'me-val'; val.dataset.nodrag = '';
@@ -123,7 +126,7 @@
     if (c.value_own > 0) vi.value = Math.round(c.value_own);
     val.append(vl, vi);
     const sugP = document.createElement('p'); sugP.className = 'me-c-sug';
-    li.append(pic, t, s, sel, val, sugP);
+    li.append(pic, t, s, kind, sel, val, sugP);
     paintSug(li, c);
     return li;
   }
@@ -148,6 +151,13 @@
         worth(j); if (j.card_market && j.card_market !== '₱0') box.placeholder = j.card_market;
         paintSug(box.closest('.me-c'), j); say('Saved ✓');
       } catch (err) { say(err.message, true); }
+      return;
+    }
+    const kindSel = e.target.closest('[data-kind]');
+    if (kindSel) {
+      const li = kindSel.closest('.me-c');
+      try { const j = await send(`/me/cards/${li.dataset.id}`, { action: 'kind', kind: kindSel.value }); worth(j); say(kindSel.value === 'sale' ? 'For sale ✓ Set its stock and price in My store › Listings.' : 'Saved ✓'); }
+      catch (err) { say(err.message, true); }
       return;
     }
     const sel = e.target.closest('[data-cond]'); if (!sel) return;

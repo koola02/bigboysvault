@@ -81,8 +81,23 @@
 
   {% else %}
   <h2 class="h2">Cards I'm buying</h2>
-  {% if buying.reservations.is_empty() && buying.offers.is_empty() %}<div class="me-empty st-empty"><b>Nothing yet.</b><span>Find a card in a <a href="/stores">store</a> and tap Reserve or Make an offer.</span></div>{% endif %}
+  {% if buying.reservations.is_empty() && buying.offers.is_empty() && vault_orders.is_empty() %}<div class="me-empty st-empty"><b>Nothing yet.</b><span>Add cards to your cart from the vault or a <a href="/stores">store</a> and send the order.</span></div>{% endif %}
   <ul class="st-orders">
+    {% for o in vault_orders %}
+    <li class="st-order ao-order" data-kind="vault" data-id="{{ o.id }}" data-status="{{ o.status }}">
+      <div class="ao-pics">{% for i in o.items.iter().take(3) %}{% if !i.image.is_empty() %}<img src="{{ i.image }}" width="60" height="84" alt="" loading="lazy">{% endif %}{% endfor %}</div>
+      <div class="st-order-body">
+        <b>From {{ nav.brand }}</b> <small>{{ o.units() }} card{% if o.units() != 1 %}s{% endif %} · <b>{{ o.total_text() }}</b></small>
+        <ul class="ao-lines">{% for i in o.items %}<li><a href="/products/{{ i.handle }}" data-float>{{ i.title }}</a> <span>×{{ i.qty }} · {{ i.price_text() }} each</span><b>{{ i.line_text() }}</b></li>{% endfor %}</ul>
+        <p class="st-order-who">{{ o.when() }} · <span class="st-status" data-s="{{ o.status }}">{{ o.status }}</span></p>
+        <p class="st-line">{{ o.buyer_line() }}</p>
+        {% if o.status == "Confirmed" %}
+        <div class="st-pay"><b>How to pay {{ nav.brand }}</b>{% if !vault_pay.0.is_empty() %}<span class="st-pay-m">{{ vault_pay.0 }}</span>{% endif %}<p>{% if vault_pay.1.is_empty() %}The vault hasn't written pay details yet. Ask in the chat.{% else %}{{ vault_pay.1 }}{% endif %}</p><small>Pay in your own app, then wait for the vault to mark it paid.</small></div>
+        {% endif %}
+        {% if o.is_open() %}<div class="st-order-acts"><button type="button" class="btn ghost" data-vcancel>Cancel</button><a class="linkbtn inline" href="/chat">Ask the vault</a></div>{% endif %}
+      </div>
+    </li>
+    {% endfor %}
     {% for o in buying.reservations %}
     <li class="st-order" data-kind="reservation" data-id="{{ o.id }}" data-status="{{ o.status }}">
       <a class="st-order-pic" href="/trainers/{{ o.seller_id }}/cards/{{ o.card_id }}" data-float>{% if !o.image.is_empty() %}<img src="{{ o.image }}" width="60" height="84" alt="" loading="lazy">{% endif %}</a>

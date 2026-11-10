@@ -59,7 +59,7 @@
   <ul class="sf-grid" id="sfGrid">
     {% for (c, is_saved) in cards %}
     <li class="sf-card" data-id="{{ c.id }}" data-title="{{ c.title }}" data-set="{{ c.card_set }}" data-number="{{ c.number }}" data-cond="{{ c.cond }}" data-price="{{ c.worth() }}" data-status="{{ c.status }}" data-qty="{{ c.qty }}" data-pos="{{ loop.index }}"{% if c.is_graded() %} data-graded{% endif %}{% if *is_saved %} data-saved{% endif %}>
-      <a class="sf-pic" href="/trainers/{{ m.id }}/cards/{{ c.id }}" data-float aria-label="See {{ c.title }}">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="">{% endif %}{% if c.status == "Reserved" %}<span class="sf-flag">Reserved</span>{% else if c.status == "Sold" %}<span class="sf-flag sold">Sold</span>{% else if c.qty > 1 %}<span class="sf-flag sf-qty">×{{ c.qty }}</span>{% endif %}</a>
+      <a class="sf-pic" href="/trainers/{{ m.id }}/cards/{{ c.id }}" data-float aria-label="See {{ c.title }}">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="">{% endif %}{% if c.status == "Reserved" %}<span class="sf-flag">Reserved</span>{% else if c.status == "Out of stock" %}<span class="sf-flag sold">Out of stock</span>{% else if c.status == "Sold" %}<span class="sf-flag sold">Sold</span>{% else if c.qty > 1 %}<span class="sf-flag sf-qty">×{{ c.qty }}</span>{% endif %}</a>
       <div class="sf-body">
         <b class="sf-title">{{ c.title }}</b>
         <small class="sf-set">{{ c.card_set }}{% if !c.number.is_empty() %} · {{ c.number }}{% endif %}{% if !c.finish.is_empty() %} · {{ c.finish }}{% endif %}</small>
@@ -69,7 +69,7 @@
       </div>
       {% if !is_me %}
       <div class="sf-buy">
-        {% if c.status == "Active" && !m.on_vacation() %}<button type="button" class="btn" data-reserve>Reserve</button><button type="button" class="btn ghost" data-offer>Offer</button>{% else if c.status == "Reserved" %}<span class="sf-held">Reserved for someone</span>{% endif %}
+        {% if c.status == "Active" && !m.on_vacation() %}{% if c.has_price() %}<button type="button" class="btn cart-add" data-cart-card="{{ c.id }}" data-title="{{ c.title }}" data-price="{{ c.worth() }}" data-image="{{ c.image }}" data-url="/trainers/{{ m.id }}/cards/{{ c.id }}" data-seller="{{ m.store_title() }}" data-seller-slug="{{ m.slug }}"><span class="cart-add-t">Add to cart</span><span class="cart-add-in">In cart ✓</span></button>{% endif %}<button type="button" class="btn ghost" data-offer>Offer</button>{% else if c.status == "Reserved" %}<span class="sf-held">Reserved for someone</span>{% else if c.status == "Out of stock" %}<span class="sf-held">Out of stock</span>{% endif %}
         <button type="button" class="sf-save" data-save aria-pressed="{% if *is_saved %}true{% else %}false{% endif %}" aria-label="Save {{ c.title }}">♥</button>
       </div>{% endif %}
     </li>

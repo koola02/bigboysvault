@@ -3,13 +3,14 @@
 {% block content %}
 <section class="wrap admin wide st" id="listings" data-max="{{ max }}" data-total="{{ total }}" data-focus="{{ focus }}" data-store="{{ p.m.store_url() }}">
   {% include "store_tabs.html" %}
-  <p class="mc-how">Your cards for sale. Change the <b>price</b>, <b>condition</b>, <b>stock</b> or <b>status</b> right here. It saves by itself. Tick cards to change many at once.</p>
+  <p class="mc-how">Your cards. Each one is a <b>Highlight</b> (shown off), <b>For sale</b> (in your store, with stock and a price) or on your <b>Wishlist</b>. Change the price, condition or stock right here; it saves by itself. Tick cards to change many at once.</p>
 
   <div class="st-bar">
     <form class="st-filters" method="get" action="/me/listings" id="listFilters">
       <input type="search" name="q" value="{{ f.q }}" placeholder="Find a card by name, set or number" aria-label="Find a card" autocomplete="off">
       <select name="status" aria-label="Status"><option value="">Every status</option>{% for s in statuses %}<option value="{{ s }}"{% if f.status.as_str() == *s %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
       <select name="binder" aria-label="Binder"><option value="">Every binder</option>{% for b in binders %}<option value="{{ b.id }}"{% if let Some(x) = f.binder %}{% if *x == b.id %} selected{% endif %}{% endif %}>{{ b.title }} ({{ b.count }})</option>{% endfor %}</select>
+      <select name="kind" aria-label="What"><option value="">Everything</option><option value="sale"{% if f.kind == "sale" %} selected{% endif %}>For sale</option><option value="own"{% if f.kind == "own" %} selected{% endif %}>Highlights</option><option value="wish"{% if f.kind == "wish" %} selected{% endif %}>Wishlist</option></select>
       <select name="sort" aria-label="Order">
         <option value="">My order</option>
         <option value="newest"{% if f.sort == "newest" %} selected{% endif %}>Newest first</option>
@@ -23,7 +24,7 @@
     <button type="button" class="btn" id="addOpen">+ Add cards</button>
   </div>
 
-  <section class="st-add" id="addPanel" hidden>
+  <section class="ls-add" id="addPanel" hidden>
     <div class="st-add-head"><h2 class="h2">Add cards</h2><button type="button" class="ibtn" id="addClose" aria-label="Close">✕</button></div>
     <div class="seg st-add-tabs" role="tablist">
       <button type="button" class="on" data-add="search" role="tab" aria-selected="true">Search</button>
@@ -81,9 +82,15 @@
       <label class="ct-pricebox"><span aria-hidden="true">₱</span><input type="text" inputmode="decimal" autocomplete="off" value="{{ c.own_text() }}" placeholder="{% if c.value > 0.0 %}{{ c.price_text() }}{% else %}Price{% endif %}" data-price aria-label="Price of {{ c.title }}"></label>
       <p class="me-c-sug st-sug"></p>
       <select class="ct-cond" data-cond aria-label="Condition of {{ c.title }}">{% if !c.is_standard_cond() %}<option selected>{{ c.cond }}</option>{% endif %}{% for o in conditions %}<option{% if *o == c.cond %} selected{% endif %}>{{ o }}</option>{% endfor %}<option value="__own">Type my own…</option></select>
-      <div class="st-row">
+      <div class="seg seg-wide ls-kind" role="group" aria-label="What this card is">
+        <button type="button" data-kind="own" class="{% if c.is_own() %}on{% endif %}" aria-pressed="{{ c.is_own() }}">Highlight</button>
+        <button type="button" data-kind="sale" class="{% if c.is_sale() %}on{% endif %}" aria-pressed="{{ c.is_sale() }}">For sale</button>
+        <button type="button" data-kind="wish" class="{% if c.is_wish() %}on{% endif %}" aria-pressed="{{ c.is_wish() }}">Wishlist</button>
+      </div>
+      <div class="st-row ls-sale"{% if !c.is_sale() %} hidden{% endif %}>
         <span class="st-qty" aria-label="Stock"><button type="button" data-qty="-1" aria-label="One fewer">−</button><input type="number" min="0" max="9999" inputmode="numeric" value="{{ c.qty }}" data-qty-in aria-label="Copies in stock"><button type="button" data-qty="1" aria-label="One more">+</button></span>
-        <select data-status aria-label="Status">{% for s in statuses %}<option{% if *s == c.status %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+        <button type="button" class="ls-stock{% if c.status == "Out of stock" %} off{% endif %}" data-stock aria-pressed="{{ c.status != "Out of stock" }}"><span class="ls-stock-on">In stock</span><span class="ls-stock-off">Out of stock</span></button>
+        <select data-status aria-label="Status" class="sr-select" hidden>{% for s in statuses %}<option{% if *s == c.status %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
       </div>
       <select data-binder aria-label="Binder"><option value="">No binder</option>{% for b in binders %}<option value="{{ b.id }}"{% if let Some(x) = c.binder_id %}{% if *x == b.id %} selected{% endif %}{% endif %}>{{ b.title }}</option>{% endfor %}</select>
       <textarea class="ct-desc" rows="2" maxlength="500" placeholder="A note for buyers (optional)" aria-label="Notes about {{ c.title }}" data-notes>{{ c.notes }}</textarea>
@@ -100,6 +107,7 @@
   <div class="selbar-acts">
     <button type="button" class="pbtn" data-bulk="price">Price</button>
     <button type="button" class="pbtn" data-bulk="cond">Condition</button>
+    <button type="button" class="pbtn" data-bulk="kind">What</button>
     <button type="button" class="pbtn" data-bulk="status">Status</button>
     <button type="button" class="pbtn" data-bulk="binder">Binder</button>
     <button type="button" class="pbtn" data-bulk="stock">Stock</button>
@@ -111,5 +119,5 @@
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/pricing.js?v=1" defer></script>
 <script src="/static/admin-ui.js?v=9" defer></script>
-<script src="/static/store.js?v=1" defer></script>
+<script src="/static/store.js?v=2" defer></script>
 {% endblock %}

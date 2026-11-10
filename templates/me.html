@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}My trainer · {{ nav.brand }}{% endblock %}
 {% block content %}
-<section class="wrap me" id="me" data-max="{{ max }}" data-highlight="{% if let Some(h) = m.highlight %}{{ h }}{% endif %}">
+<section class="wrap me" id="me" data-max="{{ max }}" data-seller="{{ m.seller }}" data-highlight="{% if let Some(h) = m.highlight %}{{ h }}{% endif %}">
   <div class="me-top">
     <h1 class="h1">My trainer</h1>
     <div class="me-top-acts">
@@ -51,7 +51,7 @@
 
   <section class="me-card">
     <h2 class="h2">My binder <small><span id="meCount">{{ m.cards }}</span> of {{ max }}</small></h2>
-    <p class="me-how">★ picks the card shown on the home page. Drag to change the order. Values come from today's market prices. Type your own if you know better, or leave it empty.</p>
+    <p class="me-how">Each card is a <b>Highlight</b> (one you have and show off){% if m.seller %}, <b>For sale</b> (in your store){% endif %} or on your <b>Wishlist</b> (one you're after). ★ picks the card shown on the home page. Drag to change the order. Values come from today's market prices; type your own if you know better.</p>
     <ul class="me-binder" id="meBinder">
       {% for c in cards %}
       <li class="me-c" data-id="{{ c.id }}">
@@ -61,6 +61,7 @@
         </span>
         <b class="me-c-t">{{ c.title }}</b>
         <small class="me-c-s">{{ c.card_set }}{% if !c.number.is_empty() %} · {{ c.number }}{% endif %}</small>
+        <select data-nodrag data-kind aria-label="What {{ c.title }} is"><option value="own"{% if c.is_own() %} selected{% endif %}>Highlight</option>{% if m.seller %}<option value="sale"{% if c.is_sale() %} selected{% endif %}>For sale</option>{% endif %}<option value="wish"{% if c.is_wish() %} selected{% endif %}>Wishlist</option></select>
         <select data-nodrag data-cond aria-label="Condition of {{ c.title }}">{% for o in conditions %}<option{% if *o == c.cond %} selected{% endif %}>{{ o }}</option>{% endfor %}</select>
         <label class="me-val" data-nodrag><span>Value ₱</span><input data-value type="number" min="0" step="1" inputmode="numeric" value="{{ c.own_text() }}" placeholder="{% if c.value > 0.0 %}{{ c.market_text() }}{% else %}Not known yet{% endif %}" aria-label="Value of {{ c.title }} in pesos"></label>
         <p class="me-c-sug" data-market="{{ c.value }}" data-own="{{ c.value_own }}" data-cond="{{ c.cond }}"{% if c.own_photo() %} data-own-photo{% endif %}></p>
@@ -115,5 +116,5 @@
 </section>
 <script src="/static/dragsort.js?v=5" defer></script>
 <script src="/static/pricing.js?v=1" defer></script>
-<script src="/static/me.js?v=8" defer></script>
+<script src="/static/me.js?v=9" defer></script>
 {% endblock %}

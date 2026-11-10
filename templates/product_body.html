@@ -6,6 +6,7 @@
     <h1 class="h1" data-tr="title" lang="{{ p.lang() }}">{{ p.title }}</h1>
     <p class="price">{{ p.price_text() }}{% if copies > 1 %} <span class="copies" data-tr="copies" data-n="{{ copies }}">×{{ copies }} in the vault</span>{% endif %}</p>
     {% if !p.price_updated.is_empty() %}<p class="hint" data-tr="market" data-date="{{ p.price_updated }}">Market value as of {{ p.price_updated }}</p>{% endif %}
+    {% if p.available && p.price > 0.0 %}<p class="detail-buy"><button type="button" class="btn cart-add" data-cart-vault="{{ p.id }}" data-title="{{ p.short_title() }}" data-price="{{ p.price }}" data-image="{{ p.img(360) }}" data-url="/products/{{ p.handle }}"><span class="cart-add-t">Add to cart</span><span class="cart-add-in">In cart ✓</span></button><small>Pay the vault directly once it accepts your order: GCash, Maya or bank.</small></p>{% endif %}
     {% if p.lang() != "en" %}<div class="lang-sw" data-lang-switch data-original="{{ p.lang() }}" data-handle="{{ p.handle }}" role="group" aria-label="Read this card in">
       {% if p.lang() == "zh" %}<button type="button" data-to="zh" lang="zh-Hant" aria-pressed="true">中文</button>{% else %}<button type="button" data-to="ja" lang="ja" aria-pressed="true">日本語</button>{% endif %}
       <button type="button" data-to="en" lang="en" aria-pressed="false">English</button>
