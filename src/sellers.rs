@@ -1241,7 +1241,7 @@ pub fn popular_binders(c: &Connection, seller: i64) -> rusqlite::Result<Vec<(Mem
 // ---------- notifications ----------
 
 /// Kinds of notification a seller can switch on or off, with what each means.
-pub const EVENTS: [(&str, &str); 9] = [
+pub const EVENTS: [(&str, &str); 10] = [
     ("follow", "Someone follows my store"),
     ("view", "Someone looks at or saves a card (summarised, once a day per card)"),
     ("inquiry", "Someone asks a question"),
@@ -1250,6 +1250,7 @@ pub const EVENTS: [(&str, &str); 9] = [
     ("sale", "A sale is done"),
     ("expiry", "A listing expires"),
     ("status", "A card's status changes"),
+    ("price", "A price of mine is far from today's market"),
     ("announcement", "News from the vault"),
 ];
 

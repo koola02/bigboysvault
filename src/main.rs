@@ -1,6 +1,7 @@
 mod admin;
 mod api;
 mod community;
+mod ops;
 mod store;
 
 use askama::Template;
@@ -31,6 +32,8 @@ struct App {
     http: reqwest::Client,
     fx: Arc<market::FxCache>,
     prices: Cache<String, Arc<Value>>,
+    /// Card catalogue searches, kept for a day (the catalogue changes rarely and the service is slow).
+    catalog: Cache<String, Arc<Value>>,
     sindex: Cache<u8, Arc<suggest::Index>>,
     /// Recent attempts per visitor or name, for sign-ins, sign-ups and searches. Forgotten after 15 minutes.
     limits: Cache<String, u32>,
@@ -193,7 +196,7 @@ fn copyright_years() -> String {
 }
 
 type Res = Result<Response, (StatusCode, String)>;
-fn ise<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
+pub(crate) fn ise<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
     (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
 }
 
@@ -675,7 +678,7 @@ async fn browse(app: App, headers: HeaderMap, collection: Option<String>, p: Par
 async fn collection(State(app): State<App>, headers: HeaderMap, Path(h): Path<String>, Qs(p): Qs<Params>) -> Res {
     browse(app, headers, Some(h), p).await
 }
-fn unix_now() -> i64 {
+pub(crate) fn unix_now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
@@ -988,6 +991,7 @@ async fn main() {
         fx: Arc::new(tokio::sync::Mutex::new(None)),
         // Market lookups are remembered for an hour: instant repeats, and polite to the free price service.
         prices: Cache::builder().max_capacity(500).time_to_live(Duration::from_secs(3600)).build(),
+        catalog: Cache::builder().max_capacity(3000).time_to_live(Duration::from_secs(24 * 3600)).build(),
         // The suggestion model is rebuilt at most once a minute, so new cards and searches are learned quickly.
         sindex: Cache::builder().max_capacity(1).time_to_live(Duration::from_secs(60)).build(),
         limits: Cache::builder().max_capacity(20_000).time_to_live(Duration::from_secs(900)).build(),
@@ -1043,6 +1047,11 @@ async fn main() {
         .route("/products/{handle}", get(product))
         .route("/manifest.webmanifest", get(manifest))
         .route("/robots.txt", get(robots))
+        .route("/healthz", get(ops::healthz))
+        .route("/admin/backup/db", get(ops::backup_db))
+        .route("/admin/backup/uploads", get(ops::backup_uploads))
+        .route("/admin/prices/refresh", post(ops::refresh_prices))
+        .route("/admin/catalog/warm", post(ops::warm_catalog))
         .route("/sitemap.xml", get(sitemap))
         .route("/cards.tsv", get(api::cards_file))
         .route("/oops", post(oops).layer(axum::extract::DefaultBodyLimit::max(1024)))
@@ -1168,14 +1177,10 @@ async fn main() {
         .route("/admin/blocks/{id}/move", post(admin::block_move))
         .route("/admin/blocks/{id}/visible", post(admin::block_visible))
         .route("/admin/blocks/{id}/delete", post(admin::block_delete))
-        .nest_service("/uploads", ServeDir::new(uploads))
-        .nest(
-            "/static",
-            // App code revalidates on every load (cheap 304), so an update shows up immediately on every device.
-            Router::new()
-                .fallback_service(ServeDir::new("static"))
-                .layer(SetResponseHeaderLayer::if_not_present(header::CACHE_CONTROL, HeaderValue::from_static("no-cache"))),
-        )
+        // Pictures: AVIF or WebP when the browser takes it and the file exists; kept for a day.
+        .nest("/uploads", Router::new().fallback_service(ServeDir::new(uploads)).layer(axum::middleware::from_fn_with_state(app.clone(), ops::negotiate_uploads)))
+        // App code with a version (?v=N) keeps for a year; without one it revalidates on every load (cheap 304).
+        .nest("/static", Router::new().fallback_service(ServeDir::new("static")).layer(axum::middleware::from_fn(ops::static_cache)))
         .fallback(not_found)
         .layer(immutable)
         .layer(SetResponseHeaderLayer::if_not_present(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
@@ -1186,6 +1191,7 @@ async fn main() {
         .with_state(app.clone());
     // Mail goes out and old listings come off sale in the background.
     store::start_housekeeping(app);
+    ops::mark_started();
 
     let addr = format!("{host}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await.expect("bind");

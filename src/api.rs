@@ -49,7 +49,7 @@ pub async fn price_suggest(State(app): State<App>, h: HeaderMap, Query(q): Query
     if !check_auth(&app, &h).await {
         return Ok((StatusCode::NOT_FOUND, "Not found").into_response());
     }
-    let who = h.get("fly-client-ip").and_then(|v| v.to_str().ok()).unwrap_or("local").to_string();
+    let who = crate::community::client_ip(&h);
     let key_limit = format!("price_suggest|{}", who);
     let n = app.limits.get(&key_limit).unwrap_or(0) + 1;
     app.limits.insert(key_limit, n);
@@ -152,7 +152,8 @@ pub async fn cards_file(State(app): State<App>, headers: HeaderMap) -> Res {
     if headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()) == Some(tag.as_str()) {
         return Ok((StatusCode::NOT_MODIFIED, [(header::ETAG, tag)]).into_response());
     }
-    Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8".to_string()), (header::CACHE_CONTROL, "no-cache".to_string()), (header::ETAG, tag)], (*body).clone()).into_response())
+    // Browsers revalidate every time (the ETag makes that a cheap 304); the CDN keeps it for half a minute.
+    Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8".to_string()), (header::CACHE_CONTROL, "public, max-age=0, s-maxage=30, stale-while-revalidate=120".to_string()), (header::ETAG, tag)], (*body).clone()).into_response())
 }
 
 #[derive(Deserialize)]
@@ -300,7 +301,7 @@ pub struct AskReq {
 
 /// Ask the Vault: a plain question in, an answer and some cards out, worked out here from the live catalogue.
 pub async fn ask_vault(State(app): State<App>, h: HeaderMap, axum::Json(req): axum::Json<AskReq>) -> Res {
-    let who = h.get("fly-client-ip").and_then(|v| v.to_str().ok()).unwrap_or("local").to_string();
+    let who = crate::community::client_ip(&h);
     let key = format!("ask|{who}");
     let n = app.limits.get(&key).unwrap_or(0) + 1;
     app.limits.insert(key, n);

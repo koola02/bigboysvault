@@ -51,8 +51,13 @@ pub(crate) fn same_site(h: &HeaderMap) -> bool {
     origin.split_once("://").map(|(_, o)| o) == Some(host)
 }
 
+/// The visitor's address: Cloudflare's header when the site sits behind it, else Fly's.
 pub(crate) fn client_ip(h: &HeaderMap) -> String {
-    h.get("fly-client-ip").and_then(|v| v.to_str().ok()).unwrap_or("local").to_string()
+    ["cf-connecting-ip", "fly-client-ip"]
+        .iter()
+        .find_map(|k| h.get(*k).and_then(|v| v.to_str().ok()).map(str::trim).filter(|v| !v.is_empty()))
+        .unwrap_or("local")
+        .to_string()
 }
 
 /// Counts attempts for a while. True means the limit has been reached.
@@ -797,7 +802,7 @@ pub async fn search_cards(State(app): State<App>, h: HeaderMap, Query(q): Query<
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of searching. Please wait a few minutes."));
     }
     let typed: String = q.q.chars().take(60).collect();
-    Ok(ok(market::catalog(&app.http, &typed, &q.lang).await.unwrap_or_else(|_| json!({ "cards": [], "error": "The card list isn't answering right now." }))))
+    Ok(ok(crate::ops::catalog_cached(&app, &typed, &q.lang).await))
 }
 
 #[derive(Deserialize)]

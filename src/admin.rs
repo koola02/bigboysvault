@@ -438,7 +438,7 @@ pub fn remove_upload(dir: &str, path: &str) {
 }
 
 /// Today's date as YYYY-MM-DD (UTC), without pulling in a date crate.
-fn today() -> String {
+pub(crate) fn today() -> String {
     let days = (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() / 86400) as i64;
     let z = days + 719468;
     let era = z.div_euclid(146097);

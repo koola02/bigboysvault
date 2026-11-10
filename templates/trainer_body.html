@@ -29,7 +29,7 @@
   <div class="tp-hl">
     <p class="eyebrow plate">Highlighted card</p>
     <a class="tp-hl-card" href="/trainers/{{ t.id }}/cards/{{ c.id }}" data-float data-c="{{ c.cond_class() }}">
-      {% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" alt="{{ c.title }}">{% endif %}
+      {% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="{{ c.title }}">{% endif %}
       <span class="tp-hl-t">{{ c.title }}</span>
       <span class="card-m">{% if !c.card_set.is_empty() %}<span class="card-set">{% if !c.symbol().is_empty() %}<img class="card-sym" src="{{ c.symbol() }}" width="16" height="16" loading="lazy" decoding="async" alt="">{% endif %}{{ c.card_set }}</span>{% endif %}<span class="card-cond" data-c="{{ c.cond_class() }}">{{ c.cond }}</span></span>
       {% if c.worth() > 0.0 %}<span class="worth">{{ c.worth_text() }}</span>{% endif %}

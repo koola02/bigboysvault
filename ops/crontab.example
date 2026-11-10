@@ -1,0 +1,5 @@
+# Big Boys Vault jobs (times are the VM's clock; set it to Asia/Manila: sudo timedatectl set-timezone Asia/Manila)
+*/5 * * * *  OPS/uptime.sh  >> $HOME/bbv/logs/uptime.log 2>&1   # bigboysvault/ops
+30 2 * * *   OPS/backup.sh  >> $HOME/bbv/logs/backup.log 2>&1   # bigboysvault/ops
+0 3 * * *    OPS/prices.sh  >> $HOME/bbv/logs/prices.log 2>&1   # bigboysvault/ops
+30 3 * * *   OPS/images.sh  >> $HOME/bbv/logs/images.log 2>&1   # bigboysvault/ops

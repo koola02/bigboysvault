@@ -6,3 +6,4 @@ shots/
 graphify-out/
 backups/
 *.log
+ops/env
