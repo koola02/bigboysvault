@@ -1848,3 +1848,56 @@ pub fn card_owner(c: &Connection, card_id: i64) -> rusqlite::Result<Option<(i64,
     let Some((owner, role)) = row else { return Ok(None) };
     Ok(card(c, owner, card_id)?.map(|k| (owner, role, k)))
 }
+
+// ---------- notifications ----------
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct Notification {
+    pub id: i64,
+    pub member_id: i64,
+    pub kind: String,
+    pub message: String,
+    pub link: String,
+    pub is_read: bool,
+    pub created_at: i64,
+}
+
+pub fn notifications(c: &Connection, member_id: i64, unread_only: bool) -> rusqlite::Result<Vec<Notification>> {
+    let mut sql = format!("SELECT id, member_id, kind, message, link, is_read, created_at FROM notifications WHERE member_id={}", member_id);
+    if unread_only {
+        sql.push_str(" AND is_read=0");
+    }
+    sql.push_str(" ORDER BY created_at DESC, id DESC LIMIT 100");
+    let mut st = c.prepare(&sql)?;
+    let rows = st.query_map([], |r| {
+        Ok(Notification {
+            id: r.get(0)?,
+            member_id: r.get(1)?,
+            kind: r.get(2)?,
+            message: r.get(3)?,
+            link: r.get(4)?,
+            is_read: r.get::<_, i64>(5)? != 0,
+            created_at: r.get(6)?,
+        })
+    })?.collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn unread_notification_count(c: &Connection, member_id: i64) -> rusqlite::Result<i64> {
+    c.query_row("SELECT COUNT(*) FROM notifications WHERE member_id=?1 AND is_read=0", [member_id], |r| r.get(0))
+}
+
+pub fn mark_notifications_read(c: &Connection, member_id: i64, before_id: Option<i64>) -> rusqlite::Result<usize> {
+    if let Some(bid) = before_id {
+        c.execute("UPDATE notifications SET is_read=1 WHERE member_id=?1 AND is_read=0 AND id<=?2", rusqlite::params![member_id, bid])
+    } else {
+        c.execute("UPDATE notifications SET is_read=1 WHERE member_id=?1 AND is_read=0", [member_id])
+    }
+}
+
+pub fn insert_notification(c: &Connection, member_id: i64, kind: &str, message: &str, link: &str) -> rusqlite::Result<()> {
+    c.execute(
+        "INSERT INTO notifications(member_id, kind, message, link, created_at) VALUES(?1, ?2, ?3, ?4, ?5)",
+        rusqlite::params![member_id, kind, message, link, now()],
+    )?;
+    Ok(())
+}

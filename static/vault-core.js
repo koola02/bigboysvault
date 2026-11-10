@@ -159,3 +159,64 @@
     e.preventDefault();
   }, { passive: false });
 })();
+
+// ---------- Notifications Bell ----------
+(() => {
+  const notifBtn = document.getElementById('notifBtn');
+  if (!notifBtn) return;
+  const notifMenu = document.getElementById('notifMenu');
+  const notifBadge = document.getElementById('notifBadge');
+  const notifList = document.getElementById('notifList');
+  const notifDropdown = document.getElementById('notifDropdown');
+  let loaded = false;
+
+  async function loadNotifs() {
+    try {
+      const res = await fetch('/api/notifications');
+      if (!res.ok) { notifDropdown.hidden = true; return; }
+      const j = await res.json();
+      notifDropdown.hidden = false;
+      if (j.unread_count > 0) {
+        notifBadge.textContent = j.unread_count > 99 ? '99+' : j.unread_count;
+        notifBadge.hidden = false;
+      } else {
+        notifBadge.hidden = true;
+      }
+      notifList.replaceChildren();
+      if (!j.notifications || !j.notifications.length) {
+        const p = document.createElement('p'); p.className = 'notif-empty'; p.textContent = 'No new notifications.';
+        notifList.append(p);
+      } else {
+        j.notifications.forEach(n => {
+          const a = document.createElement('a'); a.className = 'notif-item' + (n.is_read ? '' : ' unread'); a.href = n.link || '#';
+          a.innerHTML = `<div class="notif-k">${n.kind}</div><div class="notif-m">${n.message}</div><div class="notif-t">Just now</div>`;
+          notifList.append(a);
+        });
+      }
+      loaded = true;
+    } catch (_) {}
+  }
+
+  notifBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const showing = !notifMenu.hidden;
+    notifMenu.hidden = showing;
+    if (!showing) {
+      if (!loaded) loadNotifs();
+    }
+  });
+  document.addEventListener('click', (e) => {
+    if (!notifMenu.hidden && !notifDropdown.contains(e.target)) notifMenu.hidden = true;
+  });
+  document.getElementById('notifRead')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    try {
+      await fetch('/api/notifications/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      notifBadge.hidden = true;
+      notifList.querySelectorAll('.unread').forEach(el => el.classList.remove('unread'));
+    } catch (_) {}
+  });
+
+  // Fetch count on load
+  setTimeout(loadNotifs, 500);
+})();

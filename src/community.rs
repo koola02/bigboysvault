@@ -1052,6 +1052,41 @@ pub async fn me_binder_cover(State(app): State<App>, h: HeaderMap, Path(bid): Pa
 }
 
 #[derive(Deserialize)]
+pub struct NotificationQuery {
+    unread_only: Option<bool>,
+}
+
+pub async fn get_notifications(State(app): State<App>, h: HeaderMap, Query(q): Query<NotificationQuery>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let unread_only = q.unread_only.unwrap_or(false);
+    let id = m.id;
+    let notifs = with_db(&app, move |c| members::notifications(c, id, unread_only)).await?;
+    let unread_count = with_db(&app, move |c| members::unread_notification_count(c, id)).await?;
+    Ok(ok(json!({ "ok": true, "notifications": notifs, "unread_count": unread_count })))
+}
+
+#[derive(Deserialize)]
+pub struct ReadNotificationReq {
+    before_id: Option<i64>,
+}
+
+pub async fn read_notifications(State(app): State<App>, h: HeaderMap, Json(req): Json<ReadNotificationReq>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let id = m.id;
+    with_db(&app, move |c| {
+        members::mark_notifications_read(c, id, req.before_id)?;
+        Ok(())
+    }).await?;
+    Ok(ok(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
 pub struct OrderReq {
     ids: Vec<i64>,
 }

@@ -1052,6 +1052,8 @@ async fn main() {
         .route("/api/searched", post(api::searched))
         .route("/api/condition-shares", get(api::condition_shares))
         .route("/api/price-suggest", get(api::price_suggest))
+        .route("/api/notifications", get(community::get_notifications))
+        .route("/api/notifications/read", post(community::read_notifications))
         // trainers
         .route("/join", get(community::join_page).post(community::join))
         .route("/signin", post(community::signin))
