@@ -6,7 +6,7 @@
     <p class="eyebrow plate">Trainers' stores</p>
     <h1 class="h1">Stores</h1>
     <p class="tr-sub">Cards for sale by the trainers of {{ nav.brand }}. Reserve a card, pay the seller directly, and leave a review when it arrives.</p>
-    {% if let Some(u) = me %}<a class="btn" href="/me/store">My store</a>{% else %}<a class="btn" href="/join">Open a store</a><a class="linkbtn" href="/join?signin=1">Sign in</a>{% endif %}
+    {% if let Some(u) = me %}<a class="btn" href="/me/store">My store</a>{% else %}<a class="btn" href="/join">Open a store</a><a class="linkbtn" href="/login">Sign in</a>{% endif %}
   </div>
   {% if stores.is_empty() %}
   <p class="empty">No store has cards on sale yet. {% if me.is_some() %}<a href="/me/listings">Be the first.</a>{% else %}<a href="/join">Join</a> and be the first.{% endif %}</p>

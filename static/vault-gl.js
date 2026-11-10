@@ -1,6 +1,4 @@
-// Two small pieces of live graphics, for every page:
-// the sky, ribbons of light from domain-warped noise, drawn once at half size so it costs almost nothing;
-// and foil, the colours of real thin-film interference, on whichever card you're pointing at, or the one in the middle of the screen on a phone.
+// Live graphics for every page: foil, the colours of real thin-film interference, on whichever card you're pointing at, or the one in the middle of the screen on a phone.
 const root = document.documentElement;
 const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
 const tools = !!document.querySelector('.admin, #edList') || location.pathname.startsWith('/admin');
@@ -188,6 +186,7 @@ function foil() {
 }
 
 if (!tools && !saving && !root.dataset.lite && 'WebGL2RenderingContext' in window) {
-  const begin = () => { sky(); foil(); };
+  // The sky shader is off: the page's own backdrop (vault.css, body::before/after) is crisp at any size and costs nothing.
+  const begin = () => { foil(); };
   if ('requestIdleCallback' in window) requestIdleCallback(begin, { timeout: 1800 }); else setTimeout(begin, 500);
 }

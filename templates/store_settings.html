@@ -49,6 +49,7 @@
       <input type="hidden" name="pay_methods_sent" value="1">
       <div class="st-methods">{% for m in methods %}<label class="chk"><input type="checkbox" class="sr" name="pay_method" value="{{ m }}"{% if p.m.has_pay(m) %} checked{% endif %}><span class="chk-box"></span> {{ m }}</label>{% endfor %}</div>
       <label>How to pay <small>account name and number, meetup spots, your rules</small><textarea name="pay_info" rows="4" maxlength="600" placeholder="GCash: Juan D. · 0917 123 4567&#10;BPI: 1234 5678 90&#10;Meetups: SM North, weekends">{{ p.m.pay_info }}</textarea></label>
+      <label class="chk"><input type="checkbox" class="sr" name="pay_public" value="1"{% if p.m.pay_public %} checked{% endif %}><span class="chk-box"></span> Show these pay details on my store page too <small>(off: a buyer sees them only after you accept their reservation)</small></label>
     </div>
 
     <h2 class="h2">Email</h2>

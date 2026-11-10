@@ -101,6 +101,14 @@ pub async fn refresh_values(app: &App) {
 
 // ---------- pages ----------
 #[derive(Template)]
+#[template(path = "login.html")]
+struct LoginPage {
+    nav: Chrome,
+    error: String,
+    name: String,
+}
+
+#[derive(Template)]
 #[template(path = "join.html")]
 struct JoinPage {
     nav: Chrome,
@@ -236,8 +244,23 @@ pub async fn join_page(State(app): State<App>, h: HeaderMap, Query(q): Query<Joi
     Ok(html(render(JoinPage { nav, error: String::new(), name: String::new(), mode: if q.signin.is_some() { "signin" } else { "join" } })?))
 }
 
+/// `GET /login`: the sign-in landing for trainers, with the vault owner's admin password tucked underneath.
+pub async fn login_page(State(app): State<App>, h: HeaderMap) -> Res {
+    if current(&app, &h).await?.is_some() {
+        return Ok(Redirect::to("/me").into_response());
+    }
+    if admin::authed(&app, &h) && !app.admin_token.is_empty() {
+        return Ok(Redirect::to("/admin").into_response());
+    }
+    let nav = with_db(&app, chrome).await?;
+    Ok(html(render(LoginPage { nav, error: String::new(), name: String::new() })?))
+}
+
 async fn join_again(app: &App, code: StatusCode, mode: &'static str, name: String, error: &str) -> Res {
     let nav = with_db(app, chrome).await?;
+    if mode == "signin" {
+        return Ok((code, html(render(LoginPage { nav, error: error.to_string(), name })?)).into_response());
+    }
     Ok((code, html(render(JoinPage { nav, error: error.to_string(), name, mode })?)).into_response())
 }
 
@@ -1158,6 +1181,8 @@ pub struct AdminAction {
     reason: Option<String>,
     award: Option<i64>,
     role: Option<String>,
+    /// For "seller": on or off.
+    seller: Option<bool>,
     /// For "tags": the admin's tags for this trainer, shown to everyone.
     tags: Option<Vec<String>>,
 }
@@ -1213,6 +1238,10 @@ pub async fn admin_action(State(app): State<App>, h: HeaderMap, Path(id): Path<i
             let tags: Vec<String> = crate::db::clean_tags(&req.tags.clone().unwrap_or_default()).into_iter().take(6).collect();
             let joined = tags.join(",");
             with_db(&app, move |c| members::set_tags(c, id, &joined)).await?
+        }
+        "seller" => {
+            let on = req.seller.unwrap_or(false);
+            with_db(&app, move |c| members::set_seller(c, id, on)).await?
         }
         "block" => with_db(&app, move |c| members::set_blocked(c, id, true)).await?,
         "unblock" => with_db(&app, move |c| members::set_blocked(c, id, false)).await?,

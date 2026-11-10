@@ -4,7 +4,7 @@
 <section class="wrap admin wide" id="adminSellers">
   {% include "admin_tabs.html" %}
   <h1 class="h1 a-title">Sellers</h1>
-  <p class="mc-how">{{ sellers_n }} trainers can run a store. {{ stores.len() }} have cards on sale right now.</p>
+  <p class="mc-how">{{ sellers_n }} trainer{% if sellers_n != 1 %}s{% endif %} may sell (switch it on per trainer under <a href="/admin/trainers">Trainers</a>). {{ stores.len() }} have cards on sale right now.</p>
 
   <div class="dash-grid">
     <article class="dash-panel dash-wide">

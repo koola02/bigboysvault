@@ -13,11 +13,11 @@
     try { r = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) }); }
     catch (_) { throw new Error('No connection. Please try again.'); }
     const j = await r.json().catch(() => ({}));
-    if (r.status === 401) { location.href = '/join?signin=1'; throw new Error('Please sign in first.'); }
+    if (r.status === 401) { location.href = '/login'; throw new Error('Please sign in first.'); }
     if (!r.ok) throw new Error(j.error || 'That didn’t work. Please try again.');
     return j;
   }
-  const signIn = () => { location.href = '/join?signin=1'; };
+  const signIn = () => { location.href = '/login'; };
 
   /* ----- find a card in this store ----- */
   const grid = $('sfGrid');

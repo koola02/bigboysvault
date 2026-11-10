@@ -18,7 +18,7 @@
     let r;
     try { r = await fetch(url, opts); } catch (_) { throw new Error('No connection. Please try again.'); }
     const j = await r.json().catch(() => ({}));
-    if (r.status === 401) { location.href = '/join?signin=1'; throw new Error('Please sign in again.'); }
+    if (r.status === 401) { location.href = '/login'; throw new Error('Please sign in again.'); }
     if (!r.ok) throw new Error(j.error || 'That didn’t save. Please try again.');
     return j;
   }

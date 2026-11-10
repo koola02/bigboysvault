@@ -28,10 +28,10 @@
       {% if m.stars > 0 %}<li><b>★ {{ m.stars }}</b><span>vault stars</span></li>{% endif %}
     </ul>
     {% if !links.is_empty() || !m.pay_list().is_empty() || (!m.contact_info.is_empty() && (m.contact_public || me.is_some())) %}
-    <div class="sf-links">
-      {% for (label, url) in links %}<a class="seller-social" href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ label }}</a>{% endfor %}
-      {% for pm in m.pay_list() %}<span class="sf-pay">{{ pm }}</span>{% endfor %}
-      {% if !m.contact_info.is_empty() && (m.contact_public || me.is_some()) %}<span class="sf-contact">{{ m.contact_info }}</span>{% endif %}
+    <div class="sf-rows">
+      {% if !links.is_empty() %}<div class="sf-row"><span class="sf-row-l">Find me on</span>{% for (label, url, short) in links %}<a class="seller-social" href="{{ url }}" target="_blank" rel="noopener noreferrer"><b>{{ label }}</b> · {{ short }} <span class="sf-ext" aria-hidden="true">↗</span></a>{% endfor %}</div>{% endif %}
+      {% if !m.pay_list().is_empty() %}<div class="sf-row"><span class="sf-row-l">Pay with</span>{% for pm in m.pay_list() %}<span class="sf-pay">{{ pm }}</span>{% endfor %}{% if m.pay_public && !m.pay_info.is_empty() %}<span class="sf-payinfo">{{ m.pay_info }}</span>{% else %}<small class="sf-note-l">Pay details are shown once {{ m.store_title() }} accepts your reservation.</small>{% endif %}</div>{% endif %}
+      {% if !m.contact_info.is_empty() && (m.contact_public || me.is_some()) %}<div class="sf-row"><span class="sf-row-l">Contact</span><span class="sf-contact">{{ m.contact_info }}</span></div>{% endif %}
     </div>{% endif %}
   </header>
 
@@ -59,7 +59,7 @@
   <ul class="sf-grid" id="sfGrid">
     {% for (c, is_saved) in cards %}
     <li class="sf-card" data-id="{{ c.id }}" data-title="{{ c.title }}" data-set="{{ c.card_set }}" data-number="{{ c.number }}" data-cond="{{ c.cond }}" data-price="{{ c.worth() }}" data-status="{{ c.status }}" data-qty="{{ c.qty }}" data-pos="{{ loop.index }}"{% if c.is_graded() %} data-graded{% endif %}{% if *is_saved %} data-saved{% endif %}>
-      <a class="sf-pic" href="/trainers/{{ m.id }}/cards/{{ c.id }}" data-float aria-label="See {{ c.title }}">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="">{% endif %}{% if c.status == "Reserved" %}<span class="sf-flag">Reserved</span>{% else if c.status == "Sold" %}<span class="sf-flag sold">Sold</span>{% else if c.qty > 1 %}<span class="sf-flag qty">×{{ c.qty }}</span>{% endif %}</a>
+      <a class="sf-pic" href="/trainers/{{ m.id }}/cards/{{ c.id }}" data-float aria-label="See {{ c.title }}">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="">{% endif %}{% if c.status == "Reserved" %}<span class="sf-flag">Reserved</span>{% else if c.status == "Sold" %}<span class="sf-flag sold">Sold</span>{% else if c.qty > 1 %}<span class="sf-flag sf-qty">×{{ c.qty }}</span>{% endif %}</a>
       <div class="sf-body">
         <b class="sf-title">{{ c.title }}</b>
         <small class="sf-set">{{ c.card_set }}{% if !c.number.is_empty() %} · {{ c.number }}{% endif %}{% if !c.finish.is_empty() %} · {{ c.finish }}{% endif %}</small>

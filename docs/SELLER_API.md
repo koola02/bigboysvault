@@ -12,6 +12,14 @@ All JSON routes answer `{ "ok": true, ... }` or an error `{ "error": "plain word
 callers get 401. Every `/me/…` route only touches the signed-in trainer's own data. Requests must come from the site
 (same-origin check), with the `bbv_trainer` cookie.
 
+## Who can sell
+
+Trainers are collectors by default: a profile and a binder. An admin switches selling on per trainer (Admin › Trainers
+› Store: **Seller** / **Collector**, `POST /admin/trainers/{id}` with `{ "action": "seller", "seller": true }`).
+Only sellers get the store panel, a public `/store/<name>`, Reserve/Offer buttons and a place in `/stores`; a trainer
+whose store is off sees `/me/store` explain that, and still buys from stores like anyone else. Signing in happens
+at `/login` (trainers, with the vault owner's admin password tucked underneath).
+
 ## The SRP
 
 Every card a seller or the owner prices shows an **SRP**: the suggested retail price in pesos for its condition,

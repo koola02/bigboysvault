@@ -189,6 +189,8 @@
       if (!res.ok) { notifDropdown.hidden = true; if (res.status === 401 || res.status === 403) { try { sessionStorage.setItem(SKIP, '1'); } catch (_) {} } return; }
       const j = await res.json();
       notifDropdown.hidden = false;
+      // Signed in: the footer's "Log in" becomes "My trainer".
+      const fl = document.getElementById('footLogin'); if (fl) { fl.href = '/me'; fl.lastChild.textContent = 'My trainer'; }
       if (j.unread_count > 0) {
         notifBadge.textContent = j.unread_count > 99 ? '99+' : j.unread_count;
         notifBadge.hidden = false;

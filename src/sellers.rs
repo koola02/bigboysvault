@@ -32,6 +32,8 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         ("pay_info", "TEXT NOT NULL DEFAULT ''"),
         ("pay_methods", "TEXT NOT NULL DEFAULT ''"),
         ("notify_views", "INTEGER NOT NULL DEFAULT 0"),
+        ("pay_public", "INTEGER NOT NULL DEFAULT 1"),
+        ("seller", "INTEGER NOT NULL DEFAULT 0"),
     ] {
         add_column(c, "members", col, def)?;
     }
@@ -172,6 +174,7 @@ pub struct StoreSettings {
     pub pay_info: String,
     pub email: String,
     pub notify_views: bool,
+    pub pay_public: bool,
 }
 
 pub fn save_store(c: &Connection, member_id: i64, s: &StoreSettings) -> rusqlite::Result<()> {
@@ -179,12 +182,12 @@ pub fn save_store(c: &Connection, member_id: i64, s: &StoreSettings) -> rusqlite
     let methods: Vec<&str> = s.pay_methods.split(',').map(str::trim).filter(|m| PAY_METHODS.contains(m)).collect();
     c.execute(
         "UPDATE members SET store_name=?2, location=?3, contact_info=?4, contact_public=?5, status=?6, fb_url=?7, fb_group_url=?8, ig_url=?9, tiktok_url=?10,
-           shopee_url=?11, links=?12, pay_methods=?13, pay_info=?14, email=?15, notify_views=?16, updated_at=?17 WHERE id=?1",
+           shopee_url=?11, links=?12, pay_methods=?13, pay_info=?14, email=?15, notify_views=?16, updated_at=?17, pay_public=?18 WHERE id=?1",
         rusqlite::params![
             member_id, members::clean_line(&s.store_name, 40), members::clean_line(&s.location, 80), members::clean_text(&s.contact_info, 300), s.contact_public, status,
             members::clean_https_url(&s.fb_url), members::clean_https_url(&s.fb_group_url), members::clean_https_url(&s.ig_url), members::clean_https_url(&s.tiktok_url),
             members::clean_https_url(&s.shopee_url), clean_link_lines(&s.links), methods.join(","), members::clean_text(&s.pay_info, 600),
-            clean_email(&s.email), s.notify_views, now()
+            clean_email(&s.email), s.notify_views, now(), s.pay_public
         ],
     )?;
     Ok(())
@@ -611,7 +614,10 @@ fn can_buy(c: &Connection, buyer: i64, seller: i64, card_id: i64, qty: i64) -> r
         return Ok(Err("That's your own card."));
     }
     let Some(card) = members::card(c, seller, card_id)? else { return Ok(Err("That card isn't in this store.")) };
-    let status: String = c.query_row("SELECT status FROM members WHERE id=?1", [seller], |r| r.get(0))?;
+    let (status, selling): (String, i64) = c.query_row("SELECT status, seller FROM members WHERE id=?1", [seller], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    if selling == 0 {
+        return Ok(Err("This trainer isn't selling."));
+    }
     if status == "Vacation" {
         return Ok(Err("This seller is on vacation. Please come back later."));
     }
@@ -1515,6 +1521,9 @@ pub fn store_stats(c: &Connection, seller: i64) -> rusqlite::Result<StoreStats> 
 pub fn directory(c: &Connection) -> rusqlite::Result<Vec<(members::Member, StoreStats, Vec<MemberCard>)>> {
     let mut out = vec![];
     for m in members::approved_sellers(c)? {
+        if !m.seller {
+            continue;
+        }
         let stats = store_stats(c, m.id)?;
         if stats.on_sale == 0 {
             continue;
@@ -1567,6 +1576,7 @@ mod tests {
 
     fn seller_with_card(c: &Connection) -> (i64, i64, i64) {
         let s = create(c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(c, s, true).unwrap(); // an admin switched selling on
         let b = create(c, "Buyer", "h").unwrap().unwrap();
         let Added::Yes(card) = add_listing(c, s, "tcgdex:base1-58", "Pikachu - 058/102 - Base Set", "58/102", "Base Set", "", "").unwrap() else { panic!() };
         members::set_card_value(c, "tcgdex:base1-58", 100.0, now()).unwrap();
@@ -1668,6 +1678,9 @@ mod tests {
         assert_eq!(orders.offers[0].status, "Accepted");
         c.execute("UPDATE members SET status='Vacation' WHERE id=?1", [s]).unwrap();
         assert!(make_offer(&c, b, s, card, 80.0, 1, "").unwrap().is_err(), "closed for vacation");
+        c.execute("UPDATE members SET status='Active', seller=0 WHERE id=?1", [s]).unwrap();
+        assert!(make_offer(&c, b, s, card, 80.0, 1, "").unwrap().is_err(), "selling switched off by an admin");
+        members::set_seller(&c, s, true).unwrap();
         assert!(cancel_reservation(&c, b, orders.reservations[0].id).unwrap());
         assert_eq!(members::card(&c, s, card).unwrap().unwrap().status, "Active", "the copy is free again");
     }

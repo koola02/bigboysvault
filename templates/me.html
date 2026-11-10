@@ -14,6 +14,7 @@
   {% if m.locked() %}<p class="me-locked">🔒 Your trainer is locked for another {{ m.lock_left() }}. You can't post or change anything until then.</p>{% endif %}
   <p class="tp-stars">{% if m.stars > 0 %}<span class="stars stars-lg">★ {{ m.stars }}</span>{% endif %}<span class="worth worth-lg" id="meWorth"{% if m.worth <= 0.0 %} hidden{% endif %}>{{ m.worth_text() }}</span></p>
 
+  {% if m.seller %}
   <section class="me-card me-store">
     <div>
       <h2 class="h2">My store</h2>
@@ -22,6 +23,15 @@
     </div>
     <div class="me-top-acts"><a class="btn" href="/me/store">Open my store</a><a class="linkbtn" href="{{ m.store_url() }}" target="_blank" rel="noopener">See it ↗</a></div>
   </section>
+  {% else %}
+  <section class="me-card me-store">
+    <div>
+      <h2 class="h2">Buying</h2>
+      <p class="me-how">Reserve cards from the <a href="/stores">stores</a>. Your reservations, offers and questions are under My orders. Want to sell too? Ask the vault owner to switch your store on.</p>
+    </div>
+    <div class="me-top-acts"><a class="btn ghost" href="/me/orders?tab=buying">My orders</a></div>
+  </section>
+  {% endif %}
 
   <form class="me-card me-profile" id="meProfile">
     <label class="me-av" title="Change your picture">

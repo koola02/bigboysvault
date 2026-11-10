@@ -49,6 +49,31 @@ async fn signed_in(app: &App, h: &HeaderMap) -> Result<Result<Member, Response>,
     })
 }
 
+#[derive(Template)]
+#[template(path = "store_off.html")]
+struct StoreOffPage {
+    nav: Chrome,
+    m: Member,
+}
+
+/// A signed-in seller, or the page that says selling isn't on for them yet.
+async fn selling(app: &App, h: &HeaderMap) -> Result<Result<Member, Response>, (StatusCode, String)> {
+    let m = match signed_in(app, h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(Err(r)),
+    };
+    if m.seller {
+        return Ok(Ok(m));
+    }
+    let nav = with_db(app, |c| chrome(c)).await?;
+    Ok(Err(html(render(StoreOffPage { nav, m })?)))
+}
+
+/// JSON routes only a seller may use.
+fn seller_only(m: &Member) -> Result<(), Response> {
+    if m.seller { Ok(()) } else { Err(fail(StatusCode::FORBIDDEN, "Selling isn't switched on for your trainer. Ask the vault owner.")) }
+}
+
 // ---------- the seller panel ----------
 
 #[derive(Template)]
@@ -60,7 +85,7 @@ struct DashPage {
 }
 
 pub async fn dash(State(app): State<App>, h: HeaderMap) -> Res {
-    let m = match signed_in(&app, &h).await? {
+    let m = match selling(&app, &h).await? {
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
@@ -102,7 +127,7 @@ struct ListingsPage {
 }
 
 pub async fn listings(State(app): State<App>, h: HeaderMap, Query(q): Query<ListQs>) -> Res {
-    let m = match signed_in(&app, &h).await? {
+    let m = match selling(&app, &h).await? {
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
@@ -175,6 +200,9 @@ pub async fn edit_listing(State(app): State<App>, h: HeaderMap, Path(id): Path<i
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
+    if let Err(r) = seller_only(&m) {
+        return Ok(r);
+    }
     let mid = m.id;
     let (patch, flag) = (req.patch(), req.flag);
     let card = with_db(&app, move |c| {
@@ -207,6 +235,9 @@ pub async fn bulk_listings(State(app): State<App>, h: HeaderMap, Json(req): Json
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
+    if let Err(r) = seller_only(&m) {
+        return Ok(r);
+    }
     if req.ids.is_empty() {
         return Ok(fail(StatusCode::BAD_REQUEST, "Pick some cards first."));
     }
@@ -245,6 +276,9 @@ pub async fn renew_listing(State(app): State<App>, h: HeaderMap, Path(id): Path<
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
+    if let Err(r) = seller_only(&m) {
+        return Ok(r);
+    }
     let (mid, days) = (m.id, req.days.unwrap_or(30));
     let Some(card) = with_db(&app, move |c| sellers::renew(c, mid, id, days)).await? else { return Ok(fail(StatusCode::NOT_FOUND, "That card isn't in your store.")) };
     if m.profile_ok {
@@ -265,7 +299,7 @@ struct BindersPage {
 }
 
 pub async fn binders(State(app): State<App>, h: HeaderMap) -> Res {
-    let m = match signed_in(&app, &h).await? {
+    let m = match selling(&app, &h).await? {
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
@@ -286,6 +320,9 @@ pub async fn edit_binder(State(app): State<App>, h: HeaderMap, Path(bid): Path<i
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
+    if let Err(r) = seller_only(&m) {
+        return Ok(r);
+    }
     let id = m.id;
     let okay = with_db(&app, move |c| {
         let mut changed = false;
@@ -322,6 +359,9 @@ pub async fn order_binder(State(app): State<App>, h: HeaderMap, Path(bid): Path<
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
+    if let Err(r) = seller_only(&m) {
+        return Ok(r);
+    }
     let id = m.id;
     let ids: Vec<i64> = req.ids.into_iter().take(1000).collect();
     with_db(&app, move |c| {
@@ -346,6 +386,9 @@ pub async fn move_cards(State(app): State<App>, h: HeaderMap, Json(req): Json<Mo
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
+    if let Err(r) = seller_only(&m) {
+        return Ok(r);
+    }
     let (id, ids, bid) = (m.id, req.ids, req.binder_id);
     let n = with_db(&app, move |c| {
         let mut n = 0;
@@ -431,6 +474,9 @@ pub async fn answer_reservation(State(app): State<App>, h: HeaderMap, Path(id): 
         let done = with_db(&app, move |c| sellers::cancel_reservation(c, mid, id)).await?;
         return Ok(if done { ok(json!({ "ok": true })) } else { fail(StatusCode::BAD_REQUEST, "That reservation can't be cancelled.") });
     }
+    if let Err(r) = seller_only(&m) {
+        return Ok(r);
+    }
     let (status, via) = (req.status, req.paid_via);
     match with_db(&app, move |c| sellers::answer_reservation(c, mid, id, &status, &via)).await? {
         Ok(o) => {
@@ -460,6 +506,9 @@ pub async fn answer_offer(State(app): State<App>, h: HeaderMap, Path(id): Path<i
             with_db(&app, move |c| sellers::answer_counter(c, mid, id, accept)).await?.map(|_| None)
         }
         _ => {
+            if let Err(r) = seller_only(&m) {
+                return Ok(r);
+            }
             let (status, counter) = (req.status, req.counter.unwrap_or(0.0));
             with_db(&app, move |c| sellers::answer_offer(c, mid, id, &status, counter)).await?.map(Some)
         }
@@ -483,6 +532,9 @@ pub async fn reply_question(State(app): State<App>, h: HeaderMap, Path(id): Path
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
+    if let Err(r) = seller_only(&m) {
+        return Ok(r);
+    }
     let (mid, text) = (m.id, req.text);
     match with_db(&app, move |c| sellers::reply(c, mid, id, &text)).await? {
         Ok(()) => Ok(ok(json!({ "ok": true }))),
@@ -518,6 +570,9 @@ pub async fn reply_review(State(app): State<App>, h: HeaderMap, Path(id): Path<i
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
+    if let Err(r) = seller_only(&m) {
+        return Ok(r);
+    }
     let (mid, text) = (m.id, req.text);
     if !with_db(&app, move |c| sellers::reply_review(c, mid, id, &text)).await? {
         return Ok(fail(StatusCode::NOT_FOUND, "That review isn't on your store."));
@@ -538,7 +593,7 @@ struct SettingsPage {
 }
 
 pub async fn settings(State(app): State<App>, h: HeaderMap) -> Res {
-    let m = match signed_in(&app, &h).await? {
+    let m = match selling(&app, &h).await? {
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
@@ -552,6 +607,9 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
+    if let Err(r) = seller_only(&m) {
+        return Ok(r);
+    }
     if over_limit(&app, format!("store|{}", m.id), 60) {
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "Too many saves. Please wait a few minutes."));
     }
@@ -571,6 +629,7 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
         pay_info: m.pay_info.clone(),
         email: m.email.clone(),
         notify_views: m.notify_views,
+        pay_public: m.pay_public,
     };
     let (mut cover, mut methods, mut drop_cover) = (None::<Vec<u8>>, Vec::<String>::new(), false);
     while let Some(f) = mp.next_field().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))? {
@@ -596,10 +655,11 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
             "shopee_url" => s.shopee_url = v,
             "links" => s.links = v,
             "pay_method" => methods.push(v),
-            "pay_methods_sent" => s.pay_methods = String::new(),
+            "pay_methods_sent" => { s.pay_methods = String::new(); s.pay_public = false; s.notify_views = false; s.contact_public = false; }
             "pay_info" => s.pay_info = v,
             "email" => s.email = v,
             "notify_views" => s.notify_views = v == "1" || v == "on",
+            "pay_public" => s.pay_public = v == "1" || v == "on",
             "drop_cover" => drop_cover = v == "1" || v == "on",
             _ => {}
         }
@@ -652,6 +712,9 @@ pub async fn save_slug(State(app): State<App>, h: HeaderMap, Json(req): Json<Slu
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
+    if let Err(r) = seller_only(&m) {
+        return Ok(r);
+    }
     let (id, slug) = (m.id, req.slug);
     match with_db(&app, move |c| sellers::set_slug(c, id, &slug)).await? {
         Ok(true) => {
@@ -767,7 +830,7 @@ struct StorePage {
     me: Option<Member>,
     following: bool,
     is_me: bool,
-    links: Vec<(String, String)>,
+    links: Vec<(String, String, String)>,
     conditions: [&'static str; 10],
 }
 
@@ -780,6 +843,9 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
     // Same rules as the trainer's page: blocked and not-yet-approved stores are for their owner and the vault's staff.
     if (m.blocked || !m.profile_ok) && !is_me && !staff {
         return not_found(app).await;
+    }
+    if !m.seller {
+        return if is_me { Ok(Redirect::to("/me/store").into_response()) } else { not_found(app).await };
     }
     let (id, viewer) = (m.id, me.as_ref().map(|u| u.id));
     let bslug = binder_slug.clone();
@@ -986,7 +1052,7 @@ pub async fn admin_sellers(State(app): State<App>, h: HeaderMap) -> Res {
         return Ok(Redirect::to("/admin").into_response());
     }
     let (nav, stores, flagged, reviews, sellers_n) = with_db(&app, |c| {
-        let n: i64 = c.query_row("SELECT COUNT(*) FROM members WHERE blocked=0", [], |r| r.get(0))?;
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM members WHERE blocked=0 AND seller=1", [], |r| r.get(0))?;
         Ok((chrome(c)?, sellers::directory(c)?, sellers::flagged_cards(c)?, sellers::all_reviews(c, 50)?, n))
     })
     .await?;
@@ -1048,9 +1114,9 @@ pub fn start_housekeeping(app: App) {
             if tick % 360 == 1 {
                 crate::ops::refresh_sets(&app).await;
             }
-            // Cards that never had a market price looked up (the SRP needs it): a polite batch every ten minutes
-            // until every card has one. The nightly job on the VM keeps them fresh after that.
-            if tick % 10 == 2 && crate::ops::market_missing(&app).await > 0 {
+            // Cards that never had a market price looked up (the SRP needs it): a batch every minute until every card
+            // has one (about an hour for the whole vault, politely spaced). The nightly job keeps them fresh after that.
+            if tick >= 1 && crate::ops::market_missing(&app).await > 0 {
                 crate::ops::refresh_prices_batch(&app, 40).await.ok();
             }
             tick += 1;

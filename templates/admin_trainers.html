@@ -69,6 +69,15 @@
           <button type="button" data-role-set="admin" class="{% if r.m.role == "admin" %}on{% endif %}" aria-pressed="{{ r.m.role == "admin" }}"><b>Admin</b><small>Everything, including the site</small></button>
         </div>
       </div>
+      <div class="at-tool at-role" role="group" aria-label="Store">
+        <b>Store</b>
+        <div class="at-role-opts">
+          <button type="button" data-seller-set="1" class="{% if r.m.seller %}on{% endif %}" aria-pressed="{{ r.m.seller }}"><b>Seller</b><small>Can list cards for sale, with their own store page</small></button>
+          <button type="button" data-seller-set="0" class="{% if !r.m.seller %}on{% endif %}" aria-pressed="{{ !r.m.seller }}"><b>Collector</b><small>A binder to show, nothing for sale</small></button>
+        </div>
+      </div>
+      {% endif %}
+      {% if full %}
       <form class="at-tool at-stars" data-form="stars">
         <b>★ Give star points</b>
         <span class="at-quick"><button type="button" data-amt="1">+1</button><button type="button" data-amt="5">+5</button><button type="button" data-amt="10">+10</button></span>
@@ -130,6 +139,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (role === 'mod' && !confirm(`Make ${name} a moderator? They can hide or delete vouches, and block or remove trainers. Nothing else.`)) return;
         if (role === '' && !confirm(`Take ${name}'s powers away? This works straight away.`)) return;
         await send(row, { action: 'role', role });
+        return;
+      }
+      const setSeller = e.target.closest('[data-seller-set]');
+      if (setSeller) {
+        const row = setSeller.closest('.at-row'), on = setSeller.dataset.sellerSet === '1', name = row.dataset.name;
+        if (setSeller.classList.contains('on')) return;
+        if (on && !confirm(`Let ${name} sell cards? They get a store page, listings with stock and prices, and orders.`)) return;
+        if (!on && !confirm(`Switch ${name}'s store off? Their cards stay in their binder; nothing is for sale.`)) return;
+        await send(row, { action: 'seller', seller: on });
         return;
       }
       const amt = e.target.closest('[data-amt]');

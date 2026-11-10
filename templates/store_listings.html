@@ -63,13 +63,13 @@
     </div>
   </section>
 
-  <p class="st-count"><span id="shownN">{{ cards.len() }}</span> of {{ total }} card{% if total != 1 %}s{% endif %} · <label class="chk"><input type="checkbox" class="sr" id="selAll"><span class="chk-box"></span> Select all shown</label></p>
+  <p class="st-count"><span><b id="shownN">{{ cards.len() }}</b> of {{ total }} card{% if total != 1 %}s{% endif %}</span><label class="chk"><input type="checkbox" class="sr" id="selAll"><span class="chk-box"></span> Select all shown</label></p>
   {% if cards.is_empty() %}
   <div class="me-empty st-empty" id="listEmpty">{% if total == 0 %}<b>Your store is empty.</b><span>Tap <b>+ Add cards</b> to list your first card. Prices are suggested from today's market.</span>{% else %}<b>No cards match.</b><span>Try another word, or clear the filters.</span>{% endif %}</div>
   {% endif %}
-  <ul class="rows mc-grid st-grid" id="rows">
+  <ul class="rows mc-grid ls-grid" id="rows">
     {% for c in cards %}
-    <li class="crow ctile st-tile" data-id="{{ c.id }}" data-status="{{ c.status }}" data-market="{{ c.value }}" data-own="{{ c.value_own }}" data-cond="{{ c.cond }}" data-qty="{{ c.qty }}" data-c="{{ c.cond_class() }}"{% if c.own_photo() %} data-own-photo{% endif %}{% if let Some(b) = c.binder_id %} data-binder="{{ b }}"{% endif %}>
+    <li class="crow ctile ls-tile" data-id="{{ c.id }}" data-status="{{ c.status }}" data-market="{{ c.value }}" data-own="{{ c.value_own }}" data-cond="{{ c.cond }}" data-qty="{{ c.qty }}" data-c="{{ c.cond_class() }}"{% if c.own_photo() %} data-own-photo{% endif %}{% if let Some(b) = c.binder_id %} data-binder="{{ b }}"{% endif %}>
       <label class="chk ct-chk" title="Select"><input type="checkbox" class="sr" data-sel="{{ c.id }}" aria-label="Select {{ c.title }}"><span class="chk-box"></span></label>
       <span class="st-status" data-s="{{ c.status }}">{{ c.status }}</span>
       <a class="ct-img" href="/trainers/{{ c.member_id }}/cards/{{ c.id }}" data-float aria-label="See {{ c.title }}">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="">{% else %}<span class="thumb-empty">No photo</span>{% endif %}</a>
@@ -87,7 +87,7 @@
       </div>
       <select data-binder aria-label="Binder"><option value="">No binder</option>{% for b in binders %}<option value="{{ b.id }}"{% if let Some(x) = c.binder_id %}{% if *x == b.id %} selected{% endif %}{% endif %}>{{ b.title }}</option>{% endfor %}</select>
       <textarea class="ct-desc" rows="2" maxlength="500" placeholder="A note for buyers (optional)" aria-label="Notes about {{ c.title }}" data-notes>{{ c.notes }}</textarea>
-      <div class="st-tile-acts">
+      <div class="ls-tile-acts">
         <button type="button" class="linkbtn inline" data-renew>{% if c.needs_update() %}Renew for 30 days{% else if c.expires_at > 0 %}Change end date{% else %}Set an end date{% endif %}</button>
         <button type="button" class="linkbtn inline danger" data-del>Remove</button>
       </div>

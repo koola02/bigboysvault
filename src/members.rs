@@ -108,6 +108,10 @@ pub struct Member {
     /// Ways to pay the seller ticked, comma separated: "GCash,Maya".
     pub pay_methods: String,
     pub notify_views: bool,
+    /// The seller chose to show their pay details on the store page itself.
+    pub pay_public: bool,
+    /// An admin switched selling on for this trainer. Everyone else is a collector with a binder.
+    pub seller: bool,
 }
 
 /// An admin's tags for a trainer, as a list.
@@ -184,16 +188,23 @@ impl Member {
     pub fn on_vacation(&self) -> bool {
         self.status == "Vacation"
     }
-    /// The named links a seller added, as (label, address).
-    pub fn social_links(&self) -> Vec<(String, String)> {
+    /// The named links a seller added, as (label, address, the address in short: "facebook.com/vaultshop").
+    pub fn social_links(&self) -> Vec<(String, String, String)> {
+        let short = |u: &str| -> String {
+            let t = u.trim_start_matches("https://").trim_start_matches("www.").trim_end_matches('/');
+            let t = t.split(['?', '#']).next().unwrap_or(t);
+            if t.chars().count() > 38 { t.chars().take(37).collect::<String>() + "…" } else { t.to_string() }
+        };
         let mut v = vec![];
         for (label, url) in [("Facebook", &self.fb_url), ("Facebook group", &self.fb_group_url), ("Instagram", &self.ig_url), ("TikTok", &self.tiktok_url), ("Shopee", &self.shopee_url)] {
             if !url.is_empty() {
-                v.push((label.to_string(), url.clone()));
+                v.push((label.to_string(), url.clone(), short(url)));
             }
         }
         for line in self.link_list() {
-            v.push(crate::sellers::link_parts(&line));
+            let (label, url) = crate::sellers::link_parts(&line);
+            let s = short(&url);
+            v.push((label, url, s));
         }
         v
     }
@@ -606,8 +617,8 @@ pub struct Highlight {
     pub card: MemberCard,
 }
 
-const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags,m.slug,m.fb_url,m.tiktok_url,m.links,m.cover_photo,m.location,m.contact_info,m.contact_public,m.status,m.email,m.store_name,m.fb_group_url,m.ig_url,m.shopee_url,m.pay_info,m.pay_methods,m.notify_views");
-const MEMBER_COUNT: usize = 30;
+const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags,m.slug,m.fb_url,m.tiktok_url,m.links,m.cover_photo,m.location,m.contact_info,m.contact_public,m.status,m.email,m.store_name,m.fb_group_url,m.ig_url,m.shopee_url,m.pay_info,m.pay_methods,m.notify_views,m.pay_public,m.seller");
+const MEMBER_COUNT: usize = 32;
 
 fn map_member(r: &Row) -> rusqlite::Result<Member> {
     Ok(Member {
@@ -641,6 +652,8 @@ fn map_member(r: &Row) -> rusqlite::Result<Member> {
         pay_info: r.get(27)?,
         pay_methods: r.get(28)?,
         notify_views: r.get::<_, i64>(29)? != 0,
+        pay_public: r.get::<_, i64>(30)? != 0,
+        seller: r.get::<_, i64>(31)? != 0,
     })
 }
 
@@ -1083,6 +1096,12 @@ pub fn set_blocked(c: &Connection, id: i64, blocked: bool) -> rusqlite::Result<(
 /// Gives a trainer a role, or takes it away.
 pub fn set_tags(c: &Connection, id: i64, tags: &str) -> rusqlite::Result<()> {
     c.execute("UPDATE members SET tags=?2 WHERE id=?1", rusqlite::params![id, tags])?;
+    Ok(())
+}
+
+/// Switches a trainer's store on or off (admins only).
+pub fn set_seller(c: &Connection, id: i64, on: bool) -> rusqlite::Result<()> {
+    c.execute("UPDATE members SET seller=?2, updated_at=?3 WHERE id=?1", rusqlite::params![id, on, now()])?;
     Ok(())
 }
 

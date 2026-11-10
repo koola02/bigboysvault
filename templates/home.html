@@ -39,14 +39,11 @@
 {% endif %}
 {% if b.kind == "hero" %}
 <section class="hero{% if !edit %} hero-x{% endif %}"{% if !edit %} id="hxHero"{% endif %}>
-  {% if !edit %}<canvas class="hx-canvas" aria-hidden="true"></canvas>
-  <div class="hx-stage">
+  {% if !edit %}<div class="hx-stage" aria-label="The vault">
+    <div class="hx-glow" aria-hidden="true"></div>
+    <div class="hx-fan">{% for p in b.items.iter().take(7) %}<a class="hx-card" href="/products/{{ p.handle }}" data-float data-c="{{ p.cond_class() }}" aria-label="{{ p.short_title() }}, {{ p.price_text() }}" style="--i:{{ loop.index0 }}"><img src="{{ p.img(360) }}" alt="" width="150" height="210" {% if loop.index0 < 4 %}fetchpriority="high"{% else %}loading="lazy"{% endif %} decoding="async" draggable="false"><span class="hx-card-p">{{ p.price_text() }}</span></a>{% endfor %}</div>
     <img class="hx-logo" src="/static/img/logo-768.webp" width="768" height="768" alt="{{ nav.brand }}" fetchpriority="high" decoding="async" draggable="false">
-    <p class="hx-tip" hidden></p>
-    <p class="hx-hint">Drag to spin. Tap a card or the logo.</p>
-    <div class="hx-links" aria-label="Cards in orbit">{% for p in b.items %}<a href="/products/{{ p.handle }}" data-img="{{ p.img(540) }}" data-t="{{ p.short_title() }}" data-p="{{ p.price_text() }}" data-c="{{ p.cond_class() }}" aria-label="{{ p.short_title() }}, {{ p.price_text() }}"><img alt="" width="150" height="210" loading="lazy" decoding="async"></a>{% endfor %}</div>
-  </div>
-  <script type="module" src="/static/vault-fx.js?v=5"></script>{% endif %}
+  </div>{% endif %}
   <div class="hero-v">
     <div class="hero-copy">
       {% if !b.eyebrow.is_empty() || edit %}<p class="eyebrow plate" data-f="eyebrow" data-ph="Small label">{{ b.eyebrow }}</p>{% endif %}

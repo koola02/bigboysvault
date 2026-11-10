@@ -11,7 +11,7 @@
     let r;
     try { r = await fetch(url, opts); } catch (_) { throw new Error('No connection. Please try again.'); }
     const j = await r.json().catch(() => ({}));
-    if (r.status === 401) { location.href = '/join?signin=1'; throw new Error('Please sign in again.'); }
+    if (r.status === 401) { location.href = '/login'; throw new Error('Please sign in again.'); }
     if (!r.ok) throw new Error(j.error || 'That didn’t save. Please try again.');
     return j;
   }
@@ -23,7 +23,7 @@
   const root = $('listings');
   if (root) {
     const rows = $('rows');
-    const tileOf = (n) => n.closest('.st-tile');
+    const tileOf = (n) => n.closest('.ls-tile');
     const idOf = (n) => tileOf(n).dataset.id;
 
     // The suggestion line under each price, from the shared rule in /static/pricing.js.
@@ -35,7 +35,7 @@
         onUse: own > 0 ? () => savePrice(tile, 0) : null,
       });
     }
-    const paintAll = () => rows.querySelectorAll('.st-tile').forEach(paintSug);
+    const paintAll = () => rows.querySelectorAll('.ls-tile').forEach(paintSug);
     document.addEventListener('bbv:shares', paintAll);
 
     function apply(tile, card) {
@@ -89,14 +89,14 @@
     const sel = new Set();
     const boxes = () => [...rows.querySelectorAll('[data-sel]')];
     function sync() {
-      boxes().forEach((b) => { b.checked = sel.has(+b.dataset.sel); b.closest('.st-tile').classList.toggle('sel', b.checked); });
+      boxes().forEach((b) => { b.checked = sel.has(+b.dataset.sel); b.closest('.ls-tile').classList.toggle('sel', b.checked); });
       $('selCount').textContent = `${sel.size} selected`; $('selbar').hidden = sel.size === 0; document.body.classList.toggle('has-sel', sel.size > 0);
       const all = $('selAll'); if (all) { const vis = boxes(); all.checked = vis.length > 0 && vis.every((b) => b.checked); all.indeterminate = !all.checked && vis.some((b) => b.checked); }
     }
     const clear = () => { sel.clear(); sync(); };
     rows.addEventListener('change', (e) => { const b = e.target.closest('[data-sel]'); if (!b) return; b.checked ? sel.add(+b.dataset.sel) : sel.delete(+b.dataset.sel); sync(); });
     $('selAll')?.addEventListener('change', (e) => { boxes().forEach((b) => (e.target.checked ? sel.add(+b.dataset.sel) : sel.delete(+b.dataset.sel))); sync(); });
-    const tilesSel = () => [...sel].map((id) => rows.querySelector(`.st-tile[data-id="${id}"]`)).filter(Boolean);
+    const tilesSel = () => [...sel].map((id) => rows.querySelector(`.ls-tile[data-id="${id}"]`)).filter(Boolean);
     const plural = (n, w = 'card') => `${n.toLocaleString()} ${w}${n === 1 ? '' : 's'}`;
     async function bulk(body, msg) {
       const j = await send('/me/listings/bulk', { ids: [...sel], ...body });
@@ -113,9 +113,9 @@
       for (const g of list) { const b = el('button', null, g); b.type = 'button'; b.onclick = () => { inp.value = g; c.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); }; c.append(b); }
       return c;
     }
-    const CONDS = [...document.querySelector('.st-tile [data-cond]')?.options || []].map((o) => o.value).filter((v) => v && v !== '__own');
-    const STATUSES = [...document.querySelector('.st-tile [data-status]')?.options || []].map((o) => o.value);
-    const BINDERS = [...document.querySelector('.st-tile [data-binder]')?.options || []].map((o) => [o.value, o.textContent]);
+    const CONDS = [...document.querySelector('.ls-tile [data-cond]')?.options || []].map((o) => o.value).filter((v) => v && v !== '__own');
+    const STATUSES = [...document.querySelector('.ls-tile [data-status]')?.options || []].map((o) => o.value);
+    const BINDERS = [...document.querySelector('.ls-tile [data-binder]')?.options || []].map((o) => [o.value, o.textContent]);
     const sheets = {
       price() {
         let mode = 'set'; const node = el('div', 'sheet-form'); const inp = el('input', 'sheet-input'); inp.inputMode = 'decimal'; inp.placeholder = '₱ amount';
@@ -175,7 +175,7 @@
         else { const t = tiles[0]; const j = await send(`/me/listings/${t.dataset.id}/renew`, { days }); apply(t, j.card); A.sheet.close(); A.toast(days ? `On sale for ${days} more days ✓` : 'No end date ✓', { kind: 'ok' }); }
       }, 'Apply');
     }
-    function count() { const n = rows.querySelectorAll('.st-tile').length; $('shownN').textContent = n; const empty = $('listEmpty'); if (empty && n > 0) empty.hidden = true; }
+    function count() { const n = rows.querySelectorAll('.ls-tile').length; $('shownN').textContent = n; const empty = $('listEmpty'); if (empty && n > 0) empty.hidden = true; }
     async function refreshList() {
       const html = await (await fetch(location.pathname + location.search, { credentials: 'same-origin' })).text();
       const doc = new DOMParser().parseFromString(html, 'text/html');
@@ -293,7 +293,7 @@
 
     paintAll(); sync();
     const focus = root.dataset.focus;
-    if (focus && focus !== '0') { const t = rows.querySelector(`.st-tile[data-id="${focus}"]`); if (t) { t.classList.add('focus'); t.scrollIntoView({ block: 'center' }); } }
+    if (focus && focus !== '0') { const t = rows.querySelector(`.ls-tile[data-id="${focus}"]`); if (t) { t.classList.add('focus'); t.scrollIntoView({ block: 'center' }); } }
   }
 
   /* ================= binders ================= */

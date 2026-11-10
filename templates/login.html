@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}Log in · {{ nav.brand }}{% endblock %}
+{% block content %}
+<section class="wrap join login">
+  <div class="join-card">
+    <img class="join-mark" src="/static/img/logo-sm.png" width="88" height="88" alt="">
+    <h1 class="h1">Welcome back</h1>
+    <p class="join-sub">Sign in to your trainer: your binder, your store and your orders.</p>
+    {% if !error.is_empty() %}<p class="join-err" role="alert">{{ error }}</p>{% endif %}
+    <form class="join-form" method="post" action="/signin">
+      <label>Trainer name<input name="name" value="{{ name }}" autocomplete="username" autocapitalize="off" spellcheck="false" required autofocus></label>
+      <label>Password<input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn" type="submit">Sign in</button>
+    </form>
+    <p class="join-switch">New here? <a href="/join">Become a trainer</a> — a profile and a binder, no email needed.</p>
+    <details class="login-owner">
+      <summary>Vault owner? Sign in with the admin password</summary>
+      <form method="post" action="/admin/login" class="join-form">
+        <label>Admin password<input type="password" name="token" autocomplete="current-password" required></label>
+        <button class="btn ghost" type="submit">Open the admin</button>
+      </form>
+    </details>
+  </div>
+</section>
+{% endblock %}

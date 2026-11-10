@@ -54,7 +54,7 @@
           <span class="ct-meta">{% if !p.set_text().is_empty() %}<span class="ct-set">{{ p.set_text() }}</span>{% endif %}{% if !p.finish_shown().is_empty() %}<span class="ct-var">{{ p.finish_shown() }}</span>{% endif %}</span>
         </div>
         <label class="ct-pricebox"><span aria-hidden="true">₱</span><input type="text" inputmode="decimal" autocomplete="off" value="{{ p.price_input() }}" data-price aria-label="Price of {{ p.title }}"></label>
-        {% if !p.srp_line().is_empty() %}<p class="ct-srp sug" data-srp>{{ p.srp_line() }}</p>{% endif %}
+        <p class="ct-srp sug" data-srp>{{ p.srp_line() }}</p>
         <select class="ct-cond" data-cond aria-label="Condition of {{ p.title }}">{% for o in p.condition_choices() %}<option value="{{ o.0 }}"{% if o.2 %} selected{% endif %}{% if o.0.is_empty() %} disabled{% endif %}>{{ o.1 }}</option>{% endfor %}</select>
         <textarea class="ct-desc" rows="2" maxlength="4000" placeholder="Add a description" aria-label="Description of {{ p.title }}" data-notes>{{ p.notes() }}</textarea>
         <div class="tag-box ct-tags" data-tag-box data-tags="{{ p.shown_tags().join("|") }}" aria-label="Tags for {{ p.title }}"></div>

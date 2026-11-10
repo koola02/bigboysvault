@@ -40,7 +40,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@50..150,100..900&display=swap">
 <link rel="stylesheet" href="/static/app.css?v=53">
 <link rel="stylesheet" href="/static/modern.css?v=26">
-<link rel="stylesheet" href="/static/vault.css?v=49">
+<link rel="stylesheet" href="/static/vault.css?v=52">
 {% for t in nav.trials %}<meta http-equiv="origin-trial" content="{{ t }}">
 {% endfor %}<script type="speculationrules">
 {"prefetch":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/admin*"}},{"not":{"href_matches":"/products/*"}},{"not":{"href_matches":"/me*"}},{"not":{"href_matches":"/join*"}},{"not":{"href_matches":"/chat*"}},{"not":{"href_matches":"/ask*"}},{"not":{"href_matches":"/trainers/*"}},{"not":{"href_matches":"/collections/*"}},{"not":{"href_matches":"/static/*"}},{"not":{"href_matches":"/uploads/*"}}]},"eagerness":"moderate"}],
@@ -75,10 +75,10 @@
 <script src="/static/card-float.js?v=22" defer></script>
 <script src="/static/tiles.js?v=2" defer></script>
 <script src="/static/vouches.js?v=3" defer></script>
-<script src="/static/vault-core.js?v=7" defer></script>
+<script src="/static/vault-core.js?v=8" defer></script>
 <script src="/static/vault-talk.js?v=5" defer></script>
 <script src="/static/vault-staff.js?v=2" defer></script>
-<script type="module" src="/static/vault-gl.js?v=3"></script>
+<script type="module" src="/static/vault-gl.js?v=4"></script>
 </head>
 <body>
 <div class="hx-gate" aria-hidden="true"><img src="/static/img/logo-768.webp" width="768" height="768" alt=""></div>
@@ -106,7 +106,7 @@
 </header>
 <main id="main">{% block content %}{% endblock %}</main>
 <footer class="foot">
-  <div class="foot-in"><a class="foot-admin" href="/admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg>Admin</a></div>
+  <div class="foot-in"><a class="foot-login" id="footLogin" href="/login"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>Log in</a></div>
   <div class="foot-legal">
     <p>© {{ nav.years }} {{ nav.brand }}. All rights reserved.</p>
     <p>Pokémon and all related names are trademarks of Nintendo, Creatures and GAME FREAK. {{ nav.brand }} is a private collection and isn’t affiliated with them.</p>

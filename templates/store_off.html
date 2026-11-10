@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}My store · {{ nav.brand }}{% endblock %}
+{% block content %}
+<section class="wrap admin st">
+  <div class="st-head"><div><p class="eyebrow">My store</p><h1 class="h1 a-title">Not open yet</h1></div><div class="st-head-acts"><a class="linkbtn" href="/me">← My trainer</a></div></div>
+  <div class="me-card st-form">
+    <p>Selling isn't switched on for your trainer yet. The vault owner switches it on for trainers they know, and then this page becomes your store: listings with stock and prices, binders, orders and reviews.</p>
+    <p class="me-how">Until then your binder on <a href="/me">My trainer</a> works as before, and you can still buy from the <a href="/stores">stores</a>: your reservations and offers are under <a href="/me/orders?tab=buying">My orders</a>.</p>
+    <p><a class="btn ghost" href="/chat">Ask the vault in the chat</a></p>
+  </div>
+</section>
+{% endblock %}
