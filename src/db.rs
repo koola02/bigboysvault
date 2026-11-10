@@ -341,7 +341,7 @@ fn migrate(c: &Connection) -> rusqlite::Result<()> {
     Ok(())
 }
 
-const SCHEMA: &str = "
+pub const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS products(
   id INTEGER PRIMARY KEY, handle TEXT UNIQUE NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
   tags TEXT NOT NULL DEFAULT '', variant TEXT NOT NULL DEFAULT '', price REAL NOT NULL DEFAULT 0,

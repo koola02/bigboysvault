@@ -6,7 +6,8 @@ use argon2::Argon2;
 use rusqlite::{Connection, OptionalExtension, Row};
 use sha2::{Digest, Sha256};
 
-pub const MAX_CARDS: i64 = 50;
+/// How many cards a store may hold unless the owner sets `seller_max_cards` (see `sellers::max_cards`).
+pub const MAX_CARDS: i64 = 500;
 pub const SESSION_SECS: i64 = 30 * 86_400;
 /// Sign-ups stop while this many are waiting for approval, so a bot can't fill the disk.
 pub const MAX_PENDING: i64 = 200;
@@ -319,52 +320,8 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         }
     }
 
-    c.execute_batch("
-    CREATE TABLE IF NOT EXISTS store_follows(
-      id INTEGER PRIMARY KEY AUTOINCREMENT, follower_id INTEGER NOT NULL, seller_id INTEGER NOT NULL, created_at INTEGER NOT NULL);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_sf_pair ON store_follows(follower_id, seller_id);
-
-    CREATE TABLE IF NOT EXISTS reviews(
-      id INTEGER PRIMARY KEY AUTOINCREMENT, reviewer_id INTEGER NOT NULL, seller_id INTEGER NOT NULL, transaction_id INTEGER NOT NULL, rating INTEGER NOT NULL, text TEXT NOT NULL, created_at INTEGER NOT NULL);
-    CREATE INDEX IF NOT EXISTS idx_reviews_seller ON reviews(seller_id, created_at);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_tx ON reviews(transaction_id);
-
-    CREATE TABLE IF NOT EXISTS inquiries(
-      id INTEGER PRIMARY KEY AUTOINCREMENT, sender_id INTEGER NOT NULL, seller_id INTEGER NOT NULL, card_id INTEGER, message TEXT NOT NULL, created_at INTEGER NOT NULL);
-    CREATE INDEX IF NOT EXISTS idx_inquiries_seller ON inquiries(seller_id, created_at);
-
-    CREATE TABLE IF NOT EXISTS offers(
-      id INTEGER PRIMARY KEY AUTOINCREMENT, sender_id INTEGER NOT NULL, seller_id INTEGER NOT NULL, card_id INTEGER NOT NULL, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'Pending', created_at INTEGER NOT NULL);
-    CREATE INDEX IF NOT EXISTS idx_offers_seller ON offers(seller_id, created_at);
-
-    CREATE TABLE IF NOT EXISTS reservations(
-      id INTEGER PRIMARY KEY AUTOINCREMENT, buyer_id INTEGER NOT NULL, seller_id INTEGER NOT NULL, card_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'Pending', expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
-    CREATE INDEX IF NOT EXISTS idx_res_seller ON reservations(seller_id, created_at);
-
-    CREATE TABLE IF NOT EXISTS transactions(
-      id INTEGER PRIMARY KEY AUTOINCREMENT, buyer_id INTEGER NOT NULL, seller_id INTEGER NOT NULL, card_id INTEGER NOT NULL, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'Completed', created_at INTEGER NOT NULL);
-    CREATE INDEX IF NOT EXISTS idx_tx_seller ON transactions(seller_id, created_at);
-
-    CREATE TABLE IF NOT EXISTS listing_views(
-      id INTEGER PRIMARY KEY AUTOINCREMENT, card_id INTEGER NOT NULL, viewer_ip_hash TEXT NOT NULL, created_at INTEGER NOT NULL);
-    CREATE INDEX IF NOT EXISTS idx_views_card ON listing_views(card_id);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_views_card_ip_day ON listing_views(card_id, viewer_ip_hash, created_at);
-
-    CREATE TABLE IF NOT EXISTS listing_saves(
-      id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, card_id INTEGER NOT NULL, created_at INTEGER NOT NULL);
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_saves_member_card ON listing_saves(member_id, card_id);
-
-    CREATE TABLE IF NOT EXISTS notifications(
-      id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, link TEXT NOT NULL, is_read INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
-    CREATE INDEX IF NOT EXISTS idx_notif_member ON notifications(member_id, is_read, created_at);
-
-    CREATE TABLE IF NOT EXISTS notification_preferences(
-      member_id INTEGER PRIMARY KEY, event_type TEXT NOT NULL, site INTEGER NOT NULL DEFAULT 1, email INTEGER NOT NULL DEFAULT 1, push INTEGER NOT NULL DEFAULT 0);
-
-    CREATE TABLE IF NOT EXISTS push_subscriptions(
-      id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, endpoint TEXT NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL);
-    CREATE INDEX IF NOT EXISTS idx_push_member ON push_subscriptions(member_id);
-    ")?;
+    // The store: listings' stock and prices, orders, reviews, followers, views and notifications.
+    crate::sellers::migrate(c)?;
 
     // Fill slug for existing members without one
     let missing: Vec<(i64, String)> = c.prepare("SELECT id, name FROM members WHERE slug=''")?
@@ -473,7 +430,7 @@ pub fn initial(name: &str) -> String {
     name.chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_default()
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct MemberCard {
     pub id: i64,
     pub member_id: i64,
@@ -492,6 +449,17 @@ pub struct MemberCard {
     pub status: String,
     pub expires_at: i64,
     pub is_custom: bool,
+    /// Copies in stock. 0 = sold out.
+    pub qty: i64,
+    pub finish: String,
+    pub notes: String,
+    /// Copies sold through the store.
+    pub sold: i64,
+    pub view_n: i64,
+    pub save_n: i64,
+    pub updated_at: i64,
+    /// The seller asked the vault to look at this custom card.
+    pub flagged: bool,
 }
 
 impl MemberCard {
@@ -515,7 +483,44 @@ impl MemberCard {
     }
     /// The set's symbol.
     pub fn symbol(&self) -> String {
-        vault_search::set_symbol(&self.card_id)
+        vault_search::set_symbol(crate::sellers::catalogue_key(&self.card_id))
+    }
+    /// The asking price: the seller's own, or the market's for this condition.
+    pub fn price_text(&self) -> String {
+        vault_search::peso(self.worth())
+    }
+    pub fn has_price(&self) -> bool {
+        self.worth() > 0.0
+    }
+    pub fn on_sale(&self) -> bool {
+        self.status == "Active" || self.status == "Reserved"
+    }
+    /// Past its end date, or taken off sale by it.
+    pub fn needs_update(&self) -> bool {
+        self.status == "Expired" || (self.expires_at > 0 && self.expires_at < now())
+    }
+    pub fn expires_text(&self) -> String {
+        if self.expires_at <= 0 {
+            return String::new();
+        }
+        let left = self.expires_at - now();
+        if left < 0 {
+            "ended".into()
+        } else if left < 86400 {
+            "ends today".into()
+        } else {
+            format!("{} days left", left / 86400)
+        }
+    }
+    pub fn qty_text(&self) -> String {
+        match self.qty {
+            0 => "Sold out".into(),
+            1 => "1 left".into(),
+            n => format!("{n} in stock"),
+        }
+    }
+    pub fn when(&self) -> String {
+        crate::sellers::ago(self.updated_at)
     }
     /// Which colour this card's condition gets.
     pub fn cond_class(&self) -> &'static str {
@@ -576,9 +581,11 @@ fn map_member(r: &Row) -> rusqlite::Result<Member> {
     })
 }
 
-const CARD_COLS: &str = "c.id,c.member_id,c.title,c.number,c.card_set,c.image,c.image_large,c.cond,c.card_id,c.value,c.value_own,c.binder_id,c.status,c.expires_at,c.is_custom";
+pub const CARD_COLS: &str = "c.id,c.member_id,c.title,c.number,c.card_set,c.image,c.image_large,c.cond,c.card_id,c.value,c.value_own,c.binder_id,c.status,c.expires_at,c.is_custom,c.qty,c.finish,c.notes,c.sold,c.view_n,c.save_n,c.updated_at,c.review_flag";
+/// How many columns `CARD_COLS` has: anything selected after it starts here.
+pub const CARD_N: usize = 23;
 
-fn map_card(r: &Row, at: usize) -> rusqlite::Result<MemberCard> {
+pub fn map_card(r: &Row, at: usize) -> rusqlite::Result<MemberCard> {
     Ok(MemberCard {
         id: r.get(at)?,
         member_id: r.get(at + 1)?,
@@ -595,10 +602,18 @@ fn map_card(r: &Row, at: usize) -> rusqlite::Result<MemberCard> {
         status: r.get(at + 12)?,
         expires_at: r.get(at + 13)?,
         is_custom: r.get::<_, i64>(at + 14)? != 0,
+        qty: r.get(at + 15)?,
+        finish: r.get(at + 16)?,
+        notes: r.get(at + 17)?,
+        sold: r.get(at + 18)?,
+        view_n: r.get(at + 19)?,
+        save_n: r.get(at + 20)?,
+        updated_at: r.get(at + 21)?,
+        flagged: r.get::<_, i64>(at + 22)? != 0,
     })
 }
 
-fn now() -> i64 {
+pub fn now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0)
 }
 
@@ -1340,7 +1355,7 @@ pub fn add_card(c: &Connection, member_id: i64, card_id: &str, title: &str, numb
     c.execute_batch("BEGIN IMMEDIATE")?;
     let r = (|| {
         let n: i64 = c.query_row("SELECT COUNT(*) FROM member_cards WHERE member_id=?1", [member_id], |r| r.get(0))?;
-        if n >= MAX_CARDS {
+        if n >= crate::sellers::max_cards(c) {
             return Ok(Added::Full);
         }
         let done = c.execute(
@@ -1398,7 +1413,8 @@ pub fn reorder_cards(c: &Connection, member_id: i64, ids: &[i64]) -> rusqlite::R
 
 /// The market's price for every copy of a card.
 pub fn set_card_value(c: &Connection, card_id: &str, value: f64, now: i64) -> rusqlite::Result<usize> {
-    c.execute("UPDATE member_cards SET value=?2, value_at=?3 WHERE card_id=?1", rusqlite::params![card_id, value, now])
+    // A second listing of the same card is "id#2": it follows the market too.
+    c.execute("UPDATE member_cards SET value=?2, value_at=?3 WHERE card_id=?1 OR card_id LIKE ?1 || '#%'", rusqlite::params![card_id, value, now])
 }
 
 /// A trainer's own figure for one card. 0 goes back to the market's.
