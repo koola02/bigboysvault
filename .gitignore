@@ -4,4 +4,5 @@ data.db
 data.db-*
 shots/
 graphify-out/
+backups/
 *.log
