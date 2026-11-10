@@ -32,7 +32,7 @@ pub async fn condition_shares(State(app): State<App>, h: HeaderMap) -> Res {
     if !check_auth(&app, &h).await {
         return Ok((StatusCode::NOT_FOUND, "Not found").into_response());
     }
-    let shares: HashMap<String, f64> = with_db(&app, |c| Ok(pricing::load_shares(c))).await?;
+    let shares: HashMap<String, f64> = pricing::current();
     Ok(json(json!(shares)))
 }
 
@@ -96,7 +96,7 @@ pub async fn price_suggest(State(app): State<App>, h: HeaderMap, Query(q): Query
         None => (0.0, "", ""),
     };
 
-    let shares = with_db(&app, |c| Ok(pricing::load_shares(c))).await?;
+    let shares = pricing::current();
     let is_graded = pricing::is_graded(&q.cond);
     let is_sealed = pricing::is_sealed(&q.cond);
     let share = if !is_graded && !is_sealed { pricing::factor_with_shares(&shares, &q.cond) } else { None };

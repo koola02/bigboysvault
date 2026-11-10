@@ -357,6 +357,10 @@ CREATE INDEX IF NOT EXISTS idx_cp_product ON collection_products(product_id);
 CREATE INDEX IF NOT EXISTS idx_products_created ON products(created_at DESC);
 ";
 
+/// How many columns `COLS` has. Anything selected after `COLS` starts at this index.
+/// Keep it in step with `COLS` and `map` (a test checks it).
+const NCOLS: usize = 19;
+
 const COLS: &str =
     "p.id,p.handle,p.title,p.body,p.tags,p.variant,p.price,p.compare_at,p.available,p.image,p.image_w,p.image_h,p.card_no,p.card_set,p.api_id,p.finish,p.price_updated,p.price_src,p.rarity";
 
@@ -389,8 +393,8 @@ fn map(r: &Row) -> rusqlite::Result<Product> {
 /// A row from a grouped list: the product plus how many copies it stands for.
 fn map_grouped(r: &Row) -> rusqlite::Result<Product> {
     let mut p = map(r)?;
-    p.qty = r.get(19)?;
-    p.copy_ids = r.get(20)?;
+    p.qty = r.get(NCOLS)?;
+    p.copy_ids = r.get(NCOLS + 1)?;
     Ok(p)
 }
 
@@ -467,7 +471,7 @@ pub fn versions(c: &Connection, p: &Product) -> rusqlite::Result<Vec<Version>> {
         (format!("SELECT {COLS}, {DUP_KEY} FROM products p WHERE p.api_id=?1 ORDER BY p.id"), p.api_id.clone())
     };
     let mut st = c.prepare(&sql)?;
-    let rows = st.query_map([key], |r| Ok((map(r)?, r.get::<_, String>(18)?)))?.collect::<Result<Vec<_>, _>>()?;
+    let rows = st.query_map([key], |r| Ok((map(r)?, r.get::<_, String>(NCOLS)?)))?.collect::<Result<Vec<_>, _>>()?;
     let mut out: Vec<(String, Version)> = vec![];
     for (r, key) in rows {
         let current = r.id == p.id;
@@ -591,7 +595,7 @@ pub fn catalogue(c: &Connection) -> rusqlite::Result<String> {
         out += &vault_search::binder_line(&vault_search::Binder { handle: b.handle.clone(), title: b.title.clone(), img: b.img(360), count: b.count.max(0) as u32 });
     }
     let mut st = c.prepare(&format!("SELECT {COLS}, {DUP_KEY} AS gk FROM products p ORDER BY p.position ASC, p.created_at DESC, p.id DESC"))?;
-    let rows = st.query_map([], |r| Ok((map(r)?, r.get::<_, String>(18)?)))?;
+    let rows = st.query_map([], |r| Ok((map(r)?, r.get::<_, String>(NCOLS)?)))?;
     let (mut order, mut seen): (Vec<(Product, Vec<u16>, u32)>, HashMap<String, usize>) = (vec![], HashMap::new());
     for row in rows {
         let (p, key) = row?;
@@ -1152,7 +1156,7 @@ pub fn binder_values(c: &Connection) -> rusqlite::Result<Vec<(String, String, i6
 /// The cards opened most often, with how many times.
 pub fn most_viewed(c: &Connection, limit: i64) -> rusqlite::Result<Vec<(Product, i64)>> {
     let mut st = c.prepare(&format!("SELECT {COLS}, p.hits FROM products p WHERE p.hits>0 ORDER BY p.hits DESC, p.id DESC LIMIT ?1"))?;
-    let v = st.query_map([limit], |r| Ok((map(r)?, r.get(18)?)))?.collect::<Result<Vec<_>, _>>()?;
+    let v = st.query_map([limit], |r| Ok((map(r)?, r.get(NCOLS)?)))?.collect::<Result<Vec<_>, _>>()?;
     Ok(v)
 }
 
@@ -1197,6 +1201,40 @@ mod dashboard_tests {
         groups_to_top(&c, &[vec![3], vec![1]]).unwrap();
         assert_eq!(order(&c), "CAEBD", "a home row arranged from another sort puts its cards first, in the dragged order");
         assert_eq!(clean_tags(&["Grail".into(), "grail".into(), "  for, trade ".into(), "binder-x".into(), "".into()]), vec!["Grail".to_string(), "for trade".to_string()]);
+    }
+
+    /// Different cards that share a rarity must never count as copies of each other.
+    /// (A shifted column once grouped every "Common" Pikachu from every set into one card.)
+    #[test]
+    fn copies_group_by_card_not_by_rarity() {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch(SCHEMA).unwrap();
+        migrate(&c).unwrap();
+        assert_eq!(COLS.split(',').count(), NCOLS, "NCOLS must match COLS");
+        let add = |id: i64, title: &str, api: &str, price: f64| {
+            c.execute(
+                "INSERT INTO products(id,handle,title,api_id,price,rarity,variant,created_at,hits) VALUES(?1,?2,?3,?4,?5,'Common','Near Mint','2026-01-01T00:00:00',?1)",
+                rusqlite::params![id, format!("h{id}"), title, api, price],
+            )
+            .unwrap();
+        };
+        add(1, "Pikachu - 058/102 - Base Set", "base1-58", 50.0);
+        add(2, "Pikachu - 060/064 - Jungle", "base2-60", 40.0);
+        add(3, "Pikachu - 058/102 - Base Set", "base1-58", 50.0); // a real second copy of card 1
+        let tsv = catalogue(&c).unwrap();
+        let card_lines = tsv.lines().filter(|l| l.starts_with("C\t")).count();
+        assert_eq!(card_lines, 2, "two different Pikachus, one with two copies:\n{tsv}");
+        let p1 = product_by_id(&c, 1).unwrap().unwrap();
+        let v = versions(&c, &p1).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].qty, 2, "Base Set Pikachu has two copies");
+        let p2 = product_by_id(&c, 2).unwrap().unwrap();
+        assert_eq!(versions(&c, &p2).unwrap()[0].qty, 1, "Jungle Pikachu is its own card");
+        let mv = most_viewed(&c, 5).unwrap();
+        assert_eq!(mv[0].1, 3, "view counts are read from the hits column");
+        let (rows, total) = list(&c, &Query::default()).unwrap();
+        assert_eq!(total, 2);
+        assert_eq!(rows.iter().map(|p| p.qty).sum::<i64>(), 3);
     }
 
     #[test]

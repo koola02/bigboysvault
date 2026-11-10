@@ -141,7 +141,7 @@
     </article>
   </div>
 </section>
-<script src="/static/admin-ui.js?v=8" defer></script>
+<script src="/static/admin-ui.js?v=9" defer></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   const read = document.querySelector('[data-iv-read]');
@@ -174,7 +174,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('resetShares')?.addEventListener('click', async () => {
       if (!confirm('Go back to the standard numbers?')) return;
       try {
-        await window.Admin.postJSON('/admin/settings/condition-shares', { shares: { reset: "1" } });
+        await window.Admin.postJSON('/admin/settings/condition-shares', { reset: true });
         window.Admin.toast('Reset to standard numbers ✓', { kind: 'ok' });
         setTimeout(() => location.reload(), 700);
       } catch (err) { window.Admin.toast(err.message, { kind: 'err' }); }

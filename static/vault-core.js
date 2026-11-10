@@ -169,11 +169,22 @@
   const notifList = document.getElementById('notifList');
   const notifDropdown = document.getElementById('notifDropdown');
   let loaded = false;
+  // Only trainers have notifications. Once a page gets "not signed in", the rest of the visit doesn't ask again.
+  const SKIP = 'bbv:no-notif';
+  try { if (sessionStorage.getItem(SKIP)) return; } catch (_) {}
+  const ago = (t) => {
+    const s = Math.max(0, Math.floor(Date.now() / 1000 - (Number(t) || 0)));
+    if (s < 60) return 'Just now';
+    if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+    if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+    if (s < 7 * 86400) return `${Math.floor(s / 86400)} d ago`;
+    return new Date(Number(t) * 1000).toLocaleDateString('en-PH', { day: 'numeric', month: 'short' });
+  };
 
   async function loadNotifs() {
     try {
       const res = await fetch('/api/notifications');
-      if (!res.ok) { notifDropdown.hidden = true; return; }
+      if (!res.ok) { notifDropdown.hidden = true; if (res.status === 401 || res.status === 403) { try { sessionStorage.setItem(SKIP, '1'); } catch (_) {} } return; }
       const j = await res.json();
       notifDropdown.hidden = false;
       if (j.unread_count > 0) {
@@ -188,8 +199,12 @@
         notifList.append(p);
       } else {
         j.notifications.forEach(n => {
+          // Messages can hold what other people typed: text only, never HTML.
           const a = document.createElement('a'); a.className = 'notif-item' + (n.is_read ? '' : ' unread'); a.href = n.link || '#';
-          a.innerHTML = `<div class="notif-k">${n.kind}</div><div class="notif-m">${n.message}</div><div class="notif-t">Just now</div>`;
+          const k = document.createElement('div'); k.className = 'notif-k'; k.textContent = n.kind || '';
+          const m = document.createElement('div'); m.className = 'notif-m'; m.textContent = n.message || '';
+          const t = document.createElement('div'); t.className = 'notif-t'; t.textContent = ago(n.created_at);
+          a.append(k, m, t);
           notifList.append(a);
         });
       }

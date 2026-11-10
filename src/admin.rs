@@ -128,6 +128,8 @@ struct CardForm {
     api_id: String,
     finish: String,
     price_updated: String,
+    /// Where the price came from: '' (typed), 'market' or 'suggested'. Keeps a saved card's suggestion following its condition.
+    price_src: String,
     image: String,
     binders: Vec<BinderOpt>,
     saved: String,
@@ -291,6 +293,7 @@ async fn form_page(app: &App, edit: Option<Product>, qs: FormQs) -> Res {
         api_id: p.map(|p| p.api_id.clone()).unwrap_or_default(),
         finish: p.map(|p| p.finish.clone()).unwrap_or_default(),
         price_updated: p.map(|p| p.price_updated.clone()).unwrap_or_default(),
+        price_src: p.map(|p| p.price_src.clone()).unwrap_or_default(),
         image: p.filter(|p| p.has_image()).map(|p| p.img(360)).unwrap_or_default(),
         binders,
         saved: qs.saved.unwrap_or_default(),
@@ -718,39 +721,46 @@ pub async fn settings(State(app): State<App>, h: HeaderMap, Form(f): Form<Settin
     Ok(ok_json(json!({ "ok": true })))
 }
 
+/// The "Condition prices" panel: `{ "shares": { "Lightly Played": "80", ... } }` in percent, or `{ "reset": true }`.
 #[derive(Deserialize)]
-pub struct ConditionSharesForm {
-    shares: std::collections::HashMap<String, String>,
+pub struct ConditionSharesReq {
+    #[serde(default)]
+    shares: std::collections::HashMap<String, serde_json::Value>,
+    #[serde(default)]
+    reset: bool,
 }
 
-pub async fn settings_condition_shares(State(app): State<App>, h: HeaderMap, Form(f): Form<ConditionSharesForm>) -> Res {
+/// Only the owner and full admins can change how much each condition is worth.
+pub async fn settings_condition_shares(State(app): State<App>, h: HeaderMap, Json(f): Json<ConditionSharesReq>) -> Res {
     if !authed(&app, &h) {
         return Ok(deny(&h));
     }
-    
-    // Check if it's a reset request. (Could pass a specific key or if all are empty/reset).
-    // Let's assume if it contains "reset"="1" we clear it.
-    if f.shares.get("reset").map(|s| s.as_str()) == Some("1") {
-        with_db(&app, move |c| c.execute("DELETE FROM settings WHERE key='condition_shares'", []).map(|_| ())).await?;
+    if f.reset {
+        let shares = with_db(&app, move |c| marcuru_rs::pricing::save(c, None)).await?;
         app.forget();
-        return Ok(ok_json(json!({ "ok": true })));
+        return Ok(ok_json(json!({ "ok": true, "shares": shares })));
     }
-
     let mut map = std::collections::HashMap::new();
-    for (k, v) in &f.shares {
-        if let Ok(pct) = v.parse::<f64>() {
-            if (0.0..=200.0).contains(&pct) {
-                map.insert(k.clone(), pct / 100.0);
+    for (cond, _) in marcuru_rs::pricing::DEFAULT_SHARES {
+        let Some(v) = f.shares.get(cond) else { continue };
+        let pct = match v {
+            serde_json::Value::Number(n) => n.as_f64(),
+            serde_json::Value::String(s) => s.trim().trim_end_matches('%').trim().parse::<f64>().ok(),
+            _ => None,
+        };
+        match pct {
+            Some(p) if p.is_finite() && (0.0..=200.0).contains(&p) => {
+                map.insert(cond.to_string(), (p * 10.0).round() / 1000.0);
             }
+            _ => return Ok(json_resp(StatusCode::BAD_REQUEST, json!({ "error": format!("{cond}: type a number from 0 to 200.") }))),
         }
     }
-    
-    if !map.is_empty() {
-        let json_str = marcuru_rs::pricing::serialize_shares(&map);
-        with_db(&app, move |c| blocks::set_setting(c, "condition_shares", &json_str)).await?;
-        app.forget();
+    if map.is_empty() {
+        return Ok(json_resp(StatusCode::BAD_REQUEST, json!({ "error": "Nothing to save." })));
     }
-    Ok(ok_json(json!({ "ok": true })))
+    let shares = with_db(&app, move |c| marcuru_rs::pricing::save(c, Some(&map))).await?;
+    app.forget();
+    Ok(ok_json(json!({ "ok": true, "shares": shares })))
 }
 
 #[derive(Deserialize)]

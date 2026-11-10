@@ -48,6 +48,70 @@ pub fn load_shares(c: &rusqlite::Connection) -> HashMap<String, f64> {
     }
 }
 
+/// The shares in use right now, so every price on the site (screens, totals, SQL) agrees.
+static CURRENT: std::sync::RwLock<Option<HashMap<String, f64>>> = std::sync::RwLock::new(None);
+
+/// The shares in use: the owner's saved ones once the database has been read, otherwise the usual ones.
+pub fn current() -> HashMap<String, f64> {
+    CURRENT.read().ok().and_then(|g| g.clone()).unwrap_or_else(default_shares_map)
+}
+
+fn current_share(std: &str) -> Option<f64> {
+    if let Ok(g) = CURRENT.read() {
+        if let Some(m) = g.as_ref() {
+            if let Some(v) = m.get(std) {
+                return Some(*v);
+            }
+        }
+    }
+    DEFAULT_SHARES.iter().find(|(k, _)| *k == std).map(|(_, v)| *v)
+}
+
+/// The table the SQL totals read (`members::worth_sql!`). One row per condition name.
+const TABLE: &str = "CREATE TABLE IF NOT EXISTS condition_shares(cond TEXT PRIMARY KEY, share REAL NOT NULL)";
+
+fn write_table(c: &rusqlite::Connection, shares: &HashMap<String, f64>) -> rusqlite::Result<()> {
+    c.execute_batch(TABLE)?;
+    c.execute("DELETE FROM condition_shares", [])?;
+    for (cond, _) in DEFAULT_SHARES {
+        let v = shares.get(cond).copied().unwrap_or(1.0);
+        c.execute("INSERT INTO condition_shares(cond, share) VALUES(?1, ?2)", rusqlite::params![cond, v])?;
+    }
+    Ok(())
+}
+
+/// Runs with the other migrations: makes the table and reads the owner's shares once per process.
+pub fn install(c: &rusqlite::Connection) -> rusqlite::Result<()> {
+    c.execute_batch(TABLE)?;
+    let loaded = CURRENT.read().map(|g| g.is_some()).unwrap_or(false);
+    let rows: i64 = c.query_row("SELECT COUNT(*) FROM condition_shares", [], |r| r.get(0))?;
+    if !loaded || rows == 0 {
+        let shares = load_shares(c);
+        if rows != DEFAULT_SHARES.len() as i64 {
+            write_table(c, &shares)?;
+        }
+        if let Ok(mut g) = CURRENT.write() {
+            *g = Some(shares);
+        }
+    }
+    Ok(())
+}
+
+/// Saves the owner's shares (None = back to the usual ones) everywhere they're read.
+pub fn save(c: &rusqlite::Connection, shares: Option<&HashMap<String, f64>>) -> rusqlite::Result<HashMap<String, f64>> {
+    let map = match shares {
+        Some(m) => parse_shares(&serialize_shares(m)),
+        None => default_shares_map(),
+    };
+    let text = if shares.is_some() { serialize_shares(&map) } else { String::new() };
+    crate::blocks::set_setting(c, "condition_shares", &text)?;
+    write_table(c, &map)?;
+    if let Ok(mut g) = CURRENT.write() {
+        *g = Some(map.clone());
+    }
+    Ok(map)
+}
+
 /// Serializes shares map to JSON string.
 pub fn serialize_shares(shares: &HashMap<String, f64>) -> String {
     let mut out = serde_json::Map::new();
@@ -154,9 +218,17 @@ pub fn is_sealed(text: &str) -> bool {
     t.contains("sealed")
 }
 
-/// Returns the share (0.0 .. 1.0+) of the Near Mint price for a condition using default shares.
+/// Returns the share (0.0 .. 1.0+) of the Near Mint price for a condition, using the shares in use.
 /// None means no automatic suggestion (graded, sealed, or unrecognized).
 pub fn factor(condition: &str) -> Option<f64> {
+    if is_graded(condition) || is_sealed(condition) {
+        return None;
+    }
+    current_share(read_condition(condition)?)
+}
+
+/// The usual share, ignoring anything the owner saved. For tests and for showing "the usual numbers".
+pub fn default_factor(condition: &str) -> Option<f64> {
     if is_graded(condition) || is_sealed(condition) {
         return None;
     }
@@ -322,18 +394,17 @@ mod tests {
         assert_eq!(fallback.get("Damaged"), Some(&0.25));
     }
 
+    /// The SQL totals read the same table the screens use, so a saved share changes both.
     #[test]
-    fn worth_sql_numbers_equal_pricing_numbers() {
+    fn worth_sql_reads_the_shared_table() {
         let sql = crate::members::worth_sql_clause();
+        assert!(sql.contains("condition_shares"), "worth_sql must read the condition_shares table");
+        let c = rusqlite::Connection::open_in_memory().unwrap();
+        c.execute_batch("CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)").ok();
+        write_table(&c, &default_shares_map()).unwrap();
         for (cond, share) in DEFAULT_SHARES {
-            if cond == "Near Mint" {
-                continue;
-            }
-            let needle = format!("WHEN '{cond}' THEN {share}");
-            assert!(
-                sql.contains(&needle),
-                "worth_sql is missing or has wrong share for {cond} (expected {needle})"
-            );
+            let got: f64 = c.query_row("SELECT share FROM condition_shares WHERE cond=?1", [cond], |r| r.get(0)).unwrap();
+            assert_eq!(got, share, "{cond}");
         }
     }
 }

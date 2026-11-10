@@ -93,6 +93,7 @@ window.mountCardForm = () => {
   el.chips.addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
     el.variant.value = el.variant.value.trim() === b.dataset.v ? '' : b.dataset.v; saveDraft(); preview();
+    if (curFinish) showFinish(curFinish);
   });
   el.price.addEventListener('input', () => { el.price.value = el.price.value.replace(/[^0-9.,]/g, ''); });
   el.price.addEventListener('blur', () => { const v = num(el.price.value); el.price.value = v ? v.toLocaleString('en-US') : ''; preview(); });
@@ -170,41 +171,32 @@ window.mountCardForm = () => {
   /* ---------- today's market value: name + card number -> pesos ---------- */
   const mk = { box: $('market'), state: $('mkState'), card: $('mkCard'), img: $('mkImg'), name: $('mkName'), set: $('mkSet'), fin: $('mkFinish'),
     price: $('mkPrice'), use: $('mkUse'), photo: $('mkPhoto'), list: $('mkList'), api: $('apiId'), cset: $('cardSet'), finish: $('finishKey'), src: $('priceSrc'), purl: $('photoUrl') };
-  let priceDirty = !!el.price.value, current = null, curFinish = null, seq = 0, lookT;
   const baseName = () => el.title.value.split(' - ')[0].trim();
   function hideMarket() { mk.box.hidden = true; mk.card.hidden = true; mk.list.hidden = true; mk.state.textContent = ''; }
   function say(msg) { mk.box.hidden = false; mk.card.hidden = true; mk.list.hidden = true; mk.state.hidden = false; mk.state.textContent = msg; }
   function resetMarket() { hideMarket(); current = null; curFinish = null; mk.api.value = ''; mk.cset.value = ''; mk.finish.value = ''; mk.src.value = ''; mk.purl.value = ''; priceDirty = false; }
-  function setPrice(php) { el.price.value = php ? Math.round(php).toLocaleString('en-US') : ''; priceDirty = false; mk.src.value = 'market'; saveDraft(); preview(); }
+  // 'market' is the Near Mint price as listed; 'suggested' is that price adjusted for the condition. Both follow a new finish or condition.
+  let priceSrc = mk.src.value || '';
+  let priceDirty = !!el.price.value && !priceSrc, current = null, curFinish = null, seq = 0, lookT;
+  function setPrice(php, src = 'suggested') { el.price.value = php ? Math.round(php).toLocaleString('en-US') : ''; priceDirty = false; priceSrc = php ? src : ''; mk.src.value = priceSrc; saveDraft(); preview(); }
   function showFinish(f) {
     curFinish = f; mk.finish.value = f.key;
     const cond = el.variant.value.trim();
     mk.fin.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.k === f.key)));
-    const A = window.Admin;
-    A.renderSug(mk.price, el.price.value.replace(/[^\d.]/g, ''), Math.round(f.php), cond, f.label, current.source, current.updated, (condName, sugPrice) => {
-      el.variant.value = condName;
-      setPrice(sugPrice);
-      mk.src.value = 'suggested';
-      saveDraft();
-      preview();
-      showFinish(f);
-    });
-    const sug = A.suggest(f.php, cond);
-    if (!priceDirty && sug) { setPrice(sug); mk.src.value = 'suggested'; }
+    const sug = window.Admin.suggest(f.php, cond);
+    if (!priceDirty && sug != null) setPrice(sug);
+    const line = window.Admin.sugLine(mk.price, { nm: f.php, cond, label: f.label, source: current.source, updated: current.updated, price: el.price.value, onUse: (v) => setPrice(v) });
+    const small = document.createElement('small'); small.className = 'sug-fx'; small.textContent = `$${f.usd} at ₱${current.rate.toFixed(2)} per $1`; mk.price.append(small);
+    mk.use.hidden = true;
+    return line;
   }
-  
-  $('chips').addEventListener('click', (e) => {
-    if (e.target.tagName !== 'BUTTON') return;
-    el.variant.value = e.target.dataset.v;
-    saveDraft(); preview();
-    if (curFinish) showFinish(curFinish);
-  });
   function choose(m, rate) {
     current = { ...m, rate }; mk.box.hidden = false; mk.state.hidden = true; mk.list.hidden = true; mk.card.hidden = false;
     mk.img.src = m.image || ''; mk.name.textContent = m.name; mk.set.textContent = `${m.set} · #${m.number}/${m.total}${m.rarity ? ' · ' + m.rarity : ''}`;
     mk.api.value = m.id; mk.cset.value = m.set;
     mk.fin.replaceChildren(...m.finishes.map((f) => { const b = document.createElement('button'); b.type = 'button'; b.dataset.k = f.key; b.textContent = `${f.label} · ${peso(f.php)}`; b.onclick = () => showFinish(f); return b; }));
     if (!m.finishes.length) { mk.price.textContent = 'No price is listed for this card yet. Type the value yourself.'; mk.use.hidden = true; return; }
+    document.addEventListener('bbv:shares', () => { if (curFinish && document.activeElement !== el.price) showFinish(curFinish); }, { once: true });
     showFinish(m.finishes.find((f) => f.key === mk.finish.value) || m.finishes[0]);
     // First match: complete the name once, e.g. "Pikachu ex - 057/191 - Surging Sparks".
     if (!editing && !el.title.value.includes(' - ')) { el.title.value = `${baseName()} - ${String(m.number).padStart(3, '0')}/${m.total} - ${m.set}`; saveDraft(); preview(); }
@@ -231,9 +223,9 @@ window.mountCardForm = () => {
   const scheduleLookup = () => { clearTimeout(lookT); lookT = setTimeout(lookup, 700); };
   el.title.addEventListener('input', scheduleLookup);
   el.cardno.addEventListener('input', scheduleLookup);
-  el.price.addEventListener('input', () => { priceDirty = true; mk.src.value = ''; });
+  el.price.addEventListener('input', () => { priceDirty = true; priceSrc = ''; mk.src.value = ''; if (curFinish) showFinish(curFinish); });
   el.variant.addEventListener('input', () => { if (curFinish) showFinish(curFinish); });
-  mk.use.addEventListener('click', () => { if (curFinish) { setPrice(curFinish.php); mk.use.hidden = true; } });
+  mk.use.addEventListener('click', () => { if (curFinish) { setPrice(curFinish.php, 'market'); mk.use.hidden = true; } });
   mk.photo.addEventListener('click', () => {
     if (!current) return; const u = current.image_large || current.image;
     mk.purl.value = u; blob = null; el.photo.value = ''; el.shot.src = u; el.shot.hidden = false; el.dropT.hidden = true; el.retake.hidden = false; preview(); toast('Using the official card image ✓', 'ok');

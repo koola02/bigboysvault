@@ -416,13 +416,20 @@ pub async fn seller_binder(State(app): State<App>, h: HeaderMap, Path((slug, b_s
     let Some(b) = binder else { return not_found(&app).await };
     let bid = b.id;
     let me = current(&app, &h).await?;
+    let is_me = me.as_ref().is_some_and(|u| u.id == m.id);
+    let owner = admin::can_moderate(&app, &h);
+    // Same rules as the trainer's own page, plus: a private binder is for its owner (and the vault's staff) only.
+    if (m.blocked || b.visibility.eq_ignore_ascii_case("private")) && !is_me && !owner {
+        return not_found(&app).await;
+    }
+    let full = m.profile_ok || is_me || owner;
+    if !full {
+        return not_found(&app).await;
+    }
     let (nav, cards, vouches, awards) = with_db(&app, move |c| {
         Ok((chrome(c)?, members::cards_of_binder(c, mid, Some(bid))?, members::public_vouches(c, Some(mid), None, 20)?, members::awards_of(c, mid, 10)?))
     }).await?;
     let awards: Vec<Award> = awards.into_iter().filter(|a| !a.reason.is_empty()).collect();
-    let is_me = me.as_ref().is_some_and(|u| u.id == m.id);
-    let owner = admin::can_moderate(&app, &h);
-    let full = m.profile_ok || is_me || owner;
     let highlight = m.highlight.and_then(|h| cards.iter().find(|c| c.id == h).cloned());
     Ok(html(if q.part.is_some() {
         render(TrainerPart { t: m, cards, highlight, is_me, full, vouches, awards })?
@@ -595,7 +602,7 @@ pub async fn save_profile(State(app): State<App>, h: HeaderMap, mut mp: Multipar
             "bio" => bio = f.text().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
             "fb_url" => fb_url = members::clean_https_url(&f.text().await.unwrap_or_default()),
             "tiktok_url" => tiktok_url = members::clean_https_url(&f.text().await.unwrap_or_default()),
-            "links" => links = members::clean_text(&f.text().await.unwrap_or_default(), 1000),
+            "links" => links = members::clean_link_lines(&f.text().await.unwrap_or_default()),
             _ => {}
         }
     }
@@ -894,7 +901,7 @@ pub async fn add_card(State(app): State<App>, h: HeaderMap, Json(req): Json<AddR
                 app.forget();
             }
             let (worth, card) = with_db(&app, move |c| Ok((members::get(c, id)?.map_or(0.0, |f| f.worth), members::card(c, id, cid)?))).await?;
-            let mut j = json!({ "id": cid, "title": title, "number": number, "set": set, "image": image, "cond": "Near Mint", "value": value, "highlight": m.highlight.is_none() });
+            let mut j = json!({ "id": cid, "title": title, "number": number, "set": set, "image": image, "cond": "Near Mint", "value": vault_search::peso(value * members::condition_factor("Near Mint")), "market": value, "highlight": m.highlight.is_none() });
             if let Some(c) = card {
                 let is_graded = c.is_graded();
                 let is_sealed = c.is_sealed();
@@ -972,7 +979,7 @@ pub async fn card_action(State(app): State<App>, h: HeaderMap, Path(cid): Path<i
         out["suggested"] = json!(c.suggested_price());
         out["share"] = json!(c.condition_share());
         out["value_own"] = json!(c.value_own);
-        out["value"] = json!(c.value);
+        out["market"] = json!(c.value);
         out["cond"] = json!(c.cond);
         out["own_photo"] = json!(c.own_photo());
         out["binder_id"] = json!(c.binder_id);

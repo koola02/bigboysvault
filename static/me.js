@@ -83,88 +83,29 @@
     });
     document.querySelectorAll('.me-res').forEach((b) => { b.disabled = n >= MAX && !b.classList.contains('in'); });
   }
-  const STD_COND_LIST = [
-    ['Near Mint', 1.0], ['LP-NM', 0.9], ['Lightly Played', 0.8], ['MP-LP', 0.7],
-    ['Moderately Played', 0.6], ['HP-MP', 0.5], ['Heavily Played', 0.4], ['Damaged-HP', 0.32], ['Damaged', 0.25]
-  ];
-
-  function roundPhp(raw) {
-    if (raw <= 0) return 1;
-    let r;
-    if (raw < 100) r = Math.round(raw);
-    else if (raw <= 1000) r = Math.round(raw / 5) * 5;
-    else r = Math.round(raw / 10) * 10;
-    return Math.max(1, r);
-  }
-
-  function renderSugMe(c, p) {
-    if (!p) return;
-    p.replaceChildren();
-    if (c.own_photo) {
-      const b = document.createElement('div'); b.className = 'cpb-notice';
-      b.innerHTML = '<span>📷 Own photo</span><small>Set your own value</small>';
-      p.append(b);
-      return;
-    }
-    const nm = Number(c.value) || 0;
-    if (nm <= 0) {
-      const b = document.createElement('div'); b.className = 'cpb-notice';
-      b.innerHTML = '<span>No market price</span><small>Set your own value</small>';
-      p.append(b);
-      return;
-    }
-    if (c.is_graded) {
-      const b = document.createElement('div'); b.className = 'cpb-notice';
-      b.innerHTML = `<span>⭐ Graded card: set your own price</span><small>Raw Near Mint is ₱${Math.round(nm)}</small>`;
-      p.append(b);
-      return;
-    }
-    if (c.is_sealed) {
-      const b = document.createElement('div'); b.className = 'cpb-notice';
-      b.innerHTML = `<span>📦 Sealed item: set your own price</span><small>Raw Near Mint is ₱${Math.round(nm)}</small>`;
-      p.append(b);
-      return;
-    }
-
-    const bar = document.createElement('div');
-    bar.className = 'cond-price-bar';
-    const head = document.createElement('div');
-    head.className = 'cpb-head';
-    const title = document.createElement('span');
-    title.className = 'cpb-title';
-    title.textContent = 'Condition prices';
-    head.append(title);
-    if ((c.value_own || 0) > 0) {
-      const us = document.createElement('span'); us.className = 'me-user-set';
-      us.textContent = `You set ₱${Math.round(c.value_own)}`;
-      head.append(us);
-    } else {
-      const ref = document.createElement('span'); ref.className = 'cpb-ref';
-      ref.textContent = `NM ₱${Math.round(nm)}`;
-      head.append(ref);
-    }
-    bar.append(head);
-
-    const chips = document.createElement('div');
-    chips.className = 'cpb-chips';
-    chips.setAttribute('role', 'group');
-    chips.setAttribute('aria-label', 'Suggested prices by condition');
-
-    STD_COND_LIST.forEach(([cName, factor]) => {
-      const sug = roundPhp(nm * factor);
-      const isCur = c.cond === cName;
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'cpb-chip' + (isCur ? ' on' : '');
-      chip.dataset.useCond = cName;
-      chip.dataset.usePrice = sug;
-      chip.innerHTML = `<span class="cpb-c">${cName}</span><span class="cpb-p">₱${sug}</span>`;
-      chips.append(chip);
+  // The line under each card's value: "Suggested ₱8 · Lightly Played · 80% of Near Mint ₱10", from the shared rule in /static/pricing.js.
+  // A value the trainer typed always wins; "Use ₱8" clears it, so the value follows the market again.
+  function paintSug(li, c) {
+    const host = li.querySelector('.me-c-sug'); if (!host) return;
+    const own = Number(c.value_own) || 0, market = Number(c.market) || 0;
+    const cond = c.cond || li.querySelector('[data-cond]')?.value || '';
+    Object.assign(host.dataset, { market, own, cond }); host.toggleAttribute('data-own-photo', !!c.own_photo);
+    if (!window.Price) return;
+    window.Price.line(host, {
+      nm: market, cond, own, ownPhoto: !!c.own_photo, price: own,
+      onUse: own > 0 ? async () => {
+        try {
+          const j = await send(`/me/cards/${li.dataset.id}`, { action: 'value', value: 0 });
+          const inp = li.querySelector('[data-value]');
+          if (inp) { inp.value = ''; if (j.card_market && j.card_market !== '₱0') inp.placeholder = j.card_market; }
+          worth(j); paintSug(li, j); say('Back to the suggested value ✓');
+        } catch (err) { say(err.message, true); }
+      } : null,
     });
-    bar.append(chips);
-    p.append(bar);
   }
-
+  const fromData = (li) => { const h = li.querySelector('.me-c-sug')?.dataset || {}; return { market: h.market, value_own: h.own, cond: h.cond, own_photo: li.querySelector('.me-c-sug')?.hasAttribute('data-own-photo') }; };
+  const paintAll = () => binder.querySelectorAll('.me-c').forEach((li) => paintSug(li, fromData(li)));
+  document.addEventListener('bbv:shares', paintAll);
   function tile(c) {
     const li = document.createElement('li'); li.className = 'me-c'; li.dataset.id = c.id; li.dataset.card = c.source || '';
     const pic = document.createElement('span'); pic.className = 'me-c-pic';
@@ -182,8 +123,8 @@
     if (c.value_own > 0) vi.value = Math.round(c.value_own);
     val.append(vl, vi);
     const sugP = document.createElement('p'); sugP.className = 'me-c-sug';
-    renderSugMe(c, sugP);
     li.append(pic, t, s, sel, val, sugP);
+    paintSug(li, c);
     return li;
   }
   binder.addEventListener('click', async (e) => {
@@ -196,31 +137,6 @@
         const source = li.dataset.card; li.remove(); highlight = j.highlight; paint();
         if (source) document.querySelector(`.me-res[data-id="${CSS.escape(source)}"]`)?.classList.remove('in');
       } catch (err) { say(err.message, true); }
-    } else if (e.target.closest('[data-use-cond]')) {
-      const chip = e.target.closest('[data-use-cond]');
-      const condVal = chip.dataset.useCond;
-      const priceVal = Number(chip.dataset.usePrice) || 0;
-      const sel = li.querySelector('[data-cond]');
-      const inp = li.querySelector('[data-value]');
-      try {
-        if (sel) sel.value = condVal;
-        if (inp) inp.value = priceVal;
-        await send(`/me/cards/${li.dataset.id}`, { action: 'condition', cond: condVal });
-        const j = await send(`/me/cards/${li.dataset.id}`, { action: 'value', value: priceVal });
-        worth(j);
-        renderSugMe(j, li.querySelector('.me-c-sug'));
-        say('Condition & price updated ✓');
-      } catch (err) { say(err.message, true); }
-    } else if (e.target.closest('.me-use-btn')) {
-      const btn = e.target.closest('.me-use-btn');
-      const val = btn.dataset.use;
-      const inp = li.querySelector('[data-value]');
-      try {
-        const j = await send(`/me/cards/${li.dataset.id}`, { action: 'value', value: Number(val) || 0 });
-        worth(j); if (inp) inp.value = val;
-        renderSugMe(j, li.querySelector('.me-c-sug'));
-        say('Saved ✓');
-      } catch (err) { say(err.message, true); }
     }
   });
   const worth = (j) => { const w = document.getElementById('meWorth'); if (w && j.worth) { w.textContent = j.worth; w.hidden = j.worth === '₱0'; } };
@@ -229,9 +145,8 @@
     if (box) {
       try {
         const j = await send(`/me/cards/${box.closest('.me-c').dataset.id}`, { action: 'value', value: Number(box.value) || 0 });
-        worth(j); if (j.card_market && j.card_market !== '₱0') box.placeholder = j.card_market; 
-        renderSugMe(j, box.closest('.me-c').querySelector('.me-c-sug'));
-        say('Saved ✓');
+        worth(j); if (j.card_market && j.card_market !== '₱0') box.placeholder = j.card_market;
+        paintSug(box.closest('.me-c'), j); say('Saved ✓');
       } catch (err) { say(err.message, true); }
       return;
     }
@@ -239,18 +154,8 @@
     try {
       const li = sel.closest('.me-c');
       const j = await send(`/me/cards/${li.dataset.id}`, { action: 'condition', cond: sel.value });
-      worth(j); const vb = li.querySelector('[data-value]'); if (vb && j.card_market && j.card_market !== '₱0') vb.placeholder = j.card_market; 
-      
-      const vOwn = j.value_own || 0;
-      if (j.suggested && !j.is_graded && !j.is_sealed && vOwn === 0 && vb) {
-        // Auto-fill value
-        const newV = Math.round(j.suggested);
-        vb.value = String(newV);
-        const j2 = await send(`/me/cards/${li.dataset.id}`, { action: 'value', value: newV });
-        worth(j2); renderSugMe(j2, li.querySelector('.me-c-sug'));
-      } else {
-        renderSugMe(j, li.querySelector('.me-c-sug'));
-      }
+      worth(j); const vb = li.querySelector('[data-value]'); if (vb && j.card_market && j.card_market !== '₱0') vb.placeholder = j.card_market;
+      paintSug(li, j);
       say('Saved ✓');
     } catch (err) { say(err.message, true); }
   });
@@ -343,5 +248,5 @@
     try { await send('/me/delete'); location.href = '/trainers'; } catch (err) { say(err.message, true); }
   });
 
-  paint();
+  paint(); paintAll();
 })();

@@ -31,150 +31,8 @@ window.Admin = (() => {
     : send(url, { body: body ? new URLSearchParams(body) : undefined, headers: body ? { 'Content-Type': 'application/x-www-form-urlencoded' } : {} });
   const postJSON = (url, obj) => send(url, { body: JSON.stringify(obj), headers: { 'Content-Type': 'application/json' } });
 
-  // Condition shares and pricing
-  let _shares = null;
-  async function loadShares() {
-    if (_shares) return _shares;
-    try { const r = await fetch('/api/condition-shares'); _shares = await r.json(); } catch (_) {}
-    return _shares || {};
-  }
-  loadShares(); // Preload
-
-  function normCond(c) {
-    if (!c) return null;
-    let t = c.split('/')[0].split('·')[0].trim().toLowerCase().replace(/[_/.]/g, ' ');
-    t = t.replace(/-/g, ' ');
-    const words = t.split(/\s+/);
-    const compact = t.replace(/\s+/g, '');
-    switch (compact) {
-      case 'nearmint': case 'nm': case 'mint': case 'pristine': return 'Near Mint';
-      case 'lpnm': case 'nmlp': return 'LP-NM';
-      case 'lightlyplayed': case 'lp': return 'Lightly Played';
-      case 'mplp': case 'lpmp': return 'MP-LP';
-      case 'moderatelyplayed': case 'mp': case 'modplayed': return 'Moderately Played';
-      case 'hpmp': case 'mphp': return 'HP-MP';
-      case 'heavilyplayed': case 'hp': case 'heavyplayed': return 'Heavily Played';
-      case 'damagedhp': case 'hpdamaged': case 'dmghp': case 'hpdmg': return 'Damaged-HP';
-      case 'damaged': case 'dmg': return 'Damaged';
-    }
-    if (words.includes('near') && words.includes('mint')) return 'Near Mint';
-    if (words.includes('mint') || words.includes('pristine')) return 'Near Mint';
-    if ((words.includes('lp') && words.includes('nm')) || (words.includes('nm') && words.includes('lp'))) return 'LP-NM';
-    if (words.includes('mp') && words.includes('lp')) return 'MP-LP';
-    if (words.includes('hp') && words.includes('mp')) return 'HP-MP';
-    if ((words.includes('damaged') || words.includes('dmg')) && words.includes('hp')) return 'Damaged-HP';
-    if (words.includes('lightly') || words[0] === 'lp') return 'Lightly Played';
-    if (words.includes('moderately') || words.includes('mod') || words[0] === 'mp') return 'Moderately Played';
-    if (words.includes('heavily') || words.includes('heavy') || words[0] === 'hp') return 'Heavily Played';
-    if (words.includes('damaged') || words[0] === 'dmg') return 'Damaged';
-    return null;
-  }
-  
-  function isGraded(c) {
-    const t = (c || '').trim().toLowerCase();
-    const words = t.split(/\s+/);
-    const first = words[0] || '';
-    if (['psa', 'cgc', 'bgs', 'sgc', 'ace', 'tag'].some(g => first === g || first.startsWith(g))) return true;
-    return t.includes('gem mt') || t.includes('gem-mt') || t.includes('graded') || t.includes('slab');
-  }
-
-  function isSealed(c) { return (c || '').trim().toLowerCase().includes('sealed'); }
-
-  function getShare(c) {
-    if (isGraded(c) || isSealed(c)) return null;
-    const std = normCond(c);
-    if (!std) return null;
-    if (_shares && _shares[std] !== undefined) return _shares[std];
-    const defs = { 'Near Mint': 1, 'LP-NM': 0.9, 'Lightly Played': 0.8, 'MP-LP': 0.7, 'Moderately Played': 0.6, 'HP-MP': 0.5, 'Heavily Played': 0.4, 'Damaged-HP': 0.32, 'Damaged': 0.25 };
-    return defs[std] || null;
-  }
-
-  function roundPhp(raw) {
-    if (raw <= 0) return 1;
-    let r;
-    if (raw < 100) r = Math.round(raw);
-    else if (raw <= 1000) r = Math.round(raw / 5) * 5;
-    else r = Math.round(raw / 10) * 10;
-    return Math.max(1, r);
-  }
-
-  function suggest(nearMint, cond) {
-    if (nearMint <= 0) return null;
-    const share = getShare(cond);
-    if (share === null) return null;
-    return roundPhp(nearMint * share);
-  }
-
-  const STD_CONDS = [
-    'Near Mint', 'LP-NM', 'Lightly Played', 'MP-LP', 'Moderately Played', 'HP-MP', 'Heavily Played', 'Damaged-HP', 'Damaged'
-  ];
-
-  function renderSug(targetNode, curPrice, nmValue, curCond, label, source, updated, onSelect) {
-    let bar = targetNode.nextElementSibling;
-    if (!bar || !bar.classList.contains('cond-price-bar')) {
-      bar = document.createElement('div');
-      bar.className = 'cond-price-bar';
-      targetNode.after(bar);
-    }
-    bar.replaceChildren();
-
-    if (isGraded(curCond)) {
-      const box = document.createElement('div');
-      box.className = 'cpb-notice';
-      box.innerHTML = `<span>⭐ Graded card: set your own price</span><small>Raw Near Mint is ₱${Math.round(nmValue || 0)}</small>`;
-      bar.append(box);
-      return;
-    }
-    if (isSealed(curCond)) {
-      const box = document.createElement('div');
-      box.className = 'cpb-notice';
-      box.innerHTML = `<span>📦 Sealed item: set your own price</span><small>Raw Near Mint is ₱${Math.round(nmValue || 0)}</small>`;
-      bar.append(box);
-      return;
-    }
-    if (!nmValue || nmValue <= 0) {
-      const box = document.createElement('div');
-      box.className = 'cpb-notice';
-      box.innerHTML = `<span>No market price found for this card</span><small>Type your own price</small>`;
-      bar.append(box);
-      return;
-    }
-
-    const head = document.createElement('div');
-    head.className = 'cpb-head';
-    const t = document.createElement('span');
-    t.className = 'cpb-title';
-    t.textContent = 'Condition prices';
-    const ref = document.createElement('span');
-    ref.className = 'cpb-ref';
-    ref.textContent = `${source || 'TCGplayer'} · NM ₱${Math.round(nmValue)}${label ? ' (' + label + ')' : ''}${updated ? ' · ' + updated : ''}`;
-    head.append(t, ref);
-    bar.append(head);
-
-    const chips = document.createElement('div');
-    chips.className = 'cpb-chips';
-    chips.setAttribute('role', 'group');
-    chips.setAttribute('aria-label', 'Condition price suggestions');
-
-    const activeNorm = normCond(curCond);
-
-    STD_CONDS.forEach((cName) => {
-      const sug = suggest(nmValue, cName);
-      if (!sug) return;
-      const chip = document.createElement('button');
-      chip.type = 'button';
-      chip.className = 'cpb-chip' + (activeNorm === cName ? ' on' : '');
-      chip.innerHTML = `<span class="cpb-c">${cName}</span><span class="cpb-p">₱${sug}</span>`;
-      chip.setAttribute('aria-label', `${cName}: ₱${sug}`);
-      chip.onclick = (e) => {
-        e.preventDefault();
-        if (onSelect) onSelect(cName, sug);
-      };
-      chips.append(chip);
-    });
-
-    bar.append(chips);
-  }
+  // Suggested prices by condition live in /static/pricing.js (window.Price), shared with the sellers' page.
+  const P = () => window.Price || { suggest: () => null, line: () => null, graded: () => false, sealed: () => false, share: () => null };
 
   // Resize on the device: fast uploads, handles HEIC and rotation.
   async function resize(file, max = 1600) {
@@ -234,7 +92,8 @@ window.Admin = (() => {
     return { open, close, save };
   })();
 
-  return { toast, post, postJSON, resize, undoable, safe, sheet, loadShares, isGraded, isSealed, getShare, suggest, renderSug };
+  return { toast, post, postJSON, resize, undoable, safe, sheet,
+    suggest: (nm, cond) => P().suggest(nm, cond), sugLine: (host, o) => P().line(host, o), isGraded: (c) => P().graded(c), isSealed: (c) => P().sealed(c) };
 })();
 
 // ----- card manager -----

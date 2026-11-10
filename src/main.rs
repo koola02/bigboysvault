@@ -1126,7 +1126,7 @@ async fn main() {
         .route("/admin/page/list", get(admin::page_editor))
         .route("/admin/settings", post(admin::settings))
         .route("/admin/settings/condition-shares", post(admin::settings_condition_shares))
-        .route("/admin/block", post(admin::block_add))
+        .route("/admin/blocks/add", post(admin::block_add))
         .route("/admin/blocks/order", post(admin::blocks_order))
         .route("/admin/pick", get(admin::pick))
         .route("/admin/menu", post(admin::menu_save))

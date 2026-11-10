@@ -75,22 +75,19 @@
       const box = tile.querySelector('.ct-img'); let badge = box.querySelector('.grade');
       if (j.grade) { if (!badge) { badge = document.createElement('span'); badge.className = 'grade'; box.append(badge); } badge.textContent = j.grade; } else badge?.remove();
       
-      const priceSrc = tile.dataset.priceSrc;
-      if ((priceSrc === 'market' || priceSrc === 'suggested') && tile.dataset.apiId) {
+      // A market-based price gets a "Price → ₱8?" chip for the new condition. Nothing changes until it's tapped.
+      tile.querySelector('.mc-use-chip')?.remove();
+      const src = tile.dataset.priceSrc;
+      if ((src === 'market' || src === 'suggested') && tile.dataset.apiId) {
         const pr = tile.querySelector('[data-price]');
-        const r = await fetch(`/api/price-suggest?id=${encodeURIComponent(tile.dataset.apiId)}&finish=${encodeURIComponent(tile.dataset.finish || '')}&cond=${encodeURIComponent(sel.value)}`);
-        const pSug = await r.json();
-        if (pSug.suggested) {
-          tile.querySelector('.mc-use-chip')?.remove();
+        const r = await fetch(`/api/price-suggest?id=${encodeURIComponent(tile.dataset.apiId)}&finish=${encodeURIComponent(tile.dataset.finish || '')}&cond=${encodeURIComponent(sel.value)}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+        const s = r.ok ? await r.json() : null;
+        const now = Number((pr?.value || '').replace(/[^\d.]/g, ''));
+        if (pr && s?.suggested && s.suggested !== now) {
           const chip = document.createElement('button'); chip.className = 'use-chip mc-use-chip'; chip.type = 'button';
-          chip.textContent = `Price → ₱${pSug.suggested}?`;
-          chip.onclick = () => {
-            pr.value = String(pSug.suggested);
-            quickSave(pr, { price: pSug.suggested, price_src: 'suggested' });
-            tile.dataset.priceSrc = 'suggested';
-            chip.remove();
-          };
-          tile.append(chip);
+          chip.textContent = `Price → ₱${s.suggested.toLocaleString('en-US')}?`; chip.title = `${Math.round((s.share || 0) * 100)}% of Near Mint ₱${Math.round(s.near_mint).toLocaleString('en-US')}`;
+          chip.onclick = async () => { chip.disabled = true; pr.value = String(s.suggested); await quickSave(pr, { price: s.suggested, price_src: 'suggested' }); tile.dataset.priceSrc = 'suggested'; chip.remove(); };
+          tile.querySelector('.ct-pricebox')?.after(chip) ?? tile.append(chip);
         }
       }
     } catch (err) { sel.value = before; flash(sel, false); A.toast(err.message, { kind: 'err' }); }

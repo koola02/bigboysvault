@@ -24,7 +24,7 @@ pub fn condition_factor(cond: &str) -> f64 {
 /// Everything a trainer's cards are worth. Must agree with `MemberCard::worth`.
 macro_rules! worth_sql {
     () => {
-        "(SELECT COALESCE(SUM(CASE WHEN x.value_own>0 THEN x.value_own ELSE x.value*CASE x.cond WHEN 'LP-NM' THEN 0.9 WHEN 'Lightly Played' THEN 0.8 WHEN 'MP-LP' THEN 0.7 WHEN 'Moderately Played' THEN 0.6 WHEN 'HP-MP' THEN 0.5 WHEN 'Heavily Played' THEN 0.4 WHEN 'Damaged-HP' THEN 0.32 WHEN 'Damaged' THEN 0.25 ELSE 1.0 END END),0) FROM member_cards x WHERE x.member_id=m.id)"
+        "(SELECT COALESCE(SUM(CASE WHEN x.value_own>0 THEN x.value_own ELSE x.value*COALESCE((SELECT s.share FROM condition_shares s WHERE s.cond=x.cond),1.0) END),0) FROM member_cards x WHERE x.member_id=m.id)"
     };
 }
 
@@ -112,13 +112,19 @@ pub fn role_label(role: &str) -> &'static str {
     }
 }
 
+/// A link a trainer typed, kept only if it's a plain https:// address (no `javascript:`, no spaces, no quotes).
 pub fn clean_https_url(u: &str) -> String {
     let t = u.trim();
-    if t.starts_with("https://") && t.len() <= 300 {
-        t.to_string()
-    } else {
-        String::new()
-    }
+    let ok = t.len() <= 300
+        && t.len() > "https://".len()
+        && t.get(..8).is_some_and(|p| p.eq_ignore_ascii_case("https://"))
+        && !t.chars().any(|c| c.is_whitespace() || c.is_control() || matches!(c, '"' | '\'' | '<' | '>' | '`' | '\\'));
+    if ok { t.to_string() } else { String::new() }
+}
+
+/// Extra links, one per line: only good https:// ones, at most ten.
+pub fn clean_link_lines(text: &str) -> String {
+    text.lines().map(clean_https_url).filter(|l| !l.is_empty()).take(10).collect::<Vec<_>>().join("\n")
 }
 
 impl Member {
@@ -134,8 +140,9 @@ impl Member {
     pub fn tag_list(&self) -> Vec<String> {
         tag_list(&self.tags)
     }
+    /// Extra links to show: checked again here, so an old bad link never reaches a page.
     pub fn link_list(&self) -> Vec<String> {
-        self.links.lines().map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect()
+        self.links.lines().map(clean_https_url).filter(|s| !s.is_empty()).collect()
     }
     pub fn seller_url(&self) -> String {
         if self.slug.is_empty() {
@@ -257,6 +264,8 @@ impl Award {
 /// Adds what newer versions need to an existing database, and moves each old single vouch to the new table.
 /// An old vouch that wasn't approved stays hidden, because it may be one the owner hid on purpose.
 pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
+    // The condition shares the totals below read. Made first, so `worth_sql!` always has its table.
+    crate::pricing::install(c)?;
     for (col, def) in [
         ("locked_until", "INTEGER NOT NULL DEFAULT 0"),
         ("blocked", "INTEGER NOT NULL DEFAULT 0"),
@@ -527,30 +536,6 @@ impl MemberCard {
     }
     pub fn condition_share(&self) -> Option<f64> {
         crate::pricing::factor(&self.cond)
-    }
-    pub fn value_int(&self) -> i64 {
-        self.value.round() as i64
-    }
-    pub fn value_own_int(&self) -> i64 {
-        self.value_own.round() as i64
-    }
-    pub fn suggested_int(&self) -> Option<i64> {
-        self.suggested_price().map(|v| v.round() as i64)
-    }
-    pub fn condition_share_pct(&self) -> i64 {
-        (self.condition_share().unwrap_or(1.0) * 100.0).round() as i64
-    }
-    /// Returns (condition_name, suggested_price_int, is_current_selected) for each standard condition.
-    pub fn condition_prices(&self) -> Vec<(&'static str, i64, bool)> {
-        if self.value <= 0.0 || self.is_graded() || self.is_sealed() || self.own_photo() {
-            return Vec::new();
-        }
-        let norm = crate::pricing::read_condition(&self.cond);
-        crate::pricing::DEFAULT_SHARES.iter().filter_map(|(name, _)| {
-            let sug = crate::pricing::suggest(self.value, name)?;
-            let is_cur = norm == Some(*name);
-            Some((*name, sug.round() as i64, is_cur))
-        }).collect()
     }
 }
 
@@ -960,13 +945,9 @@ pub fn move_card_to_binder(c: &Connection, member_id: i64, card_id: i64, binder_
 }
 
 pub fn cards_of_binder(c: &Connection, member_id: i64, binder_id: Option<i64>) -> rusqlite::Result<Vec<MemberCard>> {
-    let mut sql = format!("SELECT {CARD_COLS} FROM member_cards c WHERE c.member_id=?1");
-    if let Some(bid) = binder_id {
-        sql.push_str(&format!(" AND c.binder_id={bid}"));
-    }
-    sql.push_str(" ORDER BY c.position ASC, c.id DESC");
+    let sql = format!("SELECT {CARD_COLS} FROM member_cards c WHERE c.member_id=?1 AND (?2 IS NULL OR c.binder_id=?2) ORDER BY c.position ASC, c.id ASC");
     let mut st = c.prepare(&sql)?;
-    let v = st.query_map([member_id], |r| map_card(r, 0))?.collect::<Result<Vec<_>, _>>()?;
+    let v = st.query_map(rusqlite::params![member_id, binder_id], |r| map_card(r, 0))?.collect::<Result<Vec<_>, _>>()?;
     Ok(v)
 }
 
@@ -1862,13 +1843,13 @@ pub struct Notification {
 }
 
 pub fn notifications(c: &Connection, member_id: i64, unread_only: bool) -> rusqlite::Result<Vec<Notification>> {
-    let mut sql = format!("SELECT id, member_id, kind, message, link, is_read, created_at FROM notifications WHERE member_id={}", member_id);
+    let mut sql = "SELECT id, member_id, kind, message, link, is_read, created_at FROM notifications WHERE member_id=?1".to_string();
     if unread_only {
         sql.push_str(" AND is_read=0");
     }
     sql.push_str(" ORDER BY created_at DESC, id DESC LIMIT 100");
     let mut st = c.prepare(&sql)?;
-    let rows = st.query_map([], |r| {
+    let rows = st.query_map([member_id], |r| {
         Ok(Notification {
             id: r.get(0)?,
             member_id: r.get(1)?,

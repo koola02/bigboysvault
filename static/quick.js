@@ -31,8 +31,8 @@
   const find = (id) => st.tray.find((t) => t.id === id);
   const newCopy = (it) => {
     const f = (it.edFinish && it.finishes.find((x) => x.key === it.edFinish)) || (it.edFinish ? null : it.finishes[0]);
-    // Uses the suggested price if the backend provided it, else falls back to Near Mint (php)
-    const price = f ? Math.round(f.suggested || f.php) : '';
+    // A new copy starts as Near Mint, at the suggested price for its finish.
+    const price = f ? (A.suggest(f.php, NEAR_MINT) ?? Math.round(f.php)) : '';
     return { finish: f ? f.key : (it.edFinish || ''), price, market: !!f, cond: NEAR_MINT };
   };
   const shown = new Map();          // id -> card from the last search
@@ -228,10 +228,10 @@
     const m = await getPrice(it.api || it.id); const cur = it; if (!st.tray.includes(cur)) return;
     cur.priced = true;
     if (m) {
-      cur.finishes = (m.finishes || []).map((f) => ({ key: f.key, label: f.label, php: f.php }));
+      cur.finishes = (m.finishes || []).map((f) => ({ key: f.key, label: f.label, php: f.php })); cur.source = m.source || ''; cur.updated = m.updated || '';
       if (m.total && !cur.total) cur.total = m.total; if (m.set && !cur.set) cur.set = m.set; if (m.rarity) cur.rarity = m.rarity;
       const first = (cur.edFinish && cur.finishes.find((f) => f.key === cur.edFinish)) || (cur.edFinish ? null : cur.finishes[0]);
-      if (first) for (const c of cur.copies) if (!c.finish || (c.finish === first.key && c.price === '')) { c.finish = first.key; if (c.price === '') { c.price = Math.round(first.php); c.market = true; } }
+      if (first) for (const c of cur.copies) if (!c.finish || (c.finish === first.key && c.price === '')) { c.finish = first.key; if (c.price === '') { c.price = A.suggest(first.php, c.cond) ?? Math.round(first.php); c.market = true; } }
     }
     persist(); paintBar(); if (!el.sheet.hidden) paintList();
   }
@@ -260,52 +260,39 @@
     const n = document.createElement('span'); n.className = 'qa-copy-n'; n.textContent = `Card ${i + 1}`;
     const fin = document.createElement('select'); fin.setAttribute('aria-label', `Finish of card ${i + 1}`);
     if (!c.finish) fin.append(new Option(it.priced ? 'Pick a finish' : 'Pricing…', '', true, true));
-    it.finishes.forEach((f) => fin.append(new Option(`${f.label} · ${peso(A.suggest(f.php, c.cond) || Math.round(f.php))}`, f.key, false, f.key === c.finish)));
+    // Each finish shows its suggested price for this copy's condition (graded and sealed: the Near Mint price).
+    const finLabel = (f) => `${f.label} · ${peso(A.suggest(f.php, c.cond) ?? f.php)}`;
+    it.finishes.forEach((f) => fin.append(new Option(finLabel(f), f.key, false, f.key === c.finish)));
     FINISHES.filter(([k]) => !it.finishes.some((f) => f.key === k)).forEach(([k, label]) => fin.append(new Option(label, k, false, k === c.finish)));
-    const updateSug = () => {
-      const f = it.finishes.find((x) => x.key === c.finish);
-      A.renderSug(row, c.price, Math.round(f?.php || 0), c.cond, f?.label, it.source, it.updated, (condName, sugPrice) => {
-        c.cond = condName;
-        cond.value = condName;
-        c.price = String(sugPrice);
-        c.market = true;
-        pr.value = c.price;
-        persist();
-        paintBar();
-        updateSug();
-      });
-    };
-
-    fin.onchange = () => {
-      const f = it.finishes.find((x) => x.key === fin.value);
-      c.finish = fin.value;
-      if (f) {
-        const sug = A.suggest(f.php, c.cond);
-        c.price = c.market ? (sug || Math.round(f.php)) : c.price;
-      }
-      persist(); paintBar(); paintTiles(); if (document.activeElement !== pr) pr.value = c.price;
-      updateSug();
-    };
+    const sug = document.createElement('p'); sug.className = 'qa-sug';
     const pr = document.createElement('input'); pr.className = 'qa-price'; pr.inputMode = 'decimal'; pr.placeholder = '₱0'; pr.value = c.price; pr.setAttribute('aria-label', `Value of card ${i + 1} in pesos`);
-    pr.oninput = () => { c.price = pr.value.replace(/[^\d.]/g, ''); c.market = false; persist(); paintBar(); updateSug(); };
     const cond = document.createElement('select'); cond.setAttribute('aria-label', `Condition of card ${i + 1}`);
     const known = CONDS.includes(c.cond) ? CONDS : [c.cond, ...CONDS];
     known.forEach((v) => cond.append(new Option(v, v, false, v === c.cond)));
-    cond.onchange = () => {
-      c.cond = cond.value;
-      const f = it.finishes.find((x) => x.key === c.finish);
-      if (f) {
-        const sug = A.suggest(f.php, c.cond);
-        if (c.market && sug) c.price = sug;
-      }
-      persist(); paintBar(); paintTiles(); if (document.activeElement !== pr) pr.value = c.price;
-      updateSug();
+    const market = () => it.finishes.find((x) => x.key === c.finish);
+    const usePrice = (v) => { c.price = String(v); c.market = true; pr.value = c.price; persist(); paintBar(); paintSug(); };
+    const paintSug = () => {
+      const f = market();
+      A.sugLine(sug, { nm: f?.php || 0, cond: c.cond, label: f?.label, source: it.source, updated: it.updated, price: c.price, onUse: usePrice });
+      [...fin.options].forEach((o) => { const g = it.finishes.find((x) => x.key === o.value); if (g) o.textContent = finLabel(g); });
     };
+    // A price the person typed is never replaced. A suggested one follows the finish and condition.
+    const follow = () => {
+      const f = market();
+      if (!c.market) return;
+      if (!f) { c.market = false; return; }
+      const v = A.suggest(f.php, c.cond);
+      if (v != null) { c.price = String(v); if (document.activeElement !== pr) pr.value = c.price; }
+    };
+    fin.onchange = () => { c.finish = fin.value; follow(); persist(); paintBar(); paintSug(); };
+    pr.oninput = () => { c.price = pr.value.replace(/[^\d.]/g, ''); c.market = false; persist(); paintBar(); paintSug(); };
+    cond.onchange = () => { c.cond = cond.value; follow(); persist(); paintBar(); paintSug(); };
+    document.addEventListener('bbv:shares', () => { if (row.isConnected) { follow(); paintSug(); } }, { once: true });
     const x = document.createElement('button'); x.type = 'button'; x.className = 'qa-copy-x'; x.textContent = '✕'; x.setAttribute('aria-label', `Take out card ${i + 1}`);
     x.onclick = () => { it.copies.splice(it.copies.indexOf(c), 1); if (!it.copies.length) st.tray = st.tray.filter((t) => t !== it); afterChange(); };
-    row.append(n, fin, pr, cond, x);
+    row.append(n, fin, pr, cond, x, sug);
     if (c.err) { const e = document.createElement('p'); e.className = 'qa-err'; e.textContent = c.err; row.append(e); }
-    updateSug();
+    paintSug();
     return row;
   }
   function paintList() {
@@ -352,7 +339,7 @@
     const named = (it.en && it.en !== it.name ? `${it.name} (${it.en})` : it.name) + (it.edition ? ` (${it.edition})` : '');
     f.set('title', [named, num, it.set].filter(Boolean).join(' - '));
     f.set('card_no', num); f.set('card_set', it.set || ''); f.set('api_id', it.api || it.id); f.set('finish', c.finish || ''); f.set('rarity', it.rarity || '');
-    f.set('price', String(c.price || '')); f.set('price_src', c.market ? 'market' : ''); f.set('variant', c.cond || NEAR_MINT);
+    f.set('price', String(c.price || '')); f.set('price_src', c.market ? 'suggested' : ''); f.set('variant', c.cond || NEAR_MINT);
     const l = /^tcgdex-(ja|zh)/.exec(it.id); if (l) f.set('tags', l[1] === 'ja' ? 'Japanese' : 'Chinese');
     f.set('photo_url', it.image_large || ''); st.binders.forEach((b) => f.append('binder', b));
     return f;
