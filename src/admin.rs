@@ -23,7 +23,7 @@ pub fn make_token() -> String {
     std::env::var("ADMIN_TOKEN").unwrap_or_default()
 }
 
-fn eq(a: &str, b: &str) -> bool {
+pub(crate) fn eq(a: &str, b: &str) -> bool {
     a.len() == b.len() && a.bytes().zip(b.bytes()).fold(0u8, |d, (x, y)| d | (x ^ y)) == 0
 }
 
@@ -98,12 +98,6 @@ fn deny(h: &HeaderMap) -> Response {
 }
 
 // ---------- templates ----------
-#[derive(Template)]
-#[template(path = "admin_login.html")]
-struct Login {
-    nav: Chrome,
-    error: bool,
-}
 
 struct BinderOpt {
     handle: String,
@@ -188,9 +182,9 @@ fn rd<T: Template>(t: T) -> Res {
     Ok(html(t.render().map_err(ise)?))
 }
 
-async fn login_page(app: &App, error: bool) -> Res {
-    let nav = with_db(app, |c| chrome(c)).await?;
-    rd(Login { nav, error })
+/// Not signed in: the site's one log-in page. A wrong password comes back there with a note.
+async fn login_page(_app: &App, error: bool) -> Res {
+    Ok(Redirect::to(if error { "/login?wrong=1" } else { "/login" }).into_response())
 }
 
 // ---------- auth ----------
@@ -203,9 +197,14 @@ pub async fn login(State(app): State<App>, h: HeaderMap, Form(f): Form<LoginForm
     if !eq(f.token.trim(), &app.admin_token) {
         return login_page(&app, true).await;
     }
+    Ok(admin_cookie(&app, &h, "/admin"))
+}
+
+/// Signs the owner in: the admin cookie, then on to `to`.
+pub fn admin_cookie(app: &App, h: &HeaderMap, to: &str) -> Response {
     let https = h.get("x-forwarded-proto").and_then(|v| v.to_str().ok()) == Some("https");
     let cookie = format!("{COOKIE}={}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000{}", app.admin_token, if https { "; Secure" } else { "" });
-    Ok(([(header::SET_COOKIE, cookie)], Redirect::to("/admin")).into_response())
+    ([(header::SET_COOKIE, cookie)], Redirect::to(to)).into_response()
 }
 
 pub async fn logout() -> impl IntoResponse {

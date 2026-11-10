@@ -1661,8 +1661,3 @@ html[data-lite] .foot { content-visibility: auto; contain-intrinsic-size: auto 2
 .foot-login { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: 999px; color: var(--gold-hi); font: 700 .875rem/1 var(--font); text-decoration: none; box-shadow: inset 0 0 0 1px rgba(239,200,115,.45); background: rgba(9,11,20,.6); }
 .foot-login:hover { background: rgba(239,200,115,.12); }
 .foot-login svg { width: 16px; height: 16px; }
-.login-owner { width: 100%; margin-top: var(--s2); text-align: left; }
-.login-owner > summary { cursor: pointer; color: var(--muted); font: 500 .8125rem/1.4 var(--font); list-style: none; text-align: center; }
-.login-owner > summary::-webkit-details-marker { display: none; }
-.login-owner > summary:hover { color: var(--gold-hi); }
-.login-owner[open] > summary { margin-bottom: var(--s3); color: var(--gold-hi); }

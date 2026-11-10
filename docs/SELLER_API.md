@@ -17,8 +17,10 @@ callers get 401. Every `/me/…` route only touches the signed-in trainer's own 
 Trainers are collectors by default: a profile and a binder. An admin switches selling on per trainer (Admin › Trainers
 › Store: **Seller** / **Collector**, `POST /admin/trainers/{id}` with `{ "action": "seller", "seller": true }`).
 Only sellers get the store panel, a public `/store/<name>`, Reserve/Offer buttons and a place in `/stores`; a trainer
-whose store is off sees `/me/store` explain that, and still buys from stores like anyone else. Signing in happens
-at `/login` (trainers, with the vault owner's admin password tucked underneath).
+whose store is off sees `/me/store` explain that, and still buys from stores like anyone else. Everyone signs in at `/login`: a trainer
+with their name and password; the vault owner with any name and the admin password (`ADMIN_TOKEN`), which opens the
+admin straight away. An admin trainer may switch their own store on; any other change to their own trainer needs
+another admin.
 
 ## The SRP
 

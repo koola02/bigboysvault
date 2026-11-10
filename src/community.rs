@@ -245,7 +245,7 @@ pub async fn join_page(State(app): State<App>, h: HeaderMap, Query(q): Query<Joi
 }
 
 /// `GET /login`: the sign-in landing for trainers, with the vault owner's admin password tucked underneath.
-pub async fn login_page(State(app): State<App>, h: HeaderMap) -> Res {
+pub async fn login_page(State(app): State<App>, h: HeaderMap, Query(q): Query<LoginQs>) -> Res {
     if current(&app, &h).await?.is_some() {
         return Ok(Redirect::to("/me").into_response());
     }
@@ -253,7 +253,13 @@ pub async fn login_page(State(app): State<App>, h: HeaderMap) -> Res {
         return Ok(Redirect::to("/admin").into_response());
     }
     let nav = with_db(&app, chrome).await?;
-    Ok(html(render(LoginPage { nav, error: String::new(), name: String::new() })?))
+    let error = if q.wrong.is_some() { "That password isn't right.".to_string() } else { String::new() };
+    Ok(html(render(LoginPage { nav, error, name: String::new() })?))
+}
+
+#[derive(Deserialize)]
+pub struct LoginQs {
+    wrong: Option<String>,
 }
 
 async fn join_again(app: &App, code: StatusCode, mode: &'static str, name: String, error: &str) -> Res {
@@ -320,6 +326,10 @@ pub async fn signin(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm
     let by_name = over_limit(&app, format!("in|{}", members::name_key(&typed)), 8);
     if by_ip || by_name {
         return join_again(&app, StatusCode::TOO_MANY_REQUESTS, "signin", typed, "Too many tries. Please wait 15 minutes and try again.").await;
+    }
+    // The admin password works with any name: it opens the admin, not a trainer.
+    if !app.admin_token.is_empty() && admin::eq(f.password.trim(), &app.admin_token) {
+        return Ok(admin::admin_cookie(&app, &h, "/admin"));
     }
     let n2 = typed.clone();
     let found = with_db(&app, move |c| members::for_signin(c, &n2)).await?;
@@ -1203,7 +1213,8 @@ pub async fn admin_action(State(app): State<App>, h: HeaderMap, Path(id): Path<i
         admin::Power::Nothing => (false, None),
     };
     // Tags are only words on a page, so an admin may tag their own trainer too.
-    if me == Some(id) && req.action != "tags" {
+    // An admin may tag themselves and switch their own store on; everything else needs another admin.
+    if me == Some(id) && !matches!(req.action.as_str(), "tags" | "seller") {
         return Ok(fail(StatusCode::FORBIDDEN, "You can't do that to your own trainer. Another admin can."));
     }
     if !full {
