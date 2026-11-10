@@ -40,6 +40,14 @@ pub fn parse_shares(json_str: &str) -> HashMap<String, f64> {
     map
 }
 
+/// Loads the saved shares from the database, or returns default shares if unset or broken.
+pub fn load_shares(c: &rusqlite::Connection) -> HashMap<String, f64> {
+    match crate::blocks::setting(c, "condition_shares") {
+        Ok(Some(s)) => parse_shares(&s),
+        _ => default_shares_map(),
+    }
+}
+
 /// Serializes shares map to JSON string.
 pub fn serialize_shares(shares: &HashMap<String, f64>) -> String {
     let mut out = serde_json::Map::new();

@@ -2,13 +2,14 @@
 //! Everything here is public information that the pages already show. Nothing here can change anything.
 use crate::{admin, unix_now, with_db, App, Res};
 use axum::{
-    extract::{Path, Query, State, Json as AxumJson},
+    extract::{Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
 use marcuru_rs::{ask, db, market, members, suggest, translate, pricing};
 use serde::Deserialize;
 use serde_json::json;
+use std::collections::HashMap;
 use std::sync::Arc;
 use vault_search::{parse, peso, read_words, search, Sort};
 
@@ -31,7 +32,7 @@ pub async fn condition_shares(State(app): State<App>, h: HeaderMap) -> Res {
     if !check_auth(&app, &h).await {
         return Ok((StatusCode::NOT_FOUND, "Not found").into_response());
     }
-    let shares = with_db(&app, |c| Ok(pricing::load_shares(c))).await?;
+    let shares: HashMap<String, f64> = with_db(&app, |c| Ok(pricing::load_shares(c))).await?;
     Ok(json(json!(shares)))
 }
 

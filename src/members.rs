@@ -316,6 +316,18 @@ impl MemberCard {
     pub fn condition_share(&self) -> Option<f64> {
         crate::pricing::factor(&self.cond)
     }
+    pub fn value_int(&self) -> i64 {
+        self.value.round() as i64
+    }
+    pub fn value_own_int(&self) -> i64 {
+        self.value_own.round() as i64
+    }
+    pub fn suggested_int(&self) -> Option<i64> {
+        self.suggested_price().map(|v| v.round() as i64)
+    }
+    pub fn condition_share_pct(&self) -> i64 {
+        (self.condition_share().unwrap_or(1.0) * 100.0).round() as i64
+    }
 }
 
 /// A card a trainer has highlighted, with who it belongs to.

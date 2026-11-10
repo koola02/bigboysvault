@@ -43,11 +43,11 @@
         <label class="me-val" data-nodrag><span>Value ₱</span><input data-value type="number" min="0" step="1" inputmode="numeric" value="{{ c.own_text() }}" placeholder="{% if c.value > 0.0 %}{{ c.market_text() }}{% else %}Not known yet{% endif %}" aria-label="Value of {{ c.title }} in pesos"></label>
         {% if c.own_photo() %}<p class="me-c-sug">No market price for your own photo. Set your own value.</p>
         {% else if c.value <= 0.0 %}<p class="me-c-sug">No market price found for this card. Set your own price.</p>
-        {% else if c.is_graded() %}<p class="me-c-sug">Graded card: set your own price. Ungraded Near Mint is ₱{{ c.value|round as i64 }}.</p>
-        {% else if c.is_sealed() %}<p class="me-c-sug">Sealed: set your own price. Ungraded Near Mint is ₱{{ c.value|round as i64 }}.</p>
-        {% else if let Some(sug) = c.suggested_price() %}
-          {% if c.value_own > 0.0 %}<p class="me-c-sug">You set ₱{{ c.value_own|round as i64 }}. Suggested for {{ c.cond }}: ₱{{ sug|round as i64 }} <button type="button" class="me-use-btn" data-use="{{ sug|round as i64 }}">Use ₱{{ sug|round as i64 }}</button></p>
-          {% else %}<p class="me-c-sug">Suggested ₱{{ sug|round as i64 }} · {{ c.cond }} · {{ (c.condition_share().unwrap_or(1.0) * 100.0)|round as i64 }}% of Near Mint ₱{{ c.value|round as i64 }} <button type="button" class="me-use-btn" data-use="{{ sug|round as i64 }}">Use ₱{{ sug|round as i64 }}</button></p>{% endif %}
+        {% else if c.is_graded() %}<p class="me-c-sug">Graded card: set your own price. Ungraded Near Mint is ₱{{ c.value_int() }}.</p>
+        {% else if c.is_sealed() %}<p class="me-c-sug">Sealed: set your own price. Ungraded Near Mint is ₱{{ c.value_int() }}.</p>
+        {% else if let Some(sug) = c.suggested_int() %}
+          {% if c.value_own > 0.0 %}<p class="me-c-sug">You set ₱{{ c.value_own_int() }}. Suggested for {{ c.cond }}: ₱{{ sug }} <button type="button" class="me-use-btn" data-use="{{ sug }}">Use ₱{{ sug }}</button></p>
+          {% else %}<p class="me-c-sug">Suggested ₱{{ sug }} · {{ c.cond }} · {{ c.condition_share_pct() }}% of Near Mint ₱{{ c.value_int() }} <button type="button" class="me-use-btn" data-use="{{ sug }}">Use ₱{{ sug }}</button></p>{% endif %}
         {% endif %}
       </li>
       {% endfor %}
