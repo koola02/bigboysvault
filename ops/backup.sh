@@ -25,15 +25,19 @@ SINCE_FILE="$BK/uploads.since"; SINCE="$(cat "$SINCE_FILE" 2>/dev/null || echo 0
 log "pictures changed since $SINCE"
 LIST="$(admin_curl "$SITE/admin/backup/uploads?since=$SINCE")"
 NOW="$(printf '%s' "$LIST" | json_get "d['now']")"
-printf '%s' "$LIST" | python3 -c 'import json,sys; [print(f["path"]) for f in json.load(sys.stdin)["files"]]' > "$BK/uploads.new"
-N=0
-while IFS= read -r p; do
+printf '%s' "$LIST" | python3 -c 'import json,sys; [print(f["path"], f["size"]) for f in json.load(sys.stdin)["files"]]' > "$BK/uploads.new"
+TOTAL="$(wc -l < "$BK/uploads.new")"; N=0; SKIP=0
+log "$TOTAL file(s) listed (a first run fetches every picture: give it a while)"
+while read -r p size; do
   [ -z "$p" ] && continue
   rel="${p#/uploads/}"; mkdir -p "$UP/$(dirname "$rel")"
+  # Already here and whole: skip, so an interrupted run carries on where it stopped.
+  if [ -f "$UP/$rel" ] && [ "$(stat -c %s "$UP/$rel")" = "$size" ]; then SKIP=$((SKIP+1)); continue; fi
   if curl -sS --fail --max-time 120 -o "$UP/$rel.part" "$SITE$p"; then mv "$UP/$rel.part" "$UP/$rel"; N=$((N+1)); else rm -f "$UP/$rel.part"; log "could not fetch $p"; fi
+  [ $(( (N + SKIP) % 250 )) -eq 0 ] && log "  $((N + SKIP)) of $TOTAL"
 done < "$BK/uploads.new"
+log "$N new picture(s), $SKIP already here"
 echo "$NOW" > "$SINCE_FILE"
-log "$N new picture(s)"
 
 # Keep 30 days of database copies here.
 find "$BK/db" -name 'data-*.db' -mtime +30 -delete
