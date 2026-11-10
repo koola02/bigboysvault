@@ -91,6 +91,11 @@ pub struct Member {
     pub fb_url: String,
     pub tiktok_url: String,
     pub links: String,
+    pub cover_photo: String,
+    pub location: String,
+    pub contact_info: String,
+    pub contact_public: bool,
+    pub status: String,
 }
 
 /// An admin's tags for a trainer, as a list.
@@ -262,6 +267,11 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         ("fb_url", "TEXT NOT NULL DEFAULT ''"),
         ("tiktok_url", "TEXT NOT NULL DEFAULT ''"),
         ("links", "TEXT NOT NULL DEFAULT ''"),
+        ("cover_photo", "TEXT NOT NULL DEFAULT ''"),
+        ("location", "TEXT NOT NULL DEFAULT ''"),
+        ("contact_info", "TEXT NOT NULL DEFAULT ''"),
+        ("contact_public", "INTEGER NOT NULL DEFAULT 0"),
+        ("status", "TEXT NOT NULL DEFAULT 'Active'"),
     ] {
         let there: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('members') WHERE name=?1", [col], |r| r.get(0))?;
         if there == 0 {
@@ -273,6 +283,9 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         ("value_own", "REAL NOT NULL DEFAULT 0"),
         ("value_at", "INTEGER NOT NULL DEFAULT 0"),
         ("binder_id", "INTEGER"),
+        ("status", "TEXT NOT NULL DEFAULT 'Active'"),
+        ("expires_at", "INTEGER NOT NULL DEFAULT 0"),
+        ("is_custom", "INTEGER NOT NULL DEFAULT 0"),
     ] {
         let there: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('member_cards') WHERE name=?1", [col], |r| r.get(0))?;
         if there == 0 {
@@ -285,6 +298,63 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
       cover_card INTEGER, position INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_mb_member ON member_binders(member_id, position);
     CREATE UNIQUE INDEX IF NOT EXISTS idx_mb_slug ON member_binders(member_id, slug);
+    ")?;
+
+    for (col, def) in [
+        ("description", "TEXT NOT NULL DEFAULT ''"),
+        ("visibility", "TEXT NOT NULL DEFAULT 'Public'"),
+    ] {
+        let there: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('member_binders') WHERE name=?1", [col], |r| r.get(0))?;
+        if there == 0 {
+            c.execute_batch(&format!("ALTER TABLE member_binders ADD COLUMN {col} {def}"))?;
+        }
+    }
+
+    c.execute_batch("
+    CREATE TABLE IF NOT EXISTS store_follows(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, follower_id INTEGER NOT NULL, seller_id INTEGER NOT NULL, created_at INTEGER NOT NULL);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_sf_pair ON store_follows(follower_id, seller_id);
+
+    CREATE TABLE IF NOT EXISTS reviews(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, reviewer_id INTEGER NOT NULL, seller_id INTEGER NOT NULL, transaction_id INTEGER NOT NULL, rating INTEGER NOT NULL, text TEXT NOT NULL, created_at INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_reviews_seller ON reviews(seller_id, created_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_tx ON reviews(transaction_id);
+
+    CREATE TABLE IF NOT EXISTS inquiries(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, sender_id INTEGER NOT NULL, seller_id INTEGER NOT NULL, card_id INTEGER, message TEXT NOT NULL, created_at INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_inquiries_seller ON inquiries(seller_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS offers(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, sender_id INTEGER NOT NULL, seller_id INTEGER NOT NULL, card_id INTEGER NOT NULL, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'Pending', created_at INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_offers_seller ON offers(seller_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS reservations(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, buyer_id INTEGER NOT NULL, seller_id INTEGER NOT NULL, card_id INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'Pending', expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_res_seller ON reservations(seller_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS transactions(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, buyer_id INTEGER NOT NULL, seller_id INTEGER NOT NULL, card_id INTEGER NOT NULL, amount REAL NOT NULL, status TEXT NOT NULL DEFAULT 'Completed', created_at INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_tx_seller ON transactions(seller_id, created_at);
+
+    CREATE TABLE IF NOT EXISTS listing_views(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, card_id INTEGER NOT NULL, viewer_ip_hash TEXT NOT NULL, created_at INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_views_card ON listing_views(card_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_views_card_ip_day ON listing_views(card_id, viewer_ip_hash, created_at);
+
+    CREATE TABLE IF NOT EXISTS listing_saves(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, card_id INTEGER NOT NULL, created_at INTEGER NOT NULL);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_saves_member_card ON listing_saves(member_id, card_id);
+
+    CREATE TABLE IF NOT EXISTS notifications(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, link TEXT NOT NULL, is_read INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_notif_member ON notifications(member_id, is_read, created_at);
+
+    CREATE TABLE IF NOT EXISTS notification_preferences(
+      member_id INTEGER PRIMARY KEY, event_type TEXT NOT NULL, site INTEGER NOT NULL DEFAULT 1, email INTEGER NOT NULL DEFAULT 1, push INTEGER NOT NULL DEFAULT 0);
+
+    CREATE TABLE IF NOT EXISTS push_subscriptions(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, endpoint TEXT NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_push_member ON push_subscriptions(member_id);
     ")?;
 
     // Fill slug for existing members without one
@@ -377,6 +447,8 @@ pub struct MemberBinder {
     pub created_at: i64,
     pub count: i64,
     pub cover_image: String,
+    pub description: String,
+    pub visibility: String,
 }
 
 impl MemberBinder {
@@ -408,6 +480,9 @@ pub struct MemberCard {
     /// The trainer's own figure, if they've set one. It replaces the market's.
     pub value_own: f64,
     pub binder_id: Option<i64>,
+    pub status: String,
+    pub expires_at: i64,
+    pub is_custom: bool,
 }
 
 impl MemberCard {
@@ -486,8 +561,8 @@ pub struct Highlight {
     pub card: MemberCard,
 }
 
-const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags,m.slug,m.fb_url,m.tiktok_url,m.links");
-const MEMBER_COUNT: usize = 17;
+const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags,m.slug,m.fb_url,m.tiktok_url,m.links,m.cover_photo,m.location,m.contact_info,m.contact_public,m.status");
+const MEMBER_COUNT: usize = 22;
 
 fn map_member(r: &Row) -> rusqlite::Result<Member> {
     Ok(Member {
@@ -508,10 +583,15 @@ fn map_member(r: &Row) -> rusqlite::Result<Member> {
         fb_url: r.get(14)?,
         tiktok_url: r.get(15)?,
         links: r.get(16)?,
+        cover_photo: r.get(17)?,
+        location: r.get(18)?,
+        contact_info: r.get(19)?,
+        contact_public: r.get::<_, i64>(20)? != 0,
+        status: r.get(21)?,
     })
 }
 
-const CARD_COLS: &str = "c.id,c.member_id,c.title,c.number,c.card_set,c.image,c.image_large,c.cond,c.card_id,c.value,c.value_own,c.binder_id";
+const CARD_COLS: &str = "c.id,c.member_id,c.title,c.number,c.card_set,c.image,c.image_large,c.cond,c.card_id,c.value,c.value_own,c.binder_id,c.status,c.expires_at,c.is_custom";
 
 fn map_card(r: &Row, at: usize) -> rusqlite::Result<MemberCard> {
     Ok(MemberCard {
@@ -527,6 +607,9 @@ fn map_card(r: &Row, at: usize) -> rusqlite::Result<MemberCard> {
         value: r.get(at + 9)?,
         value_own: r.get(at + 10)?,
         binder_id: r.get(at + 11)?,
+        status: r.get(at + 12)?,
+        expires_at: r.get(at + 13)?,
+        is_custom: r.get::<_, i64>(at + 14)? != 0,
     })
 }
 
@@ -754,7 +837,8 @@ pub fn binders_of(c: &Connection, member_id: i64) -> rusqlite::Result<Vec<Member
     let sql = "SELECT b.id, b.member_id, b.title, b.slug, b.cover_card, b.position, b.created_at,
                       (SELECT COUNT(*) FROM member_cards x WHERE x.binder_id=b.id AND x.member_id=b.member_id),
                       COALESCE((SELECT c.image FROM member_cards c WHERE c.id=b.cover_card AND c.member_id=b.member_id),
-                               (SELECT c.image FROM member_cards c WHERE c.binder_id=b.id AND c.member_id=b.member_id LIMIT 1), '')
+                               (SELECT c.image FROM member_cards c WHERE c.binder_id=b.id AND c.member_id=b.member_id LIMIT 1), ''),
+                      b.description, b.visibility
                FROM member_binders b
                WHERE b.member_id=?1
                ORDER BY b.position ASC, b.id ASC";
@@ -770,6 +854,8 @@ pub fn binders_of(c: &Connection, member_id: i64) -> rusqlite::Result<Vec<Member
             created_at: r.get(6)?,
             count: r.get(7)?,
             cover_image: r.get(8)?,
+            description: r.get(9)?,
+            visibility: r.get(10)?,
         })
     })?.collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
@@ -779,7 +865,8 @@ pub fn binder_by_slug(c: &Connection, member_id: i64, slug: &str) -> rusqlite::R
     let sql = "SELECT b.id, b.member_id, b.title, b.slug, b.cover_card, b.position, b.created_at,
                       (SELECT COUNT(*) FROM member_cards x WHERE x.binder_id=b.id AND x.member_id=b.member_id),
                       COALESCE((SELECT c.image FROM member_cards c WHERE c.id=b.cover_card AND c.member_id=b.member_id),
-                               (SELECT c.image FROM member_cards c WHERE c.binder_id=b.id AND c.member_id=b.member_id LIMIT 1), '')
+                               (SELECT c.image FROM member_cards c WHERE c.binder_id=b.id AND c.member_id=b.member_id LIMIT 1), ''),
+                      b.description, b.visibility
                FROM member_binders b
                WHERE b.member_id=?1 AND b.slug=?2";
     c.query_row(sql, rusqlite::params![member_id, slug], |r| {
@@ -793,6 +880,8 @@ pub fn binder_by_slug(c: &Connection, member_id: i64, slug: &str) -> rusqlite::R
             created_at: r.get(6)?,
             count: r.get(7)?,
             cover_image: r.get(8)?,
+            description: r.get(9)?,
+            visibility: r.get(10)?,
         })
     }).optional()
 }
@@ -818,6 +907,8 @@ pub fn create_member_binder(c: &Connection, member_id: i64, title: &str) -> rusq
         created_at: t_now,
         count: 0,
         cover_image: String::new(),
+        description: String::new(),
+        visibility: "Public".to_string(),
     })
 }
 
