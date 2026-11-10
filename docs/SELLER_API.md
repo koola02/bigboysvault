@@ -12,6 +12,14 @@ All JSON routes answer `{ "ok": true, ... }` or an error `{ "error": "plain word
 callers get 401. Every `/me/…` route only touches the signed-in trainer's own data. Requests must come from the site
 (same-origin check), with the `bbv_trainer` cookie.
 
+## The SRP
+
+Every card a seller or the owner prices shows an **SRP**: the suggested retail price in pesos for its condition,
+a share of today's Near Mint market price (`pricing.rs`, the owner's shares from Admin › Dashboard › Condition
+prices). It is only a guide: the price is always the seller's (or the owner's), and nothing changes it by itself.
+Graded and sealed cards get no SRP, only the raw Near Mint price for reference. Sellers' market prices refresh
+nightly; the owner's cards remember theirs in `products.market_php`.
+
 ## Listing statuses
 
 `Active` (on sale) → `Reserved` (every copy spoken for by open reservations) → `Sold` (stock is 0). Also `Hidden`

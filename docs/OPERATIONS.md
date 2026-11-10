@@ -46,7 +46,7 @@ Jobs live in `ops/`. Once: `git clone … ~/bigboysvault && ~/bigboysvault/ops/s
 |---|---|---|
 | `uptime.sh` | every 5 min | `GET /healthz`; two misses in a row → Telegram or webhook; one message when it's back |
 | `backup.sh` | 02:30 | `GET /admin/backup/db` (a `VACUUM INTO` snapshot, checked with `PRAGMA integrity_check`) → `~/bbv/backups/db/data-DATE.db(.gz)`; new pictures from `GET /admin/backup/uploads?since=` → `~/bbv/backups/uploads/`; then `gcloud storage` to a bucket. 30 days kept locally |
-| `prices.sh` | 03:00 | `POST /admin/prices/refresh?limit=50` in a loop until nothing is stale: today's market price for the vault's market-priced cards (suggested for their condition; graded and sealed untouched) and the sellers' cards; sellers far off the market are told once a week per card. Then `POST /admin/catalog/warm` |
+| `prices.sh` | 03:00 | `POST /admin/prices/refresh?limit=50` in a loop until nothing is stale: today's Near Mint market price for every catalogue card (`market_php`, what the **SRP** on My cards is worked out from), the suggested price for cards whose price follows the market (graded and sealed untouched), and the sellers' cards; sellers far off the market are told once a week per card. Then `POST /admin/catalog/warm`. The site also fills missing market prices by itself, 40 cards every ten minutes, and set release dates (`card_sets`, for "sort by set") soon after boot and every six hours (`POST /admin/sets/refresh` does it on demand) |
 | `images.sh` | 03:30 | WebP/AVIF beside new JPEGs, pushed with one `fly ssh sftp shell` session |
 | `deploy.sh` | by hand | pull, test, back up, `fly deploy --remote-only`, check `/healthz` |
 | `staging.sh` | by hand | last night's copy in the site's Docker image on port 8080 |
