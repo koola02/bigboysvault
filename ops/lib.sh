@@ -3,8 +3,15 @@
 set -euo pipefail
 OPS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${BBV_ENV:-$OPS_DIR/env}"
+# KEY=value lines, read as text (never run as shell), so tokens with spaces or commas are fine. Quotes around a value are optional.
 if [ -f "$ENV_FILE" ]; then
-  set -a; . "$ENV_FILE"; set +a
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in ''|'#'*) continue ;; esac
+    key="${line%%=*}"; val="${line#*=}"
+    val="${val#\"}"; val="${val%\"}"; val="${val#'}"; val="${val%'}"
+    case "$key" in *[!A-Za-z0-9_]*) continue ;; esac
+    export "$key=$val"
+  done < "$ENV_FILE"
 fi
 : "${SITE:=https://www.bigboysvault.com}"
 : "${ADMIN_TOKEN:?Set ADMIN_TOKEN in ops/env (the admin password you gave fly secrets)}"
