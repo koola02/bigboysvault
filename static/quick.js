@@ -262,6 +262,20 @@
     if (!c.finish) fin.append(new Option(it.priced ? 'Pick a finish' : 'Pricing…', '', true, true));
     it.finishes.forEach((f) => fin.append(new Option(`${f.label} · ${peso(A.suggest(f.php, c.cond) || Math.round(f.php))}`, f.key, false, f.key === c.finish)));
     FINISHES.filter(([k]) => !it.finishes.some((f) => f.key === k)).forEach(([k, label]) => fin.append(new Option(label, k, false, k === c.finish)));
+    const updateSug = () => {
+      const f = it.finishes.find((x) => x.key === c.finish);
+      A.renderSug(row, c.price, Math.round(f?.php || 0), c.cond, f?.label, it.source, it.updated, (condName, sugPrice) => {
+        c.cond = condName;
+        cond.value = condName;
+        c.price = String(sugPrice);
+        c.market = true;
+        pr.value = c.price;
+        persist();
+        paintBar();
+        updateSug();
+      });
+    };
+
     fin.onchange = () => {
       const f = it.finishes.find((x) => x.key === fin.value);
       c.finish = fin.value;
@@ -270,9 +284,10 @@
         c.price = c.market ? (sug || Math.round(f.php)) : c.price;
       }
       persist(); paintBar(); paintTiles(); if (document.activeElement !== pr) pr.value = c.price;
+      updateSug();
     };
     const pr = document.createElement('input'); pr.className = 'qa-price'; pr.inputMode = 'decimal'; pr.placeholder = '₱0'; pr.value = c.price; pr.setAttribute('aria-label', `Value of card ${i + 1} in pesos`);
-    pr.oninput = () => { c.price = pr.value.replace(/[^\d.]/g, ''); c.market = false; persist(); paintBar(); A.renderSug(pr, c.price, Math.round(it.finishes.find((x) => x.key === c.finish)?.php || 0), c.cond, it.finishes.find((x) => x.key === c.finish)?.label, it.source, it.updated, (sug) => { c.price = String(sug); c.market = true; pr.value = c.price; persist(); paintBar(); }); };
+    pr.oninput = () => { c.price = pr.value.replace(/[^\d.]/g, ''); c.market = false; persist(); paintBar(); updateSug(); };
     const cond = document.createElement('select'); cond.setAttribute('aria-label', `Condition of card ${i + 1}`);
     const known = CONDS.includes(c.cond) ? CONDS : [c.cond, ...CONDS];
     known.forEach((v) => cond.append(new Option(v, v, false, v === c.cond)));
@@ -284,14 +299,13 @@
         if (c.market && sug) c.price = sug;
       }
       persist(); paintBar(); paintTiles(); if (document.activeElement !== pr) pr.value = c.price;
-      A.renderSug(pr, c.price, Math.round(f?.php || 0), c.cond, f?.label, it.source, it.updated, (sug) => { c.price = String(sug); c.market = true; pr.value = c.price; persist(); paintBar(); });
+      updateSug();
     };
     const x = document.createElement('button'); x.type = 'button'; x.className = 'qa-copy-x'; x.textContent = '✕'; x.setAttribute('aria-label', `Take out card ${i + 1}`);
     x.onclick = () => { it.copies.splice(it.copies.indexOf(c), 1); if (!it.copies.length) st.tray = st.tray.filter((t) => t !== it); afterChange(); };
     row.append(n, fin, pr, cond, x);
     if (c.err) { const e = document.createElement('p'); e.className = 'qa-err'; e.textContent = c.err; row.append(e); }
-    const curF = it.finishes.find((x) => x.key === c.finish);
-    A.renderSug(pr, c.price, Math.round(curF?.php || 0), c.cond, curF?.label, it.source, it.updated, (sug) => { c.price = String(sug); c.market = true; pr.value = c.price; persist(); paintBar(); });
+    updateSug();
     return row;
   }
   function paintList() {

@@ -181,14 +181,14 @@ window.mountCardForm = () => {
     const cond = el.variant.value.trim();
     mk.fin.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.k === f.key)));
     const A = window.Admin;
-    A.renderSug(mk.price, el.price.value.replace(/[^\d.]/g, ''), Math.round(f.php), cond, f.label, current.source, current.updated, (sug) => {
-      setPrice(sug); mk.src.value = 'suggested'; mk.use.hidden = true;
+    A.renderSug(mk.price, el.price.value.replace(/[^\d.]/g, ''), Math.round(f.php), cond, f.label, current.source, current.updated, (condName, sugPrice) => {
+      el.variant.value = condName;
+      setPrice(sugPrice);
+      mk.src.value = 'suggested';
+      saveDraft();
+      preview();
+      showFinish(f);
     });
-    const sugNode = mk.price.nextElementSibling;
-    if (sugNode && sugNode.classList.contains('qa-sug')) {
-      const btn = sugNode.querySelector('button');
-      if (btn) mk.use = btn;
-    }
     const sug = A.suggest(f.php, cond);
     if (!priceDirty && sug) { setPrice(sug); mk.src.value = 'suggested'; }
   }

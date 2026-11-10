@@ -87,6 +87,10 @@ pub struct Member {
     pub worth: f64,
     /// Tags an admin gave this trainer, shown to everyone ("Top seller", "Since 2019"), comma separated.
     pub tags: String,
+    pub slug: String,
+    pub fb_url: String,
+    pub tiktok_url: String,
+    pub links: String,
 }
 
 /// An admin's tags for a trainer, as a list.
@@ -103,6 +107,15 @@ pub fn role_label(role: &str) -> &'static str {
     }
 }
 
+pub fn clean_https_url(u: &str) -> String {
+    let t = u.trim();
+    if t.starts_with("https://") && t.len() <= 300 {
+        t.to_string()
+    } else {
+        String::new()
+    }
+}
+
 impl Member {
     pub fn is_staff(&self) -> bool {
         !self.role.is_empty()
@@ -115,6 +128,16 @@ impl Member {
     }
     pub fn tag_list(&self) -> Vec<String> {
         tag_list(&self.tags)
+    }
+    pub fn link_list(&self) -> Vec<String> {
+        self.links.lines().map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect()
+    }
+    pub fn seller_url(&self) -> String {
+        if self.slug.is_empty() {
+            format!("/trainers/{}", self.id)
+        } else {
+            format!("/trainer/{}", self.slug)
+        }
     }
     /// The letter shown when there's no profile picture yet.
     pub fn initial(&self) -> String {
@@ -229,18 +252,50 @@ impl Award {
 /// Adds what newer versions need to an existing database, and moves each old single vouch to the new table.
 /// An old vouch that wasn't approved stays hidden, because it may be one the owner hid on purpose.
 pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
-    for (col, def) in [("locked_until", "INTEGER NOT NULL DEFAULT 0"), ("blocked", "INTEGER NOT NULL DEFAULT 0"), ("stars", "INTEGER NOT NULL DEFAULT 0"), ("role", "TEXT NOT NULL DEFAULT ''"), ("tags", "TEXT NOT NULL DEFAULT ''")] {
+    for (col, def) in [
+        ("locked_until", "INTEGER NOT NULL DEFAULT 0"),
+        ("blocked", "INTEGER NOT NULL DEFAULT 0"),
+        ("stars", "INTEGER NOT NULL DEFAULT 0"),
+        ("role", "TEXT NOT NULL DEFAULT ''"),
+        ("tags", "TEXT NOT NULL DEFAULT ''"),
+        ("slug", "TEXT NOT NULL DEFAULT ''"),
+        ("fb_url", "TEXT NOT NULL DEFAULT ''"),
+        ("tiktok_url", "TEXT NOT NULL DEFAULT ''"),
+        ("links", "TEXT NOT NULL DEFAULT ''"),
+    ] {
         let there: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('members') WHERE name=?1", [col], |r| r.get(0))?;
         if there == 0 {
             c.execute_batch(&format!("ALTER TABLE members ADD COLUMN {col} {def}"))?;
         }
     }
-    for (col, def) in [("value", "REAL NOT NULL DEFAULT 0"), ("value_own", "REAL NOT NULL DEFAULT 0"), ("value_at", "INTEGER NOT NULL DEFAULT 0")] {
+    for (col, def) in [
+        ("value", "REAL NOT NULL DEFAULT 0"),
+        ("value_own", "REAL NOT NULL DEFAULT 0"),
+        ("value_at", "INTEGER NOT NULL DEFAULT 0"),
+        ("binder_id", "INTEGER"),
+    ] {
         let there: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('member_cards') WHERE name=?1", [col], |r| r.get(0))?;
         if there == 0 {
             c.execute_batch(&format!("ALTER TABLE member_cards ADD COLUMN {col} {def}"))?;
         }
     }
+    c.execute_batch("
+    CREATE TABLE IF NOT EXISTS member_binders(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, title TEXT NOT NULL, slug TEXT NOT NULL,
+      cover_card INTEGER, position INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_mb_member ON member_binders(member_id, position);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_mb_slug ON member_binders(member_id, slug);
+    ")?;
+
+    // Fill slug for existing members without one
+    let missing: Vec<(i64, String)> = c.prepare("SELECT id, name FROM members WHERE slug=''")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    for (id, name) in missing {
+        let s = unique_slug(c, &name, id)?;
+        c.execute("UPDATE members SET slug=?1 WHERE id=?2", rusqlite::params![s, id])?;
+    }
+
     // This runs on every connection, so it only writes when there's really something to move.
     let waiting: i64 = c.query_row("SELECT COUNT(*) FROM members WHERE vouch<>''", [], |r| r.get(0))?;
     if waiting == 0 {
@@ -250,6 +305,87 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         "INSERT INTO vouches(member_id,text,hidden,created_at) SELECT id,vouch,CASE WHEN vouch_ok=1 THEN 0 ELSE 1 END,updated_at FROM members WHERE vouch<>'';
          UPDATE members SET vouch='',vouch_ok=0 WHERE vouch<>'';",
     )
+}
+
+pub fn slugify(name: &str) -> String {
+    let mut s: String = name.to_lowercase()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    while s.contains("--") {
+        s = s.replace("--", "-");
+    }
+    let res = s.trim_matches('-').to_string();
+    if res.is_empty() {
+        "seller".to_string()
+    } else {
+        res
+    }
+}
+
+pub fn unique_slug(c: &Connection, name: &str, member_id: i64) -> rusqlite::Result<String> {
+    let base = slugify(name);
+    let mut candidate = base.clone();
+    let mut n = 2;
+    loop {
+        let count: i64 = c.query_row(
+            "SELECT COUNT(*) FROM members WHERE slug=?1 AND id<>?2",
+            rusqlite::params![candidate, member_id],
+            |r| r.get(0),
+        )?;
+        if count == 0 {
+            return Ok(candidate);
+        }
+        candidate = format!("{base}-{n}");
+        n += 1;
+    }
+}
+
+pub fn unique_binder_slug(c: &Connection, member_id: i64, title: &str, binder_id: Option<i64>) -> rusqlite::Result<String> {
+    let base = slugify(title);
+    let mut candidate = base.clone();
+    let mut n = 2;
+    loop {
+        let count: i64 = match binder_id {
+            Some(bid) => c.query_row(
+                "SELECT COUNT(*) FROM member_binders WHERE member_id=?1 AND slug=?2 AND id<>?3",
+                rusqlite::params![member_id, candidate, bid],
+                |r| r.get(0),
+            )?,
+            None => c.query_row(
+                "SELECT COUNT(*) FROM member_binders WHERE member_id=?1 AND slug=?2",
+                rusqlite::params![member_id, candidate],
+                |r| r.get(0),
+            )?,
+        };
+        if count == 0 {
+            return Ok(candidate);
+        }
+        candidate = format!("{base}-{n}");
+        n += 1;
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct MemberBinder {
+    pub id: i64,
+    pub member_id: i64,
+    pub title: String,
+    pub slug: String,
+    pub cover_card: Option<i64>,
+    pub position: i64,
+    pub created_at: i64,
+    pub count: i64,
+    pub cover_image: String,
+}
+
+impl MemberBinder {
+    pub fn count_text(&self) -> String {
+        self.count.to_string()
+    }
+    pub fn has_image(&self) -> bool {
+        !self.cover_image.is_empty()
+    }
 }
 
 pub fn initial(name: &str) -> String {
@@ -271,6 +407,7 @@ pub struct MemberCard {
     pub value: f64,
     /// The trainer's own figure, if they've set one. It replaces the market's.
     pub value_own: f64,
+    pub binder_id: Option<i64>,
 }
 
 impl MemberCard {
@@ -328,6 +465,18 @@ impl MemberCard {
     pub fn condition_share_pct(&self) -> i64 {
         (self.condition_share().unwrap_or(1.0) * 100.0).round() as i64
     }
+    /// Returns (condition_name, suggested_price_int, is_current_selected) for each standard condition.
+    pub fn condition_prices(&self) -> Vec<(&'static str, i64, bool)> {
+        if self.value <= 0.0 || self.is_graded() || self.is_sealed() || self.own_photo() {
+            return Vec::new();
+        }
+        let norm = crate::pricing::read_condition(&self.cond);
+        crate::pricing::DEFAULT_SHARES.iter().filter_map(|(name, _)| {
+            let sug = crate::pricing::suggest(self.value, name)?;
+            let is_cur = norm == Some(*name);
+            Some((*name, sug.round() as i64, is_cur))
+        }).collect()
+    }
 }
 
 /// A card a trainer has highlighted, with who it belongs to.
@@ -337,8 +486,8 @@ pub struct Highlight {
     pub card: MemberCard,
 }
 
-const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags");
-const MEMBER_COUNT: usize = 13;
+const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags,m.slug,m.fb_url,m.tiktok_url,m.links");
+const MEMBER_COUNT: usize = 17;
 
 fn map_member(r: &Row) -> rusqlite::Result<Member> {
     Ok(Member {
@@ -355,10 +504,14 @@ fn map_member(r: &Row) -> rusqlite::Result<Member> {
         role: r.get(10)?,
         worth: r.get(11)?,
         tags: r.get(12)?,
+        slug: r.get(13)?,
+        fb_url: r.get(14)?,
+        tiktok_url: r.get(15)?,
+        links: r.get(16)?,
     })
 }
 
-const CARD_COLS: &str = "c.id,c.member_id,c.title,c.number,c.card_set,c.image,c.image_large,c.cond,c.card_id,c.value,c.value_own";
+const CARD_COLS: &str = "c.id,c.member_id,c.title,c.number,c.card_set,c.image,c.image_large,c.cond,c.card_id,c.value,c.value_own,c.binder_id";
 
 fn map_card(r: &Row, at: usize) -> rusqlite::Result<MemberCard> {
     Ok(MemberCard {
@@ -373,6 +526,7 @@ fn map_card(r: &Row, at: usize) -> rusqlite::Result<MemberCard> {
         card_id: r.get(at + 8)?,
         value: r.get(at + 9)?,
         value_own: r.get(at + 10)?,
+        binder_id: r.get(at + 11)?,
     })
 }
 
@@ -502,7 +656,14 @@ pub fn create(c: &Connection, name: &str, pass_hash: &str) -> rusqlite::Result<O
         "INSERT INTO members(name,name_key,pass,created_at,updated_at) VALUES(?1,?2,?3,?4,?4) ON CONFLICT(name_key) DO NOTHING",
         rusqlite::params![name, name_key(name), pass_hash, t],
     )?;
-    Ok((r == 1).then(|| c.last_insert_rowid()))
+    if r == 1 {
+        let id = c.last_insert_rowid();
+        let slug = unique_slug(c, name, id)?;
+        c.execute("UPDATE members SET slug=?1 WHERE id=?2", rusqlite::params![slug, id])?;
+        Ok(Some(id))
+    } else {
+        Ok(None)
+    }
 }
 
 /// (id, stored password) for a sign-in attempt.
@@ -525,6 +686,28 @@ pub fn get(c: &Connection, id: i64) -> rusqlite::Result<Option<Member>> {
     c.query_row(&format!("SELECT {MEMBER_COLS} FROM members m WHERE m.id=?1"), [id], map_member).optional()
 }
 
+pub fn by_slug(c: &Connection, slug: &str) -> rusqlite::Result<Option<Member>> {
+    let sql = format!("SELECT {MEMBER_COLS} FROM members m WHERE m.slug=?1");
+    c.query_row(&sql, [slug], map_member).optional()
+}
+
+pub fn approved_sellers(c: &Connection) -> rusqlite::Result<Vec<Member>> {
+    let sql = format!(
+        "SELECT {MEMBER_COLS} FROM members m
+         WHERE m.profile_ok=1 AND m.blocked=0
+           AND ((SELECT COUNT(*) FROM member_binders b WHERE b.member_id=m.id)>0
+                OR (SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id)>0)
+         ORDER BY (m.stars > 0) DESC, m.stars DESC, m.worth DESC, m.id DESC"
+    );
+    let mut st = c.prepare(&sql)?;
+    let rows = st.query_map([], map_member)?.collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn vouches_count(c: &Connection, member_id: i64) -> rusqlite::Result<i64> {
+    c.query_row("SELECT COUNT(*) FROM vouches WHERE member_id=?1 AND hidden=0", [member_id], |r| r.get(0))
+}
+
 pub fn pending_count(c: &Connection) -> rusqlite::Result<i64> {
     c.query_row("SELECT COUNT(*) FROM members WHERE profile_ok=0 AND blocked=0", [], |r| r.get(0))
 }
@@ -536,16 +719,163 @@ pub fn unapproved_count(c: &Connection) -> rusqlite::Result<i64> {
 /// Saves name, description and picture. Changing what people see sends the profile back for approval.
 /// Returns false when the name is already taken by someone else.
 pub fn save_profile(c: &Connection, m: &Member, name: &str, bio: &str, avatar: Option<&str>) -> rusqlite::Result<bool> {
+    save_profile_seller(c, m, name, bio, avatar, &m.fb_url, &m.tiktok_url, &m.links)
+}
+
+pub fn save_profile_seller(
+    c: &Connection,
+    m: &Member,
+    name: &str,
+    bio: &str,
+    avatar: Option<&str>,
+    fb_url: &str,
+    tiktok_url: &str,
+    links: &str,
+) -> rusqlite::Result<bool> {
     let taken: Option<i64> = c.query_row("SELECT id FROM members WHERE name_key=?1 AND id<>?2", rusqlite::params![name_key(name), m.id], |r| r.get(0)).optional()?;
     if taken.is_some() {
         return Ok(false);
     }
-    let same = m.name == name && m.bio == bio && avatar.is_none_or(|a| a == m.avatar);
+    let same = m.name == name && m.bio == bio && avatar.is_none_or(|a| a == m.avatar) && m.fb_url == fb_url && m.tiktok_url == tiktok_url && m.links == links;
+    let slug = if m.name != name || m.slug.is_empty() {
+        unique_slug(c, name, m.id)?
+    } else {
+        m.slug.clone()
+    };
     c.execute(
-        "UPDATE members SET name=?2,name_key=?3,bio=?4,avatar=COALESCE(?5,avatar),updated_at=?6,profile_ok=CASE WHEN ?7 THEN profile_ok ELSE 0 END WHERE id=?1",
-        rusqlite::params![m.id, name, name_key(name), bio, avatar, now(), same],
+        "UPDATE members SET name=?2,name_key=?3,bio=?4,avatar=COALESCE(?5,avatar),updated_at=?6,profile_ok=CASE WHEN ?7 THEN profile_ok ELSE 0 END,slug=?8,fb_url=?9,tiktok_url=?10,links=?11 WHERE id=?1",
+        rusqlite::params![m.id, name, name_key(name), bio, avatar, now(), same, slug, fb_url, tiktok_url, links],
     )?;
     Ok(true)
+}
+
+pub fn binders_of(c: &Connection, member_id: i64) -> rusqlite::Result<Vec<MemberBinder>> {
+    let sql = "SELECT b.id, b.member_id, b.title, b.slug, b.cover_card, b.position, b.created_at,
+                      (SELECT COUNT(*) FROM member_cards x WHERE x.binder_id=b.id AND x.member_id=b.member_id),
+                      COALESCE((SELECT c.image FROM member_cards c WHERE c.id=b.cover_card AND c.member_id=b.member_id),
+                               (SELECT c.image FROM member_cards c WHERE c.binder_id=b.id AND c.member_id=b.member_id LIMIT 1), '')
+               FROM member_binders b
+               WHERE b.member_id=?1
+               ORDER BY b.position ASC, b.id ASC";
+    let mut st = c.prepare(sql)?;
+    let rows = st.query_map([member_id], |r| {
+        Ok(MemberBinder {
+            id: r.get(0)?,
+            member_id: r.get(1)?,
+            title: r.get(2)?,
+            slug: r.get(3)?,
+            cover_card: r.get(4)?,
+            position: r.get(5)?,
+            created_at: r.get(6)?,
+            count: r.get(7)?,
+            cover_image: r.get(8)?,
+        })
+    })?.collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn binder_by_slug(c: &Connection, member_id: i64, slug: &str) -> rusqlite::Result<Option<MemberBinder>> {
+    let sql = "SELECT b.id, b.member_id, b.title, b.slug, b.cover_card, b.position, b.created_at,
+                      (SELECT COUNT(*) FROM member_cards x WHERE x.binder_id=b.id AND x.member_id=b.member_id),
+                      COALESCE((SELECT c.image FROM member_cards c WHERE c.id=b.cover_card AND c.member_id=b.member_id),
+                               (SELECT c.image FROM member_cards c WHERE c.binder_id=b.id AND c.member_id=b.member_id LIMIT 1), '')
+               FROM member_binders b
+               WHERE b.member_id=?1 AND b.slug=?2";
+    c.query_row(sql, rusqlite::params![member_id, slug], |r| {
+        Ok(MemberBinder {
+            id: r.get(0)?,
+            member_id: r.get(1)?,
+            title: r.get(2)?,
+            slug: r.get(3)?,
+            cover_card: r.get(4)?,
+            position: r.get(5)?,
+            created_at: r.get(6)?,
+            count: r.get(7)?,
+            cover_image: r.get(8)?,
+        })
+    }).optional()
+}
+
+pub fn create_member_binder(c: &Connection, member_id: i64, title: &str) -> rusqlite::Result<MemberBinder> {
+    let t = title.trim();
+    let title = if t.is_empty() { "New Binder" } else { t };
+    let slug = unique_binder_slug(c, member_id, title, None)?;
+    let t_now = now();
+    c.execute(
+        "INSERT INTO member_binders(member_id, title, slug, position, created_at)
+         VALUES(?1, ?2, ?3, (SELECT COALESCE(MAX(position), -1) + 1 FROM member_binders WHERE member_id=?1), ?4)",
+        rusqlite::params![member_id, title, slug, t_now],
+    )?;
+    let id = c.last_insert_rowid();
+    Ok(MemberBinder {
+        id,
+        member_id,
+        title: title.to_string(),
+        slug,
+        cover_card: None,
+        position: 0,
+        created_at: t_now,
+        count: 0,
+        cover_image: String::new(),
+    })
+}
+
+pub fn rename_member_binder(c: &Connection, member_id: i64, binder_id: i64, title: &str) -> rusqlite::Result<bool> {
+    let t = title.trim();
+    if t.is_empty() {
+        return Ok(false);
+    }
+    let slug = unique_binder_slug(c, member_id, t, Some(binder_id))?;
+    let changed = c.execute(
+        "UPDATE member_binders SET title=?3, slug=?4 WHERE id=?1 AND member_id=?2",
+        rusqlite::params![binder_id, member_id, t, slug],
+    )?;
+    Ok(changed > 0)
+}
+
+pub fn delete_member_binder(c: &Connection, member_id: i64, binder_id: i64) -> rusqlite::Result<bool> {
+    c.execute("UPDATE member_cards SET binder_id=NULL WHERE member_id=?1 AND binder_id=?2", rusqlite::params![member_id, binder_id])?;
+    let changed = c.execute("DELETE FROM member_binders WHERE id=?1 AND member_id=?2", rusqlite::params![binder_id, member_id])?;
+    Ok(changed > 0)
+}
+
+pub fn set_member_binder_cover(c: &Connection, member_id: i64, binder_id: i64, card_id: Option<i64>) -> rusqlite::Result<bool> {
+    if let Some(cid) = card_id {
+        let owns: i64 = c.query_row("SELECT COUNT(*) FROM member_cards WHERE id=?1 AND member_id=?2", rusqlite::params![cid, member_id], |r| r.get(0))?;
+        if owns == 0 {
+            return Ok(false);
+        }
+    }
+    let changed = c.execute(
+        "UPDATE member_binders SET cover_card=?3 WHERE id=?1 AND member_id=?2",
+        rusqlite::params![binder_id, member_id, card_id],
+    )?;
+    Ok(changed > 0)
+}
+
+pub fn move_card_to_binder(c: &Connection, member_id: i64, card_id: i64, binder_id: Option<i64>) -> rusqlite::Result<bool> {
+    if let Some(bid) = binder_id {
+        let owns_b: i64 = c.query_row("SELECT COUNT(*) FROM member_binders WHERE id=?1 AND member_id=?2", rusqlite::params![bid, member_id], |r| r.get(0))?;
+        if owns_b == 0 {
+            return Ok(false);
+        }
+    }
+    let changed = c.execute(
+        "UPDATE member_cards SET binder_id=?3 WHERE id=?1 AND member_id=?2",
+        rusqlite::params![card_id, member_id, binder_id],
+    )?;
+    Ok(changed > 0)
+}
+
+pub fn cards_of_binder(c: &Connection, member_id: i64, binder_id: Option<i64>) -> rusqlite::Result<Vec<MemberCard>> {
+    let mut sql = format!("SELECT {CARD_COLS} FROM member_cards c WHERE c.member_id=?1");
+    if let Some(bid) = binder_id {
+        sql.push_str(&format!(" AND c.binder_id={bid}"));
+    }
+    sql.push_str(" ORDER BY c.position ASC, c.id DESC");
+    let mut st = c.prepare(&sql)?;
+    let v = st.query_map([member_id], |r| map_card(r, 0))?.collect::<Result<Vec<_>, _>>()?;
+    Ok(v)
 }
 
 pub fn set_profile_ok(c: &Connection, id: i64, ok: bool) -> rusqlite::Result<()> {
@@ -1308,6 +1638,67 @@ mod tests {
         assert_ne!(get(&c, a).unwrap().unwrap().highlight, Some(first));
         delete(&c, a).unwrap();
         assert!(cards_of(&c, a).unwrap().is_empty());
+    }
+
+    #[test]
+    fn slug_making_and_uniqueness() {
+        assert_eq!(slugify("Big Boys Vault"), "big-boys-vault");
+        assert_eq!(slugify("Ash Ketchum! #1"), "ash-ketchum-1");
+        assert_eq!(slugify("---test---"), "test");
+        assert_eq!(slugify(""), "seller");
+
+        let c = db();
+        let a = create(&c, "Brock", "h").unwrap().unwrap();
+        let m_a = get(&c, a).unwrap().unwrap();
+        assert_eq!(m_a.slug, "brock");
+
+        let b = create(&c, "Brock 2", "h").unwrap().unwrap();
+        let m_b = get(&c, b).unwrap().unwrap();
+        assert_eq!(m_b.slug, "brock-2");
+    }
+
+    #[test]
+    fn binder_ownership_checks() {
+        let c = db();
+        let a = create(&c, "Red", "h").unwrap().unwrap();
+        let b = create(&c, "Blue", "h").unwrap().unwrap();
+
+        // Trainer A creates binder
+        let binder_a = create_member_binder(&c, a, "Grails").unwrap();
+        assert_eq!(binder_a.slug, "grails");
+        assert_eq!(binders_of(&c, a).unwrap().len(), 1);
+        assert_eq!(binders_of(&c, b).unwrap().len(), 0);
+
+        // Trainer B cannot rename A's binder
+        assert!(!rename_member_binder(&c, b, binder_a.id, "Stolen").unwrap());
+        let a_check = binder_by_slug(&c, a, "grails").unwrap().unwrap();
+        assert_eq!(a_check.title, "Grails");
+
+        // Trainer A adds a card
+        let Added::Yes(card_a) = add_card(&c, a, "tcgdex:pika", "Pikachu", "1", "Set", "", "").unwrap() else { panic!() };
+        // Trainer B adds a card
+        let Added::Yes(card_b) = add_card(&c, b, "tcgdex:char", "Charizard", "2", "Set", "", "").unwrap() else { panic!() };
+
+        // Trainer B cannot move their card into Trainer A's binder
+        assert!(!move_card_to_binder(&c, b, card_b, Some(binder_a.id)).unwrap());
+        // Trainer B cannot move Trainer A's card
+        assert!(!move_card_to_binder(&c, b, card_a, None).unwrap());
+
+        // Trainer A can move their card into their binder
+        assert!(move_card_to_binder(&c, a, card_a, Some(binder_a.id)).unwrap());
+        assert_eq!(cards_of_binder(&c, a, Some(binder_a.id)).unwrap().len(), 1);
+
+        // Trainer B cannot set cover or delete A's binder
+        assert!(!set_member_binder_cover(&c, b, binder_a.id, Some(card_b)).unwrap());
+        assert!(!delete_member_binder(&c, b, binder_a.id).unwrap());
+        assert_eq!(binders_of(&c, a).unwrap().len(), 1);
+
+        // Trainer A can delete their binder; card stays in collection with binder_id=None
+        assert!(delete_member_binder(&c, a, binder_a.id).unwrap());
+        assert_eq!(binders_of(&c, a).unwrap().len(), 0);
+        let cards_after = cards_of(&c, a).unwrap();
+        assert_eq!(cards_after.len(), 1);
+        assert_eq!(cards_after[0].binder_id, None);
     }
 }
 

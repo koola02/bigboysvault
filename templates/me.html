@@ -23,7 +23,13 @@
     <div class="me-fields">
       <label>Trainer name<input name="name" value="{{ m.name }}" maxlength="24" autocomplete="off" required></label>
       <label>About you <small><span id="bioCount">0</span> of 300</small><textarea name="bio" maxlength="300" rows="3" placeholder="What do you collect? Who's your favorite Pokémon?">{{ m.bio }}</textarea></label>
-      <button class="btn" type="submit">Save</button>
+      <label>Facebook profile URL <small>https://...</small><input type="url" name="fb_url" value="{{ m.fb_url }}" placeholder="https://facebook.com/..." maxlength="300"></label>
+      <label>TikTok profile URL <small>https://...</small><input type="url" name="tiktok_url" value="{{ m.tiktok_url }}" placeholder="https://tiktok.com/@..." maxlength="300"></label>
+      <label>Extra vouch links <small>One link per line</small><textarea name="links" rows="2" placeholder="https://... (Carousell, Facebook post, etc.)">{{ m.links }}</textarea></label>
+      <div class="me-save-row">
+        <button class="btn" type="submit">Save</button>
+        <a class="linkbtn" href="{{ m.seller_url() }}" target="_blank">See my public seller page →</a>
+      </div>
     </div>
   </form>
 
@@ -41,14 +47,32 @@
         <small class="me-c-s">{{ c.card_set }}{% if !c.number.is_empty() %} · {{ c.number }}{% endif %}</small>
         <select data-nodrag data-cond aria-label="Condition of {{ c.title }}">{% for o in conditions %}<option{% if *o == c.cond %} selected{% endif %}>{{ o }}</option>{% endfor %}</select>
         <label class="me-val" data-nodrag><span>Value ₱</span><input data-value type="number" min="0" step="1" inputmode="numeric" value="{{ c.own_text() }}" placeholder="{% if c.value > 0.0 %}{{ c.market_text() }}{% else %}Not known yet{% endif %}" aria-label="Value of {{ c.title }} in pesos"></label>
-        {% if c.own_photo() %}<p class="me-c-sug">No market price for your own photo. Set your own value.</p>
-        {% else if c.value <= 0.0 %}<p class="me-c-sug">No market price found for this card. Set your own price.</p>
-        {% else if c.is_graded() %}<p class="me-c-sug">Graded card: set your own price. Ungraded Near Mint is ₱{{ c.value_int() }}.</p>
-        {% else if c.is_sealed() %}<p class="me-c-sug">Sealed: set your own price. Ungraded Near Mint is ₱{{ c.value_int() }}.</p>
-        {% else if let Some(sug) = c.suggested_int() %}
-          {% if c.value_own > 0.0 %}<p class="me-c-sug">You set ₱{{ c.value_own_int() }}. Suggested for {{ c.cond }}: ₱{{ sug }} <button type="button" class="me-use-btn" data-use="{{ sug }}">Use ₱{{ sug }}</button></p>
-          {% else %}<p class="me-c-sug">Suggested ₱{{ sug }} · {{ c.cond }} · {{ c.condition_share_pct() }}% of Near Mint ₱{{ c.value_int() }} <button type="button" class="me-use-btn" data-use="{{ sug }}">Use ₱{{ sug }}</button></p>{% endif %}
+        <div class="me-c-sug">
+        {% if c.own_photo() %}
+          <div class="cpb-notice"><span>📷 Own photo</span><small>Set your own value</small></div>
+        {% else if c.value <= 0.0 %}
+          <div class="cpb-notice"><span>No market price</span><small>Set your own value</small></div>
+        {% else if c.is_graded() %}
+          <div class="cpb-notice"><span>⭐ Graded card: set your own price</span><small>Raw Near Mint is ₱{{ c.value_int() }}</small></div>
+        {% else if c.is_sealed() %}
+          <div class="cpb-notice"><span>📦 Sealed item: set your own price</span><small>Raw Near Mint is ₱{{ c.value_int() }}</small></div>
+        {% else %}
+          <div class="cond-price-bar">
+            <div class="cpb-head">
+              <span class="cpb-title">Condition prices</span>
+              {% if c.value_own > 0.0 %}<span class="me-user-set">You set ₱{{ c.value_own_int() }}</span>{% else %}<span class="cpb-ref">NM ₱{{ c.value_int() }}</span>{% endif %}
+            </div>
+            <div class="cpb-chips" role="group" aria-label="Suggested prices by condition">
+              {% for cp in c.condition_prices() %}
+              <button type="button" class="cpb-chip{% if cp.2 %} on{% endif %}" data-use-cond="{{ cp.0 }}" data-use-price="{{ cp.1 }}">
+                <span class="cpb-c">{{ cp.0 }}</span>
+                <span class="cpb-p">₱{{ cp.1 }}</span>
+              </button>
+              {% endfor %}
+            </div>
+          </div>
         {% endif %}
+        </div>
       </li>
       {% endfor %}
     </ul>
@@ -99,5 +123,5 @@
   </details>
 </section>
 <script src="/static/dragsort.js?v=5" defer></script>
-<script src="/static/me.js?v=6" defer></script>
+<script src="/static/me.js?v=7" defer></script>
 {% endblock %}

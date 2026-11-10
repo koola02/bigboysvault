@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Sellers · {{ nav.brand }}{% endblock %}
+{% block content %}
+<section class="wrap trainers sellers-page">
+  <div class="tr-head">
+    <p class="eyebrow plate">Verified Sellers</p>
+    <h1 class="h1">Community Sellers</h1>
+    <p class="tr-sub">Certified trainers and collectors with cards for sale. Vouched by the community.</p>
+    {% if let Some(m) = me %}<a class="btn" href="/me">My Seller Dashboard</a>{% else %}<a class="btn" href="/join">Start selling</a><a class="linkbtn" href="/join?signin=1">Sign in</a>{% endif %}
+    <a class="linkbtn" href="/vouches">Read all vouches</a>
+  </div>
+
+  {% if sellers.is_empty() %}
+  <p class="empty">No sellers have listed cards yet. Be the first.</p>
+  {% else %}
+  <div class="sellers-list">
+    {% for s in sellers %}
+    <article class="seller-card" id="seller-{{ s.trainer.slug }}">
+      <div class="seller-vouch-head">
+        <div class="svh-main">
+          <a class="svh-av-link" href="{{ s.trainer.seller_url() }}">
+            {% if s.trainer.has_avatar() %}
+            <img class="av av-lg" src="{{ s.trainer.avatar }}" width="96" height="96" alt="{{ s.trainer.name }}">
+            {% else %}
+            <span class="av av-lg">{{ s.trainer.initial() }}</span>
+            {% endif %}
+          </a>
+          <div class="svh-meta">
+            <div class="svh-name-row">
+              <a class="svh-name" href="{{ s.trainer.seller_url() }}">{{ s.trainer.name }}</a>
+              {% if !s.trainer.role_text().is_empty() %}<span class="role" data-role="{{ s.trainer.role }}">{{ s.trainer.role_text() }}</span>{% else %}<span class="role seller-badge">Seller</span>{% endif %}
+              {% if s.trainer.stars > 0 %}<span class="stars">★ {{ s.trainer.stars }}</span>{% endif %}
+              {% if s.vouch_count > 0 %}<a class="svh-vouches" href="{{ s.trainer.seller_url() }}#vouches">{{ s.vouch_count }} vouch{% if s.vouch_count != 1 %}es{% endif %}</a>{% endif %}
+            </div>
+            {% if s.trainer.worth > 0.0 %}<p class="svh-worth">Collection worth: <b>{{ s.trainer.worth_text() }}</b></p>{% endif %}
+            {% if !s.trainer.bio.is_empty() %}<p class="svh-bio">{{ s.trainer.bio }}</p>{% endif %}
+            {% if !s.trainer.tags.is_empty() %}<div class="svh-tags">{% for g in s.trainer.tag_list() %}<span class="tag-hl mtag">{{ g }}</span>{% endfor %}</div>{% endif %}
+            
+            {% if !s.trainer.fb_url.is_empty() || !s.trainer.tiktok_url.is_empty() || !s.trainer.link_list().is_empty() %}
+            <div class="svh-links">
+              {% if !s.trainer.fb_url.is_empty() %}<a class="seller-social fb" href="{{ s.trainer.fb_url }}" target="_blank" rel="noopener" aria-label="Facebook profile"><svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>Facebook</a>{% endif %}
+              {% if !s.trainer.tiktok_url.is_empty() %}<a class="seller-social tiktok" href="{{ s.trainer.tiktok_url }}" target="_blank" rel="noopener" aria-label="TikTok profile"><svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.97v7.68c-.01 2.22-.72 4.45-2.12 6.18-1.57 1.95-4.01 3.12-6.52 3.1-2.97.04-5.83-1.43-7.46-3.9-1.64-2.5-1.74-5.78-.26-8.36 1.48-2.58 4.23-4.14 7.21-4.1.29 0 .58.02.87.05v4.19c-.31-.07-.63-.1-.95-.1-1.45-.02-2.88.66-3.7 1.86-.82 1.22-.84 2.85-.05 4.09.79 1.23 2.24 1.95 3.7 1.89 1.52-.03 2.92-.93 3.47-2.35.25-.62.33-1.3.31-1.97V.02z"/></svg>TikTok</a>{% endif %}
+              {% for lk in s.trainer.link_list() %}<a class="seller-social vouch-ext" href="{{ lk }}" target="_blank" rel="noopener">Vouch link</a>{% endfor %}
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="svh-act">
+          <a class="btn ghost" href="{{ s.trainer.seller_url() }}">View collection ({{ s.trainer.cards }}) →</a>
+        </div>
+      </div>
+
+      {% if !s.cards.is_empty() %}
+      <div class="seller-cards-row">
+        {% for c in s.cards.iter().take(6) %}
+        <a class="card" href="/trainers/{{ s.trainer.id }}/cards/{{ c.id }}" data-float data-c="{{ c.cond_class() }}">
+          <div class="card-img">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="{{ c.title }}">{% endif %}</div>
+          <div class="card-t">{{ c.title }}</div>
+          <div class="card-m"><span class="card-cond" data-c="{{ c.cond_class() }}">{{ c.cond }}</span></div>
+          {% if c.worth() > 0.0 %}<div class="card-p"><span class="worth">{{ c.worth_text() }}</span></div>{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

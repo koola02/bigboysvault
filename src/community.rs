@@ -186,8 +186,25 @@ struct MePage {
     nav: Chrome,
     m: Member,
     cards: Vec<MemberCard>,
+    binders: Vec<members::MemberBinder>,
     max: i64,
     conditions: [&'static str; 10],
+}
+
+#[derive(Template)]
+#[template(path = "sellers.html")]
+struct SellersPage {
+    nav: Chrome,
+    sellers: Vec<SellerItem>,
+    me: Option<Member>,
+}
+
+pub struct SellerItem {
+    pub trainer: Member,
+    pub vouch_count: i64,
+    pub binders: Vec<members::MemberBinder>,
+    pub cards: Vec<MemberCard>,
+    pub highlight: Option<MemberCard>,
 }
 
 #[derive(Template)]
@@ -339,6 +356,80 @@ pub async fn trainers(State(app): State<App>, h: HeaderMap) -> Res {
     Ok(html(render(TrainersPage { nav, trainers: list, me })?))
 }
 
+pub async fn sellers(State(app): State<App>, h: HeaderMap) -> Res {
+    let me = current(&app, &h).await?;
+    let (mut nav, raw_sellers) = with_db(&app, |c| Ok((chrome(c)?, members::approved_sellers(c)?))).await?;
+    let mut sellers = Vec::new();
+    for t in raw_sellers {
+        let tid = t.id;
+        let (vouch_count, binders, cards) = with_db(&app, move |c| {
+            Ok((
+                members::vouches_count(c, tid)?,
+                members::binders_of(c, tid)?,
+                members::cards_of(c, tid)?,
+            ))
+        }).await?;
+        let highlight = t.highlight.and_then(|h| cards.iter().find(|c| c.id == h).cloned());
+        sellers.push(SellerItem {
+            trainer: t,
+            vouch_count,
+            binders,
+            cards,
+            highlight,
+        });
+    }
+    nav.seo = crate::Seo {
+        title: format!("Sellers · {}", nav.brand),
+        desc: format!("Meet the Pokémon card sellers of {}: browse verified community collections and binders.", nav.brand),
+        path: "/sellers".into(),
+        kind: "website",
+        ..Default::default()
+    };
+    Ok(html(render(SellersPage { nav, sellers, me })?))
+}
+
+pub async fn trainer_by_slug(State(app): State<App>, h: HeaderMap, Path(slug): Path<String>, Query(q): Query<PartQs>) -> Res {
+    let s = slug.clone();
+    let member = with_db(&app, move |c| members::by_slug(c, &s)).await?;
+    if let Some(m) = member {
+        return trainer(State(app), h, Path(m.id), Query(q)).await;
+    }
+    if let Ok(id) = slug.parse::<i64>() {
+        return trainer(State(app), h, Path(id), Query(q)).await;
+    }
+    not_found(&app).await
+}
+
+pub async fn seller_binder(State(app): State<App>, h: HeaderMap, Path((slug, b_slug)): Path<(String, String)>, Query(q): Query<PartQs>) -> Res {
+    let s = slug.clone();
+    let member = with_db(&app, move |c| members::by_slug(c, &s)).await?;
+    let Some(m) = member else {
+        if let Ok(id) = slug.parse::<i64>() {
+            return trainer(State(app), h, Path(id), Query(q)).await;
+        }
+        return not_found(&app).await;
+    };
+    let mid = m.id;
+    let bs = b_slug.clone();
+    let binder = with_db(&app, move |c| members::binder_by_slug(c, mid, &bs)).await?;
+    let Some(b) = binder else { return not_found(&app).await };
+    let bid = b.id;
+    let me = current(&app, &h).await?;
+    let (nav, cards, vouches, awards) = with_db(&app, move |c| {
+        Ok((chrome(c)?, members::cards_of_binder(c, mid, Some(bid))?, members::public_vouches(c, Some(mid), None, 20)?, members::awards_of(c, mid, 10)?))
+    }).await?;
+    let awards: Vec<Award> = awards.into_iter().filter(|a| !a.reason.is_empty()).collect();
+    let is_me = me.as_ref().is_some_and(|u| u.id == m.id);
+    let owner = admin::can_moderate(&app, &h);
+    let full = m.profile_ok || is_me || owner;
+    let highlight = m.highlight.and_then(|h| cards.iter().find(|c| c.id == h).cloned());
+    Ok(html(if q.part.is_some() {
+        render(TrainerPart { t: m, cards, highlight, is_me, full, vouches, awards })?
+    } else {
+        render(TrainerPage { nav, t: m, cards, highlight, is_me, full, vouches, awards })?
+    }))
+}
+
 async fn not_found(app: &App) -> Res {
     Ok(crate::not_found(State(app.clone())).await)
 }
@@ -413,8 +504,8 @@ pub async fn member_card(State(app): State<App>, h: HeaderMap, Path((id, cid)): 
 pub async fn me(State(app): State<App>, h: HeaderMap) -> Res {
     let Some(m) = current(&app, &h).await? else { return Ok(Redirect::to("/join").into_response()) };
     let id = m.id;
-    let (nav, cards) = with_db(&app, move |c| Ok((chrome(c)?, members::cards_of(c, id)?))).await?;
-    Ok(html(render(MePage { nav, m, cards, max: members::MAX_CARDS, conditions: members::CONDITIONS })?))
+    let (nav, cards, binders) = with_db(&app, move |c| Ok((chrome(c)?, members::cards_of(c, id)?, members::binders_of(c, id)?))).await?;
+    Ok(html(render(MePage { nav, m, cards, binders, max: members::MAX_CARDS, conditions: members::CONDITIONS })?))
 }
 
 /// Signed in and really from this site, whatever their lock says. For things a locked trainer may still do: their password, deleting what's theirs.
@@ -490,6 +581,7 @@ pub async fn save_profile(State(app): State<App>, h: HeaderMap, mut mp: Multipar
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "Too many saves. Please wait a few minutes."));
     }
     let (mut name, mut bio, mut photo) = (m.name.clone(), m.bio.clone(), None::<Vec<u8>>);
+    let (mut fb_url, mut tiktok_url, mut links) = (m.fb_url.clone(), m.tiktok_url.clone(), m.links.clone());
     while let Some(f) = mp.next_field().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))? {
         match f.name().unwrap_or_default() {
             "avatar" => {
@@ -500,6 +592,9 @@ pub async fn save_profile(State(app): State<App>, h: HeaderMap, mut mp: Multipar
             }
             "name" => name = f.text().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
             "bio" => bio = f.text().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
+            "fb_url" => fb_url = members::clean_https_url(&f.text().await.unwrap_or_default()),
+            "tiktok_url" => tiktok_url = members::clean_https_url(&f.text().await.unwrap_or_default()),
+            "links" => links = members::clean_text(&f.text().await.unwrap_or_default(), 1000),
             _ => {}
         }
     }
@@ -520,7 +615,8 @@ pub async fn save_profile(State(app): State<App>, h: HeaderMap, mut mp: Multipar
         None => None,
     };
     let (m2, n2, b2, a2) = (m.clone(), name.clone(), bio.clone(), avatar.clone());
-    let saved = with_db(&app, move |c| members::save_profile(c, &m2, &n2, &b2, a2.as_deref())).await?;
+    let (fb, tt, lk) = (fb_url.clone(), tiktok_url.clone(), links.clone());
+    let saved = with_db(&app, move |c| members::save_profile_seller(c, &m2, &n2, &b2, a2.as_deref(), &fb, &tt, &lk)).await?;
     if !saved {
         if let Some(a) = &avatar {
             admin::remove_upload(&app.uploads, a);
@@ -816,10 +912,11 @@ pub async fn add_card(State(app): State<App>, h: HeaderMap, Json(req): Json<AddR
 
 #[derive(Deserialize)]
 pub struct CardAction {
-    /// "remove", "highlight", "condition" or "value"
+    /// "remove", "highlight", "condition", "value" or "binder"
     action: String,
     cond: Option<String>,
     value: Option<f64>,
+    binder_id: Option<i64>,
 }
 
 pub async fn card_action(State(app): State<App>, h: HeaderMap, Path(cid): Path<i64>, Json(req): Json<CardAction>) -> Res {
@@ -853,6 +950,13 @@ pub async fn card_action(State(app): State<App>, h: HeaderMap, Path(cid): Path<i
             }
             with_db(&app, move |c| members::set_own_value(c, id, cid, value.round())).await?;
         }
+        "binder" => {
+            let bid = req.binder_id;
+            let ok = with_db(&app, move |c| members::move_card_to_binder(c, id, cid, bid)).await?;
+            if !ok {
+                return Ok(fail(StatusCode::NOT_FOUND, "Could not move card to that binder."));
+            }
+        }
         _ => return Ok(fail(StatusCode::BAD_REQUEST, "Unknown action.")),
     }
     if m.profile_ok {
@@ -870,8 +974,80 @@ pub async fn card_action(State(app): State<App>, h: HeaderMap, Path(cid): Path<i
         out["value"] = json!(c.value);
         out["cond"] = json!(c.cond);
         out["own_photo"] = json!(c.own_photo());
+        out["binder_id"] = json!(c.binder_id);
     }
     Ok(ok(out))
+}
+
+#[derive(Deserialize)]
+pub struct BinderReq {
+    title: Option<String>,
+    card_id: Option<i64>,
+}
+
+pub async fn me_binders(State(app): State<App>, h: HeaderMap) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let id = m.id;
+    let binders = with_db(&app, move |c| members::binders_of(c, id)).await?;
+    Ok(ok(json!({ "ok": true, "binders": binders })))
+}
+
+pub async fn me_create_binder(State(app): State<App>, h: HeaderMap, Json(req): Json<BinderReq>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let id = m.id;
+    let title = req.title.unwrap_or_default();
+    let binder = with_db(&app, move |c| members::create_member_binder(c, id, &title)).await?;
+    app.forget();
+    Ok(ok(json!({ "ok": true, "binder": binder })))
+}
+
+pub async fn me_rename_binder(State(app): State<App>, h: HeaderMap, Path(bid): Path<i64>, Json(req): Json<BinderReq>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let id = m.id;
+    let title = req.title.unwrap_or_default();
+    let ok_flag = with_db(&app, move |c| members::rename_member_binder(c, id, bid, &title)).await?;
+    if !ok_flag {
+        return Ok(fail(StatusCode::NOT_FOUND, "Binder not found."));
+    }
+    app.forget();
+    Ok(ok(json!({ "ok": true })))
+}
+
+pub async fn me_delete_binder(State(app): State<App>, h: HeaderMap, Path(bid): Path<i64>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let id = m.id;
+    let ok_flag = with_db(&app, move |c| members::delete_member_binder(c, id, bid)).await?;
+    if !ok_flag {
+        return Ok(fail(StatusCode::NOT_FOUND, "Binder not found."));
+    }
+    app.forget();
+    Ok(ok(json!({ "ok": true })))
+}
+
+pub async fn me_binder_cover(State(app): State<App>, h: HeaderMap, Path(bid): Path<i64>, Json(req): Json<BinderReq>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let id = m.id;
+    let ok_flag = with_db(&app, move |c| members::set_member_binder_cover(c, id, bid, req.card_id)).await?;
+    if !ok_flag {
+        return Ok(fail(StatusCode::NOT_FOUND, "Could not set binder cover."));
+    }
+    app.forget();
+    Ok(ok(json!({ "ok": true })))
 }
 
 #[derive(Deserialize)]

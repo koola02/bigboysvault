@@ -141,7 +141,14 @@
         
         const rerenderSug = () => {
           const f = finishes.find((x) => x.key === c.finish);
-          window.Admin.renderSug(pr, c.price, Math.round(f?.php || 0), c.cond, f?.label, null, null, (sug) => { c.price = String(sug); c.market = true; pr.value = c.price; changed(); sync(); paint(); });
+          window.Admin.renderSug(row, c.price, Math.round(f?.php || 0), c.cond, f?.label, null, null, (condName, sugPrice) => {
+            c.cond = condName;
+            c.price = String(sugPrice);
+            c.market = true;
+            changed();
+            sync();
+            paint();
+          });
         };
 
         fin.onchange = () => { 
@@ -180,8 +187,7 @@
           acts.append(x);
         }
         row.append(label, acts, fin, cond, pr);
-        const f = finishes.find((x) => x.key === c.finish);
-        window.Admin.renderSug(pr, c.price, Math.round(f?.php || 0), c.cond, f?.label, null, null, (sug) => { c.price = String(sug); c.market = true; pr.value = c.price; changed(); sync(); paint(); });
+        rerenderSug();
         return row;
       }));
       minus.disabled = rows.length < 2;

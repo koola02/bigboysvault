@@ -83,24 +83,86 @@
     });
     document.querySelectorAll('.me-res').forEach((b) => { b.disabled = n >= MAX && !b.classList.contains('in'); });
   }
+  const STD_COND_LIST = [
+    ['Near Mint', 1.0], ['LP-NM', 0.9], ['Lightly Played', 0.8], ['MP-LP', 0.7],
+    ['Moderately Played', 0.6], ['HP-MP', 0.5], ['Heavily Played', 0.4], ['Damaged-HP', 0.32], ['Damaged', 0.25]
+  ];
+
+  function roundPhp(raw) {
+    if (raw <= 0) return 1;
+    let r;
+    if (raw < 100) r = Math.round(raw);
+    else if (raw <= 1000) r = Math.round(raw / 5) * 5;
+    else r = Math.round(raw / 10) * 10;
+    return Math.max(1, r);
+  }
+
   function renderSugMe(c, p) {
     if (!p) return;
     p.replaceChildren();
-    if (c.own_photo) { p.textContent = 'No market price for your own photo. Set your own value.'; }
-    else if ((c.value || 0) <= 0) { p.textContent = 'No market price found for this card. Set your own price.'; }
-    else if (c.is_graded) { p.textContent = `Graded card: set your own price. Ungraded Near Mint is ₱${Math.round(c.value)}.`; }
-    else if (c.is_sealed) { p.textContent = `Sealed: set your own price. Ungraded Near Mint is ₱${Math.round(c.value)}.`; }
-    else if (c.suggested) {
-      if ((c.value_own || 0) > 0) {
-        p.textContent = `You set ₱${Math.round(c.value_own)}. Suggested for ${c.cond}: ₱${Math.round(c.suggested)} `;
-      } else {
-        p.textContent = `Suggested ₱${Math.round(c.suggested)} · ${c.cond} · ${Math.round((c.share || 1) * 100)}% of Near Mint ₱${Math.round(c.value)} `;
-      }
-      const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'me-use-btn';
-      btn.textContent = `Use ₱${Math.round(c.suggested)}`;
-      btn.dataset.use = Math.round(c.suggested);
-      p.append(btn);
+    if (c.own_photo) {
+      const b = document.createElement('div'); b.className = 'cpb-notice';
+      b.innerHTML = '<span>📷 Own photo</span><small>Set your own value</small>';
+      p.append(b);
+      return;
     }
+    const nm = Number(c.value) || 0;
+    if (nm <= 0) {
+      const b = document.createElement('div'); b.className = 'cpb-notice';
+      b.innerHTML = '<span>No market price</span><small>Set your own value</small>';
+      p.append(b);
+      return;
+    }
+    if (c.is_graded) {
+      const b = document.createElement('div'); b.className = 'cpb-notice';
+      b.innerHTML = `<span>⭐ Graded card: set your own price</span><small>Raw Near Mint is ₱${Math.round(nm)}</small>`;
+      p.append(b);
+      return;
+    }
+    if (c.is_sealed) {
+      const b = document.createElement('div'); b.className = 'cpb-notice';
+      b.innerHTML = `<span>📦 Sealed item: set your own price</span><small>Raw Near Mint is ₱${Math.round(nm)}</small>`;
+      p.append(b);
+      return;
+    }
+
+    const bar = document.createElement('div');
+    bar.className = 'cond-price-bar';
+    const head = document.createElement('div');
+    head.className = 'cpb-head';
+    const title = document.createElement('span');
+    title.className = 'cpb-title';
+    title.textContent = 'Condition prices';
+    head.append(title);
+    if ((c.value_own || 0) > 0) {
+      const us = document.createElement('span'); us.className = 'me-user-set';
+      us.textContent = `You set ₱${Math.round(c.value_own)}`;
+      head.append(us);
+    } else {
+      const ref = document.createElement('span'); ref.className = 'cpb-ref';
+      ref.textContent = `NM ₱${Math.round(nm)}`;
+      head.append(ref);
+    }
+    bar.append(head);
+
+    const chips = document.createElement('div');
+    chips.className = 'cpb-chips';
+    chips.setAttribute('role', 'group');
+    chips.setAttribute('aria-label', 'Suggested prices by condition');
+
+    STD_COND_LIST.forEach(([cName, factor]) => {
+      const sug = roundPhp(nm * factor);
+      const isCur = c.cond === cName;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'cpb-chip' + (isCur ? ' on' : '');
+      chip.dataset.useCond = cName;
+      chip.dataset.usePrice = sug;
+      chip.innerHTML = `<span class="cpb-c">${cName}</span><span class="cpb-p">₱${sug}</span>`;
+      chips.append(chip);
+    });
+    bar.append(chips);
+    p.append(bar);
   }
 
   function tile(c) {
@@ -133,6 +195,21 @@
         const j = await send(`/me/cards/${li.dataset.id}`, { action: 'remove' }); worth(j);
         const source = li.dataset.card; li.remove(); highlight = j.highlight; paint();
         if (source) document.querySelector(`.me-res[data-id="${CSS.escape(source)}"]`)?.classList.remove('in');
+      } catch (err) { say(err.message, true); }
+    } else if (e.target.closest('[data-use-cond]')) {
+      const chip = e.target.closest('[data-use-cond]');
+      const condVal = chip.dataset.useCond;
+      const priceVal = Number(chip.dataset.usePrice) || 0;
+      const sel = li.querySelector('[data-cond]');
+      const inp = li.querySelector('[data-value]');
+      try {
+        if (sel) sel.value = condVal;
+        if (inp) inp.value = priceVal;
+        await send(`/me/cards/${li.dataset.id}`, { action: 'condition', cond: condVal });
+        const j = await send(`/me/cards/${li.dataset.id}`, { action: 'value', value: priceVal });
+        worth(j);
+        renderSugMe(j, li.querySelector('.me-c-sug'));
+        say('Condition & price updated ✓');
       } catch (err) { say(err.message, true); }
     } else if (e.target.closest('.me-use-btn')) {
       const btn = e.target.closest('.me-use-btn');

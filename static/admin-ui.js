@@ -105,31 +105,75 @@ window.Admin = (() => {
     return roundPhp(nearMint * share);
   }
 
-  function renderSug(priceNode, curPrice, nmValue, cond, label, source, updated, onUse) {
-    let p = priceNode.nextElementSibling;
-    if (!p || !p.classList.contains('qa-sug')) {
-      p = document.createElement('p'); p.className = 'qa-sug';
-      priceNode.after(p);
+  const STD_CONDS = [
+    'Near Mint', 'LP-NM', 'Lightly Played', 'MP-LP', 'Moderately Played', 'HP-MP', 'Heavily Played', 'Damaged-HP', 'Damaged'
+  ];
+
+  function renderSug(targetNode, curPrice, nmValue, curCond, label, source, updated, onSelect) {
+    let bar = targetNode.nextElementSibling;
+    if (!bar || !bar.classList.contains('cond-price-bar')) {
+      bar = document.createElement('div');
+      bar.className = 'cond-price-bar';
+      targetNode.after(bar);
     }
-    p.replaceChildren();
-    if (isGraded(cond)) {
-      p.textContent = `Graded card: set your own price. Ungraded Near Mint is ₱${Math.round(nmValue)}.`;
-    } else if (isSealed(cond)) {
-      p.textContent = `Sealed: set your own price. Ungraded Near Mint is ₱${Math.round(nmValue)}.`;
-    } else if (nmValue <= 0) {
-      p.textContent = `No market price found for this card. Set your own price.`;
-    } else {
-      const share = getShare(cond) || 1;
-      const sug = suggest(nmValue, cond);
-      const parts = `Suggested ₱${sug} · ${cond} · ${Math.round(share * 100)}% of Near Mint ₱${Math.round(nmValue)} (${label}, ${source || 'TCGplayer'}${updated ? ', ' + updated : ''})`;
-      p.textContent = parts;
-      if (curPrice !== sug && onUse) {
-        const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'use-chip';
-        btn.textContent = `Use ₱${sug}`;
-        btn.onclick = () => onUse(sug);
-        p.append(btn);
-      }
+    bar.replaceChildren();
+
+    if (isGraded(curCond)) {
+      const box = document.createElement('div');
+      box.className = 'cpb-notice';
+      box.innerHTML = `<span>⭐ Graded card: set your own price</span><small>Raw Near Mint is ₱${Math.round(nmValue || 0)}</small>`;
+      bar.append(box);
+      return;
     }
+    if (isSealed(curCond)) {
+      const box = document.createElement('div');
+      box.className = 'cpb-notice';
+      box.innerHTML = `<span>📦 Sealed item: set your own price</span><small>Raw Near Mint is ₱${Math.round(nmValue || 0)}</small>`;
+      bar.append(box);
+      return;
+    }
+    if (!nmValue || nmValue <= 0) {
+      const box = document.createElement('div');
+      box.className = 'cpb-notice';
+      box.innerHTML = `<span>No market price found for this card</span><small>Type your own price</small>`;
+      bar.append(box);
+      return;
+    }
+
+    const head = document.createElement('div');
+    head.className = 'cpb-head';
+    const t = document.createElement('span');
+    t.className = 'cpb-title';
+    t.textContent = 'Condition prices';
+    const ref = document.createElement('span');
+    ref.className = 'cpb-ref';
+    ref.textContent = `${source || 'TCGplayer'} · NM ₱${Math.round(nmValue)}${label ? ' (' + label + ')' : ''}${updated ? ' · ' + updated : ''}`;
+    head.append(t, ref);
+    bar.append(head);
+
+    const chips = document.createElement('div');
+    chips.className = 'cpb-chips';
+    chips.setAttribute('role', 'group');
+    chips.setAttribute('aria-label', 'Condition price suggestions');
+
+    const activeNorm = normCond(curCond);
+
+    STD_CONDS.forEach((cName) => {
+      const sug = suggest(nmValue, cName);
+      if (!sug) return;
+      const chip = document.createElement('button');
+      chip.type = 'button';
+      chip.className = 'cpb-chip' + (activeNorm === cName ? ' on' : '');
+      chip.innerHTML = `<span class="cpb-c">${cName}</span><span class="cpb-p">₱${sug}</span>`;
+      chip.setAttribute('aria-label', `${cName}: ₱${sug}`);
+      chip.onclick = (e) => {
+        e.preventDefault();
+        if (onSelect) onSelect(cName, sug);
+      };
+      chips.append(chip);
+    });
+
+    bar.append(chips);
   }
 
   // Resize on the device: fast uploads, handles HEIC and rotation.

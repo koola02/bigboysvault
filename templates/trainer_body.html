@@ -9,6 +9,13 @@
       {% if !t.role_text().is_empty() %}<span class="role" data-role="{{ t.role }}">{{ t.role_text() }}</span>{% endif %}{% for g in t.tag_list() %}<span class="tag-hl mtag">{{ g }}</span>{% endfor %}
       {% if t.stars > 0 || t.worth > 0.0 %}<p class="tp-stars">{% if t.stars > 0 %}<span class="stars stars-lg">★ {{ t.stars }}</span>{% endif %}{% if t.worth > 0.0 %}<span class="worth worth-lg">{{ t.worth_text() }}</span>{% endif %}</p>{% endif %}
       {% if !t.bio.is_empty() %}<p class="tp-bio">{{ t.bio }}</p>{% endif %}
+      {% if !t.fb_url.is_empty() || !t.tiktok_url.is_empty() || !t.link_list().is_empty() %}
+      <div class="svh-links">
+        {% if !t.fb_url.is_empty() %}<a class="seller-social fb" href="{{ t.fb_url }}" target="_blank" rel="noopener" aria-label="Facebook"><svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/></svg>Facebook</a>{% endif %}
+        {% if !t.tiktok_url.is_empty() %}<a class="seller-social tiktok" href="{{ t.tiktok_url }}" target="_blank" rel="noopener" aria-label="TikTok"><svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.97v7.68c-.01 2.22-.72 4.45-2.12 6.18-1.57 1.95-4.01 3.12-6.52 3.1-2.97.04-5.83-1.43-7.46-3.9-1.64-2.5-1.74-5.78-.26-8.36 1.48-2.58 4.23-4.14 7.21-4.1.29 0 .58.02.87.05v4.19c-.31-.07-.63-.1-.95-.1-1.45-.02-2.88.66-3.7 1.86-.82 1.22-.84 2.85-.05 4.09.79 1.23 2.24 1.95 3.7 1.89 1.52-.03 2.92-.93 3.47-2.35.25-.62.33-1.3.31-1.97V.02z"/></svg>TikTok</a>{% endif %}
+        {% for lk in t.link_list() %}<a class="seller-social vouch-ext" href="{{ lk }}" target="_blank" rel="noopener">Vouch link</a>{% endfor %}
+      </div>
+      {% endif %}
       {% if is_me %}<a class="linkbtn tp-edit" href="/me">Edit my trainer</a>{% endif %}
     </div>
   </header>
