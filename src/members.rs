@@ -697,10 +697,11 @@ pub fn approved_sellers(c: &Connection) -> rusqlite::Result<Vec<Member>> {
          WHERE m.profile_ok=1 AND m.blocked=0
            AND ((SELECT COUNT(*) FROM member_binders b WHERE b.member_id=m.id)>0
                 OR (SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id)>0)
-         ORDER BY (m.stars > 0) DESC, m.stars DESC, m.worth DESC, m.id DESC"
+         ORDER BY (m.stars > 0) DESC, m.stars DESC, m.created_at DESC, m.id DESC"
     );
     let mut st = c.prepare(&sql)?;
-    let rows = st.query_map([], map_member)?.collect::<Result<Vec<_>, _>>()?;
+    let mut rows: Vec<Member> = st.query_map([], map_member)?.collect::<Result<Vec<_>, _>>()?;
+    rows.sort_by(|a, b| b.worth.total_cmp(&a.worth).then_with(|| b.stars.cmp(&a.stars)));
     Ok(rows)
 }
 
