@@ -53,7 +53,7 @@
         {% if let Some(c) = r.highlight %}{% if !c.image.is_empty() %}<img class="at-card" src="{{ c.image }}" width="245" height="342" alt="{{ c.title }}" loading="lazy">{% endif %}{% endif %}
       </div>
       {% if !r.can_act %}
-      <p class="at-off">{% if r.is_self %}This is you. Nobody can change their own trainer here.{% else %}This is another staff member, so only an admin can change anything.{% endif %}</p>
+      <p class="at-off">This is another staff member, so only an admin can change anything.</p>
       {% else %}
       <div class="at-acts">
         {% if full %}{% if r.profile_waiting %}<button type="button" class="btn" data-act="approve">✓ Approve page</button>{% else %}<button type="button" class="pbtn" data-act="hide">Hide page</button>{% endif %}{% endif %}
@@ -61,14 +61,14 @@
         {% if full %}<button type="button" class="pbtn" data-act="password">New password</button>{% endif %}
       </div>
       {% if full %}
-      <div class="at-tool at-role" role="group" aria-label="Role">
+      {% if !r.is_self %}<div class="at-tool at-role" role="group" aria-label="Role">
         <b>Role</b>
         <div class="at-role-opts">
           <button type="button" data-role-set="" class="{% if r.m.role.is_empty() %}on{% endif %}" aria-pressed="{{ r.m.role.is_empty() }}"><b>Trainer</b><small>No extra powers</small></button>
           <button type="button" data-role-set="mod" class="{% if r.m.role == "mod" %}on{% endif %}" aria-pressed="{{ r.m.role == "mod" }}"><b>Moderator</b><small>Hide or delete vouches, block or remove trainers</small></button>
           <button type="button" data-role-set="admin" class="{% if r.m.role == "admin" %}on{% endif %}" aria-pressed="{{ r.m.role == "admin" }}"><b>Admin</b><small>Everything, including the site</small></button>
         </div>
-      </div>
+      </div>{% endif %}
       <div class="at-tool at-role" role="group" aria-label="Store">
         <b>Store</b>
         <div class="at-role-opts">
@@ -90,7 +90,7 @@
         <ul>{% for a in r.awards %}<li><span class="stars">★ +{{ a.points }}</span><span>{% if a.reason.is_empty() %}No reason given{% else %}{{ a.reason }}{% endif %}</span><time data-at="{{ a.created_at }}">{{ a.when() }}</time><button type="button" class="pbtn" data-undo="{{ a.id }}">Take back</button></li>{% endfor %}</ul>
       </details>
       {% endif %}
-      <form class="at-tool at-lock" data-form="lock">
+      {% if !r.is_self %}<form class="at-tool at-lock" data-form="lock">
         <b>🔒 Lock</b>
         {% if r.m.locked() %}
         <button type="button" class="btn" data-act="unlock">Unlock now</button>
@@ -101,12 +101,12 @@
         <input name="n" type="number" min="1" max="3650" inputmode="numeric" value="1" aria-label="How long">
         <select name="unit" aria-label="Hours or days"><option value="1">hours</option><option value="24" selected>days</option></select>
         <button class="pbtn" type="submit">Lock</button>
-      </form>
+      </form>{% endif %}
       {% endif %}
-      <div class="at-tool at-end">
+      {% if !r.is_self %}<div class="at-tool at-end">
         {% if r.m.blocked %}<button type="button" class="btn" data-act="unblock">Unblock</button>{% else %}<button type="button" class="pbtn danger" data-act="block">⛔ Block</button>{% endif %}
         <button type="button" class="pbtn danger" data-act="delete">Remove trainer</button>
-      </div>
+      </div>{% else %}<p class="at-off">Your own role, lock, block and removal are for another admin.</p>{% endif %}
       {% endif %}
     </li>
     {% endfor %}

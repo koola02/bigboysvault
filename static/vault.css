@@ -1661,3 +1661,21 @@ html[data-lite] .foot { content-visibility: auto; contain-intrinsic-size: auto 2
 .foot-login { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 18px; border-radius: 999px; color: var(--gold-hi); font: 700 .875rem/1 var(--font); text-decoration: none; box-shadow: inset 0 0 0 1px rgba(239,200,115,.45); background: rgba(9,11,20,.6); }
 .foot-login:hover { background: rgba(239,200,115,.12); }
 .foot-login svg { width: 16px; height: 16px; }
+
+/* ---------- The profile chip, and no "Log in" while signed in ---------- */
+.bar-me { flex: none; display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 3px 12px 3px 3px; border-radius: 999px; background: rgba(255,255,255,.07); box-shadow: inset 0 0 0 1px rgba(239,200,115,.45); color: var(--gold-hi); text-decoration: none; transition: background .2s, box-shadow .2s; }
+.bar-me:hover { background: rgba(239,200,115,.14); box-shadow: inset 0 0 0 1px var(--gold), 0 0 16px rgba(239,200,115,.35); }
+.bar-me-av { width: 36px; height: 36px; font-size: .9375rem; }
+.bar-me-av img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; display: block; }
+.bar-me-t { font: 700 .8125rem/1 var(--font); max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+html[data-me] #footLogin, html[data-me] .join .join-switch { display: none !important; }
+@media (max-width: 899px) {
+  /* On a phone the chip is the picture alone, beside the search button. */
+  .bar-in { padding-right: 62px; }
+  html[data-me] .bar-in { padding-right: 112px; }
+  .bar-me { position: absolute; right: 58px; top: 50%; translate: 0 -50%; z-index: 2; padding: 0; min-height: 0; background: none; box-shadow: none; }
+  .bar-me-t { display: none; }
+  .bar-me-av { width: 40px; height: 40px; }
+  .bar-me-av img { width: 40px; height: 40px; }
+  form.search:focus-within ~ .bar-me, form.search:has(input[type=search]:not(:placeholder-shown)) ~ .bar-me { display: none; }
+}

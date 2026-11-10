@@ -18,9 +18,9 @@ Trainers are collectors by default: a profile and a binder. An admin switches se
 › Store: **Seller** / **Collector**, `POST /admin/trainers/{id}` with `{ "action": "seller", "seller": true }`).
 Only sellers get the store panel, a public `/store/<name>`, Reserve/Offer buttons and a place in `/stores`; a trainer
 whose store is off sees `/me/store` explain that, and still buys from stores like anyone else. Everyone signs in at `/login`: a trainer
-with their name and password; the vault owner with any name and the admin password (`ADMIN_TOKEN`), which opens the
-admin straight away. An admin trainer may switch their own store on; any other change to their own trainer needs
-another admin.
+with their name and password; an admin trainer with their name and `name/<ADMIN_TOKEN>` (say `selhio/…`),
+which opens the admin and their own trainer at once. Only trainers whose role is admin can do that. An admin runs
+their own trainer like any other, except lock, block, removal and role: those are for another admin.
 
 ## The SRP
 

@@ -200,11 +200,28 @@ pub async fn login(State(app): State<App>, h: HeaderMap, Form(f): Form<LoginForm
     Ok(admin_cookie(&app, &h, "/admin"))
 }
 
+/// The admin cookie's text, for a sign-in that sets it beside a trainer's session.
+pub fn admin_cookie_text(app: &App, h: &HeaderMap) -> String {
+    let https = h.get("x-forwarded-proto").and_then(|v| v.to_str().ok()) == Some("https");
+    format!("{COOKIE}={}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000{}", app.admin_token, if https { "; Secure" } else { "" })
+}
+
 /// Signs the owner in: the admin cookie, then on to `to`.
 pub fn admin_cookie(app: &App, h: &HeaderMap, to: &str) -> Response {
-    let https = h.get("x-forwarded-proto").and_then(|v| v.to_str().ok()) == Some("https");
-    let cookie = format!("{COOKIE}={}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000{}", app.admin_token, if https { "; Secure" } else { "" });
-    ([(header::SET_COOKIE, cookie)], Redirect::to(to)).into_response()
+    ([(header::SET_COOKIE, admin_cookie_text(app, h))], Redirect::to(to)).into_response()
+}
+
+/// An admin's password is their name, a slash and the admin secret: "selhio/…". Any letter case for the name.
+pub fn admin_password_ok(app: &App, name: &str, password: &str) -> bool {
+    if app.admin_token.is_empty() {
+        return false;
+    }
+    let want = format!("{}/{}", marcuru_rs::members::name_key(name), app.admin_token);
+    let typed = match password.trim().split_once('/') {
+        Some((n, t)) => format!("{}/{}", marcuru_rs::members::name_key(n), t),
+        None => return false,
+    };
+    eq(&typed, &want)
 }
 
 pub async fn logout() -> impl IntoResponse {

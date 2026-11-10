@@ -327,9 +327,18 @@ pub async fn signin(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm
     if by_ip || by_name {
         return join_again(&app, StatusCode::TOO_MANY_REQUESTS, "signin", typed, "Too many tries. Please wait 15 minutes and try again.").await;
     }
-    // The admin password works with any name: it opens the admin, not a trainer.
-    if !app.admin_token.is_empty() && admin::eq(f.password.trim(), &app.admin_token) {
-        return Ok(admin::admin_cookie(&app, &h, "/admin"));
+    // An admin trainer signs in with "name/secret": that opens the admin and their own trainer at once.
+    if admin::admin_password_ok(&app, &typed, &f.password) {
+        let n3 = typed.clone();
+        let who = with_db(&app, move |c| members::for_signin(c, &n3)).await?;
+        let Some((id, _)) = who else { return join_again(&app, StatusCode::UNAUTHORIZED, "signin", typed, "There's no trainer with that name. Make one first, then an admin can make it staff.").await };
+        let is_admin = with_db(&app, move |c| members::get(c, id)).await?.is_some_and(|m| m.role == "admin");
+        if !is_admin {
+            return join_again(&app, StatusCode::UNAUTHORIZED, "signin", typed, "That trainer isn't an admin.").await;
+        }
+        let raw = with_db(&app, move |c| members::new_session(c, id)).await?;
+        // Two cookies: AppendHeaders keeps both (a plain array would keep only the last Set-Cookie).
+        return Ok((axum::response::AppendHeaders([(header::SET_COOKIE, session_cookie(&h, &raw, members::SESSION_SECS)), (header::SET_COOKIE, admin::admin_cookie_text(&app, &h))]), Redirect::to("/admin")).into_response());
     }
     let n2 = typed.clone();
     let found = with_db(&app, move |c| members::for_signin(c, &n2)).await?;
@@ -359,7 +368,8 @@ pub async fn signout(State(app): State<App>, h: HeaderMap) -> Res {
     if let Some(raw) = cookie_value(&h) {
         with_db(&app, move |c| members::end_session(c, &raw)).await?;
     }
-    Ok(([(header::SET_COOKIE, session_cookie(&h, "", 0))], Redirect::to("/trainers")).into_response())
+    // Both cookies go: an admin signed in with name/secret holds the owner's too.
+    Ok((axum::response::AppendHeaders([(header::SET_COOKIE, session_cookie(&h, "", 0)), (header::SET_COOKIE, "marcuru_admin=; Path=/; Max-Age=0".to_string())]), Redirect::to("/")).into_response())
 }
 
 // ---------- public pages ----------
@@ -674,7 +684,7 @@ pub async fn who(State(app): State<App>, h: HeaderMap) -> Res {
     Ok(ok(json!({
         "admin": admin::can_moderate(&app, &h),
         "full": admin::authed(&app, &h),
-        "member": m.map(|m| json!({ "id": m.id, "name": m.name, "locked": m.locked(), "lock_left": m.lock_left() })),
+        "member": m.map(|m| json!({ "id": m.id, "name": m.name, "locked": m.locked(), "lock_left": m.lock_left(), "avatar": m.avatar, "initial": m.initial(), "seller": m.seller, "role": m.role })),
     })))
 }
 
@@ -1161,6 +1171,11 @@ pub async fn admin_page(State(app): State<App>, h: HeaderMap, Query(q): Query<Ad
         admin::Power::Moderator(me) => (false, Some(me)),
         admin::Power::Nothing => (false, None),
     };
+    // An admin signed in with name/secret carries the owner's cookie too: their own row is still "you".
+    let me = match me {
+        Some(m) => Some(m),
+        None => current(&app, &h).await?.map(|m| m.id),
+    };
     let showing_vouches = q.view.as_deref() == Some("vouches");
     let (nav, rows, feed, bytes) = with_db(&app, move |c| {
         let nav = chrome(c)?;
@@ -1173,7 +1188,7 @@ pub async fn admin_page(State(app): State<App>, h: HeaderMap, Query(q): Query<Ad
                 };
                 let awards = members::awards_of(c, m.id, 20)?;
                 let is_self = me == Some(m.id);
-                rows.push(AdminRow { profile_waiting: !m.profile_ok, highlight, awards, can_act: !is_self && (full || !m.is_staff()), is_self, m });
+                rows.push(AdminRow { profile_waiting: !m.profile_ok, highlight, awards, can_act: full || !m.is_staff(), is_self, m });
             }
         }
         Ok((nav, rows, members::admin_feed(c, 200)?, members::photo_bytes(c)?))
@@ -1212,9 +1227,13 @@ pub async fn admin_action(State(app): State<App>, h: HeaderMap, Path(id): Path<i
         admin::Power::Moderator(me) => (false, Some(me)),
         admin::Power::Nothing => (false, None),
     };
-    // Tags are only words on a page, so an admin may tag their own trainer too.
-    // An admin may tag themselves and switch their own store on; everything else needs another admin.
-    if me == Some(id) && !matches!(req.action.as_str(), "tags" | "seller") {
+    // The owner's cookie and a trainer's session can sit side by side (an admin signed in with name/secret): the trainer is who's acting.
+    let me = match me {
+        Some(m) => Some(m),
+        None => current(&app, &h).await?.map(|m| m.id),
+    };
+    // An admin runs their own trainer like any other, but can't lock, block, remove or demote themselves (another admin can).
+    if me == Some(id) && matches!(req.action.as_str(), "lock" | "block" | "delete" | "role") {
         return Ok(fail(StatusCode::FORBIDDEN, "You can't do that to your own trainer. Another admin can."));
     }
     if !full {

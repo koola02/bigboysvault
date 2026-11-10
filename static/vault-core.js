@@ -189,8 +189,6 @@
       if (!res.ok) { notifDropdown.hidden = true; if (res.status === 401 || res.status === 403) { try { sessionStorage.setItem(SKIP, '1'); } catch (_) {} } return; }
       const j = await res.json();
       notifDropdown.hidden = false;
-      // Signed in: the footer's "Log in" becomes "My trainer".
-      const fl = document.getElementById('footLogin'); if (fl) { fl.href = '/me'; fl.lastChild.textContent = 'My trainer'; }
       if (j.unread_count > 0) {
         notifBadge.textContent = j.unread_count > 99 ? '99+' : j.unread_count;
         notifBadge.hidden = false;
@@ -238,4 +236,39 @@
 
   // Fetch count on load
   setTimeout(loadNotifs, 500);
+})();
+
+// ---------- Who's here: the profile chip in the top bar, and no "Log in" while signed in ----------
+(() => {
+  const chip = document.getElementById('barMe'), av = document.getElementById('barMeAv'), label = document.getElementById('barMeT');
+  const root = document.documentElement;
+  const paint = (me, admin) => {
+    if (me && me.name) {
+      root.dataset.me = me.role === 'admin' || admin ? 'admin' : '1';
+      if (chip) {
+        chip.hidden = false; chip.href = '/me';
+        av.replaceChildren();
+        if (me.avatar) { const i = document.createElement('img'); i.src = me.avatar; i.alt = ''; i.width = 36; i.height = 36; av.append(i); av.classList.add('has-pic'); }
+        else { av.textContent = me.initial || me.name[0].toUpperCase(); av.classList.remove('has-pic'); }
+        label.textContent = me.name;
+        chip.title = `${me.name} · My profile`;
+      }
+    } else if (admin) {
+      // The owner, signed in with the admin password alone.
+      root.dataset.me = 'admin';
+      if (chip) { chip.hidden = false; chip.href = '/admin'; av.replaceChildren(); av.textContent = '★'; av.classList.remove('has-pic'); label.textContent = 'Admin'; chip.title = 'Admin'; }
+    } else {
+      delete root.dataset.me;
+      if (chip) chip.hidden = true;
+    }
+  };
+  // Last visit's answer first (no flash), then today's.
+  let last = null;
+  try { last = JSON.parse(localStorage.getItem('bbv:me') || 'null'); } catch (_) {}
+  if (last) paint(last.me, last.admin);
+  fetch('/me/who', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then((r) => r.json()).then((j) => {
+    const me = j.member || null, admin = !!j.full;
+    paint(me, admin);
+    try { if (me || admin) localStorage.setItem('bbv:me', JSON.stringify({ me, admin })); else localStorage.removeItem('bbv:me'); } catch (_) {}
+  }).catch(() => {});
 })();
