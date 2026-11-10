@@ -1368,3 +1368,11 @@ html[data-lite] .foot { content-visibility: auto; contain-intrinsic-size: auto 2
 .seller-social { display: inline-flex; align-items: center; gap: 6px; padding: 6px 14px; border-radius: 999px; background: rgba(255, 255, 255, 0.08); border: 1px solid rgba(239, 200, 115, 0.35); color: var(--gold-hi); font: 600 .8125rem/1 var(--font); text-decoration: none; transition: all .2s; }
 .seller-social:hover { background: rgba(239, 200, 115, 0.22); border-color: var(--gold); color: #fff; scale: 1.04; box-shadow: 0 0 12px rgba(239, 200, 115, 0.4); }
 .seller-cards-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 12px; }
+
+/* ---------- Seller Dashboard ---------- */
+.dash-seller { padding-bottom: 24px; }
+.dash-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px; margin-top: 20px; }
+.dtile { background: rgba(0,0,0,.2); border: 1px solid rgba(239, 200, 115, 0.2); border-radius: 12px; padding: 16px; text-align: center; }
+.dt-t { font: 600 .75rem/1.2 var(--font); color: rgba(255,255,255,.7); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+.dt-n { font: 800 1.5rem/1 var(--display); color: var(--gold-hi); }
+

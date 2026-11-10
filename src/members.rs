@@ -1300,6 +1300,44 @@ pub fn all_for_admin(c: &Connection) -> rusqlite::Result<Vec<Member>> {
 }
 
 // ---------- the binder ----------
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct SellerStats {
+    pub total_listings: i64,
+    pub active_listings: i64,
+    pub items_sold: i64,
+    pub binder_count: i64,
+    pub total_value: i64,
+    pub recent_views: i64,
+    pub pending_inquiries: i64,
+    pub pending_offers: i64,
+}
+
+pub fn seller_stats(c: &Connection, member_id: i64) -> rusqlite::Result<SellerStats> {
+    let cards = cards_of(c, member_id)?;
+    let total_listings = cards.len() as i64;
+    let active_listings = cards.iter().filter(|c| c.status == "Active").count() as i64;
+    let items_sold = cards.iter().filter(|c| c.status == "Sold").count() as i64;
+    let total_value: i64 = cards.iter().filter(|c| c.status == "Active").map(|c| c.worth().round() as i64).sum();
+    let binder_count: i64 = c.query_row("SELECT COUNT(*) FROM member_binders WHERE member_id=?1", [member_id], |r| r.get(0))?;
+    let recent_views: i64 = c.query_row(
+        "SELECT COUNT(*) FROM listing_views v JOIN member_cards c ON c.id=v.card_id WHERE c.member_id=?1 AND v.created_at >= ?2",
+        rusqlite::params![member_id, now() - 30 * 86400],
+        |r| r.get(0)
+    ).unwrap_or(0);
+    let pending_inquiries: i64 = c.query_row(
+        "SELECT COUNT(*) FROM inquiries WHERE seller_id=?1",
+        [member_id],
+        |r| r.get(0)
+    ).unwrap_or(0);
+    let pending_offers: i64 = c.query_row(
+        "SELECT COUNT(*) FROM offers WHERE seller_id=?1 AND status='Pending'",
+        [member_id],
+        |r| r.get(0)
+    ).unwrap_or(0);
+
+    Ok(SellerStats { total_listings, active_listings, items_sold, binder_count, total_value, recent_views, pending_inquiries, pending_offers })
+}
+
 pub fn cards_of(c: &Connection, member_id: i64) -> rusqlite::Result<Vec<MemberCard>> {
     let mut st = c.prepare(&format!("SELECT {CARD_COLS} FROM member_cards c WHERE c.member_id=?1 ORDER BY c.position,c.id"))?;
     let v = st.query_map([member_id], |r| map_card(r, 0))?.collect::<Result<Vec<_>, _>>()?;

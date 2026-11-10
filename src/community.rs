@@ -187,6 +187,7 @@ struct MePage {
     m: Member,
     cards: Vec<MemberCard>,
     binders: Vec<members::MemberBinder>,
+    stats: members::SellerStats,
     max: i64,
     conditions: [&'static str; 10],
 }
@@ -504,8 +505,8 @@ pub async fn member_card(State(app): State<App>, h: HeaderMap, Path((id, cid)): 
 pub async fn me(State(app): State<App>, h: HeaderMap) -> Res {
     let Some(m) = current(&app, &h).await? else { return Ok(Redirect::to("/join").into_response()) };
     let id = m.id;
-    let (nav, cards, binders) = with_db(&app, move |c| Ok((chrome(c)?, members::cards_of(c, id)?, members::binders_of(c, id)?))).await?;
-    Ok(html(render(MePage { nav, m, cards, binders, max: members::MAX_CARDS, conditions: members::CONDITIONS })?))
+    let (nav, cards, binders, stats) = with_db(&app, move |c| Ok((chrome(c)?, members::cards_of(c, id)?, members::binders_of(c, id)?, members::seller_stats(c, id)?))).await?;
+    Ok(html(render(MePage { nav, m, cards, binders, stats, max: members::MAX_CARDS, conditions: members::CONDITIONS })?))
 }
 
 /// Signed in and really from this site, whatever their lock says. For things a locked trainer may still do: their password, deleting what's theirs.
