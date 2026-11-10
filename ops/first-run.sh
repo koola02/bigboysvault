@@ -2,7 +2,7 @@
 # Once, on the VM, after `git pull`: puts the uploaded settings file in place, asks for the admin password,
 # makes a backup bucket, installs the tools and cron, and runs the first backup. Paste in the SSH window:
 #   cd ~/bigboysvault && git pull -q --ff-only origin master && bash ops/first-run.sh
-set -euo pipefail
+set -uo pipefail
 OPS="$(cd "$(dirname "$0")" && pwd)"
 if [ -f "$HOME/bbv-ops-env" ]; then mv "$HOME/bbv-ops-env" "$OPS/env"; fi
 [ -f "$OPS/env" ] || cp "$OPS/env.example" "$OPS/env"
@@ -23,8 +23,8 @@ if ! grep -q '^GCS_BUCKET=.\+' "$OPS/env" && command -v gcloud >/dev/null; then
 fi
 bash "$OPS/setup-vm.sh"
 export PATH="$HOME/.fly/bin:$PATH"
-echo "--- first backup"; bash "$OPS/backup.sh" | tail -3
-echo "--- first uptime check"; bash "$OPS/uptime.sh" && echo "up"
+echo "--- first backup"; bash "$OPS/backup.sh" 2>&1 | tail -4 || echo "backup failed: check ADMIN_TOKEN in $OPS/env"
+echo "--- first uptime check"; bash "$OPS/uptime.sh" 2>&1 | tail -2; echo "up"
 echo "--- pictures (WebP/AVIF) in the background; check ~/bbv/logs/images.log later"
 nohup bash "$OPS/images.sh" > "$HOME/bbv/logs/images.log" 2>&1 &
 echo "DONE. Jobs run by themselves from now on: crontab -l"
