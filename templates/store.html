@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}{{ m.store_title() }} · {{ nav.brand }}{% endblock %}
+{% block content %}
+<section class="wrap storefront" id="storefront" data-slug="{{ m.slug }}" data-seller="{{ m.id }}"{% if let Some(u) = me %} data-me="{{ u.id }}"{% endif %}{% if is_me %} data-mine{% endif %}>
+  <header class="sf-head{% if m.has_cover() %} has-cover{% endif %}">
+    {% if m.has_cover() %}<div class="sf-cover"><img src="{{ m.cover_photo }}" alt="" width="1600" height="500" decoding="async"></div>{% endif %}
+    <div class="sf-id">
+      {% if m.has_avatar() %}<img class="av av-xl" src="{{ m.avatar }}" width="160" height="160" alt="">{% else %}<span class="av av-xl">{{ m.initial() }}</span>{% endif %}
+      <div class="sf-who">
+        <p class="eyebrow">Store</p>
+        <h1 class="h1">{{ m.store_title() }}</h1>
+        <p class="sf-sub">by <a href="/trainers/{{ m.id }}" data-float>{{ m.name }}</a>{% if !m.role_text().is_empty() %} <span class="role" data-role="{{ m.role }}">{{ m.role_text() }}</span>{% endif %}{% for g in m.tag_list() %} <span class="tag-hl mtag">{{ g }}</span>{% endfor %}{% if !m.location.is_empty() %} · 📍 {{ m.location }}{% endif %} · since {{ stats.since }}</p>
+        {% if !m.bio.is_empty() %}<p class="sf-bio">{{ m.bio }}</p>{% endif %}
+      </div>
+      <div class="sf-acts">
+        {% if is_me %}<a class="btn" href="/me/store">Manage my store</a>
+        {% else %}<button type="button" class="btn{% if following %} ghost{% endif %}" id="followBtn" aria-pressed="{{ following }}">{% if following %}Following ✓{% else %}Follow{% endif %}</button><button type="button" class="btn ghost" id="askBtn">Ask a question</button>{% endif %}
+      </div>
+    </div>
+    {% if m.on_vacation() %}<p class="sf-banner vacation">🏝️ {{ m.store_title() }} is on vacation. You can look, but reservations and offers are paused until they're back.</p>
+    {% else if m.is_away() %}<p class="sf-banner away">⏳ {{ m.store_title() }} is away right now. Orders are open, but replies may take longer.</p>{% endif %}
+    <ul class="sf-stats">
+      <li><b>{{ stats.on_sale }}</b><span>on sale</span></li>
+      <li><b>{{ stats.sold }}</b><span>sold</span></li>
+      <li><b>{{ stats.sales }}</b><span>sale{% if stats.sales != 1 %}s{% endif %}</span></li>
+      <li><b id="followerN">{{ stats.followers }}</b><span>follower{% if stats.followers != 1 %}s{% endif %}</span></li>
+      <li><b>{% if stats.reviews > 0 %}★ {{ stats.rating }}{% else %}—{% endif %}</b><span>{{ stats.reviews }} review{% if stats.reviews != 1 %}s{% endif %}</span></li>
+      {% if m.stars > 0 %}<li><b>★ {{ m.stars }}</b><span>vault stars</span></li>{% endif %}
+    </ul>
+    {% if !links.is_empty() || !m.pay_list().is_empty() || (!m.contact_info.is_empty() && (m.contact_public || me.is_some())) %}
+    <div class="sf-links">
+      {% for (label, url) in links %}<a class="seller-social" href="{{ url }}" target="_blank" rel="noopener noreferrer">{{ label }}</a>{% endfor %}
+      {% for pm in m.pay_list() %}<span class="sf-pay">{{ pm }}</span>{% endfor %}
+      {% if !m.contact_info.is_empty() && (m.contact_public || me.is_some()) %}<span class="sf-contact">{{ m.contact_info }}</span>{% endif %}
+    </div>{% endif %}
+  </header>
+
+  {% if let Some(b) = binder %}
+  <nav class="sf-crumbs"><a href="{{ m.store_url() }}">← All of {{ m.store_title() }}</a></nav>
+  <h2 class="h2">{{ b.title }} <small>{{ cards.len() }} card{% if cards.len() != 1 %}s{% endif %}{% if b.visibility != "Public" %} · {{ b.visibility }}{% endif %}</small></h2>
+  {% if !b.description.is_empty() %}<p class="sf-desc">{{ b.description }}</p>{% endif %}
+  {% else if !binders.is_empty() %}
+  <h2 class="h2">Binders</h2>
+  <div class="sf-binders">
+    {% for b in binders %}<a class="sf-binder" href="{{ m.store_url() }}/binders/{{ b.slug }}">{% if b.has_image() %}<img src="{{ b.cover_image }}" width="120" height="168" alt="" loading="lazy">{% else %}<span class="thumb-empty"></span>{% endif %}<b>{{ b.title }}</b><small>{{ b.count }} card{% if b.count != 1 %}s{% endif %}{% if b.visibility == "Unlisted" %} · unlisted{% endif %}</small></a>{% endfor %}
+  </div>
+  <h2 class="h2">Everything on sale</h2>
+  {% endif %}
+
+  {% if cards.is_empty() %}
+  <div class="me-empty st-empty"><b>Nothing on sale right now.</b><span>{% if is_me %}<a href="/me/listings">Add cards</a> and they'll show here.{% else %}Follow the store to hear when cards go up.{% endif %}</span></div>
+  {% else %}
+  <div class="sf-filter">
+    <input type="search" id="sfQ" placeholder="Find a card in this store" aria-label="Find a card" autocomplete="off">
+    <select id="sfCond" aria-label="Condition"><option value="">Any condition</option>{% for o in conditions %}<option>{{ o }}</option>{% endfor %}<option value="Graded">Graded</option></select>
+    <select id="sfSort" aria-label="Order"><option value="">Seller's order</option><option value="price-asc">Price: low to high</option><option value="price-desc">Price: high to low</option><option value="title">Name</option><option value="newest">Newest</option></select>
+    <span class="sf-n"><b id="sfN">{{ cards.len() }}</b> card{% if cards.len() != 1 %}s{% endif %}</span>
+  </div>
+  <ul class="sf-grid" id="sfGrid">
+    {% for (c, is_saved) in cards %}
+    <li class="sf-card" data-id="{{ c.id }}" data-title="{{ c.title }}" data-set="{{ c.card_set }}" data-number="{{ c.number }}" data-cond="{{ c.cond }}" data-price="{{ c.worth() }}" data-status="{{ c.status }}" data-qty="{{ c.qty }}" data-pos="{{ loop.index }}"{% if c.is_graded() %} data-graded{% endif %}{% if *is_saved %} data-saved{% endif %}>
+      <a class="sf-pic" href="/trainers/{{ m.id }}/cards/{{ c.id }}" data-float aria-label="See {{ c.title }}">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="">{% endif %}{% if c.status == "Reserved" %}<span class="sf-flag">Reserved</span>{% else if c.status == "Sold" %}<span class="sf-flag sold">Sold</span>{% else if c.qty > 1 %}<span class="sf-flag qty">×{{ c.qty }}</span>{% endif %}</a>
+      <div class="sf-body">
+        <b class="sf-title">{{ c.title }}</b>
+        <small class="sf-set">{{ c.card_set }}{% if !c.number.is_empty() %} · {{ c.number }}{% endif %}{% if !c.finish.is_empty() %} · {{ c.finish }}{% endif %}</small>
+        <span class="card-cond" data-c="{{ c.cond_class() }}">{{ c.cond }}</span>
+        <b class="sf-price">{% if c.has_price() %}{{ c.price_text() }}{% else %}Ask for a price{% endif %}</b>
+        {% if !c.notes.is_empty() %}<p class="sf-note">{{ c.notes }}</p>{% endif %}
+      </div>
+      {% if !is_me %}
+      <div class="sf-buy">
+        {% if c.status == "Active" && !m.on_vacation() %}<button type="button" class="btn" data-reserve>Reserve</button><button type="button" class="btn ghost" data-offer>Offer</button>{% else if c.status == "Reserved" %}<span class="sf-held">Reserved for someone</span>{% endif %}
+        <button type="button" class="sf-save" data-save aria-pressed="{% if *is_saved %}true{% else %}false{% endif %}" aria-label="Save {{ c.title }}">♥</button>
+      </div>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <section class="sf-reviews" id="reviews">
+    <h2 class="h2">Reviews <small>{% if stats.reviews > 0 %}★ {{ stats.rating }} · {{ stats.reviews }}{% else %}none yet{% endif %}</small></h2>
+    {% if reviews.is_empty() %}<p class="me-how">Only buyers of a finished sale can leave a review, so every review here is from a real sale.</p>{% else %}
+    <ul class="sf-review-list">
+      {% for r in reviews %}
+      <li class="sf-review">
+        <div class="sf-review-head">{% if !r.reviewer_avatar.is_empty() %}<img class="av av-sm" src="{{ r.reviewer_avatar }}" width="40" height="40" alt="">{% else %}<span class="av av-sm">{{ r.initial() }}</span>{% endif %}<b>{{ r.reviewer_name }}</b><span class="sf-stars">{{ r.stars() }}</span><small>{{ r.when() }}{% if !r.title.is_empty() %} · {{ r.title }}{% endif %}</small></div>
+        {% if !r.text.is_empty() %}<p>{{ r.text }}</p>{% endif %}
+        {% if !r.reply.is_empty() %}<p class="sf-review-reply"><b>{{ m.store_title() }}:</b> {{ r.reply }}</p>{% else if is_me %}<form class="st-reply" data-review-reply="{{ r.id }}"><input maxlength="400" placeholder="Reply (optional)" aria-label="Reply"><button class="linkbtn inline" type="submit">Reply</button></form>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>{% endif %}
+  </section>
+</section>
+
+<div class="sheet" id="buySheet" hidden>
+  <div class="sheet-bg" data-close></div>
+  <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="buyTitle">
+    <h2 class="sheet-h" id="buyTitle">Reserve</h2>
+    <form class="sheet-form" id="buyForm">
+      <p class="sf-buy-card"><img id="buyImg" alt="" width="60" height="84"><span><b id="buyName"></b><small id="buyMeta"></small></span></p>
+      <label class="sf-field" id="buyAmountRow" hidden><span>Your offer, per card ₱</span><input type="number" name="amount" min="1" step="1" inputmode="numeric" class="sheet-input"></label>
+      <label class="sf-field"><span>How many</span><input type="number" name="qty" min="1" max="99" value="1" inputmode="numeric" class="sheet-input"></label>
+      <label class="sf-field"><span>A note for the seller <small>(optional)</small></span><textarea name="message" rows="2" maxlength="300" class="sheet-input" placeholder="When can we meet? Can you ship?"></textarea></label>
+      <p class="hint show" id="buyHint">The seller gets your reservation and accepts it. Then you'll see how to pay them. {{ nav.brand }} never handles the money.</p>
+      <div class="sheet-acts"><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn" id="buyGo">Reserve</button></div>
+    </form>
+  </div>
+</div>
+<div class="sheet" id="askSheet" hidden>
+  <div class="sheet-bg" data-close></div>
+  <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="askTitle">
+    <h2 class="sheet-h" id="askTitle">Ask {{ m.store_title() }}</h2>
+    <form class="sheet-form" id="askForm">
+      <label class="sf-field"><span>Your question</span><textarea name="message" rows="3" maxlength="500" class="sheet-input" required placeholder="Is this still available? Do you ship to Cebu?"></textarea></label>
+      <p class="hint show">The reply shows in <a href="/me/orders?tab=buying">My orders</a> and the bell at the top.</p>
+      <div class="sheet-acts"><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn">Send</button></div>
+    </form>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="/static/storefront.js?v=1" defer></script>
+{% endblock %}

@@ -96,7 +96,18 @@ pub struct Member {
     pub location: String,
     pub contact_info: String,
     pub contact_public: bool,
+    /// "Active", "Away" or "Vacation". On vacation, nobody can reserve or make offers.
     pub status: String,
+    pub email: String,
+    pub store_name: String,
+    pub fb_group_url: String,
+    pub ig_url: String,
+    pub shopee_url: String,
+    /// How to pay, shown to a buyer once the seller accepts their reservation. Never on the public page.
+    pub pay_info: String,
+    /// Ways to pay the seller ticked, comma separated: "GCash,Maya".
+    pub pay_methods: String,
+    pub notify_views: bool,
 }
 
 /// An admin's tags for a trainer, as a list.
@@ -151,6 +162,46 @@ impl Member {
         } else {
             format!("/trainer/{}", self.slug)
         }
+    }
+    /// The store's public address.
+    pub fn store_url(&self) -> String {
+        if self.slug.is_empty() {
+            format!("/trainers/{}", self.id)
+        } else {
+            format!("/store/{}", self.slug)
+        }
+    }
+    /// The store's name: what the seller called it, or their own name.
+    pub fn store_title(&self) -> String {
+        if self.store_name.trim().is_empty() { self.name.clone() } else { self.store_name.clone() }
+    }
+    pub fn has_cover(&self) -> bool {
+        !self.cover_photo.is_empty()
+    }
+    pub fn is_away(&self) -> bool {
+        self.status == "Away"
+    }
+    pub fn on_vacation(&self) -> bool {
+        self.status == "Vacation"
+    }
+    /// The named links a seller added, as (label, address).
+    pub fn social_links(&self) -> Vec<(String, String)> {
+        let mut v = vec![];
+        for (label, url) in [("Facebook", &self.fb_url), ("Facebook group", &self.fb_group_url), ("Instagram", &self.ig_url), ("TikTok", &self.tiktok_url), ("Shopee", &self.shopee_url)] {
+            if !url.is_empty() {
+                v.push((label.to_string(), url.clone()));
+            }
+        }
+        for line in self.link_list() {
+            v.push(crate::sellers::link_parts(&line));
+        }
+        v
+    }
+    pub fn pay_list(&self) -> Vec<String> {
+        self.pay_methods.split(',').map(str::trim).filter(|m| !m.is_empty()).map(String::from).collect()
+    }
+    pub fn has_pay(&self, method: &str) -> bool {
+        self.pay_list().iter().any(|m| m == method)
     }
     /// The letter shown when there's no profile picture yet.
     pub fn initial(&self) -> String {
@@ -522,6 +573,10 @@ impl MemberCard {
     pub fn when(&self) -> String {
         crate::sellers::ago(self.updated_at)
     }
+    /// One of the conditions the site offers in its lists (not a typed grade like "PSA 9").
+    pub fn is_standard_cond(&self) -> bool {
+        CONDITIONS.contains(&self.cond.as_str())
+    }
     /// Which colour this card's condition gets.
     pub fn cond_class(&self) -> &'static str {
         vault_search::cond_class(&self.cond)
@@ -551,8 +606,8 @@ pub struct Highlight {
     pub card: MemberCard,
 }
 
-const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags,m.slug,m.fb_url,m.tiktok_url,m.links,m.cover_photo,m.location,m.contact_info,m.contact_public,m.status");
-const MEMBER_COUNT: usize = 22;
+const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags,m.slug,m.fb_url,m.tiktok_url,m.links,m.cover_photo,m.location,m.contact_info,m.contact_public,m.status,m.email,m.store_name,m.fb_group_url,m.ig_url,m.shopee_url,m.pay_info,m.pay_methods,m.notify_views");
+const MEMBER_COUNT: usize = 30;
 
 fn map_member(r: &Row) -> rusqlite::Result<Member> {
     Ok(Member {
@@ -578,6 +633,14 @@ fn map_member(r: &Row) -> rusqlite::Result<Member> {
         contact_info: r.get(19)?,
         contact_public: r.get::<_, i64>(20)? != 0,
         status: r.get(21)?,
+        email: r.get(22)?,
+        store_name: r.get(23)?,
+        fb_group_url: r.get(24)?,
+        ig_url: r.get(25)?,
+        shopee_url: r.get(26)?,
+        pay_info: r.get(27)?,
+        pay_methods: r.get(28)?,
+        notify_views: r.get::<_, i64>(29)? != 0,
     })
 }
 
@@ -1856,6 +1919,12 @@ pub struct Notification {
     pub link: String,
     pub is_read: bool,
     pub created_at: i64,
+}
+
+impl Notification {
+    pub fn when(&self) -> String {
+        crate::sellers::ago(self.created_at)
+    }
 }
 
 pub fn notifications(c: &Connection, member_id: i64, unread_only: bool) -> rusqlite::Result<Vec<Notification>> {

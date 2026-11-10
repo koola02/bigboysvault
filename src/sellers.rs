@@ -967,6 +967,18 @@ pub struct SalesSummary {
     pub units: i64,
 }
 
+impl SalesSummary {
+    pub fn week_text(&self) -> String {
+        vault_search::peso(self.week_php)
+    }
+    pub fn month_text(&self) -> String {
+        vault_search::peso(self.month_php)
+    }
+    pub fn all_text(&self) -> String {
+        vault_search::peso(self.all_php)
+    }
+}
+
 pub fn sales_summary(c: &Connection, seller: i64) -> rusqlite::Result<SalesSummary> {
     let t = now();
     let q = |since: i64| -> rusqlite::Result<(i64, f64)> {
@@ -994,19 +1006,23 @@ pub struct Review {
     pub hidden: bool,
     pub created_at: i64,
     pub title: String,
+    pub seller_name: String,
 }
 
 impl Review {
     pub fn when(&self) -> String {
         ago(self.created_at)
     }
+    pub fn initial(&self) -> String {
+        members::initial(&self.reviewer_name)
+    }
     pub fn stars(&self) -> String {
         "★".repeat(self.rating.clamp(0, 5) as usize) + &"☆".repeat((5 - self.rating.clamp(0, 5)) as usize)
     }
 }
 
-const REVIEW: &str = "v.id, v.reviewer_id, b.name, b.avatar, v.seller_id, v.rating, v.text, v.reply, v.hidden, v.created_at, COALESCE(NULLIF(t.title,''), c.title, '')
-    FROM reviews v JOIN members b ON b.id=v.reviewer_id LEFT JOIN transactions t ON t.id=v.transaction_id LEFT JOIN member_cards c ON c.id=t.card_id";
+const REVIEW: &str = "v.id, v.reviewer_id, b.name, b.avatar, v.seller_id, v.rating, v.text, v.reply, v.hidden, v.created_at, COALESCE(NULLIF(t.title,''), c.title, ''), s.name
+    FROM reviews v JOIN members b ON b.id=v.reviewer_id JOIN members s ON s.id=v.seller_id LEFT JOIN transactions t ON t.id=v.transaction_id LEFT JOIN member_cards c ON c.id=t.card_id";
 
 fn map_review(r: &Row) -> rusqlite::Result<Review> {
     Ok(Review {
@@ -1021,6 +1037,7 @@ fn map_review(r: &Row) -> rusqlite::Result<Review> {
         hidden: r.get::<_, i64>(8)? != 0,
         created_at: r.get(9)?,
         title: r.get(10)?,
+        seller_name: r.get(11)?,
     })
 }
 

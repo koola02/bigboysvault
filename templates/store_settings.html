@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Store settings · My store · {{ nav.brand }}{% endblock %}
+{% block content %}
+<section class="wrap admin st" id="storeSettings">
+  {% include "store_tabs.html" %}
+  <p class="mc-how">How your store looks and how buyers reach you. Your pay details are shown only to a buyer whose reservation you've accepted.</p>
+
+  <form class="me-card st-form" id="slugForm">
+    <h2 class="h2">Store address</h2>
+    <p class="me-how">Your store lives at <b>{{ site }}/store/<span id="slugNow">{{ p.m.slug }}</span></b>. Share that link anywhere.</p>
+    <div class="st-slug"><span>{{ site }}/store/</span><input name="slug" value="{{ p.m.slug }}" minlength="3" maxlength="30" pattern="[a-z0-9-]+" autocomplete="off" spellcheck="false" aria-label="Store address" required><button class="btn ghost" type="submit">Change</button></div>
+    <small class="me-how">Letters, numbers and dashes. Changing it breaks links you've already shared.</small>
+  </form>
+
+  <form class="me-card st-form" id="storeForm" enctype="multipart/form-data">
+    <h2 class="h2">The store</h2>
+    <div class="me-fields">
+      <label>Store name <small>shown at the top; blank uses your trainer name</small><input name="store_name" value="{{ p.m.store_name }}" maxlength="40" autocomplete="off"></label>
+      <label class="st-cover-pick">Cover photo <small>wide, like a banner</small>
+        <span class="st-cover-prev" id="coverPrev"{% if !p.m.has_cover() %} hidden{% endif %}><img src="{{ p.m.cover_photo }}" alt="" id="coverImg"></span>
+        <input type="file" name="cover" accept="image/*" id="coverFile">
+        <label class="chk"><input type="checkbox" class="sr" name="drop_cover" value="1"><span class="chk-box"></span> Remove the cover photo</label>
+      </label>
+      <label>Status
+        <select name="status">
+          <option value="Active"{% if p.m.status == "Active" %} selected{% endif %}>Active — open for orders</option>
+          <option value="Away"{% if p.m.status == "Away" %} selected{% endif %}>Away — open, but replies may be slow</option>
+          <option value="Vacation"{% if p.m.status == "Vacation" %} selected{% endif %}>Vacation — nobody can reserve or make offers</option>
+        </select>
+      </label>
+      <label>Location <small>city or area, for meetups</small><input name="location" value="{{ p.m.location }}" maxlength="80" autocomplete="off"></label>
+      <label>Contact <small>how to reach you, like a Messenger link or a number</small><textarea name="contact_info" rows="2" maxlength="300">{{ p.m.contact_info }}</textarea></label>
+      <label class="chk"><input type="checkbox" class="sr" name="contact_public" value="1"{% if p.m.contact_public %} checked{% endif %}><span class="chk-box"></span> Show my contact to everyone <small>(off: only signed-in trainers see it)</small></label>
+    </div>
+
+    <h2 class="h2">Links</h2>
+    <div class="me-fields st-links">
+      <label>Facebook page or profile<input type="url" name="fb_url" value="{{ p.m.fb_url }}" placeholder="https://facebook.com/…" maxlength="300"></label>
+      <label>Facebook group<input type="url" name="fb_group_url" value="{{ p.m.fb_group_url }}" placeholder="https://facebook.com/groups/…" maxlength="300"></label>
+      <label>Instagram<input type="url" name="ig_url" value="{{ p.m.ig_url }}" placeholder="https://instagram.com/…" maxlength="300"></label>
+      <label>TikTok<input type="url" name="tiktok_url" value="{{ p.m.tiktok_url }}" placeholder="https://tiktok.com/@…" maxlength="300"></label>
+      <label>Shopee<input type="url" name="shopee_url" value="{{ p.m.shopee_url }}" placeholder="https://shopee.ph/…" maxlength="300"></label>
+      <label>Other links <small>one per line: <code>Carousell | https://…</code>, or just the address</small><textarea name="links" rows="3" placeholder="Carousell | https://carousell.ph/u/…">{{ p.m.links }}</textarea></label>
+    </div>
+
+    <h2 class="h2">Getting paid</h2>
+    <p class="me-how">{{ nav.brand }} never handles money. A buyer pays you directly, in their own app, once you accept their reservation. These details are shown only then.</p>
+    <div class="me-fields">
+      <input type="hidden" name="pay_methods_sent" value="1">
+      <div class="st-methods">{% for m in methods %}<label class="chk"><input type="checkbox" class="sr" name="pay_method" value="{{ m }}"{% if p.m.has_pay(m) %} checked{% endif %}><span class="chk-box"></span> {{ m }}</label>{% endfor %}</div>
+      <label>How to pay <small>account name and number, meetup spots, your rules</small><textarea name="pay_info" rows="4" maxlength="600" placeholder="GCash: Juan D. · 0917 123 4567&#10;BPI: 1234 5678 90&#10;Meetups: SM North, weekends">{{ p.m.pay_info }}</textarea></label>
+    </div>
+
+    <h2 class="h2">Email</h2>
+    <div class="me-fields">
+      <label>Email <small>for notifications you switch on, and never shown to anyone</small><input type="email" name="email" value="{{ p.m.email }}" maxlength="120" autocomplete="email"></label>
+      <label class="chk"><input type="checkbox" class="sr" name="notify_views" value="1"{% if p.m.notify_views %} checked{% endif %}><span class="chk-box"></span> Tell me when people look at or save my cards <small>(once a day per card)</small></label>
+    </div>
+
+    <div class="me-save-row"><button class="btn" type="submit">Save</button><a class="linkbtn" href="{{ p.m.store_url() }}" target="_blank" rel="noopener">See my store ↗</a></div>
+  </form>
+</section>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="/static/admin-ui.js?v=9" defer></script>
+<script src="/static/store.js?v=1" defer></script>
+{% endblock %}

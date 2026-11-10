@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Sellers · Admin{% endblock %}
+{% block content %}
+<section class="wrap admin wide" id="adminSellers">
+  {% include "admin_tabs.html" %}
+  <h1 class="h1 a-title">Sellers</h1>
+  <p class="mc-how">{{ sellers_n }} trainers can run a store. {{ stores.len() }} have cards on sale right now.</p>
+
+  <div class="dash-grid">
+    <article class="dash-panel dash-wide">
+      <h2 class="dash-h">Tell every seller something</h2>
+      <p class="dash-sub">Goes to everyone's bell and notifications page (and email, for those who turned it on).</p>
+      <form id="announceForm" class="sheet-form">
+        <textarea name="message" rows="3" maxlength="500" required class="sheet-input" placeholder="New: you can now set an end date on a listing…"></textarea>
+        <input name="link" class="sheet-input" maxlength="200" placeholder="A link to open (optional), like /me/listings">
+        <button class="btn" type="submit">Send to everyone</button>
+      </form>
+    </article>
+
+    <article class="dash-panel">
+      <h2 class="dash-h">Custom cards to check{% if !flagged.is_empty() %} <span class="seg-n">{{ flagged.len() }}</span>{% endif %}</h2>
+      {% if flagged.is_empty() %}<p class="dash-sub">None waiting.</p>{% else %}
+      <ul class="dash-list st-top">{% for (c, who) in flagged %}<li data-flag="{{ c.id }}"><a href="/trainers/{{ c.member_id }}/cards/{{ c.id }}" data-float>{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="36" height="50" alt="" loading="lazy">{% endif %}<span class="db-t">{{ c.title }}</span><span class="db-n">{{ who }} · {{ c.cond }} · {{ c.price_text() }}</span></a><button type="button" class="linkbtn inline" data-clear-flag="{{ c.id }}">Checked ✓</button></li>{% endfor %}</ul>{% endif %}
+    </article>
+
+    <article class="dash-panel">
+      <h2 class="dash-h">Latest reviews</h2>
+      {% if reviews.is_empty() %}<p class="dash-sub">No reviews yet.</p>{% else %}
+      <ul class="dash-list">{% for r in reviews %}<li data-review="{{ r.id }}"{% if r.hidden %} class="is-hidden"{% endif %}><span class="db-t">{{ r.stars() }} {{ r.reviewer_name }} → <a href="/trainers/{{ r.seller_id }}" data-float>{{ r.seller_name }}</a>{% if !r.text.is_empty() %}: “{{ r.text }}”{% endif %}</span><span class="db-n">{{ r.when() }} · <button type="button" class="linkbtn inline" data-hide-review="{{ r.id }}" data-hidden="{{ r.hidden }}">{% if r.hidden %}Show{% else %}Hide{% endif %}</button></span></li>{% endfor %}</ul>{% endif %}
+    </article>
+
+    <article class="dash-panel dash-wide">
+      <h2 class="dash-h">Stores with cards on sale</h2>
+      {% if stores.is_empty() %}<p class="dash-sub">None yet.</p>{% else %}
+      <ul class="dash-list">{% for (m, s, cards) in stores %}<li><a href="{{ m.store_url() }}" target="_blank" rel="noopener"><span class="db-t">{{ m.store_title() }} <small>({{ m.name }})</small></span><span class="db-n">{{ s.on_sale }} on sale · {{ s.sold }} sold · {{ s.followers }} followers{% if s.reviews > 0 %} · ★ {{ s.rating }}{% endif %} · {{ m.status }}</span></a></li>{% endfor %}</ul>{% endif %}
+    </article>
+  </div>
+</section>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="/static/admin-ui.js?v=9" defer></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const A = window.Admin;
+  document.getElementById('announceForm')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = e.target, btn = f.querySelector('button'); btn.disabled = true;
+    try { const j = await A.postJSON('/admin/sellers/announce', { message: f.message.value, link: f.link.value }); A.toast(`Sent to ${j.n} trainers ✓`, { kind: 'ok' }); f.reset(); }
+    catch (err) { A.toast(err.message, { kind: 'err' }); }
+    btn.disabled = false;
+  });
+  document.addEventListener('click', async (e) => {
+    const c = e.target.closest('[data-clear-flag]');
+    if (c) { try { await A.postJSON(`/admin/sellers/flag/${c.dataset.clearFlag}/clear`, {}); c.closest('li').remove(); A.toast('Checked ✓', { kind: 'ok' }); } catch (err) { A.toast(err.message, { kind: 'err' }); } }
+    const h = e.target.closest('[data-hide-review]');
+    if (h) {
+      const hidden = h.dataset.hidden !== 'true';
+      try { await A.postJSON(`/admin/sellers/reviews/${h.dataset.hideReview}`, { hidden }); h.dataset.hidden = String(hidden); h.textContent = hidden ? 'Show' : 'Hide'; h.closest('li').classList.toggle('is-hidden', hidden); A.toast(hidden ? 'Hidden' : 'Shown ✓', { kind: 'ok' }); }
+      catch (err) { A.toast(err.message, { kind: 'err' }); }
+    }
+  });
+});
+</script>
+{% endblock %}

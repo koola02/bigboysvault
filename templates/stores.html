@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Stores · {{ nav.brand }}{% endblock %}
+{% block content %}
+<section class="wrap trainers stores-page">
+  <div class="tr-head">
+    <p class="eyebrow plate">Trainers' stores</p>
+    <h1 class="h1">Stores</h1>
+    <p class="tr-sub">Cards for sale by the trainers of {{ nav.brand }}. Reserve a card, pay the seller directly, and leave a review when it arrives.</p>
+    {% if let Some(u) = me %}<a class="btn" href="/me/store">My store</a>{% else %}<a class="btn" href="/join">Open a store</a><a class="linkbtn" href="/join?signin=1">Sign in</a>{% endif %}
+  </div>
+  {% if stores.is_empty() %}
+  <p class="empty">No store has cards on sale yet. {% if me.is_some() %}<a href="/me/listings">Be the first.</a>{% else %}<a href="/join">Join</a> and be the first.{% endif %}</p>
+  {% else %}
+  <div class="sellers-list">
+    {% for (m, s, cards) in stores %}
+    <article class="seller-card{% if m.has_cover() %} has-cover{% endif %}" style="{% if m.has_cover() %}--cover:url('{{ m.cover_photo }}'){% endif %}">
+      <div class="seller-vouch-head">
+        <div class="svh-main">
+          <a class="svh-av-link" href="{{ m.store_url() }}">{% if m.has_avatar() %}<img class="av av-lg" src="{{ m.avatar }}" width="96" height="96" alt="">{% else %}<span class="av av-lg">{{ m.initial() }}</span>{% endif %}</a>
+          <div class="svh-meta">
+            <div class="svh-name-row">
+              <a class="svh-name" href="{{ m.store_url() }}">{{ m.store_title() }}</a>
+              {% if m.on_vacation() %}<span class="seller-badge">On vacation</span>{% else if m.is_away() %}<span class="seller-badge">Away</span>{% endif %}
+              {% if s.reviews > 0 %}<span class="stars">★ {{ s.rating }} · {{ s.reviews }}</span>{% endif %}
+            </div>
+            <p class="svh-worth">{{ s.on_sale }} on sale · {{ s.sold }} sold · {{ s.followers }} follower{% if s.followers != 1 %}s{% endif %}{% if !m.location.is_empty() %} · 📍 {{ m.location }}{% endif %}</p>
+            {% if !m.bio.is_empty() %}<p class="svh-bio">{{ m.bio }}</p>{% endif %}
+            {% if !m.pay_list().is_empty() %}<div class="svh-tags">{% for pm in m.pay_list() %}<span class="sf-pay">{{ pm }}</span>{% endfor %}</div>{% endif %}
+          </div>
+        </div>
+        <div class="svh-act"><a class="btn ghost" href="{{ m.store_url() }}">Visit store →</a></div>
+      </div>
+      {% if !cards.is_empty() %}
+      <div class="seller-cards-row">
+        {% for c in cards %}
+        <a class="card" href="/trainers/{{ m.id }}/cards/{{ c.id }}" data-float data-c="{{ c.cond_class() }}">
+          <div class="card-img">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="{{ c.title }}">{% endif %}</div>
+          <div class="card-t">{{ c.title }}</div>
+          <div class="card-m"><span class="card-cond" data-c="{{ c.cond_class() }}">{{ c.cond }}</span></div>
+          {% if c.has_price() %}<div class="card-p"><span class="worth">{{ c.price_text() }}</span></div>{% endif %}
+        </a>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+  {% endif %}
+</section>
+{% endblock %}

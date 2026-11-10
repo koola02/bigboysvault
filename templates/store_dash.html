@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% block title %}Dashboard · My store · {{ nav.brand }}{% endblock %}
+{% block content %}
+<section class="wrap admin wide dash st" id="storeDash">
+  {% include "store_tabs.html" %}
+  <p class="mc-how">How your store is doing, from your cards, your visitors and your sales. Everything here is live.</p>
+
+  <div class="dash-kpis">
+    <div class="kpi kpi-hero"><span>On sale</span><b>{{ d.active + d.reserved }}</b><small>{{ d.listings }} listed · {{ d.reserved }} reserved</small></div>
+    <div class="kpi"><span>Stock value</span><b>{{ d.value_text() }}</b><small>asking prices × stock</small></div>
+    <div class="kpi"><span>Sold</span><b>{{ d.sold_units }}</b><small>{{ d.sales.all_n }} sale{% if d.sales.all_n != 1 %}s{% endif %} ever</small></div>
+    <div class="kpi"><span>Views</span><b>{{ d.views7 }}</b><small>last 7 days · {{ d.views30 }} in 30</small></div>
+    <div class="kpi"><span>Followers</span><b>{{ d.followers }}</b><small>{% if d.reviews > 0 %}★ {{ d.rating }} from {{ d.reviews }} review{% if d.reviews != 1 %}s{% endif %}{% else %}no reviews yet{% endif %}</small></div>
+    <div class="kpi"><span>Binders</span><b>{{ d.binders }}</b><small><a href="/me/binders">arrange your cards</a></small></div>
+  </div>
+
+  <div class="dash-grid">
+    <article class="dash-panel{% if d.todo() > 0 %} st-todo-on{% endif %}">
+      <h2 class="dash-h">To do{% if d.todo() > 0 %} <span class="seg-n">{{ d.todo() }}</span>{% endif %}</h2>
+      {% if d.todo() == 0 %}<p class="dash-sub">All caught up. Nothing is waiting for you.</p>{% else %}
+      <ul class="dash-list st-todo">
+        {% if d.pending_reservations > 0 %}<li><a href="/me/orders"><span class="db-t"><b>{{ d.pending_reservations }}</b> reservation{% if d.pending_reservations != 1 %}s{% endif %} to answer or mark paid</span></a></li>{% endif %}
+        {% if d.pending_offers > 0 %}<li><a href="/me/orders"><span class="db-t"><b>{{ d.pending_offers }}</b> offer{% if d.pending_offers != 1 %}s{% endif %} to answer</span></a></li>{% endif %}
+        {% if d.open_questions > 0 %}<li><a href="/me/orders?tab=questions"><span class="db-t"><b>{{ d.open_questions }}</b> question{% if d.open_questions != 1 %}s{% endif %} from buyers</span></a></li>{% endif %}
+        {% for c in d.expiring %}<li><a href="/me/listings?id={{ c.id }}"><span class="db-t">{{ c.title }}: {% if c.status == "Expired" %}expired, renew it{% else %}{{ c.expires_text() }}{% endif %}</span></a></li>{% endfor %}
+      </ul>{% endif %}
+    </article>
+
+    <article class="dash-panel">
+      <h2 class="dash-h">Sales</h2>
+      <div class="st-sales">
+        <div><span>This week</span><b>{{ d.sales.week_text() }}</b><small>{{ d.sales.week_n }} sale{% if d.sales.week_n != 1 %}s{% endif %}</small></div>
+        <div><span>This month</span><b>{{ d.sales.month_text() }}</b><small>{{ d.sales.month_n }} sale{% if d.sales.month_n != 1 %}s{% endif %}</small></div>
+        <div><span>All time</span><b>{{ d.sales.all_text() }}</b><small>{{ d.sales.units }} card{% if d.sales.units != 1 %}s{% endif %}</small></div>
+      </div>
+      {% if d.recent_sales.is_empty() %}<p class="dash-sub">No sales yet. When a buyer pays and you mark it paid, it shows here.</p>{% else %}
+      <ul class="dash-list">{% for s in d.recent_sales %}<li><a href="/me/orders?tab=sales"><span class="db-t">{{ s.title }} ×{{ s.qty }} · {{ s.buyer_name }}</span><span class="db-n">{{ s.amount_text() }} · {{ s.when() }}</span></a></li>{% endfor %}</ul>
+      <p class="dash-foot"><a href="/me/orders?tab=sales">All sales →</a></p>{% endif %}
+    </article>
+
+    <article class="dash-panel dash-wide">
+      <h2 class="dash-h">Views, last 30 days</h2>
+      {% if d.views30 == 0 %}<p class="dash-sub">Nobody has opened one of your cards yet. Share your store link: <a href="{{ p.m.store_url() }}">{{ nav.site }}{{ p.m.store_url() }}</a></p>{% else %}
+      <div class="st-chart" role="img" aria-label="Views per day for the last 30 days">
+        {% for (label, n, pct) in d.chart %}<i style="--h:{{ pct }}%" title="{{ label }}: {{ n }}"><b>{{ n }}</b></i>{% endfor %}
+      </div>
+      <div class="st-chart-x"><span>{% if let Some(first) = d.chart.first() %}{{ first.0 }}{% endif %}</span><span>Today</span></div>{% endif %}
+    </article>
+
+    <article class="dash-panel">
+      <h2 class="dash-h">Most looked at</h2>
+      {% if d.top_cards.is_empty() %}<p class="dash-sub">No looks yet.</p>{% else %}
+      <ul class="dash-list st-top">{% for c in d.top_cards %}<li><a href="/me/listings?id={{ c.id }}">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="36" height="50" alt="" loading="lazy">{% endif %}<span class="db-t">{{ c.title }}</span><span class="db-n">{{ c.view_n }} view{% if c.view_n != 1 %}s{% endif %}{% if c.save_n > 0 %} · {{ c.save_n }} saved{% endif %}</span></a></li>{% endfor %}</ul>{% endif %}
+    </article>
+
+    <article class="dash-panel">
+      <h2 class="dash-h">Popular binders</h2>
+      {% if d.top_binders.is_empty() %}<p class="dash-sub">Make a binder to group your cards: <a href="/me/binders">Binders</a>.</p>{% else %}
+      <ul class="dash-list">{% for (b, n) in d.top_binders %}<li><a href="{{ p.m.store_url() }}/binders/{{ b.slug }}"><span class="db-t">{{ b.title }}</span><span class="db-n">{{ b.count }} card{% if b.count != 1 %}s{% endif %} · {{ n }} view{% if *n != 1 %}s{% endif %}</span></a></li>{% endfor %}</ul>{% endif %}
+    </article>
+
+    <article class="dash-panel dash-wide">
+      <h2 class="dash-h">Recent activity</h2>
+      {% if d.recent.is_empty() %}<p class="dash-sub">Nothing yet. <a href="/me/listings">Add your first cards</a>.</p>{% else %}
+      <ul class="dash-list st-activity">{% for a in d.recent %}<li data-k="{{ a.kind }}"><a href="{{ a.link }}"><span class="db-t">{{ a.text }}</span><span class="db-n">{{ a.when() }}</span></a></li>{% endfor %}</ul>{% endif %}
+    </article>
+  </div>
+</section>
+{% endblock %}

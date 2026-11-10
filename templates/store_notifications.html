@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}Notifications · My store · {{ nav.brand }}{% endblock %}
+{% block content %}
+<section class="wrap admin st" id="storeNotifs" data-push-key="{{ push_key }}">
+  {% include "store_tabs.html" %}
+  <div class="st-bar">
+    <p class="mc-how">What's happened in your store. Opening this page marks them read.</p>
+    <button type="button" class="btn ghost" id="readAll">Mark all read</button>
+  </div>
+
+  {% if notes.is_empty() %}<div class="me-empty st-empty"><b>Nothing yet.</b><span>Follows, questions, offers, reservations and sales show up here.</span></div>{% endif %}
+  <ul class="st-notes">
+    {% for n in notes %}
+    <li class="st-note{% if !n.is_read %} unread{% endif %}" data-k="{{ n.kind }}"><a href="{% if n.link.is_empty() %}#{% else %}{{ n.link }}{% endif %}"><span class="st-note-k">{{ n.kind }}</span><span class="st-note-m">{{ n.message }}</span><span class="st-note-t">{{ n.when() }}</span></a></li>
+    {% endfor %}
+  </ul>
+  {% if pages > 1 %}<p class="st-pager">{% if page > 0 %}<a class="linkbtn" href="/me/notifications?page={{ page - 1 }}">← Newer</a>{% endif %}<span>Page {{ page + 1 }} of {{ pages }}</span>{% if page + 1 < pages %}<a class="linkbtn" href="/me/notifications?page={{ page + 1 }}">Older →</a>{% endif %}</p>{% endif %}
+
+  <section class="me-card st-form">
+    <h2 class="h2">What to tell me about</h2>
+    <p class="me-how">On the site means the bell and this page. Email needs an address in <a href="/me/settings">Store settings</a>{% if !has_email %} (you haven't added one yet){% endif %}.</p>
+    <table class="st-table st-prefs">
+      <thead><tr><th>When</th><th>On the site</th><th>Email</th><th>Push</th></tr></thead>
+      <tbody>
+        {% for pr in prefs %}
+        <tr data-event="{{ pr.event }}">
+          <td>{{ pr.label }}</td>
+          <td><label class="chk"><input type="checkbox" class="sr" data-ch="site"{% if pr.site %} checked{% endif %} aria-label="On the site: {{ pr.label }}"><span class="chk-box"></span></label></td>
+          <td><label class="chk"><input type="checkbox" class="sr" data-ch="email"{% if pr.email %} checked{% endif %}{% if !has_email %} disabled{% endif %} aria-label="Email: {{ pr.label }}"><span class="chk-box"></span></label></td>
+          <td><label class="chk"><input type="checkbox" class="sr" data-ch="push"{% if pr.push %} checked{% endif %}{% if push_key.is_empty() %} disabled{% endif %} aria-label="Push: {{ pr.label }}"><span class="chk-box"></span></label></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if push_key.is_empty() %}<p class="me-how">Push notifications to your phone aren't switched on for this site yet.</p>{% else %}<p class="me-how"><button type="button" class="btn ghost" id="pushOn">Allow push notifications on this device</button></p>{% endif %}
+  </section>
+</section>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="/static/admin-ui.js?v=9" defer></script>
+<script src="/static/store.js?v=1" defer></script>
+{% endblock %}

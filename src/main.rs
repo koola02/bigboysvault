@@ -1,6 +1,7 @@
 mod admin;
 mod api;
 mod community;
+mod store;
 
 use askama::Template;
 use axum::{
@@ -1062,13 +1063,42 @@ async fn main() {
         .route("/trainers/{id}", get(community::trainer))
         .route("/trainer/{slug}", get(community::trainer_by_slug))
         .route("/trainer/{slug}/binders/{binder_slug}", get(community::seller_binder))
-        .route("/sellers", get(community::sellers))
+        .route("/sellers", get(store::directory))
         .route("/trainers/{id}/cards/{card}", get(community::member_card))
         .route("/me", get(community::me))
-        .route("/me/binders", get(community::me_binders).post(community::me_create_binder))
+        // the seller panel
+        .route("/me/store", get(store::dash))
+        .route("/me/listings", get(store::listings))
+        .route("/me/listings/bulk", post(store::bulk_listings))
+        .route("/me/listings/move", post(store::move_cards))
+        .route("/me/listings/{id}", post(store::edit_listing))
+        .route("/me/listings/{id}/renew", post(store::renew_listing))
+        .route("/me/binders", get(store::binders).post(community::me_create_binder))
         .route("/me/binders/{id}/rename", post(community::me_rename_binder))
         .route("/me/binders/{id}/delete", post(community::me_delete_binder))
         .route("/me/binders/{id}/cover", post(community::me_binder_cover))
+        .route("/me/binders/{id}/edit", post(store::edit_binder))
+        .route("/me/binders/{id}/order", post(store::order_binder))
+        .route("/me/orders", get(store::orders))
+        .route("/me/orders/reservations/{id}", post(store::answer_reservation))
+        .route("/me/orders/offers/{id}", post(store::answer_offer))
+        .route("/me/orders/questions/{id}/reply", post(store::reply_question))
+        .route("/me/reviews", post(store::add_review))
+        .route("/me/reviews/{id}/reply", post(store::reply_review))
+        .route("/me/settings", get(store::settings).post(store::save_settings).layer(axum::extract::DefaultBodyLimit::max(12 * 1024 * 1024)))
+        .route("/me/settings/slug", post(store::save_slug))
+        .route("/me/notifications", get(store::notifications))
+        .route("/me/notifications/prefs", post(store::save_pref))
+        .route("/api/notifications/push", post(store::push_subscribe))
+        .route("/api/cards/{id}/save", post(store::save_card))
+        // the public storefront
+        .route("/stores", get(store::directory))
+        .route("/store/{slug}", get(store::storefront))
+        .route("/store/{slug}/binders/{binder_slug}", get(store::store_binder))
+        .route("/store/{slug}/follow", post(store::follow))
+        .route("/store/{slug}/reserve", post(store::reserve))
+        .route("/store/{slug}/offer", post(store::make_offer))
+        .route("/store/{slug}/ask", post(store::ask_seller))
         .route("/me/profile", post(community::save_profile).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)))
         .route("/me/who", get(community::who))
         .route("/chat", get(community::chat_page))
@@ -1126,6 +1156,10 @@ async fn main() {
         .route("/admin/page/list", get(admin::page_editor))
         .route("/admin/settings", post(admin::settings))
         .route("/admin/settings/condition-shares", post(admin::settings_condition_shares))
+        .route("/admin/sellers", get(store::admin_sellers))
+        .route("/admin/sellers/announce", post(store::announce))
+        .route("/admin/sellers/reviews/{id}", post(store::admin_review))
+        .route("/admin/sellers/flag/{id}/clear", post(store::admin_clear_flag))
         .route("/admin/blocks/add", post(admin::block_add))
         .route("/admin/blocks/order", post(admin::blocks_order))
         .route("/admin/pick", get(admin::pick))
@@ -1149,7 +1183,9 @@ async fn main() {
         .layer(SetResponseHeaderLayer::if_not_present(header::X_FRAME_OPTIONS, HeaderValue::from_static("SAMEORIGIN")))
         .layer(axum::middleware::from_fn(robots_header))
         .layer(CompressionLayer::new())
-        .with_state(app);
+        .with_state(app.clone());
+    // Mail goes out and old listings come off sale in the background.
+    store::start_housekeeping(app);
 
     let addr = format!("{host}:{port}");
     let listener = tokio::net::TcpListener::bind(&addr).await.expect("bind");

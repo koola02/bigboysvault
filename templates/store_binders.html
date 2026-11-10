@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+{% block title %}Binders · My store · {{ nav.brand }}{% endblock %}
+{% block content %}
+<section class="wrap admin wide st" id="storeBinders" data-store="{{ p.m.store_url() }}" data-site="{{ nav.site }}">
+  {% include "store_tabs.html" %}
+  <p class="mc-how">Binders group your cards: by set, by Pokémon, by price, however you like. <b>Public</b> binders show in your store, <b>Unlisted</b> ones only to people with the link, <b>Private</b> ones only to you.</p>
+
+  <form class="st-newbinder" id="newBinder">
+    <input name="title" maxlength="60" placeholder="New binder, like “Base Set” or “Under ₱100”" aria-label="New binder name" required autocomplete="off">
+    <button class="btn" type="submit">Make a binder</button>
+  </form>
+
+  {% if binders.is_empty() %}<div class="me-empty st-empty"><b>No binders yet.</b><span>Make one above, then drag your cards into it.</span></div>{% endif %}
+  <div class="st-binders">
+    {% for b in binders %}
+    <article class="st-binder" data-id="{{ b.id }}" data-slug="{{ b.slug }}">
+      <div class="st-binder-cover">{% if b.has_image() %}<img src="{{ b.cover_image }}" width="120" height="168" alt="" loading="lazy">{% else %}<span class="thumb-empty">No cover</span>{% endif %}</div>
+      <div class="st-binder-body">
+        <input class="st-binder-title" value="{{ b.title }}" maxlength="60" data-title aria-label="Binder name">
+        <textarea class="st-binder-desc" rows="2" maxlength="300" placeholder="What's in this binder? (optional)" data-desc aria-label="Binder description">{{ b.description }}</textarea>
+        <div class="st-binder-row">
+          <select data-vis aria-label="Who can see this binder"><option value="Public"{% if b.visibility == "Public" %} selected{% endif %}>Public</option><option value="Unlisted"{% if b.visibility == "Unlisted" %} selected{% endif %}>Unlisted (link only)</option><option value="Private"{% if b.visibility == "Private" %} selected{% endif %}>Private (just me)</option></select>
+          <span class="st-binder-n">{{ b.count }} card{% if b.count != 1 %}s{% endif %}</span>
+          <button type="button" class="linkbtn inline" data-share>Copy link</button>
+          <a class="linkbtn inline" href="{{ p.m.store_url() }}/binders/{{ b.slug }}" target="_blank" rel="noopener">Open ↗</a>
+          <button type="button" class="linkbtn inline danger" data-del-binder>Delete</button>
+        </div>
+        <details class="st-binder-cards">
+          <summary>Arrange the cards</summary>
+          <p class="me-how">Drag to change the order. Tap ★ to make a card the cover. Tick cards and pick a binder below to move them.</p>
+          <ul class="me-binder st-sort" data-binder="{{ b.id }}">
+            {% for c in cards %}{% if let Some(x) = c.binder_id %}{% if *x == b.id %}
+            <li class="me-c" data-id="{{ c.id }}"{% if let Some(cv) = b.cover_card %}{% if *cv == c.id %} data-cover{% endif %}{% endif %}>
+              <span class="me-c-pic">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" alt="" draggable="false">{% endif %}
+                <button type="button" class="me-star" data-nodrag data-cover-btn aria-label="Use {{ c.title }} as the cover">★</button>
+                <label class="chk ct-chk" data-nodrag><input type="checkbox" class="sr" data-pick="{{ c.id }}" aria-label="Select {{ c.title }}"><span class="chk-box"></span></label>
+              </span>
+              <b class="me-c-t">{{ c.title }}</b>
+              <small class="me-c-s">{{ c.cond }} · {{ c.price_text() }}</small>
+            </li>
+            {% endif %}{% endif %}{% endfor %}
+          </ul>
+        </details>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+
+  <section class="st-loose">
+    <h2 class="h2">Not in a binder <small id="looseN"></small></h2>
+    <p class="me-how">Tick cards here (or in a binder above), then choose where they go.</p>
+    <ul class="me-binder st-sort" data-binder="">
+      {% for c in cards %}{% if c.binder_id.is_none() %}
+      <li class="me-c" data-id="{{ c.id }}">
+        <span class="me-c-pic">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" alt="" draggable="false">{% endif %}
+          <label class="chk ct-chk" data-nodrag><input type="checkbox" class="sr" data-pick="{{ c.id }}" aria-label="Select {{ c.title }}"><span class="chk-box"></span></label>
+        </span>
+        <b class="me-c-t">{{ c.title }}</b>
+        <small class="me-c-s">{{ c.cond }} · {{ c.price_text() }}</small>
+      </li>
+      {% endif %}{% endfor %}
+    </ul>
+  </section>
+</section>
+<div class="selbar" id="moveBar" hidden role="toolbar" aria-label="Move cards">
+  <span class="selbar-n" id="moveCount">0 selected</span>
+  <div class="selbar-acts">
+    <select id="moveTo" aria-label="Move to"><option value="">Out of its binder</option>{% for b in binders %}<option value="{{ b.id }}">{{ b.title }}</option>{% endfor %}</select>
+    <button type="button" class="pbtn" id="moveGo">Move</button>
+    <button type="button" class="ibtn" id="moveClear" aria-label="Clear selection">✕</button>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="/static/dragsort.js?v=5" defer></script>
+<script src="/static/admin-ui.js?v=9" defer></script>
+<script src="/static/store.js?v=1" defer></script>
+{% endblock %}

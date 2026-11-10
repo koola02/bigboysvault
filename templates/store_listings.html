@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Listings · My store · {{ nav.brand }}{% endblock %}
+{% block content %}
+<section class="wrap admin wide st" id="listings" data-max="{{ max }}" data-total="{{ total }}" data-focus="{{ focus }}" data-store="{{ p.m.store_url() }}">
+  {% include "store_tabs.html" %}
+  <p class="mc-how">Your cards for sale. Change the <b>price</b>, <b>condition</b>, <b>stock</b> or <b>status</b> right here. It saves by itself. Tick cards to change many at once.</p>
+
+  <div class="st-bar">
+    <form class="st-filters" method="get" action="/me/listings" id="listFilters">
+      <input type="search" name="q" value="{{ f.q }}" placeholder="Find a card by name, set or number" aria-label="Find a card" autocomplete="off">
+      <select name="status" aria-label="Status"><option value="">Every status</option>{% for s in statuses %}<option value="{{ s }}"{% if f.status.as_str() == *s %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      <select name="binder" aria-label="Binder"><option value="">Every binder</option>{% for b in binders %}<option value="{{ b.id }}"{% if let Some(x) = f.binder %}{% if *x == b.id %} selected{% endif %}{% endif %}>{{ b.title }} ({{ b.count }})</option>{% endfor %}</select>
+      <select name="sort" aria-label="Order">
+        <option value="">My order</option>
+        <option value="newest"{% if f.sort == "newest" %} selected{% endif %}>Newest first</option>
+        <option value="price-desc"{% if f.sort == "price-desc" %} selected{% endif %}>Most expensive first</option>
+        <option value="price-asc"{% if f.sort == "price-asc" %} selected{% endif %}>Cheapest first</option>
+        <option value="views"{% if f.sort == "views" %} selected{% endif %}>Most looked at</option>
+        <option value="stock"{% if f.sort == "stock" %} selected{% endif %}>Lowest stock</option>
+        <option value="title"{% if f.sort == "title" %} selected{% endif %}>A to Z</option>
+      </select>
+    </form>
+    <button type="button" class="btn" id="addOpen">+ Add cards</button>
+  </div>
+
+  <section class="st-add" id="addPanel" hidden>
+    <div class="st-add-head"><h2 class="h2">Add cards</h2><button type="button" class="ibtn" id="addClose" aria-label="Close">✕</button></div>
+    <div class="seg st-add-tabs" role="tablist">
+      <button type="button" class="on" data-add="search" role="tab" aria-selected="true">Search</button>
+      <button type="button" data-add="scan" role="tab" aria-selected="false">Scan a card</button>
+      <button type="button" data-add="own" role="tab" aria-selected="false">Not in the list</button>
+    </div>
+    <div class="st-add-pane" data-pane="search">
+      <div class="me-find">
+        <input type="search" id="addQ" placeholder="Card name, like Pikachu 58" aria-label="Find a card" autocomplete="off" enterkeyhint="search">
+        <div class="lang-sw me-lang" id="addLang" role="group" aria-label="Card language">
+          <button type="button" data-lang="en" aria-pressed="true">English</button>
+          <button type="button" data-lang="ja" aria-pressed="false">日本語</button>
+          <button type="button" data-lang="zh" aria-pressed="false">中文</button>
+        </div>
+      </div>
+      <p class="me-state" id="addState" aria-live="polite">Type a name and tap the card you're selling. You can add the same card twice, in different conditions.</p>
+      <div class="me-results" id="addResults"></div>
+    </div>
+    <div class="st-add-pane" data-pane="scan" hidden>
+      <label class="me-up-pic st-scan-pic"><input type="file" accept="image/*" capture="environment" class="sr" id="scanFile"><img id="scanShot" alt="" hidden><span id="scanHint"><b>📷 Take a photo of the card</b><small>We'll look for it in the card list. You pick the right one.</small></span></label>
+      <p class="me-state" id="scanState" aria-live="polite"></p>
+      <div class="me-results" id="scanResults"></div>
+    </div>
+    <div class="st-add-pane" data-pane="own" hidden>
+      <form id="ownForm" class="me-up">
+        <label class="me-up-pic"><input type="file" name="photo" accept="image/*" required class="sr" id="ownPhoto"><img id="ownShot" alt="" hidden><span id="ownHint"><b>Add a photo</b><small>Take one or choose one</small></span></label>
+        <div class="me-fields">
+          <label>Card name<input name="name" maxlength="120" required placeholder="Like Charizard ex" autocomplete="off"></label>
+          <label>Set <small>if you know it</small><input name="set" maxlength="80" autocomplete="off"></label>
+          <label>Condition<select name="cond">{% for o in conditions %}<option>{{ o }}</option>{% endfor %}</select></label>
+          <label>Price ₱<input name="value" type="number" min="0" step="1" inputmode="numeric"></label>
+          <label class="chk"><input type="checkbox" class="sr" name="flag" value="1"><span class="chk-box"></span> Ask the vault to check this card</label>
+          <button class="btn" type="submit">Add to my store</button>
+          <p class="me-how">A card from your own photo. It shows in your store, not in the vault.</p>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <p class="st-count"><span id="shownN">{{ cards.len() }}</span> of {{ total }} card{% if total != 1 %}s{% endif %} · <label class="chk"><input type="checkbox" class="sr" id="selAll"><span class="chk-box"></span> Select all shown</label></p>
+  {% if cards.is_empty() %}
+  <div class="me-empty st-empty" id="listEmpty">{% if total == 0 %}<b>Your store is empty.</b><span>Tap <b>+ Add cards</b> to list your first card. Prices are suggested from today's market.</span>{% else %}<b>No cards match.</b><span>Try another word, or clear the filters.</span>{% endif %}</div>
+  {% endif %}
+  <ul class="rows mc-grid st-grid" id="rows">
+    {% for c in cards %}
+    <li class="crow ctile st-tile" data-id="{{ c.id }}" data-status="{{ c.status }}" data-market="{{ c.value }}" data-own="{{ c.value_own }}" data-cond="{{ c.cond }}" data-qty="{{ c.qty }}" data-c="{{ c.cond_class() }}"{% if c.own_photo() %} data-own-photo{% endif %}{% if let Some(b) = c.binder_id %} data-binder="{{ b }}"{% endif %}>
+      <label class="chk ct-chk" title="Select"><input type="checkbox" class="sr" data-sel="{{ c.id }}" aria-label="Select {{ c.title }}"><span class="chk-box"></span></label>
+      <span class="st-status" data-s="{{ c.status }}">{{ c.status }}</span>
+      <a class="ct-img" href="/trainers/{{ c.member_id }}/cards/{{ c.id }}" data-float aria-label="See {{ c.title }}">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="">{% else %}<span class="thumb-empty">No photo</span>{% endif %}</a>
+      <div class="ct-info">
+        <b class="ct-t">{{ c.title }}</b>
+        <small class="ct-set">{{ c.card_set }}{% if !c.number.is_empty() %} · {{ c.number }}{% endif %}{% if !c.finish.is_empty() %} · {{ c.finish }}{% endif %}</small>
+        <small class="st-meta">{{ c.view_n }} view{% if c.view_n != 1 %}s{% endif %}{% if c.save_n > 0 %} · {{ c.save_n }} saved{% endif %}{% if c.sold > 0 %} · {{ c.sold }} sold{% endif %}{% if !c.expires_text().is_empty() %} · <span class="st-exp">{{ c.expires_text() }}</span>{% endif %}</small>
+      </div>
+      <label class="ct-pricebox"><span aria-hidden="true">₱</span><input type="text" inputmode="decimal" autocomplete="off" value="{{ c.own_text() }}" placeholder="{% if c.value > 0.0 %}{{ c.price_text() }}{% else %}Price{% endif %}" data-price aria-label="Price of {{ c.title }}"></label>
+      <p class="me-c-sug st-sug"></p>
+      <select class="ct-cond" data-cond aria-label="Condition of {{ c.title }}">{% if !c.is_standard_cond() %}<option selected>{{ c.cond }}</option>{% endif %}{% for o in conditions %}<option{% if *o == c.cond %} selected{% endif %}>{{ o }}</option>{% endfor %}<option value="__own">Type my own…</option></select>
+      <div class="st-row">
+        <span class="st-qty" aria-label="Stock"><button type="button" data-qty="-1" aria-label="One fewer">−</button><input type="number" min="0" max="9999" inputmode="numeric" value="{{ c.qty }}" data-qty-in aria-label="Copies in stock"><button type="button" data-qty="1" aria-label="One more">+</button></span>
+        <select data-status aria-label="Status">{% for s in statuses %}<option{% if *s == c.status %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+      </div>
+      <select data-binder aria-label="Binder"><option value="">No binder</option>{% for b in binders %}<option value="{{ b.id }}"{% if let Some(x) = c.binder_id %}{% if *x == b.id %} selected{% endif %}{% endif %}>{{ b.title }}</option>{% endfor %}</select>
+      <textarea class="ct-desc" rows="2" maxlength="500" placeholder="A note for buyers (optional)" aria-label="Notes about {{ c.title }}" data-notes>{{ c.notes }}</textarea>
+      <div class="st-tile-acts">
+        <button type="button" class="linkbtn inline" data-renew>{% if c.needs_update() %}Renew for 30 days{% else if c.expires_at > 0 %}Change end date{% else %}Set an end date{% endif %}</button>
+        <button type="button" class="linkbtn inline danger" data-del>Remove</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+<div class="selbar" id="selbar" hidden role="toolbar" aria-label="Bulk actions">
+  <span class="selbar-n" id="selCount">0 selected</span>
+  <div class="selbar-acts">
+    <button type="button" class="pbtn" data-bulk="price">Price</button>
+    <button type="button" class="pbtn" data-bulk="cond">Condition</button>
+    <button type="button" class="pbtn" data-bulk="status">Status</button>
+    <button type="button" class="pbtn" data-bulk="binder">Binder</button>
+    <button type="button" class="pbtn" data-bulk="stock">Stock</button>
+    <button type="button" class="pbtn" data-bulk="expiry">End date</button>
+    <button type="button" class="pbtn danger" data-bulk="delete">Remove</button>
+    <button type="button" class="ibtn" data-bulk="clear" aria-label="Clear selection" title="Clear selection">✕</button>
+  </div>
+</div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="/static/pricing.js?v=1" defer></script>
+<script src="/static/admin-ui.js?v=9" defer></script>
+<script src="/static/store.js?v=1" defer></script>
+{% endblock %}

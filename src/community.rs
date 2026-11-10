@@ -16,16 +16,16 @@ use std::path::PathBuf;
 const COOKIE: &str = "bbv_trainer";
 
 // ---------- small helpers ----------
-fn html(s: String) -> Response {
+pub(crate) fn html(s: String) -> Response {
     ([(header::CACHE_CONTROL, HeaderValue::from_static("no-store"))], Html(s)).into_response()
 }
-fn ok(v: Value) -> Response {
+pub(crate) fn ok(v: Value) -> Response {
     ([(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, "no-store")], v.to_string()).into_response()
 }
-fn fail(code: StatusCode, msg: &str) -> Response {
+pub(crate) fn fail(code: StatusCode, msg: &str) -> Response {
     (code, [(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, "no-store")], json!({ "error": msg }).to_string()).into_response()
 }
-fn render<T: Template>(t: T) -> Result<String, (StatusCode, String)> {
+pub(crate) fn render<T: Template>(t: T) -> Result<String, (StatusCode, String)> {
     t.render().map_err(ise)
 }
 
@@ -39,24 +39,24 @@ fn session_cookie(h: &HeaderMap, raw: &str, max_age: i64) -> String {
 }
 
 /// Who is signed in, if anyone.
-async fn current(app: &App, h: &HeaderMap) -> Result<Option<Member>, (StatusCode, String)> {
+pub(crate) async fn current(app: &App, h: &HeaderMap) -> Result<Option<Member>, (StatusCode, String)> {
     let Some(raw) = cookie_value(h) else { return Ok(None) };
     with_db(app, move |c| members::from_session(c, &raw)).await
 }
 
 /// Forms and buttons must come from this site, not from another page trying to act for a signed-in visitor.
-fn same_site(h: &HeaderMap) -> bool {
+pub(crate) fn same_site(h: &HeaderMap) -> bool {
     let Some(origin) = h.get(header::ORIGIN).and_then(|v| v.to_str().ok()) else { return true };
     let host = h.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or("");
     origin.split_once("://").map(|(_, o)| o) == Some(host)
 }
 
-fn client_ip(h: &HeaderMap) -> String {
+pub(crate) fn client_ip(h: &HeaderMap) -> String {
     h.get("fly-client-ip").and_then(|v| v.to_str().ok()).unwrap_or("local").to_string()
 }
 
 /// Counts attempts for a while. True means the limit has been reached.
-fn over_limit(app: &App, key: String, max: u32) -> bool {
+pub(crate) fn over_limit(app: &App, key: String, max: u32) -> bool {
     let n = app.limits.get(&key).unwrap_or(0) + 1;
     app.limits.insert(key, n);
     n > max
@@ -190,22 +190,6 @@ struct MePage {
     stats: members::SellerStats,
     max: i64,
     conditions: [&'static str; 10],
-}
-
-#[derive(Template)]
-#[template(path = "sellers.html")]
-struct SellersPage {
-    nav: Chrome,
-    sellers: Vec<SellerItem>,
-    me: Option<Member>,
-}
-
-pub struct SellerItem {
-    pub trainer: Member,
-    pub vouch_count: i64,
-    pub binders: Vec<members::MemberBinder>,
-    pub cards: Vec<MemberCard>,
-    pub highlight: Option<MemberCard>,
 }
 
 #[derive(Template)]
@@ -357,38 +341,6 @@ pub async fn trainers(State(app): State<App>, h: HeaderMap) -> Res {
     Ok(html(render(TrainersPage { nav, trainers: list, me })?))
 }
 
-pub async fn sellers(State(app): State<App>, h: HeaderMap) -> Res {
-    let me = current(&app, &h).await?;
-    let (mut nav, raw_sellers) = with_db(&app, |c| Ok((chrome(c)?, members::approved_sellers(c)?))).await?;
-    let mut sellers = Vec::new();
-    for t in raw_sellers {
-        let tid = t.id;
-        let (vouch_count, binders, cards) = with_db(&app, move |c| {
-            Ok((
-                members::vouches_count(c, tid)?,
-                members::binders_of(c, tid)?,
-                members::cards_of(c, tid)?,
-            ))
-        }).await?;
-        let highlight = t.highlight.and_then(|h| cards.iter().find(|c| c.id == h).cloned());
-        sellers.push(SellerItem {
-            trainer: t,
-            vouch_count,
-            binders,
-            cards,
-            highlight,
-        });
-    }
-    nav.seo = crate::Seo {
-        title: format!("Sellers · {}", nav.brand),
-        desc: format!("Meet the Pokémon card sellers of {}: browse verified community collections and binders.", nav.brand),
-        path: "/sellers".into(),
-        kind: "website",
-        ..Default::default()
-    };
-    Ok(html(render(SellersPage { nav, sellers, me })?))
-}
-
 pub async fn trainer_by_slug(State(app): State<App>, h: HeaderMap, Path(slug): Path<String>, Query(q): Query<PartQs>) -> Res {
     let s = slug.clone();
     let member = with_db(&app, move |c| members::by_slug(c, &s)).await?;
@@ -438,7 +390,7 @@ pub async fn seller_binder(State(app): State<App>, h: HeaderMap, Path((slug, b_s
     }))
 }
 
-async fn not_found(app: &App) -> Res {
+pub(crate) async fn not_found(app: &App) -> Res {
     Ok(crate::not_found(State(app.clone())).await)
 }
 
@@ -505,6 +457,9 @@ pub async fn member_card(State(app): State<App>, h: HeaderMap, Path((id, cid)): 
     if (!t.profile_ok || t.blocked) && me.as_ref().is_none_or(|m| m.id != t.id) && !admin::can_moderate(&app, &h) {
         return not_found(&app).await;
     }
+    // A look at a card in a store counts for its seller (once a day per viewer, never the owner).
+    let (cid2, who, viewer) = (c.id, crate::store::viewer_hash(&h), me.as_ref().map(|m| m.id));
+    with_db(&app, move |c| marcuru_rs::sellers::count_view(c, cid2, &who, viewer)).await.ok();
     Ok(html(if q.part.is_some() { render(MemberCardPart { t, c })? } else { render(MemberCardPage { nav, t, c })? }))
 }
 
@@ -517,7 +472,7 @@ pub async fn me(State(app): State<App>, h: HeaderMap) -> Res {
 }
 
 /// Signed in and really from this site, whatever their lock says. For things a locked trainer may still do: their password, deleting what's theirs.
-async fn acting_any(app: &App, h: &HeaderMap) -> Result<Result<Member, Response>, (StatusCode, String)> {
+pub(crate) async fn acting_any(app: &App, h: &HeaderMap) -> Result<Result<Member, Response>, (StatusCode, String)> {
     if !same_site(h) {
         return Ok(Err(fail(StatusCode::FORBIDDEN, "That request didn't come from this site.")));
     }
@@ -525,7 +480,7 @@ async fn acting_any(app: &App, h: &HeaderMap) -> Result<Result<Member, Response>
 }
 
 /// Every action on "My trainer" and every post starts here: signed in, really from this site, and not locked.
-async fn acting(app: &App, h: &HeaderMap) -> Result<Result<Member, Response>, (StatusCode, String)> {
+pub(crate) async fn acting(app: &App, h: &HeaderMap) -> Result<Result<Member, Response>, (StatusCode, String)> {
     Ok(match acting_any(app, h).await? {
         Ok(m) if m.locked() => Err(fail(StatusCode::FORBIDDEN, &format!("Your trainer is locked for another {}. You can't post or change anything until then.", m.lock_left()))),
         other => other,
@@ -551,7 +506,7 @@ fn store_avatar(bytes: Vec<u8>, dir: PathBuf, stem: String) -> Result<String, St
 
 /// One photo for a vouch: a full size and a small one, both re-made from the pixels. The server is small, so very large pictures are refused before they're opened.
 /// Returns (full, small, width, height, bytes on disk).
-fn store_photo(bytes: Vec<u8>, dir: PathBuf, stem: String) -> Result<(String, String, i64, i64, i64), String> {
+pub(crate) fn store_photo(bytes: Vec<u8>, dir: PathBuf, stem: String) -> Result<(String, String, i64, i64, i64), String> {
     use image::{codecs::jpeg::JpegEncoder, imageops::FilterType, DynamicImage, ImageReader};
     let (w, h) = ImageReader::new(std::io::Cursor::new(&bytes)).with_guessed_format().map_err(|e| e.to_string())?.into_dimensions().map_err(|e| e.to_string())?;
     if u64::from(w) * u64::from(h) > 24_000_000 {
@@ -574,11 +529,11 @@ fn store_photo(bytes: Vec<u8>, dir: PathBuf, stem: String) -> Result<(String, St
 }
 
 /// Room for vouch photos, so they can never fill the disk the whole site lives on. Raise it after growing the volume.
-fn photo_cap_mb() -> i64 {
+pub(crate) fn photo_cap_mb() -> i64 {
     std::env::var("PHOTO_SPACE_MB").ok().and_then(|v| v.parse().ok()).unwrap_or(650)
 }
 
-static PHOTO_GATE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+pub(crate) static PHOTO_GATE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
 
 pub async fn save_profile(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> Res {
     let m = match acting(&app, &h).await? {
@@ -859,8 +814,8 @@ pub async fn add_card(State(app): State<App>, h: HeaderMap, Json(req): Json<AddR
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
-    if m.cards >= members::MAX_CARDS {
-        return Ok(fail(StatusCode::CONFLICT, "Your binder is full. Take a card out first."));
+    if m.cards >= with_db(&app, |c| Ok(marcuru_rs::sellers::max_cards(c))).await? {
+        return Ok(fail(StatusCode::CONFLICT, "Your store is full. Take a card out first."));
     }
     // The details come from the catalogue, not from what the browser says.
     let info = match market::by_id_lang(&app.http, &app.fx, &req.id).await {
@@ -884,10 +839,11 @@ pub async fn add_card(State(app): State<App>, h: HeaderMap, Json(req): Json<AddR
     let image_large = pick(text("image_large"), req.image_large);
     let (id, card_id, set) = (m.id, req.id.chars().take(60).collect::<String>(), members::clean_line(&text("set"), 80));
     let (t2, n2, s2, i2, l2) = (title.clone(), number.clone(), set.clone(), image.clone(), image_large.clone());
-    let added = with_db(&app, move |c| members::add_card(c, id, &card_id, &t2, &n2, &s2, &i2, &l2)).await?;
+    // A store may list the same card more than once (say Near Mint and Lightly Played): add_listing numbers the copies.
+    let added = with_db(&app, move |c| marcuru_rs::sellers::add_listing(c, id, &card_id, &t2, &n2, &s2, &i2, &l2)).await?;
     match added {
         Added::Full => Ok(fail(StatusCode::CONFLICT, "Your binder is full. Take a card out first.")),
-        Added::Duplicate => Ok(fail(StatusCode::CONFLICT, "That card is already in your binder.")),
+        Added::Duplicate => Ok(fail(StatusCode::CONFLICT, "That card is already in your store.")),
         Added::Yes(cid) => {
             let (market, key) = (market_php(&info), req.id.chars().take(60).collect::<String>());
             let value = with_db(&app, move |c| {
@@ -991,16 +947,6 @@ pub async fn card_action(State(app): State<App>, h: HeaderMap, Path(cid): Path<i
 pub struct BinderReq {
     title: Option<String>,
     card_id: Option<i64>,
-}
-
-pub async fn me_binders(State(app): State<App>, h: HeaderMap) -> Res {
-    let m = match acting(&app, &h).await? {
-        Ok(m) => m,
-        Err(r) => return Ok(r),
-    };
-    let id = m.id;
-    let binders = with_db(&app, move |c| members::binders_of(c, id)).await?;
-    Ok(ok(json!({ "ok": true, "binders": binders })))
 }
 
 pub async fn me_create_binder(State(app): State<App>, h: HeaderMap, Json(req): Json<BinderReq>) -> Res {
@@ -1451,8 +1397,8 @@ pub async fn upload_card(State(app): State<App>, h: HeaderMap, mut mp: Multipart
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
-    if m.cards >= members::MAX_CARDS {
-        return Ok(fail(StatusCode::CONFLICT, "Your binder is full. Take a card out first."));
+    if m.cards >= with_db(&app, |c| Ok(marcuru_rs::sellers::max_cards(c))).await? {
+        return Ok(fail(StatusCode::CONFLICT, "Your store is full. Take a card out first."));
     }
     if over_limit(&app, format!("cardup|{}", m.id), 40) {
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of photos in a short time. Please take a short break and try again."));

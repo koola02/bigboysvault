@@ -14,19 +14,13 @@
   {% if m.locked() %}<p class="me-locked">🔒 Your trainer is locked for another {{ m.lock_left() }}. You can't post or change anything until then.</p>{% endif %}
   <p class="tp-stars">{% if m.stars > 0 %}<span class="stars stars-lg">★ {{ m.stars }}</span>{% endif %}<span class="worth worth-lg" id="meWorth"{% if m.worth <= 0.0 %} hidden{% endif %}>{{ m.worth_text() }}</span></p>
 
-  <section class="me-card dash-seller">
-    <h2 class="h2">Dashboard</h2>
-    <p class="me-how">An overview of your seller account.</p>
-    <div class="dash-tiles">
-      <div class="dtile"><p class="dt-t">Total Listings</p><p class="dt-n">{{ stats.total_listings }}</p></div>
-      <div class="dtile"><p class="dt-t">Active Listings</p><p class="dt-n">{{ stats.active_listings }}</p></div>
-      <div class="dtile"><p class="dt-t">Items Sold</p><p class="dt-n">{{ stats.items_sold }}</p></div>
-      <div class="dtile"><p class="dt-t">Binders</p><p class="dt-n">{{ stats.binder_count }}</p></div>
-      <div class="dtile"><p class="dt-t">Inventory Value</p><p class="dt-n">₱{{ stats.total_value }}</p></div>
-      <div class="dtile"><p class="dt-t">Views (30d)</p><p class="dt-n">{{ stats.recent_views }}</p></div>
-      <div class="dtile"><p class="dt-t">Pending Inquiries</p><p class="dt-n">{{ stats.pending_inquiries }}</p></div>
-      <div class="dtile"><p class="dt-t">Pending Offers</p><p class="dt-n">{{ stats.pending_offers }}</p></div>
+  <section class="me-card me-store">
+    <div>
+      <h2 class="h2">My store</h2>
+      <p class="me-how">Sell your cards: stock, prices, binders, orders and reviews, all in one place.</p>
+      <p class="me-store-n"><span><b>{{ stats.active_listings }}</b> on sale</span><span><b>{{ stats.items_sold }}</b> sold</span><span><b>{{ stats.binder_count }}</b> binder{% if stats.binder_count != 1 %}s{% endif %}</span>{% if stats.pending_offers + stats.pending_inquiries > 0 %}<span><b>{{ stats.pending_offers + stats.pending_inquiries }}</b> waiting</span>{% endif %}</p>
     </div>
+    <div class="me-top-acts"><a class="btn" href="/me/store">Open my store</a><a class="linkbtn" href="{{ m.store_url() }}" target="_blank" rel="noopener">See it ↗</a></div>
   </section>
 
   <form class="me-card me-profile" id="meProfile">
@@ -38,12 +32,9 @@
     <div class="me-fields">
       <label>Trainer name<input name="name" value="{{ m.name }}" maxlength="24" autocomplete="off" required></label>
       <label>About you <small><span id="bioCount">0</span> of 300</small><textarea name="bio" maxlength="300" rows="3" placeholder="What do you collect? Who's your favorite Pokémon?">{{ m.bio }}</textarea></label>
-      <label>Facebook profile URL <small>https://...</small><input type="url" name="fb_url" value="{{ m.fb_url }}" placeholder="https://facebook.com/..." maxlength="300"></label>
-      <label>TikTok profile URL <small>https://...</small><input type="url" name="tiktok_url" value="{{ m.tiktok_url }}" placeholder="https://tiktok.com/@..." maxlength="300"></label>
-      <label>Extra vouch links <small>One link per line</small><textarea name="links" rows="2" placeholder="https://... (Carousell, Facebook post, etc.)">{{ m.links }}</textarea></label>
       <div class="me-save-row">
         <button class="btn" type="submit">Save</button>
-        <a class="linkbtn" href="{{ m.seller_url() }}" target="_blank">See my public seller page →</a>
+        <a class="linkbtn" href="/me/settings">Links, location and how to pay are in Store settings →</a>
       </div>
     </div>
   </form>
