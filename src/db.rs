@@ -84,7 +84,7 @@ impl Product {
     pub fn srp(&self) -> Option<f64> {
         crate::pricing::suggest(self.market_php, self.srp_condition())
     }
-    /// One line for the owner: "SRP ₱8 · Lightly Played · 80% of Near Mint ₱10". Only a guide: the owner sets the price.
+    /// One line for the owner: "SRP ₱8 · Lightly Played (80% of Near Mint ₱10)", or "SRP ₱10 · Near Mint". Only a guide: the owner sets the price.
     pub fn srp_line(&self) -> String {
         if self.api_id.is_empty() {
             return String::new();
@@ -101,7 +101,8 @@ impl Product {
             return format!("Sealed: set your own price. Near Mint single is {nm}");
         }
         match (self.srp(), crate::pricing::factor(cond), crate::pricing::read_condition(cond)) {
-            (Some(srp), Some(share), Some(std)) => format!("SRP {} · {std} · {}% of Near Mint {nm}", peso(srp), (share * 100.0).round() as i64),
+            (Some(srp), Some(share), Some(std)) if (share * 100.0).round() as i64 == 100 => format!("SRP {} · {std}", peso(srp)),
+            (Some(srp), Some(share), Some(std)) => format!("SRP {} · {std} ({}% of Near Mint {nm})", peso(srp), (share * 100.0).round() as i64),
             _ => format!("SRP: condition not known. Near Mint is {nm}"),
         }
     }
@@ -1492,7 +1493,7 @@ mod dashboard_tests {
         assert_eq!(p.srp_line(), "SRP: no market price yet");
         p.market_php = 100.0;
         assert_eq!(p.srp(), Some(80.0));
-        assert_eq!(p.srp_line(), "SRP ₱80 · Lightly Played · 80% of Near Mint ₱100");
+        assert_eq!(p.srp_line(), "SRP ₱80 · Lightly Played (80% of Near Mint ₱100)");
         assert_eq!(p.price, 999.0, "the owner's price is untouched");
         p.variant = String::new();
         assert_eq!(p.srp(), Some(100.0), "no condition written means Near Mint");

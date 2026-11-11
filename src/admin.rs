@@ -177,6 +177,13 @@ struct CardsPage {
     value: String,
 }
 
+impl CardsPage {
+    /// "1,293": the count of cards (tiles), written the same way as the copies.
+    fn total_text(&self) -> String {
+        db::thousands(self.total)
+    }
+}
+
 /// A card's sold copies. They stay in the table as the vault's record (available=0), but aren't stock.
 struct Sold {
     n: i64,
@@ -1180,11 +1187,18 @@ struct QuickPage {
     binders: Vec<BinderOpt>,
 }
 
+impl QuickPage {
+    fn total_text(&self) -> String {
+        db::thousands(self.total)
+    }
+}
+
 async fn quick_page(app: &App, h: &HeaderMap, mode: &'static str) -> Res {
     if !authed(app, h) {
         return login_page(app, false).await;
     }
-    let (nav, total) = with_db(app, |c| Ok((chrome(c)?, db::total(c)?))).await?;
+    // Copies still for sale: the same number as My cards and All cards show.
+    let (nav, total) = with_db(app, |c| Ok((chrome(c)?, in_vault(c)?.0))).await?;
     let binders = binder_opts(&nav.links, &[]);
     rd(QuickPage { nav, tab: if mode == "set" { "sets" } else { "quick" }, mode, total, binders })
 }

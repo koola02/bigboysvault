@@ -93,8 +93,8 @@ window.Price = (() => {
     const own = Number(o.own) || 0;
     // SRP: the suggested retail price for this condition. Only a guide: the price is always the seller's.
     if (own > 0) txt.textContent = `You set ${peso(own)}. SRP for ${std}: ${peso(sug)}`;
-    else { const b = document.createElement('b'); b.textContent = peso(sug); txt.append('SRP ', b, ` · ${std} · ${pct}% of Near Mint ${peso(nm)}`); }
-    if (own <= 0 && where) txt.append(` (${where})`);
+    else { const b = document.createElement('b'); b.textContent = peso(sug); txt.append('SRP ', b, pct === 100 ? ` · ${std}` : ` · ${std} (${pct}% of Near Mint ${peso(nm)})`); }
+    if (own <= 0 && where) txt.append(` · ${where}`);
     const cur = Number(String(o.price ?? '').replace(/[^\d.]/g, '')) || 0;
     if (o.onUse && cur !== sug) {
       const use = document.createElement('button'); use.type = 'button'; use.className = 'sug-use'; use.dataset.nodrag = '';

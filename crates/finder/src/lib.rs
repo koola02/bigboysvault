@@ -101,6 +101,19 @@ fn note_search(q: &str) {
     }
 }
 
+/// 2213 -> "2,213", the way the rest of the site writes counts.
+fn commas(n: usize) -> String {
+    let s = n.to_string();
+    let mut out = String::new();
+    for (i, ch) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i) % 3 == 0 {
+            out.push(',');
+        }
+        out.push(ch);
+    }
+    out
+}
+
 #[component]
 fn Tile(card: Arc<Card>) -> impl IntoView {
     let href = format!("/products/{}", card.handle);
@@ -142,8 +155,8 @@ fn Finder(binders: Vec<Binder>, cards: Vec<Arc<Card>>, embedded: bool) -> impl I
     let sort = RwSignal::new(Sort::parse(&param("sort").unwrap_or_default()));
     let binder = RwSignal::new(start_binder);
     let shown = RwSignal::new(STEP);
-    // A card whose copies have all sold is still listed (qty 0, no "+"), so every listed card counts at least once.
-    let total_cards: usize = cards.iter().map(|c| c.qty.max(1) as usize).sum();
+    // Every listed card counts once, sold out or not (a sold-out card stays listed with no "+").
+    let total_listed: usize = cards.len();
 
     // What the filters can offer: only what's really in the vault.
     let cond_options: Vec<Token> = COND_LABELS.iter().filter(|(k, _)| cards.iter().any(|c| vault_search::cond_class(&c.variant) == *k || (*k == "gr" && !c.grade.is_empty()))).map(|(k, _)| Token::Cond((*k).to_string())).collect();
@@ -457,10 +470,14 @@ fn Finder(binders: Vec<Binder>, cards: Vec<Arc<Card>>, embedded: bool) -> impl I
             <p class="sub fd-count" aria-live="polite">
                 {move || {
                     let (hits, typo) = found.get();
-                    // Every hit is a tile on screen, so it counts at least once, sold out or not.
-                    let n: usize = all.with_value(|c| hits.iter().map(|i| c[*i].copies_in(binder.get()).min(c[*i].qty).max(1) as usize).sum());
+                    // Cards are the tiles on screen; copies are how many of them the vault holds (a ×3 tile is 3 copies).
+                    // My cards in the admin counts the same way, so the two pages always agree.
+                    let n = hits.len();
+                    let copies: usize = all.with_value(|c| hits.iter().map(|i| c[*i].copies_in(binder.get()).min(c[*i].qty) as usize).sum());
                     let word = if n == 1 { "card" } else { "cards" };
-                    if n == total_cards { format!("{n} {word}") } else if typo { format!("Closest spelling: {n} {word}") } else { format!("{n} of {total_cards} {word}") }
+                    let tail = if copies == n { String::new() } else { format!(" · {} cop{}", commas(copies), if copies == 1 { "y" } else { "ies" }) };
+                    let (nn, tt) = (commas(n), commas(total_listed));
+                    if n == total_listed { format!("{nn} {word}{tail}") } else if typo { format!("Closest spelling: {nn} {word}{tail}") } else { format!("{nn} of {tt} {word}{tail}") }
                 }}
             </p>
             <Show when=anything_set>
