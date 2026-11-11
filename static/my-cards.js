@@ -18,18 +18,26 @@
     const n = ids.length; tile.querySelector('[data-n]').textContent = n;
     const badge = tile.querySelector('[data-qty-badge]'); badge.hidden = n < 2; badge.textContent = '×' + n;
   }
-  document.addEventListener('click', async (e) => {
+  // − / ＋ take turns on each card, in the order they were tapped. Each turn reads the copies again,
+  // so quick taps never work from an old list (two ＋ losing a copy, or two − removing the same one).
+  const qtyQueue = new WeakMap();
+  document.addEventListener('click', (e) => {
     const plus = e.target.closest('[data-plus]'), minus = e.target.closest('[data-minus]');
     const tile = (plus || minus)?.closest('.ctile'); if (!tile) return;
+    const run = () => changeCopies(tile, !!plus);
+    qtyQueue.set(tile, (qtyQueue.get(tile) || Promise.resolve()).then(run, run));
+  });
+  async function changeCopies(tile, plus) {
+    if (tile.hidden || !tile.isConnected) return;   // already deleted (waiting on Undo) or swapped out by a search
     const ids = idsOf(tile);
     if (plus) {
-      try { const j = await A.post('/admin/dup/' + ids[0]); setCount(tile, [...ids, j.id]); A.toast(`${ids.length + 1} copies ✓`, { kind: 'ok' }); }
+      try { const j = await A.post('/admin/dup/' + ids[0]); const now = [...idsOf(tile), j.id]; setCount(tile, now); A.toast(`${now.length} copies ✓`, { kind: 'ok' }); }
       catch (err) { A.toast(err.message, { kind: 'err' }); }
       return;
     }
     if (ids.length > 1) {   // one copy fewer: remove the newest copy
       const gone = Math.max(...ids);
-      try { await A.post('/admin/delete/' + gone); setCount(tile, ids.filter((x) => x !== gone)); A.toast(`${ids.length - 1} cop${ids.length - 1 === 1 ? 'y' : 'ies'} left`, { kind: 'ok' }); }
+      try { await A.post('/admin/delete/' + gone); const left = idsOf(tile).filter((x) => x !== gone); setCount(tile, left); A.toast(`${left.length} cop${left.length === 1 ? 'y' : 'ies'} left`, { kind: 'ok' }); }
       catch (err) { A.toast(err.message, { kind: 'err' }); }
       return;
     }
@@ -39,7 +47,7 @@
       hide: () => { tile.hidden = true; }, show: () => { tile.hidden = false; },
       commit: async () => { await A.post('/admin/delete/' + ids[0]); tile.remove(); },
     });
-  });
+  }
 
   // Price and description: edit in place, saved as soon as you leave the box. Every copy of the card changes together.
   const flash = (n, ok) => { n.classList.remove('saved', 'bad'); void n.offsetWidth; n.classList.add(ok ? 'saved' : 'bad'); };
@@ -93,7 +101,7 @@
           const chip = document.createElement('button'); chip.className = 'use-chip mc-use-chip'; chip.type = 'button';
           chip.textContent = `Price → ₱${srp.toLocaleString('en-US')}?`; chip.title = 'Use the SRP as the price';
           chip.onclick = async () => { chip.disabled = true; pr.value = String(srp); await quickSave(pr, { price: srp, price_src: 'suggested' }); tile.dataset.priceSrc = 'suggested'; chip.remove(); };
-          tile.querySelector('.ct-pricebox')?.after(chip) ?? tile.append(chip);
+          srpLine?.append(chip);   // inside the SRP line: never an extra grid row, never above the name on a phone
         }
       }
     } catch (err) { sel.value = before; flash(sel, false); A.toast(err.message, { kind: 'err' }); }

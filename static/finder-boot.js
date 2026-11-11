@@ -3,8 +3,8 @@ const slot = document.getElementById('finder');
 
 async function run() {
   try {
-    const finder = await import('/static/wasm/finder.js?v=10');
-    await finder.default({ module_or_path: '/static/wasm/finder_bg.wasm?v=10' });
+    const finder = await import('/static/wasm/finder.js?v=11');
+    await finder.default({ module_or_path: '/static/wasm/finder_bg.wasm?v=11' });
     await finder.start('finder', '/cards.tsv');
     // The Search tab means "I want to type": put the cursor in the box.
     if (location.pathname === '/search' && !location.search) document.querySelector('form.search input')?.focus({ preventScroll: true });

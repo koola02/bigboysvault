@@ -40,7 +40,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@50..150,100..900&display=swap">
 <link rel="stylesheet" href="/static/app.css?v=53">
 <link rel="stylesheet" href="/static/modern.css?v=26">
-<link rel="stylesheet" href="/static/vault.css?v=54">
+<link rel="stylesheet" href="/static/vault.css?v=55">
 {% for t in nav.trials %}<meta http-equiv="origin-trial" content="{{ t }}">
 {% endfor %}<script type="speculationrules">
 {"prefetch":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/admin*"}},{"not":{"href_matches":"/products/*"}},{"not":{"href_matches":"/me*"}},{"not":{"href_matches":"/join*"}},{"not":{"href_matches":"/chat*"}},{"not":{"href_matches":"/ask*"}},{"not":{"href_matches":"/trainers/*"}},{"not":{"href_matches":"/collections/*"}},{"not":{"href_matches":"/static/*"}},{"not":{"href_matches":"/uploads/*"}}]},"eagerness":"moderate"}],
@@ -75,14 +75,18 @@
 <script src="/static/card-float.js?v=22" defer></script>
 <script src="/static/tiles.js?v=2" defer></script>
 <script src="/static/vouches.js?v=3" defer></script>
-<script src="/static/vault-core.js?v=10" defer></script>
+<script src="/static/vault-core.js?v=11" defer></script>
 <script src="/static/cart.js?v=1" defer></script>
-<script src="/static/vault-talk.js?v=5" defer></script>
+<script src="/static/vault-talk.js?v=6" defer></script>
 <script src="/static/vault-staff.js?v=2" defer></script>
 <script type="module" src="/static/vault-gl.js?v=4"></script>
 </head>
 <body>
-<script>try { var me = JSON.parse(localStorage.getItem('bbv:me') || 'null'); if (me && me.name) document.documentElement.dataset.me = me.role === 'admin' ? 'admin' : '1'; } catch (_) {}</script>
+<script>(function () { try { // Signed in last time? Say so before the top bar paints, so "Log in" never flashes. Saved by vault-core.js as { me, admin }.
+  var s = JSON.parse(localStorage.getItem('bbv:me') || 'null'); if (!s) return;
+  var me = s.me || (s.name ? s : null), d = document.documentElement.dataset;
+  if (me && me.name) d.me = (me.role === 'admin' || s.admin) ? 'admin' : '1'; else if (s.admin) d.me = 'admin';
+} catch (_) {} })();</script>
 <div class="hx-gate" aria-hidden="true"><img src="/static/img/logo-768.webp" width="768" height="768" alt=""></div>
 <header class="bar">
   <div class="bar-in">
@@ -130,6 +134,7 @@
 <nav class="tabs" aria-label="Primary">
   <a href="/"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</a>
   <a href="/all"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/></svg>Browse</a>
+  <a href="/stores"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>Stores</a>
   <a class="tab-ask" href="/ask" data-float aria-label="Ask the Vault"><img src="/static/img/logo-sm.png" width="52" height="52" alt=""><span>Ask</span></a>
   <a href="/chat" data-float><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>Chat</a>
   <a href="/trainers"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>Trainers</a>

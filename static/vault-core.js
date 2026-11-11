@@ -28,7 +28,8 @@
   const here = location.pathname;
   document.querySelectorAll('.tabs a').forEach((a) => {
     const h = a.getAttribute('href');
-    if (h === here || (h !== '/' && here.startsWith(h))) a.setAttribute('aria-current', 'page');
+    // A seller's own store (/store/name) lights the Stores tab too.
+    if (h === here || (h !== '/' && here.startsWith(h)) || (h === '/stores' && here.startsWith('/store/'))) a.setAttribute('aria-current', 'page');
   });
 
   if (tools()) return;
@@ -36,7 +37,7 @@
   /* ---------- text that fits ----------
      Anybody is a variable font, 50% to 150% wide. A label too long for its space gets exactly the width that fits, solved in a few steps,
      so it stays one clean line at full height and nothing spills out of a card. */
-  const FIT = '.card-cond, .card-set, .worth, .sc-p, .card-p, .stars, .role, .bf-plate h1, .hl-who b, .stats dd, .iv-spot b, .iv-spot small, .tr-tile b, .fd-chip, .fd-b-t, .iv-legend span, .msg-name, .bf-id h1, .bf-id p, .fp-at, .bk-n, .bx-cap-n, .binder-t, .qa-set-en';
+  const FIT = '.card-cond, .card-set, .worth, .sc-p, .card-p, .stars, .role, .bf-plate h1, .hl-who b, .stats dd, .iv-spot b, .iv-spot small, .tr-tile b, .fd-chip, .fd-b-t, .iv-legend span, .msg-name, .bf-id h1, .bf-id p, .fp-at, .bk-n, .bx-cap-n, .binder-t, .qa-set-en, .brand-t, .tabs a:not(.tab-ask)';
   // Narrower letters first; if that isn't enough, a slightly smaller size (never under 70%), so nothing ends in "…".
   const fit = (n) => {
     n.style.removeProperty('font-stretch');
@@ -70,6 +71,9 @@
   new MutationObserver((changes) => {
     for (const c of changes) c.addedNodes.forEach((n) => { if (n.nodeType === 1 && !n.classList?.contains('hx-ripple')) fitSoon(n); });
   }).observe(document.body, { childList: true, subtree: true });
+  // On a phone the bell takes room in the top bar when it shows up: fit the shop's name again.
+  const bell = document.getElementById('notifDropdown'), brand = document.querySelector('.bar .brand');
+  if (bell && brand) new MutationObserver(() => fitSoon(brand)).observe(bell, { attributes: true, attributeFilter: ['hidden'] });
 
   /* ---------- the panel of what's inside the vault answers as you point ---------- */
   document.querySelectorAll('.iv').forEach((iv) => {

@@ -149,7 +149,15 @@
     a.append(meta);
     if (c.tags?.length) { const t = make('div', 'card-tags'); c.tags.forEach((x) => t.append(make('span', 'tag-hl', x))); a.append(t); }
     if (c.notes) a.append(make('div', 'card-note', c.notes));
-    a.append(make('div', 'card-p', c.price));
+    const p = make('div', 'card-p', c.price);
+    // The "+" only shows when the vault sent the card's own number and real price: that means it is still for sale.
+    if (c.id && c.amount > 0) {
+      const b = make('span', 'cart-mini', '+');
+      b.setAttribute('role', 'button'); b.tabIndex = 0; b.title = 'Add to cart'; b.setAttribute('aria-label', `Add ${c.title} to cart`);
+      Object.assign(b.dataset, { cartVault: c.id, title: c.title, price: c.amount, image: c.img || '', url: `/products/${c.handle}` });
+      p.append(b);
+    }
+    a.append(p);
     return a;
   }
 

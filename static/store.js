@@ -38,23 +38,72 @@
     const paintAll = () => rows.querySelectorAll('.ls-tile').forEach(paintSug);
     document.addEventListener('bbv:shares', paintAll);
 
+    // Each save on a card gets a number. An answer repaints the card only if no newer answer already did, so an old one never undoes a new one.
+    const turn = (tile) => (tile._seq = (tile._seq || 0) + 1);
+    const fresh = (tile, my) => { if (my <= (tile._painted || 0)) return false; tile._painted = my; return true; };
+
+    // Stock: quick taps wait a moment, then the last count is sent once. One card's stock saves go one at a time.
+    const qtyOf = (v) => Math.min(9999, Math.max(0, Math.round(Number(v) || 0)));
+    const qtyState = new WeakMap();
+    const qs = (tile) => { let s = qtyState.get(tile); if (!s) qtyState.set(tile, (s = { timer: 0, busy: false, again: false })); return s; };
+    const qtyWaiting = new Set();
+    // While the seller is typing, tapping, or a stock save is on its way, the box keeps what they put in it.
+    const qtyHeld = (tile, inp) => { const s = qtyState.get(tile); return document.activeElement === inp || !!(s && (s.timer || s.busy)); };
+    function queueQty(tile, inp, wait) {
+      const s = qs(tile); clearTimeout(s.timer); qtyWaiting.add(tile);
+      s.timer = setTimeout(() => { s.timer = 0; qtyWaiting.delete(tile); saveQty(tile, inp); }, wait);
+    }
+    async function saveQty(tile, inp) {
+      const s = qs(tile);
+      if (s.busy) { s.again = true; qtyWaiting.add(tile); return; } // the save on its way sends the newest count when it's back
+      s.busy = true;
+      let card = null, my = 0, ok = true;
+      try {
+        do {
+          s.again = false; qtyWaiting.delete(tile); my = turn(tile);
+          card = (await send(`/me/listings/${tile.dataset.id}`, { qty: qtyOf(inp.value) })).card;
+          if (card && fresh(tile, my)) apply(tile, card); // the box stays as typed: a save is still on its way
+        } while (s.again && !s.timer);
+      } catch (err) { ok = false; A.toast(err.message, { kind: 'err' }); }
+      s.busy = false; s.again = false; if (!s.timer) qtyWaiting.delete(tile);
+      if (ok) { if (card && !qtyHeld(tile, inp)) inp.value = tile.dataset.qty; flash(inp, true); if (!s.timer) A.toast('Saved ✓', { kind: 'ok' }); }
+      else { if (!qtyHeld(tile, inp)) inp.value = tile.dataset.qty; flash(inp, false); }
+    }
+    // Leaving the page with a count still waiting: send it on the way out.
+    window.addEventListener('pagehide', () => {
+      const a = document.activeElement; // a count typed but not saved yet (no change event fires on the way out)
+      if (a && a.matches && a.matches('[data-qty-in]') && a.value.trim() !== '') { const t = tileOf(a); if (t && String(qtyOf(a.value)) !== String(t.dataset.qty)) qtyWaiting.add(t); }
+      qtyWaiting.forEach((tile) => {
+        const s = qs(tile); clearTimeout(s.timer); s.timer = 0; s.again = false;
+        const inp = tile.querySelector('[data-qty-in]');
+        fetch(`/me/listings/${tile.dataset.id}`, { method: 'POST', credentials: 'same-origin', keepalive: true, headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ qty: qtyOf(inp.value) }) }).catch(() => {});
+      });
+      qtyWaiting.clear();
+    });
+    // Coming back with the Back button shows the page as it was: load it fresh so stock and status are current.
+    window.addEventListener('pageshow', (e) => { if (e.persisted) location.reload(); });
+
     function apply(tile, card) {
       Object.assign(tile.dataset, { status: card.status, market: card.market, own: card.value_own, cond: card.cond, qty: card.qty, kind: card.kind });
       const st = tile.querySelector('.st-status'); st.textContent = card.status; st.dataset.s = card.status;
       tile.querySelector('[data-status]').value = card.status;
       tile.querySelectorAll('[data-kind]').forEach((b) => { const on = b.dataset.kind === card.kind; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
       const sale = tile.querySelector('.ls-sale'); if (sale) sale.hidden = card.kind !== 'sale';
-      const stock = tile.querySelector('[data-stock]'); if (stock) { const off = card.status === 'Out of stock'; stock.classList.toggle('off', off); stock.setAttribute('aria-pressed', String(!off)); }
-      tile.querySelector('[data-qty-in]').value = card.qty;
+      // The switch shows "Out of stock" when the seller said so, when it's sold, or when no copies are left.
+      const stock = tile.querySelector('[data-stock]'); if (stock) { const off = card.status === 'Out of stock' || card.status === 'Sold' || Number(card.qty) <= 0; stock.classList.toggle('off', off); stock.setAttribute('aria-pressed', String(!off)); }
+      const qi = tile.querySelector('[data-qty-in]'); if (!qtyHeld(tile, qi)) qi.value = card.qty;
       const pr = tile.querySelector('[data-price]'); pr.value = card.value_own > 0 ? String(Math.round(card.value_own)) : ''; pr.placeholder = card.market > 0 ? card.price_text : 'Price';
-      const renew = tile.querySelector('[data-renew]'); renew.textContent = card.status === 'Expired' ? 'Renew for 30 days' : card.expires_at > 0 ? 'Change end date' : 'Set an end date';
+      // Same words as the page: an expired card, or one past its end date, needs renewing.
+      const late = card.status === 'Expired' || (card.expires_at > 0 && card.expires_at < Date.now() / 1000);
+      const renew = tile.querySelector('[data-renew]'); renew.textContent = late ? 'Renew for 30 days' : card.expires_at > 0 ? 'Change end date' : 'Set an end date';
       const exp = tile.querySelector('.st-exp');
       if (card.expires_text) { if (exp) exp.textContent = card.expires_text; else { const m = tile.querySelector('.st-meta'); m.append(' · '); const s = el('span', 'st-exp', card.expires_text); m.append(s); } }
       else exp?.remove();
       paintSug(tile);
     }
     async function patch(tile, body, node) {
-      try { const j = await send(`/me/listings/${tile.dataset.id}`, body); apply(tile, j.card); if (node) flash(node, true); A.toast('Saved ✓', { kind: 'ok' }); return j.card; }
+      const my = turn(tile);
+      try { const j = await send(`/me/listings/${tile.dataset.id}`, body); if (fresh(tile, my)) apply(tile, j.card); if (node) flash(node, true); A.toast('Saved ✓', { kind: 'ok' }); return j.card; }
       catch (err) { if (node) flash(node, false); A.toast(err.message, { kind: 'err' }); return null; }
     }
     const savePrice = (tile, v) => patch(tile, { price: v }, tile.querySelector('[data-price]'));
@@ -66,7 +115,7 @@
         if (t.value === '__own') { const v = (prompt('Condition or grade, like PSA 9') || '').trim().slice(0, 40); if (!v) { t.value = tile.dataset.cond; return; } t.insertBefore(new Option(v, v, true, true), t.firstChild); t.value = v; }
         patch(tile, { cond: t.value }, t);
       }
-      else if (t.matches('[data-qty-in]')) patch(tile, { qty: Math.max(0, Math.round(Number(t.value) || 0)) }, t);
+      else if (t.matches('[data-qty-in]')) { t.value = qtyOf(t.value); queueQty(tile, t, 0); }
       else if (t.matches('[data-status]')) patch(tile, { status: t.value }, t);
       else if (t.matches('[data-binder]')) patch(tile, { binder_id: t.value ? Number(t.value) : null }, t);
       else if (t.matches('[data-notes]')) patch(tile, { notes: t.value }, t);
@@ -74,12 +123,12 @@
     rows.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.matches('[data-price], [data-qty-in]')) { e.preventDefault(); e.target.blur(); } });
     rows.addEventListener('click', async (e) => {
       const tile = tileOf(e.target); if (!tile) return;
-      const kind = e.target.closest('[data-kind]');
+      const kind = e.target.closest('button[data-kind]');
       if (kind) { if (!kind.classList.contains('on')) patch(tile, { kind: kind.dataset.kind }, kind); return; }
-      const stock = e.target.closest('[data-stock]');
+      const stock = e.target.closest('button[data-stock]');
       if (stock) { patch(tile, { status: stock.classList.contains('off') ? 'Active' : 'Out of stock' }, stock); return; }
-      const q = e.target.closest('[data-qty]');
-      if (q) { const inp = tile.querySelector('[data-qty-in]'); const v = Math.max(0, (Number(inp.value) || 0) + Number(q.dataset.qty)); inp.value = v; patch(tile, { qty: v }, inp); return; }
+      const q = e.target.closest('button[data-qty]');
+      if (q) { const inp = tile.querySelector('[data-qty-in]'); inp.value = qtyOf(qtyOf(inp.value) + Number(q.dataset.qty)); queueQty(tile, inp, 400); return; }
       if (e.target.closest('[data-renew]')) { renewSheet([tile]); return; }
       if (e.target.closest('[data-del]')) {
         const id = tile.dataset.id;
@@ -144,7 +193,7 @@
       },
       status() {
         const node = el('div', 'sheet-form'); const inp = el('input', 'sheet-input'); inp.hidden = true;
-        node.append(el('p', 'hint show', 'Hidden cards stay in your store but nobody else sees them. Sold cards stop being for sale.'), chips(STATUSES, inp));
+        node.append(el('p', 'hint show', 'Hidden cards stay in your store but nobody else sees them. Sold sets the stock to 0.'), chips(STATUSES.filter((x) => x !== 'Reserved'), inp));
         A.sheet.open(`Status · ${plural(sel.size)}`, node, async () => { if (!inp.value) throw new Error('Pick a status.'); await bulk({ action: 'edit', status: inp.value }, (j) => `Updated ${plural(j.n)}`); }, 'Apply');
       },
       binder() {
@@ -153,9 +202,9 @@
         A.sheet.open(`Binder · ${plural(sel.size)}`, node, async () => { await bulk({ action: 'edit', binder_id: s.value ? Number(s.value) : null }, (j) => `Moved ${plural(j.n)}`); }, 'Move');
       },
       stock() {
-        const node = el('div', 'sheet-form'); const inp = el('input', 'sheet-input'); inp.type = 'number'; inp.min = '0'; inp.inputMode = 'numeric'; inp.placeholder = 'Copies in stock';
+        const node = el('div', 'sheet-form'); const inp = el('input', 'sheet-input'); inp.type = 'number'; inp.min = '0'; inp.max = '9999'; inp.inputMode = 'numeric'; inp.placeholder = 'Copies in stock';
         node.append(el('p', 'hint show', 'Every selected card gets this many copies in stock. 0 means sold out.'), inp);
-        A.sheet.open(`Stock · ${plural(sel.size)}`, node, async () => { const n = Math.round(Number(inp.value)); if (!Number.isFinite(n) || n < 0) throw new Error('Type how many.'); await bulk({ action: 'edit', qty: n }, (j) => `Updated ${plural(j.n)}`); }, 'Apply');
+        A.sheet.open(`Stock · ${plural(sel.size)}`, node, async () => { const n = Math.min(9999, Math.round(Number(inp.value))); if (!Number.isFinite(n) || n < 0) throw new Error('Type how many.'); await bulk({ action: 'edit', qty: n }, (j) => `Updated ${plural(j.n)}`); }, 'Apply');
       },
       expiry() { renewSheet(tilesSel(), true); },
       delete() {
@@ -186,7 +235,7 @@
         if (!inp.value) throw new Error('Pick one.');
         const days = parseInt(inp.value) || 0;
         if (many) await bulk({ action: 'edit', expires_days: days }, (j) => `Updated ${plural(j.n)}`);
-        else { const t = tiles[0]; const j = await send(`/me/listings/${t.dataset.id}/renew`, { days }); apply(t, j.card); A.sheet.close(); A.toast(days ? `On sale for ${days} more days ✓` : 'No end date ✓', { kind: 'ok' }); }
+        else { const t = tiles[0]; const my = turn(t); const j = await send(`/me/listings/${t.dataset.id}/renew`, { days }); if (fresh(t, my)) apply(t, j.card); A.sheet.close(); A.toast(days ? `Ends in ${days} days ✓` : 'No end date ✓', { kind: 'ok' }); }
       }, 'Apply');
     }
     function count() { const n = rows.querySelectorAll('.ls-tile').length; $('shownN').textContent = n; const empty = $('listEmpty'); if (empty && n > 0) empty.hidden = true; }
@@ -253,7 +302,6 @@
     }
     // Leaving the add panel with new cards: show them.
     $('addClose').addEventListener('click', () => { if (added) location.reload(); });
-    window.addEventListener('pagehide', () => {});
 
     /* ----- scan: a photo, read on the device when the browser can, then the card list ----- */
     const scanFile = $('scanFile');

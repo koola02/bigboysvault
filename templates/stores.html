@@ -36,7 +36,7 @@
         <a class="card" href="/trainers/{{ m.id }}/cards/{{ c.id }}" data-float data-c="{{ c.cond_class() }}">
           <div class="card-img">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="{{ c.title }}">{% endif %}</div>
           <div class="card-t">{{ c.title }}</div>
-          <div class="card-m"><span class="card-cond" data-c="{{ c.cond_class() }}">{{ c.cond }}</span></div>
+          <div class="card-m">{% if !c.card_set.is_empty() %}<span class="card-set">{% if !c.symbol().is_empty() %}<img class="card-sym" src="{{ c.symbol() }}" width="16" height="16" loading="lazy" decoding="async" alt="">{% endif %}{{ c.card_set }}</span>{% endif %}<span class="card-cond" data-c="{{ c.cond_class() }}">{{ c.cond }}</span></div>
           {% if c.has_price() %}<div class="card-p"><span class="worth">{{ c.price_text() }}</span></div>{% endif %}
         </a>
         {% endfor %}

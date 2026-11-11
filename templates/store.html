@@ -22,7 +22,6 @@
     <ul class="sf-stats">
       <li><b>{{ stats.on_sale }}</b><span>on sale</span></li>
       <li><b>{{ stats.sold }}</b><span>sold</span></li>
-      <li><b>{{ stats.sales }}</b><span>sale{% if stats.sales != 1 %}s{% endif %}</span></li>
       <li><b id="followerN">{{ stats.followers }}</b><span>follower{% if stats.followers != 1 %}s{% endif %}</span></li>
       <li><b>{% if stats.reviews > 0 %}★ {{ stats.rating }}{% else %}—{% endif %}</b><span>{{ stats.reviews }} review{% if stats.reviews != 1 %}s{% endif %}</span></li>
       {% if m.stars > 0 %}<li><b>★ {{ m.stars }}</b><span>vault stars</span></li>{% endif %}
@@ -58,11 +57,11 @@
   </div>
   <ul class="sf-grid" id="sfGrid">
     {% for (c, is_saved) in cards %}
-    <li class="sf-card" data-id="{{ c.id }}" data-title="{{ c.title }}" data-set="{{ c.card_set }}" data-number="{{ c.number }}" data-cond="{{ c.cond }}" data-price="{{ c.worth() }}" data-status="{{ c.status }}" data-qty="{{ c.qty }}" data-pos="{{ loop.index }}"{% if c.is_graded() %} data-graded{% endif %}{% if *is_saved %} data-saved{% endif %}>
+    <li class="sf-card" data-c="{{ c.cond_class() }}" data-id="{{ c.id }}" data-title="{{ c.title }}" data-set="{{ c.card_set }}" data-number="{{ c.number }}" data-cond="{{ c.cond }}" data-price="{{ c.worth() }}" data-status="{{ c.status }}" data-qty="{{ c.qty }}" data-pos="{{ loop.index }}"{% if c.is_graded() %} data-graded{% endif %}{% if *is_saved %} data-saved{% endif %}>
       <a class="sf-pic" href="/trainers/{{ m.id }}/cards/{{ c.id }}" data-float aria-label="See {{ c.title }}">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="">{% endif %}{% if c.status == "Reserved" %}<span class="sf-flag">Reserved</span>{% else if c.status == "Out of stock" %}<span class="sf-flag sold">Out of stock</span>{% else if c.status == "Sold" %}<span class="sf-flag sold">Sold</span>{% else if c.qty > 1 %}<span class="sf-flag sf-qty">×{{ c.qty }}</span>{% endif %}</a>
       <div class="sf-body">
         <b class="sf-title">{{ c.title }}</b>
-        <small class="sf-set">{{ c.card_set }}{% if !c.number.is_empty() %} · {{ c.number }}{% endif %}{% if !c.finish.is_empty() %} · {{ c.finish }}{% endif %}</small>
+        <small class="sf-set">{% if !c.symbol().is_empty() %}<img class="card-sym" src="{{ c.symbol() }}" width="16" height="16" loading="lazy" decoding="async" alt="">{% endif %}<span>{{ c.card_set }}{% if !c.number.is_empty() %} · {{ c.number }}{% endif %}{% if !c.finish.is_empty() %} · {{ c.finish }}{% endif %}</span></small>
         <span class="card-cond" data-c="{{ c.cond_class() }}">{{ c.cond }}</span>
         <b class="sf-price">{% if c.has_price() %}{{ c.price_text() }}{% else %}Ask for a price{% endif %}</b>
         {% if !c.notes.is_empty() %}<p class="sf-note">{{ c.notes }}</p>{% endif %}

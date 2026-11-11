@@ -1,6 +1,6 @@
 <a class="card" href="/products/{{ p.handle }}" data-foil="{{ p.foil_class() }}" data-c="{{ p.cond_class() }}">
   <div class="card-img">
-    {% if p.has_image() %}<img src="{{ p.img(360) }}" srcset="{{ p.srcset() }}" sizes="(min-width:1100px) 220px, (min-width:700px) 25vw, 46vw" width="{{ p.image_w }}" height="{{ p.image_h }}" loading="lazy" decoding="async" alt="{{ p.title }}">{% endif %}
+    {% if p.has_image() %}<img src="{{ p.img(360) }}" srcset="{{ p.srcset() }}" sizes="(min-width:1100px) 220px, (min-width:700px) 25vw, 46vw"{% if p.image_w > 0 && p.image_h > 0 %} width="{{ p.image_w }}" height="{{ p.image_h }}"{% endif %} loading="lazy" decoding="async" alt="{{ p.title }}">{% endif %}
     {% if let Some(g) = p.grade() %}<span class="grade">{{ g }}</span>{% endif %}
     {% if p.qty > 1 %}<span class="qty" title="{{ p.qty }} copies in the vault">×{{ p.qty }}</span>{% endif %}
   </div>

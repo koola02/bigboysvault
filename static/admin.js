@@ -118,6 +118,9 @@ window.mountCardForm = () => {
     resetMarket();
     blob = null; el.photo.value = ''; el.shot.removeAttribute('src'); el.shot.hidden = true; el.dropT.hidden = false; el.retake.hidden = true;
     el.titleHint.textContent = '';
+    // The tag chips start again from the now-empty field, so the last card's tags don't come along.
+    // A fresh, empty box drops the old chips; tag-editor.js sees it appear and sets it up again.
+    form.querySelectorAll('[data-tag-box]').forEach((b) => { const fresh = b.cloneNode(false); delete fresh.dataset.ready; b.replaceWith(fresh); });
   }
   function setBusy(b) { busy = b; form.querySelectorAll('button[type=submit]').forEach((x) => (x.disabled = b)); }
 

@@ -1814,3 +1814,35 @@ body:has(.v-fab) .cart-fab { right: 14px; bottom: calc(80px + var(--sab)); }
 @media (min-width: 600px) and (max-width: 1023px) {
   #cardsRoot .mc-grid > .ctile, #listings .ls-grid > .ls-tile { --thumb: 120px; }
 }
+
+/* ---------- F06 Dock: six places, Stores beside Browse ----------
+   Three tabs left of the Ask logo, two on the right. The right two grow 1.5 times as much, so both sides are
+   the same width and the logo stays right in the middle. Narrower letters on phones so no label touches the next. */
+.tabs a { min-width: 0; }
+.tabs .tab-ask ~ a { flex-grow: 1.5; }
+@media (max-width: 899px) { .tabs a:not(.tab-ask) { font-stretch: 72%; letter-spacing: .02em; white-space: nowrap; } }
+
+/* ---------- F07 Phone top bar: the bell sits left of the profile picture, and its list opens on screen ----------
+   From the right: search (6px), profile picture (58px), bell (102px). The bell hides while the search is open
+   and while nobody is signed in (then "Log in" holds that spot). The shop's name gets narrower to fit (vault-core.js). */
+.bar-notif-btn svg { width: 24px; height: 24px; }
+@media (max-width: 899px) {
+  .brand-t { min-width: 0; overflow: hidden; padding-block: .2em; }
+  .bar-in:has(#notifDropdown:not([hidden])) { padding-right: 148px; }
+  .bar-notif { position: absolute; right: 102px; top: 50%; translate: 0 -50%; z-index: 2; }
+  html:not([data-me]) .bar-notif, form.search:focus-within ~ .bar-notif, form.search:has(input[type=search]:not(:placeholder-shown)) ~ .bar-notif { display: none; }
+  .notif-menu { top: calc(100% + 12px); right: -96px; width: min(320px, calc(100vw - 32px)); max-height: min(70dvh, calc(100dvh - 180px)); }
+}
+
+/* ---------- F10 Store cards wear their condition, like every other card (same --tone colours as .card) ---------- */
+.sf-card { --tone: 148, 158, 174; border-color: rgba(var(--tone), .45); background: linear-gradient(180deg, rgba(var(--tone), .12), rgba(var(--tone), .03) 62%), rgba(9,11,20,.7); box-shadow: inset 0 0 0 1px rgba(var(--tone), .2), 0 12px 28px -14px rgba(var(--tone), .4); }
+.sf-card[data-c="nm"] { --tone: 16, 185, 129; } .sf-card[data-c="lp"] { --tone: 245, 158, 11; } .sf-card[data-c="mp"] { --tone: 255, 127, 80; } .sf-card[data-c="hp"] { --tone: 239, 68, 68; }
+.sf-card[data-c="dm"] { --tone: 200, 40, 55; } .sf-card[data-c="gr"] { --tone: 226, 185, 75; } .sf-card[data-c="sl"] { --tone: 167, 139, 250; }
+.sf-set { display: flex; align-items: center; gap: 5px; min-width: 0; }
+.sf-set > span { min-width: 0; }
+
+/* ---------- Notification list: no browser indent, a small "Mark all read" ---------- */
+.notif-menu { overflow-x: hidden; }
+.notif-list { margin: 0; padding: 0; list-style: none; }
+.notif-head { gap: 10px; }
+.notif-head .btn { flex: none; min-height: 32px; padding: 0 12px; font-size: .6875rem; letter-spacing: .04em; white-space: nowrap; }

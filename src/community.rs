@@ -84,12 +84,21 @@ pub async fn refresh_values(app: &App) {
     let Ok(ids) = with_db(app, move |c| members::cards_to_price(c, now - 5 * 86_400, 400)).await else { return };
     let mut changed = false;
     for id in ids {
-        let info = market::by_id_lang(&app.http, &app.fx, &id).await.ok().flatten();
+        // The price service didn't answer: try this card again next time, and keep the price it has.
+        let Ok(info) = market::by_id_lang(&app.http, &app.fx, &id).await else {
+            tokio::time::sleep(std::time::Duration::from_millis(350)).await;
+            continue;
+        };
         let market = info.as_ref().map_or(0.0, market_php);
         let key = id.clone();
         let done = with_db(app, move |c| {
             let value = if market > 0.0 { market } else { members::vault_price(c, &key)? };
-            members::set_card_value(c, &key, value, crate::unix_now())?;
+            if value > 0.0 {
+                members::set_card_value(c, &key, value, crate::unix_now())?;
+            } else {
+                // No price anywhere today: keep the last one and don't ask again for a while.
+                c.execute("UPDATE member_cards SET value_at=?2 WHERE card_id=?1 OR card_id LIKE ?1 || '#%'", rusqlite::params![key, crate::unix_now()])?;
+            }
             Ok(value)
         })
         .await;

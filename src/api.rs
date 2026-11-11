@@ -313,9 +313,10 @@ pub async fn ask_vault(State(app): State<App>, h: HeaderMap, axum::Json(req): ax
     let ctx: Option<String> = req.ctx.map(|c| c.chars().take(200).collect());
     let trainers = with_db(&app, |c| members::approved(c)).await?;
     let trainers: Vec<ask::Trainer> = trainers.into_iter().map(|t| ask::Trainer { name: t.name, stars: t.stars, worth: t.worth }).collect();
-    let out = tokio::task::spawn_blocking(move || {
+    let (mut out, handles) = tokio::task::spawn_blocking(move || {
         let (binders, cards) = parse(&body);
         let a = ask::answer(&question, ctx.as_deref(), &cards, &binders, &trainers);
+        let handles: Vec<String> = a.picks.iter().map(|i| cards[*i].handle.clone()).collect();
         let tiles: Vec<serde_json::Value> = a
             .picks
             .iter()
@@ -324,9 +325,28 @@ pub async fn ask_vault(State(app): State<App>, h: HeaderMap, axum::Json(req): ax
                 serde_json::json!({ "handle": c.handle, "title": vault_search::title_and_set(&c.title, &c.set).0, "full": c.title, "img": c.img, "price": peso(c.price), "c": vault_search::cond_class(&c.variant), "cond": vault_search::tile_condition(&c.variant), "set": c.set, "sym": c.sym, "foil": vault_search::foil_class(&format!("{} {}", c.title, c.variant)), "grade": c.grade, "notes": c.notes, "tags": c.tags.split(',').map(str::trim).filter(|t| !t.is_empty() && db::tag_for_people(t)).collect::<Vec<_>>() })
             })
             .collect();
-        serde_json::json!({ "say": a.say, "cards": tiles, "chips": a.chips, "link": a.link.map(|(t, u)| serde_json::json!({ "text": t, "href": u })), "ctx": a.ctx })
+        (serde_json::json!({ "say": a.say, "cards": tiles, "chips": a.chips, "link": a.link.map(|(t, u)| serde_json::json!({ "text": t, "href": u })), "ctx": a.ctx }), handles)
     })
     .await
     .map_err(crate::ise)?;
+    // The "+" on a tile needs the vault's own number for the card and its real price.
+    // The handle is not that number, so look the card up. A sold card, or one with no price, gets no "+".
+    if !handles.is_empty() {
+        let buy = with_db(&app, move |c| {
+            handles
+                .iter()
+                .map(|h| db::product(c, h).map(|p| p.filter(|p| p.available && p.price > 0.0).map(|p| (p.id, p.price))))
+                .collect::<rusqlite::Result<Vec<Option<(i64, f64)>>>>()
+        })
+        .await?;
+        if let Some(tiles) = out["cards"].as_array_mut() {
+            for (t, b) in tiles.iter_mut().zip(buy) {
+                if let Some((id, price)) = b {
+                    t["id"] = serde_json::json!(id);
+                    t["amount"] = serde_json::json!(price);
+                }
+            }
+        }
+    }
     Ok(json(out))
 }

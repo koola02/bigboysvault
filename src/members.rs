@@ -22,10 +22,11 @@ pub fn condition_factor(cond: &str) -> f64 {
     crate::pricing::factor(cond).unwrap_or(1.0)
 }
 
-/// Everything a trainer's cards are worth. Must agree with `MemberCard::worth`.
+/// Everything a trainer has is worth: each card priced like `MemberCard::worth`, times the copies left for a card for sale.
+/// A wishlist card isn't theirs yet, and a sold listing is gone, so neither counts.
 macro_rules! worth_sql {
     () => {
-        "(SELECT COALESCE(SUM(CASE WHEN x.value_own>0 THEN x.value_own ELSE x.value*COALESCE((SELECT s.share FROM condition_shares s WHERE s.cond=x.cond),1.0) END),0) FROM member_cards x WHERE x.member_id=m.id)"
+        "(SELECT COALESCE(SUM((CASE WHEN x.value_own>0 THEN x.value_own ELSE x.value*COALESCE((SELECT s.share FROM condition_shares s WHERE s.cond=x.cond),1.0) END)*(CASE WHEN x.kind='sale' THEN MAX(x.qty,0) ELSE 1 END)),0) FROM member_cards x WHERE x.member_id=m.id AND x.kind<>'wish' AND NOT (x.kind='sale' AND x.status='Sold'))"
     };
 }
 
@@ -1086,6 +1087,8 @@ pub fn delete(c: &Connection, id: i64) -> rusqlite::Result<Vec<String>> {
             let (a, b) = pair?;
             files.extend([a, b].into_iter().filter(|f| f.starts_with("/uploads/")));
         }
+        // Their orders and the orders on their cards must not keep holding anything.
+        crate::sellers::close_member_orders(c, id)?;
         c.execute("DELETE FROM member_cards WHERE member_id=?1", [id])?;
         c.execute("DELETE FROM chat_messages WHERE member_id=?1", [id])?;
         c.execute("DELETE FROM member_sessions WHERE member_id=?1", [id])?;
@@ -1417,25 +1420,22 @@ pub struct SellerStats {
 pub fn seller_stats(c: &Connection, member_id: i64) -> rusqlite::Result<SellerStats> {
     let cards = cards_of(c, member_id)?;
     let total_listings = cards.len() as i64;
-    let active_listings = cards.iter().filter(|c| c.status == "Active").count() as i64;
-    let items_sold = cards.iter().filter(|c| c.status == "Sold").count() as i64;
-    let total_value: i64 = cards.iter().filter(|c| c.status == "Active").map(|c| c.worth().round() as i64).sum();
+    // Only cards for sale count as "on sale"; Highlights and Wishlist cards are not in the store.
+    let on_sale = || cards.iter().filter(|c| c.is_sale() && c.status == "Active");
+    let active_listings = on_sale().count() as i64;
+    // Copies sold, the same number the store page shows.
+    let items_sold: i64 = cards.iter().map(|c| c.sold).sum();
+    let total_value: i64 = on_sale().map(|c| (c.worth() * c.qty.max(1) as f64).round() as i64).sum();
     let binder_count: i64 = c.query_row("SELECT COUNT(*) FROM member_binders WHERE member_id=?1", [member_id], |r| r.get(0))?;
     let recent_views: i64 = c.query_row(
         "SELECT COUNT(*) FROM listing_views v JOIN member_cards c ON c.id=v.card_id WHERE c.member_id=?1 AND v.created_at >= ?2",
         rusqlite::params![member_id, now() - 30 * 86400],
         |r| r.get(0)
     ).unwrap_or(0);
-    let pending_inquiries: i64 = c.query_row(
-        "SELECT COUNT(*) FROM inquiries WHERE seller_id=?1",
-        [member_id],
-        |r| r.get(0)
-    ).unwrap_or(0);
-    let pending_offers: i64 = c.query_row(
-        "SELECT COUNT(*) FROM offers WHERE seller_id=?1 AND status='Pending'",
-        [member_id],
-        |r| r.get(0)
-    ).unwrap_or(0);
+    // Same counts as the store's to-do list, so /me and /me/store agree:
+    // reservations and offers still open, and questions not answered yet.
+    let (open_reservations, open_offers, pending_inquiries) = crate::sellers::pending(c, member_id)?;
+    let pending_offers = open_reservations + open_offers;
 
     Ok(SellerStats { total_listings, active_listings, items_sold, binder_count, total_value, recent_views, pending_inquiries, pending_offers })
 }
@@ -1488,6 +1488,8 @@ pub fn add_card(c: &Connection, member_id: i64, card_id: &str, title: &str, numb
 }
 
 pub fn remove_card(c: &Connection, member_id: i64, card_id: i64) -> rusqlite::Result<()> {
+    // Anyone waiting on this card is told it's off sale, before the card (and its name) is gone.
+    crate::sellers::close_open_orders(c, member_id, card_id)?;
     c.execute("DELETE FROM member_cards WHERE member_id=?1 AND id=?2", [member_id, card_id])?;
     // The next card takes over as the highlight.
     c.execute(
@@ -1654,6 +1656,31 @@ mod tests {
         assert!(chat_author(&c, first).unwrap().is_none());
         set_blocked(&c, 2, true).unwrap();
         assert!(chat_read(&c, None, None, 10).unwrap().is_empty(), "a blocked trainer's messages come down too");
+    }
+
+    #[test]
+    fn worth_counts_what_a_trainer_has() {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch(SCHEMA).unwrap();
+        c.execute_batch("CREATE TABLE products(id INTEGER, api_id TEXT, price REAL)").unwrap();
+        migrate(&c).unwrap();
+        c.execute("INSERT INTO members(name,name_key,pass,created_at,updated_at,profile_ok) VALUES('a','a','x',0,0,1)", []).unwrap();
+        let Added::Yes(one) = add_card(&c, 1, "tcgdex:x-1", "One", "", "", "", "").unwrap() else { panic!() };
+        let Added::Yes(two) = add_card(&c, 1, "tcgdex:x-2", "Two", "", "", "", "").unwrap() else { panic!() };
+        set_card_value(&c, "tcgdex:x-1", 1000.0, 200).unwrap();
+        set_card_value(&c, "tcgdex:x-2", 500.0, 200).unwrap();
+        let worth = |c: &Connection| get(c, 1).unwrap().unwrap().worth;
+        assert_eq!(worth(&c), 1500.0);
+        c.execute("UPDATE member_cards SET kind='wish' WHERE id=?1", [two]).unwrap();
+        assert_eq!(worth(&c), 1000.0, "a wishlist card isn't theirs yet");
+        c.execute("UPDATE member_cards SET kind='sale', qty=3, status='Active' WHERE id=?1", [one]).unwrap();
+        assert_eq!(worth(&c), 3000.0, "every copy for sale counts");
+        c.execute("UPDATE member_cards SET status='Out of stock' WHERE id=?1", [one]).unwrap();
+        assert_eq!(worth(&c), 3000.0, "out of stock is the seller's switch: the copies are still theirs");
+        c.execute("UPDATE member_cards SET qty=0, status='Sold' WHERE id=?1", [one]).unwrap();
+        assert_eq!(worth(&c), 0.0, "a sold-out listing is gone");
+        c.execute("UPDATE member_cards SET kind='own' WHERE id=?1", [two]).unwrap();
+        assert_eq!(worth(&c), 500.0, "back from the wishlist, it counts again");
     }
 
     fn db() -> Connection {

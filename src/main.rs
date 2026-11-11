@@ -869,7 +869,7 @@ fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;").replace('\'', "&apos;")
 }
 
-/// Every page worth finding: the home page, All cards, each binder, one page per card (with its photo), and the trainers.
+/// Every page worth finding: the home page, All cards, each binder, one page per card (with its photo), the trainers and their stores.
 async fn sitemap(State(app): State<App>) -> Res {
     let key = "sitemap.xml".to_string();
     let xml = if let Some(hit) = app.cache.get(&key) {
@@ -880,7 +880,7 @@ async fn sitemap(State(app): State<App>) -> Res {
         let mut x = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\" xmlns:image=\"http://www.google.com/schemas/sitemap-image/1.1\">\n");
         let newest = cards.iter().map(|c| c.2.clone()).max().unwrap_or_default();
         let lm = |d: &str| if d.len() >= 10 { format!("<lastmod>{}</lastmod>", &d[..10]) } else { String::new() };
-        for (path, when) in [("/", newest.as_str()), ("/all", newest.as_str()), ("/trainers", ""), ("/vouches", "")] {
+        for (path, when) in [("/", newest.as_str()), ("/all", newest.as_str()), ("/trainers", ""), ("/stores", ""), ("/vouches", "")] {
             x.push_str(&format!("<url><loc>{site}{path}</loc>{}</url>\n", lm(when)));
         }
         for l in links.iter().filter(|l| l.count > 0) {
@@ -897,6 +897,11 @@ async fn sitemap(State(app): State<App>) -> Res {
         }
         for t in trainers.iter().filter(|t| !t.blocked) {
             x.push_str(&format!("<url><loc>{site}/trainers/{}</loc></url>\n", t.id));
+        }
+        // Each open store with its own address. members::approved already leaves out trainers who are blocked or not approved;
+        // a seller with no store address uses the trainer page above.
+        for t in trainers.iter().filter(|t| !t.blocked && t.seller && !t.slug.is_empty()) {
+            x.push_str(&format!("<url><loc>{site}/store/{}</loc></url>\n", xml_escape(&t.slug)));
         }
         x.push_str("</urlset>\n");
         app.cache.insert(key, Arc::new(x.clone()));

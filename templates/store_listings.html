@@ -89,8 +89,8 @@
       </div>
       <div class="st-row ls-sale"{% if !c.is_sale() %} hidden{% endif %}>
         <span class="st-qty" aria-label="Stock"><button type="button" data-qty="-1" aria-label="One fewer">−</button><input type="number" min="0" max="9999" inputmode="numeric" value="{{ c.qty }}" data-qty-in aria-label="Copies in stock"><button type="button" data-qty="1" aria-label="One more">+</button></span>
-        <button type="button" class="ls-stock{% if c.status == "Out of stock" %} off{% endif %}" data-stock aria-pressed="{{ c.status != "Out of stock" }}"><span class="ls-stock-on">In stock</span><span class="ls-stock-off">Out of stock</span></button>
-        <select data-status aria-label="Status" class="sr-select" hidden>{% for s in statuses %}<option{% if *s == c.status %} selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+        <button type="button" class="ls-stock{% if c.status == "Out of stock" || c.status == "Sold" || c.qty <= 0 %} off{% endif %}" data-stock aria-pressed="{{ c.status != "Out of stock" && c.status != "Sold" && c.qty > 0 }}"><span class="ls-stock-on">In stock</span><span class="ls-stock-off">Out of stock</span></button>
+        <select data-status aria-label="Status" class="sr-select" hidden>{% for s in statuses %}{% if *s != "Reserved" || *s == c.status %}<option{% if *s == c.status %} selected{% endif %}>{{ s }}</option>{% endif %}{% endfor %}</select>
       </div>
       <select data-binder aria-label="Binder"><option value="">No binder</option>{% for b in binders %}<option value="{{ b.id }}"{% if let Some(x) = c.binder_id %}{% if *x == b.id %} selected{% endif %}{% endif %}>{{ b.title }}</option>{% endfor %}</select>
       <textarea class="ct-desc" rows="2" maxlength="500" placeholder="A note for buyers (optional)" aria-label="Notes about {{ c.title }}" data-notes>{{ c.notes }}</textarea>
@@ -119,5 +119,5 @@
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/pricing.js?v=1" defer></script>
 <script src="/static/admin-ui.js?v=9" defer></script>
-<script src="/static/store.js?v=2" defer></script>
+<script src="/static/store.js?v=3" defer></script>
 {% endblock %}

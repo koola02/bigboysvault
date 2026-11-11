@@ -525,8 +525,9 @@ pub fn cond_class(text: &str) -> &'static str {
         _ if t.starts_with("moderately") || first == "mp" => "mp",
         _ if t.starts_with("heavily") || first == "hp" => "hp",
         _ if t.starts_with("damaged") || first == "dmg" => "dm",
-        _ if t.starts_with("sealed") => "sl",
-        _ if ["psa", "cgc", "bgs", "sgc"].iter().any(|g| t.starts_with(g)) => "gr",
+        _ if t.starts_with("sealed") || t.split_whitespace().any(|w| w.trim_matches(|c: char| !c.is_alphanumeric()) == "sealed") => "sl",
+        // A slab: the grading company comes first, with or without a space before the grade ("PSA 10", "PSA10", "ACE 10").
+        _ if ["psa", "cgc", "bgs", "sgc", "ace", "tag"].iter().any(|g| first.strip_prefix(g).is_some_and(|rest| rest.chars().all(|c| c.is_ascii_digit() || c == '.'))) || t.contains("slab") => "gr",
         _ => "",
     }
 }
@@ -682,6 +683,12 @@ mod tests {
         assert_eq!(cond_class("Lightly Played · Holofoil"), "lp");
         assert_eq!(cond_class("Moderately Played"), "mp");
         assert_eq!(cond_class("PSA 10"), "gr");
+        assert_eq!(cond_class("PSA10"), "gr");
+        assert_eq!(cond_class("ACE 10"), "gr");
+        assert_eq!(cond_class("TAG 9.5"), "gr");
+        assert_eq!(cond_class("Ungraded"), "");
+        assert_eq!(cond_class("Aceptable"), "");
+        assert_eq!(cond_class("Booster Box (sealed)"), "sl");
         assert_eq!(cond_class("whatever"), "");
         assert_eq!(tile_condition("near-mint / normal / common"), "Near Mint");
         assert_eq!(tile_condition("Lightly Played / reverse-holofoil / Rare"), "Lightly Played · Reverse Holofoil");

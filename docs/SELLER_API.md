@@ -41,10 +41,24 @@ status between `Active` and `Out of stock` without touching the copy count.
 
 ## Listing statuses
 
-`Active` (on sale) → `Reserved` (every copy spoken for by open reservations) → `Sold` (stock is 0). Also `Hidden`
-(the seller took it off the shelf) and `Expired` (its end date passed; the owner is told and can renew). Statuses
-`Reserved`, `Sold` and `Active` follow stock and reservations by themselves; `Hidden` and `Expired` are set by the
-seller or the clock.
+`Active` (on sale) → `Reserved` (every copy spoken for by open reservations) → `Sold` (stock is 0). Also
+`Out of stock` (the seller's own switch), `Hidden` (the seller took it off the shelf) and `Expired` (its end date
+passed; the owner is told and can renew).
+
+- `Out of stock`, `Hidden` and `Expired` belong to the seller or the clock: changing the copy count never moves a
+  listing out of them.
+- Otherwise the status follows stock (`sellers::refresh_reserved`): 0 copies is `Sold`, every copy held by open
+  reservations is `Reserved`, anything else is `Active`.
+- Asking for `Active` with 0 copies sets 1 copy first. Asking for `Sold` sets 0 copies. `Reserved` can't be picked by
+  hand; it is always worked out from real reservations.
+- Renew and "Change end date" only move the date, except that an `Expired` listing comes back to life.
+- Switching a card into For sale brings `Expired` and `Sold` back with at least 1 copy and leaves `Out of stock` and
+  `Hidden` alone. A card already for sale is untouched.
+- Removing a listing, or moving it out of For sale, cancels its open reservations and declines its open offers
+  (`sellers::close_open_orders`), and each buyer is told once. A member who deletes their account has their own
+  orders cancelled the same way (`sellers::close_member_orders`).
+- Nobody can buy from a store that is blocked or whose profile is waiting for approval: "This store is closed."
+  Accepting an offer re-checks stock, so a card can't be sold twice.
 
 The same card can be listed more than once (say a Near Mint and a Lightly Played copy): the second listing's
 `card_id` is `tcgdex:base1-58#2`. `sellers::catalogue_key` strips the suffix wherever the catalogue id matters.
@@ -110,6 +124,11 @@ There is no checkout and no payment: sending the cart places orders, and the sel
 | `POST /cart/checkout` | `{ items: [{ kind: "vault" \| "card", id, qty }], message }` → `{ placed, failed }`. The vault's lines become one `vault_orders` row; each seller's card becomes a reservation (`sellers::reserve`). 401 when signed out. |
 | `GET /me/orders?tab=buying` | The buyer's reservations, offers and vault orders, with how to pay once accepted |
 | `POST /me/orders/vault/{id}` | `{ status: "Cancelled" }` while the order is still open |
+
+Open vault orders (`Pending`, `Confirmed`) hold the vault's copies (`db::vault_left`), oldest first, so two buyers
+can't both get the last copy; Accept and Mark paid re-check stock. One order holds at most 30 lines and 60 copies, a
+buyer has at most 3 open, and a `Pending` order the vault doesn't answer in 7 days lapses (`expire_due`) and the
+buyer is told. Deleting a vault copy moves open orders onto another copy of the same card (`db::repoint_open_orders`).
 
 Vault orders go `Pending` → `Confirmed` (the buyer now sees how to pay the vault) → `Paid` (the copies come off the
 shelf through `db::mark_sold`), or `Declined` / `Cancelled`. Admin trainers get a notification (event `order`).

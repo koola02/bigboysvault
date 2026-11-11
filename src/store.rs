@@ -660,6 +660,10 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
         pay_public: m.pay_public,
     };
     let (mut cover, mut methods, mut drop_cover) = (None::<Vec<u8>>, Vec::<String>::new(), false);
+    // An unticked box isn't sent at all. The pay_methods_sent marker says "the whole form came in",
+    // so a missing box then means "off"; without the marker it means "leave it as it is".
+    // The boxes are applied after the loop, so the order the fields arrive in doesn't matter.
+    let (mut sent, mut contact_public, mut pay_public, mut notify_views) = (false, None::<bool>, None::<bool>, None::<bool>);
     while let Some(f) = mp.next_field().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))? {
         let key = f.name().unwrap_or("").to_string();
         if key == "cover" {
@@ -674,7 +678,7 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
             "store_name" => s.store_name = v,
             "location" => s.location = v,
             "contact_info" => s.contact_info = v,
-            "contact_public" => s.contact_public = v == "1" || v == "on",
+            "contact_public" => contact_public = Some(v == "1" || v == "on"),
             "status" => s.status = v,
             "fb_url" => s.fb_url = v,
             "fb_group_url" => s.fb_group_url = v,
@@ -683,16 +687,19 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
             "shopee_url" => s.shopee_url = v,
             "links" => s.links = v,
             "pay_method" => methods.push(v),
-            "pay_methods_sent" => { s.pay_methods = String::new(); s.pay_public = false; s.notify_views = false; s.contact_public = false; }
+            "pay_methods_sent" => sent = true,
             "pay_info" => s.pay_info = v,
             "email" => s.email = v,
-            "notify_views" => s.notify_views = v == "1" || v == "on",
-            "pay_public" => s.pay_public = v == "1" || v == "on",
+            "notify_views" => notify_views = Some(v == "1" || v == "on"),
+            "pay_public" => pay_public = Some(v == "1" || v == "on"),
             "drop_cover" => drop_cover = v == "1" || v == "on",
             _ => {}
         }
     }
-    if !methods.is_empty() {
+    s.contact_public = contact_public.unwrap_or(s.contact_public && !sent);
+    s.pay_public = pay_public.unwrap_or(s.pay_public && !sent);
+    s.notify_views = notify_views.unwrap_or(s.notify_views && !sent);
+    if sent || !methods.is_empty() {
         s.pay_methods = methods.join(",");
     }
     let mut new_cover = None;
@@ -969,6 +976,14 @@ async fn seller_by_slug(app: &App, slug: String) -> Result<Option<Member>, (Stat
     with_db(app, move |c| members::by_slug(c, &slug)).await
 }
 
+/// What a buyer is told when a store is blocked or not approved yet.
+const CLOSED: &str = "This store is closed.";
+
+/// A blocked store, or one the vault hasn't approved yet, takes no orders, offers or questions.
+fn closed(seller: &Member) -> bool {
+    seller.blocked || !seller.profile_ok
+}
+
 pub async fn follow(State(app): State<App>, h: HeaderMap, Path(slug): Path<String>) -> Res {
     let m = match acting(&app, &h).await? {
         Ok(m) => m,
@@ -1004,6 +1019,9 @@ pub async fn reserve(State(app): State<App>, h: HeaderMap, Path(slug): Path<Stri
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of orders in a short time. Please wait a few minutes."));
     }
     let Some(seller) = seller_by_slug(&app, slug).await? else { return Ok(fail(StatusCode::NOT_FOUND, "No such store.")) };
+    if closed(&seller) {
+        return Ok(fail(StatusCode::BAD_REQUEST, CLOSED));
+    }
     let (me, sid) = (m.id, seller.id);
     match with_db(&app, move |c| sellers::reserve(c, me, sid, req.card_id, req.qty, &req.message)).await? {
         Ok(id) => {
@@ -1023,6 +1041,9 @@ pub async fn make_offer(State(app): State<App>, h: HeaderMap, Path(slug): Path<S
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of offers in a short time. Please wait a few minutes."));
     }
     let Some(seller) = seller_by_slug(&app, slug).await? else { return Ok(fail(StatusCode::NOT_FOUND, "No such store.")) };
+    if closed(&seller) {
+        return Ok(fail(StatusCode::BAD_REQUEST, CLOSED));
+    }
     let (me, sid, amount) = (m.id, seller.id, req.amount.unwrap_or(0.0));
     match with_db(&app, move |c| sellers::make_offer(c, me, sid, req.card_id, amount, req.qty, &req.message)).await? {
         Ok(id) => Ok(ok(json!({ "ok": true, "id": id }))),
@@ -1045,6 +1066,9 @@ pub async fn ask_seller(State(app): State<App>, h: HeaderMap, Path(slug): Path<S
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of questions in a short time. Please wait a few minutes."));
     }
     let Some(seller) = seller_by_slug(&app, slug).await? else { return Ok(fail(StatusCode::NOT_FOUND, "No such store.")) };
+    if closed(&seller) {
+        return Ok(fail(StatusCode::BAD_REQUEST, CLOSED));
+    }
     let (me, sid) = (m.id, seller.id);
     match with_db(&app, move |c| sellers::ask(c, me, sid, req.card_id, &req.message)).await? {
         Ok(id) => Ok(ok(json!({ "ok": true, "id": id }))),
@@ -1126,11 +1150,19 @@ pub async fn checkout(State(app): State<App>, h: HeaderMap, Json(req): Json<Chec
     }
     for (cid, qty) in cards {
         let msg = message.clone();
-        let seller: Option<i64> = with_db(&app, move |c| c.query_row("SELECT member_id FROM member_cards WHERE id=?1", [cid], |r| r.get(0)).optional()).await?;
-        let Some(sid) = seller else {
+        // Whose card it is, and whether their store is open (not blocked, and approved).
+        let seller: Option<(i64, bool)> = with_db(&app, move |c| {
+            c.query_row("SELECT x.member_id, (m.blocked=0 AND m.profile_ok=1) FROM member_cards x JOIN members m ON m.id=x.member_id WHERE x.id=?1", [cid], |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0))).optional()
+        })
+        .await?;
+        let Some((sid, open)) = seller else {
             failed.push(json!({ "kind": "card", "id": cid, "error": "No longer listed" }));
             continue;
         };
+        if !open {
+            failed.push(json!({ "kind": "card", "id": cid, "error": CLOSED }));
+            continue;
+        }
         match with_db(&app, move |c| sellers::reserve(c, me, sid, cid, qty, &msg)).await? {
             Ok(id) => placed.push(json!({ "kind": "card", "id": cid, "reservation": id })),
             Err(e) => failed.push(json!({ "kind": "card", "id": cid, "error": e })),
@@ -1206,7 +1238,7 @@ pub async fn admin_answer_order(State(app): State<App>, h: HeaderMap, Path(id): 
             app.forget();
             Ok(ok(json!({ "ok": true, "status": o.status })))
         }
-        Err(e) => Ok(fail(StatusCode::BAD_REQUEST, e)),
+        Err(e) => Ok(fail(StatusCode::BAD_REQUEST, &e)),
     }
 }
 

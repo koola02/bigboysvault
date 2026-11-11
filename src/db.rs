@@ -1090,6 +1090,29 @@ pub fn copies_for_sale(c: &Connection, id: i64) -> rusqlite::Result<i64> {
     )
 }
 
+/// Copies of this card the vault can still promise: copies for sale, less the ones in open orders (waiting or accepted).
+/// `except_order` is an order being answered: its own copies don't count against it, and of the orders still waiting
+/// only older ones come first (first come, first served). 0 = a new order: every open order counts.
+/// Needs the store's tables (`sellers::migrate`).
+pub fn vault_left(c: &Connection, id: i64, except_order: i64) -> rusqlite::Result<i64> {
+    let have = copies_for_sale(c, id)?;
+    let held: i64 = c.query_row(
+        &format!(
+            "SELECT COALESCE(SUM(i.qty),0) FROM vault_order_items i JOIN vault_orders o ON o.id=i.order_id JOIN products p ON p.id=i.product_id
+             WHERE o.id<>?2 AND (o.status='Confirmed' OR (o.status='Pending' AND (?2=0 OR o.id<?2)))
+               AND {DUP_KEY} = (SELECT {DUP_KEY} FROM products p WHERE p.id=?1)"
+        ),
+        rusqlite::params![id, except_order],
+        |r| r.get(0),
+    )?;
+    Ok((have - held).max(0))
+}
+
+/// Which copies count as the same card (same card, condition, finish and price). None if the card is gone.
+pub fn copy_key(c: &Connection, id: i64) -> rusqlite::Result<Option<String>> {
+    c.query_row(&format!("SELECT {DUP_KEY} FROM products p WHERE p.id=?1"), [id], |r| r.get(0)).optional()
+}
+
 /// `n` copies of this card are sold: they stop being for sale (the card itself stays, as the vault's record of it).
 pub fn mark_sold(c: &Connection, id: i64, n: i64) -> rusqlite::Result<usize> {
     c.execute(
@@ -1150,7 +1173,25 @@ pub fn replace_image(c: &Connection, old: &str, new: &str) -> rusqlite::Result<(
     Ok(())
 }
 
+/// A copy is about to be deleted. Open vault orders that point at it move to another copy of the same card,
+/// so the order keeps its place in line and can still be accepted. With no other copy, the line stays as it is.
+pub fn repoint_open_orders(c: &Connection, id: i64) -> rusqlite::Result<()> {
+    let has_orders: bool = c.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='vault_order_items')", [], |r| r.get(0))?;
+    if !has_orders {
+        return Ok(());
+    }
+    c.execute(
+        &format!(
+            "UPDATE vault_order_items SET product_id=COALESCE((SELECT p.id FROM products p WHERE p.id<>?1 AND {DUP_KEY}=(SELECT {DUP_KEY} FROM products p WHERE p.id=?1) ORDER BY p.available DESC, p.id LIMIT 1), product_id)
+             WHERE product_id=?1 AND order_id IN (SELECT id FROM vault_orders WHERE status IN ('Pending','Confirmed'))"
+        ),
+        [id],
+    )?;
+    Ok(())
+}
+
 pub fn delete_entry(c: &Connection, id: i64) -> rusqlite::Result<()> {
+    repoint_open_orders(c, id)?;
     c.execute("DELETE FROM collection_products WHERE product_id=?1", [id])?;
     c.execute("DELETE FROM products WHERE id=?1", [id])?;
     Ok(())

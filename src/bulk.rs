@@ -129,6 +129,7 @@ pub fn delete_many(c: &Connection, ids: &[i64]) -> rusqlite::Result<Vec<String>>
         if let Ok(img) = tx.query_row("SELECT image FROM products WHERE id=?1", [id], |r| r.get::<_, String>(0)) {
             images.push(img);
         }
+        crate::db::repoint_open_orders(&tx, *id)?;
         tx.execute("DELETE FROM collection_products WHERE product_id=?1", [id])?;
         tx.execute("DELETE FROM products WHERE id=?1", [id])?;
     }
