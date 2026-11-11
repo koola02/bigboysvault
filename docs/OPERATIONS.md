@@ -166,6 +166,24 @@ wrong (timeout, Google's free quota used up: a 429 pauses it for a minute), Ask 
 - Status: `GET /admin/ask/status` (owner): on/off, model, answers today, last success, last problem.
 - The free tier lets Google use the questions to improve its products; the Ask screen says that questions go to Google.
 
+## 4c. Private messages (Messenger style)
+
+`src/dm.rs` (database), `src/messages.rs` (web), `static/dm.js` (the chat window). One conversation per pair of
+people; "the vault" is one side too (id 0), answered by every full admin. A "Message" button sits beside every
+add-to-cart button; it opens the chat with that card attached to the first message. Text, photos (re-made from the
+pixels, like every upload), voice notes (WebM/Ogg/MP4/MP3, checked by their first bytes, 3 MB) and voice calls.
+
+- Live: each open page keeps one waiting request (`GET /dm/poll`, 25 s), woken the moment a message, a "Seen" or a
+  call signal arrives. Calls are WebRTC, browser to browser; `GET /dm/ice` hands out Cloudflare's relay (TURN) when the
+  Fly secrets `CF_TURN_KEY_ID` and `CF_TURN_API_TOKEN` are set (credentials for a day, made again every 12 hours),
+  otherwise public STUN only (some mobile networks then can't connect).
+- Notifications: the other side gets one line per conversation that keeps count ("Juan · 3 new messages: …").
+  Every message in a conversation between two trainers also notifies the admins who aren't in it (`dm_watch`).
+- Admin › Messages (`/admin/messages`): every conversation. Reading there never marks anything seen. The vault's own
+  conversations open normally, so an admin can answer and call as the vault.
+- Media counts toward the photo space cap (`PHOTO_SPACE_MB`) and lives in `uploads/` under unguessable names
+  (`dm<thread>-…`), so the nightly backup keeps it.
+
 ## 5. Catalogue importer (later)
 
 Adding stock already pulls names, sets and art from TCGdex on demand, and the nightly warm-up keeps the most

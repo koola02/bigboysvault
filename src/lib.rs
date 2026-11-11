@@ -2,6 +2,7 @@ pub mod ask;
 pub mod blocks;
 pub mod bulk;
 pub mod db;
+pub mod dm;
 pub mod history;
 pub mod market;
 pub mod insights;

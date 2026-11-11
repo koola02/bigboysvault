@@ -1,6 +1,7 @@
 mod admin;
 mod api;
 mod community;
+mod messages;
 mod ops;
 mod store;
 mod vault_ai;
@@ -39,6 +40,8 @@ struct App {
     /// Recent attempts per visitor or name, for sign-ins, sign-ups and searches. Forgotten after 15 minutes.
     limits: Cache<String, u32>,
     chat: Arc<community::ChatHub>,
+    /// Private messages: who's waiting for news, call signals, who's online (messages.rs).
+    dm: Arc<messages::DmHub>,
     /// Goes up on every change. A page or catalogue worked out before the latest change is never kept,
     /// so a slow request that started just before a save can't put old cards back into the cache.
     changes: Arc<std::sync::atomic::AtomicU64>,
@@ -1213,6 +1216,7 @@ async fn main() {
         sindex: Cache::builder().max_capacity(1).time_to_live(Duration::from_secs(60)).build(),
         limits: Cache::builder().max_capacity(20_000).time_to_live(Duration::from_secs(900)).build(),
         chat: Arc::new(community::ChatHub::new()),
+        dm: Arc::new(messages::DmHub::new()),
         changes: Arc::new(std::sync::atomic::AtomicU64::new(0)),
     };
 
@@ -1361,6 +1365,20 @@ async fn main() {
         .route("/ask", get(community::ask_page))
         .route("/api/ask", post(api::ask_vault))
         .route("/admin/ask/status", get(api::ask_status))
+        .route("/me/messages", get(messages::page))
+        .route("/admin/messages", get(messages::admin_page))
+        .route("/admin/dm", get(messages::admin_list))
+        .route("/admin/dm/{id}", get(messages::admin_thread))
+        .route("/dm/inbox", get(messages::inbox))
+        .route("/dm/poll", get(messages::poll))
+        .route("/dm/ice", get(messages::ice))
+        .route("/dm/open", post(messages::open))
+        .route("/dm/{id}", get(messages::thread))
+        .route("/dm/{id}/send", post(messages::send))
+        .route("/dm/{id}/read", post(messages::read))
+        .route("/dm/{id}/call", post(messages::call).layer(axum::extract::DefaultBodyLimit::max(96 * 1024)))
+        .route("/dm/{id}/photo", post(messages::photo).layer(axum::extract::DefaultBodyLimit::max(12 * 1024 * 1024)))
+        .route("/dm/{id}/voice", post(messages::voice).layer(axum::extract::DefaultBodyLimit::max(3 * 1024 * 1024 + 4096)))
         .route("/me/photos", post(community::upload_photo).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)))
         .route("/me/photos/{id}/drop", post(community::drop_photo))
         .route("/vouches", get(community::wall).post(community::post_vouch))

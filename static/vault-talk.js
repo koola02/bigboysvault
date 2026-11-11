@@ -154,6 +154,8 @@
     const p = make('div', 'card-p', c.price);
     // The "+" only shows when the vault sent the card's own number and real price: that means it is still for sale.
     if (c.id && c.amount > 0) {
+      const d = make('span', 'dm-mini'); d.setAttribute('role', 'button'); d.tabIndex = 0; d.title = 'Message the seller'; d.setAttribute('aria-label', `Message the seller about ${c.title}`); d.dataset.dmVault = c.id;
+      p.append(d);
       const b = make('span', 'cart-mini', '+');
       b.setAttribute('role', 'button'); b.tabIndex = 0; b.title = 'Add to cart'; b.setAttribute('aria-label', `Add ${c.title} to cart`);
       Object.assign(b.dataset, { cartVault: c.id, title: c.title, price: c.amount, image: c.img || '', url: `/products/${c.handle}` });

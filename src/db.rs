@@ -341,6 +341,7 @@ pub fn open(path: &str) -> rusqlite::Result<Connection> {
     migrate(&c)?;
     crate::history::migrate(&c)?;
     crate::wishes::migrate(&c)?;
+    crate::dm::migrate(&c)?;
     c.execute_batch(crate::similar::SCHEMA)?;
     Ok(c)
 }

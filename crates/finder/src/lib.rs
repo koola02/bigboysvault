@@ -140,7 +140,7 @@ fn Tile(card: Arc<Card>) -> impl IntoView {
             </div>
             {(!tags.is_empty()).then(|| view! { <div class="card-tags">{tags.into_iter().map(|t| view! { <span class="tag-hl">{t}</span> }).collect_view()}</div> })}
             {(!notes.is_empty()).then(|| view! { <div class="card-note">{notes}</div> })}
-            <div class="card-p">{price}{buy.then(|| view! { <span class="cart-mini" role="button" tabindex="0" data-cart-vault=pid data-title=buy_title data-price=buy_price data-image=buy_img data-url=buy_url aria-label=buy_label title="Add to cart">"+"</span> })}</div>
+            <div class="card-p">{price}{buy.then(|| view! { <span class="dm-mini" role="button" tabindex="0" data-dm-vault=pid aria-label="Message the seller" title="Message the seller"></span> })}{buy.then(|| view! { <span class="cart-mini" role="button" tabindex="0" data-cart-vault=pid data-title=buy_title data-price=buy_price data-image=buy_img data-url=buy_url aria-label=buy_label title="Add to cart">"+"</span> })}</div>
         </a>
     }
 }

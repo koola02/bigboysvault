@@ -1470,6 +1470,7 @@ pub fn start_housekeeping(app: App) {
                     "expiry" => "A listing expired",
                     "announcement" => "News from the vault",
                     "wish" => "A card from your wishlist is here",
+                    "message" => "You have a new message",
                     _ => "Something happened in your store",
                 };
                 let url = if link.starts_with('/') { format!("{site}{link}") } else { link };

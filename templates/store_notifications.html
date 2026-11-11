@@ -11,7 +11,7 @@
   {% if notes.is_empty() %}<div class="me-empty st-empty"><b>Nothing yet.</b><span>{% if p.m.seller %}Follows, questions, offers, reservations and sales show up here.{% else %}News about what you're buying shows up here.{% endif %}</span></div>{% endif %}
   <ul class="st-notes">
     {% for n in notes %}
-    <li class="st-note{% if !n.is_read %} unread{% endif %}" data-k="{{ n.kind }}"><a href="{% if n.link.is_empty() %}#{% else %}{{ n.link }}{% endif %}"><span class="st-note-k">{% if n.kind == "my_order" %}my order{% else if n.kind == "wish" %}wishlist{% else %}{{ n.kind }}{% endif %}</span><span class="st-note-m">{{ n.message }}</span><span class="st-note-t">{{ n.when() }}</span></a></li>
+    <li class="st-note{% if !n.is_read %} unread{% endif %}" data-k="{{ n.kind }}"><a href="{% if n.link.is_empty() %}#{% else %}{{ n.link }}{% endif %}"><span class="st-note-k">{% if n.kind == "my_order" %}my order{% else if n.kind == "wish" %}wishlist{% else if n.kind == "message" || n.kind == "dm_watch" %}message{% else %}{{ n.kind }}{% endif %}</span><span class="st-note-m">{{ n.message }}</span><span class="st-note-t">{{ n.when() }}</span></a></li>
     {% endfor %}
   </ul>
   {% if pages > 1 %}<p class="st-pager">{% if page > 0 %}<a class="linkbtn" href="/me/notifications?page={{ page - 1 }}">← Newer</a>{% endif %}<span>Page {{ page + 1 }} of {{ pages }}</span>{% if page + 1 < pages %}<a class="linkbtn" href="/me/notifications?page={{ page + 1 }}">Older →</a>{% endif %}</p>{% endif %}
@@ -32,7 +32,7 @@
       <tbody>
         {% for pr in prefs %}
         {# Someone who doesn't sell only sees the switches that can reach them. #}
-        {% if p.m.seller || pr.event == "my_order" || pr.event == "wish" || pr.event == "announcement" || (pr.event == "order" && p.m.role == "admin") %}
+        {% if p.m.seller || pr.event == "my_order" || pr.event == "message" || pr.event == "wish" || pr.event == "announcement" || (pr.event == "order" && p.m.role == "admin") %}
         <tr data-event="{{ pr.event }}">
           <td>{{ pr.label }}</td>
           <td><label class="chk"><input type="checkbox" class="sr" data-ch="site"{% if pr.site %} checked{% endif %} aria-label="On the site: {{ pr.label }}"><span class="chk-box"></span></label></td>
