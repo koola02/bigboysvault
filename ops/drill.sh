@@ -45,20 +45,34 @@ EOF
 )"
 case "$DBNOTE" in FAIL*) alert "Restore test: ${DBNOTE#FAIL }"; exit 1 ;; esac
 
-# 2. Every picture the site lists is here, whole.
+# 2. Every picture the site lists is here, whole: the originals in the backup, and the WebP/AVIF copies (made on
+# this VM by images.sh, in converted/) next to them. A missing copy is only counted: images.sh can make it again.
 LIST="$(admin_curl "$SITE/admin/backup/uploads?since=0" || true)"
 PICNOTE="$(printf '%s' "$LIST" | python3 -c '
 import json, os, sys
-up = sys.argv[1]
+up, conv = sys.argv[1], sys.argv[2]
 try:
     files = json.load(sys.stdin)["files"]
 except Exception:
     print("FAIL the site did not list its pictures"); sys.exit()
-missing = [f["path"] for f in files if not (os.path.isfile(os.path.join(up, f["path"][len("/uploads/"):])) and os.path.getsize(os.path.join(up, f["path"][len("/uploads/"):])) == f["size"])]
-if len(missing) > max(5, len(files) // 100):
-    print(f"FAIL {len(missing)} of {len(files)} pictures are not in the backup, like {missing[0]}"); sys.exit()
-print(f"{len(files) - len(missing)} of {len(files)} pictures" + (f" ({len(missing)} new since last night)" if missing else ""))
-' "$BK/uploads")"
+def here(f):
+    name = f["path"][len("/uploads/"):]
+    for d in ((conv, up) if name.endswith((".webp", ".avif")) else (up,)):
+        p = os.path.join(d, name)
+        if os.path.isfile(p) and os.path.getsize(p) == f["size"]:
+            return True
+    return False
+orig = [f for f in files if not f["path"].endswith((".webp", ".avif"))]
+copies = [f for f in files if f["path"].endswith((".webp", ".avif"))]
+missing = [f["path"] for f in orig if not here(f)]
+gone = sum(1 for f in copies if not here(f))
+if len(missing) > max(5, len(orig) // 100):
+    print(f"FAIL {len(missing)} of {len(orig)} pictures are not in the backup, like {missing[0]}"); sys.exit()
+note = f"{len(orig) - len(missing)} of {len(orig)} pictures" + (f" ({len(missing)} new since last night)" if missing else "")
+if copies:
+    note += f", {len(copies) - gone} of {len(copies)} WebP/AVIF copies"
+print(note)
+' "$BK/uploads" "$DATA_DIR/converted")"
 case "$PICNOTE" in FAIL*) alert "Restore test: ${PICNOTE#FAIL }"; exit 1 ;; esac
 
 # 3. The real program on the copy (when Docker is installed: ops/setup-extras.sh).
