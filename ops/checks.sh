@@ -10,8 +10,8 @@ SLOW="${CHECK_SLOW_S:-3}"
 PICK="$DATA_DIR/checks.pick"
 if [ ! -s "$PICK" ] || [ -n "$(find "$PICK" -mmin +1440 2>/dev/null)" ]; then
   SM="$(curl -sS --max-time 30 "$SITE/sitemap.xml" 2>/dev/null || true)"
-  P="$(printf '%s' "$SM" | grep -o '<loc>[^<]*/products/[^<]*</loc>' | head -1 | sed -e 's#<loc>##' -e 's#</loc>##')"
-  S="$(printf '%s' "$SM" | grep -o '<loc>[^<]*/store/[^<]*</loc>' | head -1 | sed -e 's#<loc>##' -e 's#</loc>##')"
+  P="$(printf '%s' "$SM" | grep -o '<loc>[^<]*/products/[^<]*</loc>' | head -1 | sed -e 's#<loc>##' -e 's#</loc>##' || true)"
+  S="$(printf '%s' "$SM" | grep -o '<loc>[^<]*/store/[^<]*</loc>' | head -1 | sed -e 's#<loc>##' -e 's#</loc>##' || true)"
   [ -n "$P" ] && printf '%s\n%s\n' "$P" "$S" > "$PICK"
 fi
 PRODUCT="$(sed -n 1p "$PICK" 2>/dev/null)"; STORE="$(sed -n 2p "$PICK" 2>/dev/null)"
