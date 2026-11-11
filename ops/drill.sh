@@ -23,7 +23,7 @@ c = sqlite3.connect(sys.argv[1])
 ok = c.execute("PRAGMA integrity_check").fetchone()[0]
 if ok != "ok":
     print("FAIL integrity check: " + ok[:80]); sys.exit()
-need = ["products", "members", "member_cards", "collections", "vault_orders", "reservations", "offers", "notifications", "settings", "price_history"]
+need = ["products", "members", "member_cards", "collections", "vault_orders", "reservations", "offers", "notifications", "settings"]
 have = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
 miss = [t for t in need if t not in have]
 if miss:
