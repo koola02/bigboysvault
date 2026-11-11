@@ -125,7 +125,7 @@ def main():
                 break
         out.append({"id": int(c["id"]), "picks": picks})
     body = json.dumps({"cards": out}).encode()
-    req = urllib.request.Request(f"{SITE}/admin/similar", data=body, method="POST", headers={"Content-Type": "application/json", "Cookie": f"marcuru_admin={TOKEN}"})
+    req = urllib.request.Request(f"{SITE}/admin/similar", data=body, method="POST", headers={"Content-Type": "application/json", "Cookie": f"marcuru_admin={TOKEN}", "User-Agent": "bbv-similar"})
     with urllib.request.urlopen(req, timeout=120) as r:
         saved = json.load(r).get("saved", 0)
     known = sum(1 for c in cards if c.get("api_id") and os.path.exists(os.path.join(CACHE, c["api_id"].replace(":", "_").replace("/", "_") + ".json")))
