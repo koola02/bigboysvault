@@ -14,7 +14,7 @@ use std::time::Duration;
 use vault_search::{parse, peso, read_words, search, Sort};
 
 const DEFAULT_MODEL: &str = "gemini-3.6-flash";
-const ROUNDS: usize = 4;
+const ROUNDS: usize = 6;
 /// Answers one visitor may get from the AI in 15 minutes; after that, the rule-based answers.
 const PER_VISITOR: u32 = 30;
 static PAUSED_UNTIL: AtomicI64 = AtomicI64::new(0);
@@ -82,7 +82,7 @@ fn tools() -> Value {
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "Words to search for: a Pokémon or card name, a set, a card number, and words like holo, reverse holo, 1st edition, graded, PSA, near mint, japanese. Leave empty to search everything (with a sort)." },
+                    "query": { "type": "string", "description": "Words to search for: a Pokémon or card name, a set, a card number, and words like holo, reverse holo, 1st edition, graded, PSA, near mint, japanese. Leave empty to search everything (with a sort). Types (fire, water, psychic…) are not searchable: search Pokémon of that type by name instead, one name per search." },
                     "min_price": { "type": "number", "description": "Lowest price in pesos." },
                     "max_price": { "type": "number", "description": "Highest price in pesos." },
                     "sort": { "type": "string", "enum": ["best_match", "cheapest", "priciest", "newest"] }
