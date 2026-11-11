@@ -1,7 +1,7 @@
 <section class="ask" data-ask data-card-title="Ask the Vault">
   <header class="chat-head">
     <img class="ask-orb" src="/static/img/logo-sm-144.png?v=1" width="52" height="52" alt="">
-    <div><h1 class="h1">Ask the Vault</h1><p class="ask-sub">I answer from the vault's live cards and prices.</p></div>
+    <div><h1 class="h1">Ask the Vault</h1><p class="ask-sub">I answer from the vault's live cards and prices.{% if ai %} Answers are written with Google Gemini, so your question goes to Google.{% endif %}</p></div>
   </header>
   <div class="chat-log ask-log" data-log role="log" aria-label="Answers" tabindex="0"></div>
   <div class="ask-chips" data-chips></div>

@@ -1649,10 +1649,13 @@ struct ChatPart;
 #[template(path = "ask.html")]
 struct AskPage {
     nav: Chrome,
+    ai: bool,
 }
 #[derive(Template)]
 #[template(path = "ask_part.html")]
-struct AskPart;
+struct AskPart {
+    ai: bool,
+}
 
 pub async fn chat_page(State(app): State<App>, Query(q): Query<PartQs>) -> Res {
     if q.part.is_some() {
@@ -1664,10 +1667,10 @@ pub async fn chat_page(State(app): State<App>, Query(q): Query<PartQs>) -> Res {
 
 pub async fn ask_page(State(app): State<App>, Query(q): Query<PartQs>) -> Res {
     if q.part.is_some() {
-        return Ok(html(render(AskPart)?));
+        return Ok(html(render(AskPart { ai: crate::vault_ai::enabled() })?));
     }
     let nav = with_db(&app, |c| chrome(c)).await?;
-    Ok(html(render(AskPage { nav: titled(nav, "Ask the Vault") })?))
+    Ok(html(render(AskPage { nav: titled(nav, "Ask the Vault"), ai: crate::vault_ai::enabled() })?))
 }
 
 fn chat_json(m: &ChatMessage) -> Value {

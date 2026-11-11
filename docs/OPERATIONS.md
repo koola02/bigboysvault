@@ -152,6 +152,20 @@ steps 2 and 3.
 
 Try a restore now and then on staging (`ops/staging.sh`) so it's familiar before it's needed.
 
+## 4b. Ask the Vault with Google Gemini
+
+`src/vault_ai.rs`. When the Fly secret `GEMINI_API_KEY` is set, Gemini answers Ask questions: it searches the vault
+(`search_cards`), opens a card (`card_details`: price, stock, market price, trend), finds look-alikes
+(`similar_cards`) and searches the trainers' stores (`store_listings`), all read-only. It may only quote what those
+return; the cards it recommends come back as tiles built from the real products. Without a key, or when anything goes
+wrong (timeout, Google's free quota used up: a 429 pauses it for a minute), Ask answers the old way (`src/ask.rs`).
+
+- Key: aistudio.google.com/apikey → Create API key, then `fly secrets set GEMINI_API_KEY=... -a bigboysvault`.
+- `GEMINI_MODEL` (default `gemini-3.6-flash`), `GEMINI_DAILY_MAX` (answers per Philippine day, default 900; each
+  visitor at most 30 per 15 minutes).
+- Status: `GET /admin/ask/status` (owner): on/off, model, answers today, last success, last problem.
+- The free tier lets Google use the questions to improve its products; the Ask screen says that questions go to Google.
+
 ## 5. Catalogue importer (later)
 
 Adding stock already pulls names, sets and art from TCGdex on demand, and the nightly warm-up keeps the most

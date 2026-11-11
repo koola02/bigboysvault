@@ -3,6 +3,7 @@ mod api;
 mod community;
 mod ops;
 mod store;
+mod vault_ai;
 
 use askama::Template;
 use axum::{
@@ -1359,6 +1360,7 @@ async fn main() {
         .route("/chat/messages/{id}/delete", post(community::chat_delete))
         .route("/ask", get(community::ask_page))
         .route("/api/ask", post(api::ask_vault))
+        .route("/admin/ask/status", get(api::ask_status))
         .route("/me/photos", post(community::upload_photo).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)))
         .route("/me/photos/{id}/drop", post(community::drop_photo))
         .route("/vouches", get(community::wall).post(community::post_vouch))

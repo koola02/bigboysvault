@@ -124,7 +124,7 @@ pub async fn price_suggest(State(app): State<App>, h: HeaderMap, Query(q): Query
     })))
 }
 
-async fn catalogue(app: &App) -> Result<Arc<String>, (StatusCode, String)> {
+pub(crate) async fn catalogue(app: &App) -> Result<Arc<String>, (StatusCode, String)> {
     const KEY: &str = "cards.tsv";
     if let Some(hit) = app.cache.get(KEY) {
         return Ok(hit);
@@ -326,6 +326,24 @@ pub struct AskReq {
 }
 
 /// Ask the Vault: a plain question in, an answer and some cards out, worked out here from the live catalogue.
+/// A card as an Ask tile; the "+" (id and amount) only while it is for sale.
+pub(crate) fn product_tile(p: &db::Product) -> serde_json::Value {
+    let mut t = serde_json::json!({ "handle": p.handle, "title": p.short_title(), "full": p.title, "img": p.img(360), "price": peso(p.price), "c": p.cond_class(), "cond": vault_search::tile_condition(&p.variant), "set": p.set_text(), "sym": "", "foil": vault_search::foil_class(&format!("{} {}", p.title, p.variant)), "grade": p.grade().unwrap_or_default(), "notes": "", "tags": [] });
+    if p.available && p.price > 0.0 {
+        t["id"] = p.id.into();
+        t["amount"] = p.price.into();
+    }
+    t
+}
+
+/// GET /admin/ask/status: is the AI on, answers today, the last problem.
+pub async fn ask_status(State(app): State<App>, h: HeaderMap) -> Res {
+    if !admin::authed(&app, &h) {
+        return Ok((StatusCode::NOT_FOUND, "Not found").into_response());
+    }
+    Ok(json(crate::vault_ai::status(&app).await))
+}
+
 pub async fn ask_vault(State(app): State<App>, h: HeaderMap, axum::Json(req): axum::Json<AskReq>) -> Res {
     let who = crate::community::client_ip(&h);
     let key = format!("ask|{who}");
@@ -355,20 +373,14 @@ pub async fn ask_vault(State(app): State<App>, h: HeaderMap, axum::Json(req): ax
             })
             .await?;
             if !rel.is_empty() {
-                let tiles: Vec<serde_json::Value> = rel
-                    .iter()
-                    .map(|p| {
-                        let mut t = serde_json::json!({ "handle": p.handle, "title": p.short_title(), "full": p.title, "img": p.img(360), "price": peso(p.price), "c": p.cond_class(), "cond": vault_search::tile_condition(&p.variant), "set": p.set_text(), "sym": "", "foil": vault_search::foil_class(&format!("{} {}", p.title, p.variant)), "grade": p.grade().unwrap_or_default(), "notes": "", "tags": [] });
-                        if p.available && p.price > 0.0 {
-                            t["id"] = p.id.into();
-                            t["amount"] = p.price.into();
-                        }
-                        t
-                    })
-                    .collect();
+                let tiles: Vec<serde_json::Value> = rel.iter().map(product_tile).collect();
                 return Ok(json(serde_json::json!({ "say": format!("Cards like {title}: alike in type, artist, rarity or set."), "cards": tiles, "chips": [], "ctx": serde_json::Value::Null })));
             }
         }
+    }
+    // Google Gemini answers when it is set up (crate::vault_ai); anything wrong there and the guide below answers.
+    if let Some(v) = crate::vault_ai::answer(&app, &who, &question, ctx.as_deref()).await {
+        return Ok(json(v));
     }
     let trainers = with_db(&app, |c| members::approved(c)).await?;
     let trainers: Vec<ask::Trainer> = trainers.into_iter().map(|t| ask::Trainer { name: t.name, stars: t.stars, worth: t.worth }).collect();
