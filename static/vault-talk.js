@@ -46,7 +46,7 @@
       const words = make('p', 'msg-text', m.text);
       body.append(head, words);
       if (mine || who.full || (who.admin && !m.role)) {
-        const x = make('button', 'msg-x', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Delete this message');
+        const x = make('button', mine ? 'msg-x' : 'msg-x staff-only', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Delete this message');
         x.addEventListener('click', async () => {
           if (!confirm('Delete this message?')) return;
           try { await jsonPost(`/chat/messages/${m.id}/delete`, {}); n.remove(); tidy(); } catch (e) { say(e.message); }

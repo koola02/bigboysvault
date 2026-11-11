@@ -40,7 +40,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@50..150,100..900&display=swap">
 <link rel="stylesheet" href="/static/app.css?v=53">
 <link rel="stylesheet" href="/static/modern.css?v=27">
-<link rel="stylesheet" href="/static/vault.css?v=60">
+<link rel="stylesheet" href="/static/vault.css?v=62">
 {% for t in nav.trials %}<meta http-equiv="origin-trial" content="{{ t }}">
 {% endfor %}<script type="speculationrules">
 {"prefetch":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/admin*"}},{"not":{"href_matches":"/products/*"}},{"not":{"href_matches":"/me*"}},{"not":{"href_matches":"/join*"}},{"not":{"href_matches":"/chat*"}},{"not":{"href_matches":"/ask*"}},{"not":{"href_matches":"/trainers/*"}},{"not":{"href_matches":"/collections/*"}},{"not":{"href_matches":"/static/*"}},{"not":{"href_matches":"/uploads/*"}}]},"eagerness":"moderate"}],
@@ -78,16 +78,18 @@
 <script src="/static/suggest.js?v=3" defer></script>
 <script src="/static/card-float.js?v=23" defer></script>
 <script src="/static/tiles.js?v=2" defer></script>
-<script src="/static/vouches.js?v=4" defer></script>
+<script src="/static/vouches.js?v=5" defer></script>
 <script src="/static/vault-core.js?v=12" defer></script>
 <script src="/static/cart.js?v=2" defer></script>
-<script src="/static/vault-talk.js?v=8" defer></script>
-<script src="/static/dm.js?v=1" defer></script>
-<script src="/static/vault-staff.js?v=3" defer></script>
+<script src="/static/vault-talk.js?v=9" defer></script>
+<script src="/static/dm.js?v=3" defer></script>
+<script src="/static/card-cam.js?v=2" defer></script>
+<script src="/static/vault-staff.js?v=4" defer></script>
 <script type="module" src="/static/vault-gl.js?v=4"></script>
 </head>
 <body>
 <a class="skip" href="#main">Skip to content</a>
+<script>try { if (localStorage.getItem('bbv:staff-hide')) document.documentElement.setAttribute('data-staff-hide', ''); } catch (_) {}</script>
 <script>(function () { try { // Signed in last time? Say so before the top bar paints, so "Log in" never flashes. Saved by vault-core.js as { me, admin }.
   var s = JSON.parse(localStorage.getItem('bbv:me') || 'null'); if (!s) return;
   var me = s.me || (s.name ? s : null), d = document.documentElement.dataset;

@@ -49,8 +49,8 @@
       // Moderators don't overrule other staff.
       const canManage = owner && (full || mine || !v.hasAttribute('data-staff'));
       if (me && !me.locked && v.classList.contains('vouch')) acts.append(button('v-act', '↩ Reply', () => compose(v)));
-      if (canManage) acts.append(button('v-act', 'Hide', () => act(id, 'hide')));
-      if (mine || canManage) acts.append(button('v-act bad', 'Delete', () => act(id, 'delete')));
+      if (canManage) acts.append(button(`v-act${mine ? '' : ' staff-only'}`, 'Hide', () => act(id, 'hide')));
+      if (mine || canManage) acts.append(button(`v-act bad${mine ? '' : ' staff-only'}`, 'Delete', () => act(id, 'delete')));
     });
   }
   const gone = (id) => document.querySelectorAll(`[data-vouch="${CSS.escape(id)}"]`).forEach((n) => n.remove());

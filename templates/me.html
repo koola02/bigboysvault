@@ -9,7 +9,7 @@
     </div>
   </div>
   <p class="me-status {% if m.profile_ok %}ok{% endif %}" id="meStatus">{% if m.profile_ok %}✓ Your page is live.{% else %}⏳ The vault owner still has to approve your picture, description and binder. Your vouches go up straight away.{% endif %}</p>
-  {% if m.is_staff() %}<p class="me-staff"><span class="role" data-role="{{ m.role }}">{{ m.role_text() }}</span><span>{% if m.role == "admin" %}You can do everything the vault owner can, including editing the site.{% else %}You can hide or delete vouches, and block or remove trainers.{% endif %}</span><a class="btn ghost" href="{% if m.role == "admin" %}/admin{% else %}/admin/trainers{% endif %}">Open admin</a></p>{% endif %}
+  {% if m.is_staff() %}<p class="me-staff-toggle"><button type="button" class="btn ghost" data-staff-toggle aria-pressed="true"><span data-staff-word>Hide admin buttons</span></button><small>Admin buttons on the site's pages (edit, take down, delete). Hidden only on this device.</small></p><p class="me-staff"><span class="role" data-role="{{ m.role }}">{{ m.role_text() }}</span><span>{% if m.role == "admin" %}You can do everything the vault owner can, including editing the site.{% else %}You can hide or delete vouches, and block or remove trainers.{% endif %}</span><a class="btn ghost" href="{% if m.role == "admin" %}/admin{% else %}/admin/trainers{% endif %}">Open admin</a></p>{% endif %}
   {% if m.locked() %}<p class="me-locked">🔒 Your trainer is locked for another {{ m.lock_left() }}. You can't post or change anything until then.</p>{% endif %}
   <p class="tp-stars">{% if m.stars > 0 %}<span class="stars stars-lg">★ {{ m.stars }}</span>{% endif %}<span class="worth worth-lg" id="meWorth"{% if m.worth <= 0.0 %} hidden{% endif %}>{{ m.worth_text() }}</span></p>
 
@@ -85,7 +85,7 @@
     <details class="me-own" id="meOwn">
       <summary><span>📷</span> Not in the list? Add your own photo of a card</summary>
       <form id="meUpload" class="me-up">
-        <label class="me-up-pic"><input type="file" name="photo" accept="image/*" required class="sr" id="meUpPhoto"><img id="meUpShot" alt="" hidden><span id="meUpHint"><b>Add a photo</b><small>Take one or choose one</small></span></label>
+        <label class="me-up-pic"><input type="file" name="photo" accept="image/*" required class="sr" id="meUpPhoto" data-card-cam><img id="meUpShot" alt="" hidden><span id="meUpHint"><b>Add a photo</b><small>Take one or choose one</small></span></label>
         <div class="me-fields">
           <label>Card name<input name="name" maxlength="120" required placeholder="Like Charizard ex" autocomplete="off"></label>
           <label>Set <small>if you know it</small><input name="set" maxlength="80" autocomplete="off"></label>

@@ -2,6 +2,21 @@
 // A card opens its edit form, a trainer opens their row in Admin › Trainers, a binder or the home page opens its editor.
 // Moderators only see what's theirs to change. Nobody else ever sees the button.
 (() => {
+  // Hiding the admin buttons: remembered on this device, switched with any [data-staff-toggle] button (My profile,
+  // the admin pages) or the small eye beside the admin button. The page's first script sets it before anything paints.
+  const KEY = 'bbv:staff-hide';
+  const hidden = () => document.documentElement.hasAttribute('data-staff-hide');
+  const label = () => document.querySelectorAll('[data-staff-toggle]').forEach((b) => {
+    b.setAttribute('aria-pressed', String(!hidden()));
+    const t = b.querySelector('[data-staff-word]') || b; t.textContent = hidden() ? 'Show admin buttons' : 'Hide admin buttons';
+  });
+  const setHidden = (on) => {
+    try { on ? localStorage.setItem(KEY, '1') : localStorage.removeItem(KEY); } catch (_) {}
+    document.documentElement.toggleAttribute('data-staff-hide', on);
+    label();
+  };
+  document.addEventListener('click', (e) => { if (e.target.closest('[data-staff-toggle]')) { e.preventDefault(); setHidden(!hidden()); } });
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', label); else label();
   if (document.querySelector('.admin, #edList')) return;
   let who = null;
   const btn = document.createElement('a');
@@ -13,6 +28,16 @@
   const off = document.createElement('button');
   off.type = 'button'; off.className = 'staff-off'; off.hidden = true;
   off.innerHTML = '<span>Take this card down</span>';
+  const hide = document.createElement('button');
+  hide.type = 'button'; hide.className = 'staff-hide'; hide.hidden = true;
+  hide.title = 'Hide admin buttons (bring them back from My profile)'; hide.setAttribute('aria-label', 'Hide admin buttons');
+  hide.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18M10.6 6.1A10 10 0 0 1 12 6c5 0 9 6 9 6a17 17 0 0 1-3.2 3.7M6.6 6.6C4.2 8.2 3 12 3 12s4 6 9 6a9.3 9.3 0 0 0 4.4-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
+  hide.addEventListener('click', () => {
+    setHidden(true);
+    const t = document.createElement('div'); t.className = 'cart-toast on'; t.setAttribute('role', 'status');
+    t.textContent = 'Admin buttons hidden. Show them again from My profile.';
+    document.body.append(t); setTimeout(() => t.remove(), 3200);
+  });
 
   function context() {
     const scope = document.querySelector('dialog.float[open] .float-panel') || document.querySelector('main');
@@ -36,13 +61,13 @@
   function paint() {
     if (!who) return;
     const c = context();
-    btn.hidden = !c;
+    btn.hidden = !c; hide.hidden = !c;
     if (!c) { off.hidden = true; return; }
     btn.href = c.href; word.textContent = c.text;
     off.hidden = !c.mcard; off.dataset.id = c.mcard || '';
     // Inside the window, the button lives in the window, or the window would cover it.
     const host = document.querySelector('dialog.float[open]') || document.body;
-    if (btn.parentNode !== host) host.append(btn, off);
+    if (btn.parentNode !== host) host.append(btn, hide, off);
   }
   off.addEventListener('click', async () => {
     if (!off.dataset.id || !confirm('Take this card off the trainer\u2019s page? This can\u2019t be undone.')) return;

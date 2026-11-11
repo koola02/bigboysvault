@@ -44,13 +44,13 @@
       <div class="me-results" id="addResults"></div>
     </div>
     <div class="st-add-pane" data-pane="scan" hidden>
-      <label class="me-up-pic st-scan-pic"><input type="file" accept="image/*" capture="environment" class="sr" id="scanFile"><img id="scanShot" alt="" hidden><span id="scanHint"><b>📷 Take a photo of the card</b><small>We'll look for it in the card list. You pick the right one.</small></span></label>
+      <label class="me-up-pic st-scan-pic"><input type="file" accept="image/*" capture="environment" class="sr" id="scanFile" data-card-cam><img id="scanShot" alt="" hidden><span id="scanHint"><b>📷 Take a photo of the card</b><small>We'll look for it in the card list. You pick the right one.</small></span></label>
       <p class="me-state" id="scanState" aria-live="polite"></p>
       <div class="me-results" id="scanResults"></div>
     </div>
     <div class="st-add-pane" data-pane="own" hidden>
       <form id="ownForm" class="me-up">
-        <label class="me-up-pic"><input type="file" name="photo" accept="image/*" required class="sr" id="ownPhoto"><img id="ownShot" alt="" hidden><span id="ownHint"><b>Add a photo</b><small>Take one or choose one</small></span></label>
+        <label class="me-up-pic"><input type="file" name="photo" accept="image/*" required class="sr" id="ownPhoto" data-card-cam><img id="ownShot" alt="" hidden><span id="ownHint"><b>Add a photo</b><small>Take one or choose one</small></span></label>
         <div class="me-fields">
           <label>Card name<input name="name" maxlength="120" required placeholder="Like Charizard ex" autocomplete="off"></label>
           <label>Set <small>if you know it</small><input name="set" maxlength="80" autocomplete="off"></label>

@@ -48,7 +48,7 @@
           {% if let Some(g) = p.grade() %}<span class="grade">{{ g }}</span>{% endif %}
           <span class="qty" data-qty-badge {% if p.qty < 2 %}hidden{% endif %}>×{{ p.qty }}</span>
         </a>
-        <label class="ct-photo" title="Change photo" aria-label="Change the photo of {{ p.title }}">📷<input class="sr" type="file" accept="image/*" data-photo2="{{ p.id }}"></label>
+        <label class="ct-photo" title="Change photo" aria-label="Change the photo of {{ p.title }}">📷<input class="sr" type="file" accept="image/*" data-photo2="{{ p.id }}" data-card-cam></label>
         <div class="ct-info">
           <strong class="ct-t">{{ p.short_title() }}</strong>
           <span class="ct-meta">{% if !p.set_text().is_empty() %}<span class="ct-set">{{ p.set_text() }}</span>{% endif %}{% if !p.finish_shown().is_empty() %}<span class="ct-var">{{ p.finish_shown() }}</span>{% endif %}<span class="ct-var ct-sold" data-sold-n title="Sold copies are kept as a record. They aren't counted as copies for sale."{% if sold.n == 0 %} hidden{% endif %}>{{ sold.n }} sold</span></span>

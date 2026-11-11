@@ -24,7 +24,9 @@
     mute: '<path d="M1 1l22 22M9 9v3a3 3 0 0 0 5.1 2.1M15 9.3V4a3 3 0 0 0-5.9-.6M17 16.9A7 7 0 0 1 5 12v-2m14 0v2c0 .7-.1 1.4-.3 2M12 19v3"/>',
   };
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const phone = () => matchMedia('(max-width: 699px)').matches;
+  const phone = () => matchMedia('(max-width: 699px), (max-height: 520px)').matches;
+  // The condition's colour, as on the site's cards.
+  const condClass = (t) => { t = (t || '').toLowerCase(); return /psa|bgs|cgc|graded/.test(t) ? 'gr' : /near mint|^nm|mint/.test(t) ? 'nm' : /light|^lp/.test(t) ? 'lp' : /moderate|^mp/.test(t) ? 'mp' : /heav|^hp/.test(t) ? 'hp' : /damag|^dm/.test(t) ? 'dm' : ''; };
   const who = () => (window.bbvWho ? window.bbvWho() : fetch('/me/who', { credentials: 'same-origin' }).then((r) => r.json()).catch(() => ({})));
   const store = { get(k) { try { return JSON.parse(sessionStorage.getItem(k)); } catch (_) { return null; } }, set(k, v) { try { v == null ? sessionStorage.removeItem(k) : sessionStorage.setItem(k, JSON.stringify(v)); } catch (_) {} } };
 
@@ -170,7 +172,7 @@
       this.watch = !!opts.watch;
       n.classList.toggle('watch', this.watch);
       $('.dm-form', n).hidden = this.watch; $('.dm-ro', n).hidden = !this.watch; $('.dm-call', n).hidden = this.watch;
-      n.hidden = false; n.classList.remove('min'); document.documentElement.classList.toggle('dm-full', phone());
+      n.hidden = false; n.classList.remove('min'); document.documentElement.classList.toggle('dm-full', phone()); this.fitScreen?.();
       $('.dm-head-bubble')?.remove();
       if (opts.card !== undefined) this.setCard(opts.card);
       if (!this.watch) store.set('bbv:dm', { t: tid, min: false });
@@ -262,7 +264,8 @@
       if (m.kind === 'card' && m.card) b.append(cardView(m.card));
       if (m.kind === 'photo') {
         const a = el('a', 'dm-photo'); a.href = m.media; a.target = '_blank'; a.rel = 'noopener';
-        const img = el('img'); img.src = m.thumb || m.media; img.alt = 'Photo'; img.loading = 'lazy'; a.append(img);
+        const img = el('img'); img.src = m.thumb || m.media; img.alt = 'Photo'; img.decoding = 'async'; a.append(img);
+        img.addEventListener('load', () => { const log = this.node && this.node.querySelector('.dm-log'); if (log && log.scrollHeight - log.scrollTop - log.clientHeight < 260) log.scrollTop = log.scrollHeight; }, { once: true });
         a.addEventListener('click', (e) => { e.preventDefault(); lightbox(m.media); });
         b.append(a);
       }
@@ -328,7 +331,7 @@
     const meta = [c.set, c.number].filter(Boolean).join(' · ');
     if (meta) t.append(el('small', '', meta));
     const row = el('span', 'dm-card-r');
-    if (c.cond) row.append(el('span', 'dm-card-c', c.cond));
+    if (c.cond) { const k = el('span', 'dm-card-c', c.cond); const cc = condClass(c.cond); if (cc) k.dataset.c = cc; row.append(k); }
     if (c.price) row.append(el('span', 'dm-card-p', c.price));
     if (c.sold) row.append(el('span', 'dm-card-c sold', 'Sold'));
     t.append(row);
@@ -509,6 +512,17 @@
       kick();
     },
   };
+  if (window.visualViewport) {
+    const vv = window.visualViewport;
+    const fitScreen = () => {
+      const n = win.node; if (!n || n.hidden) return;
+      if (!phone()) { n.style.height = ''; n.style.top = ''; return; }
+      n.style.height = `${Math.round(vv.height)}px`; n.style.top = `${Math.round(vv.offsetTop)}px`;
+      const log = n.querySelector('.dm-log'); if (log && log.scrollHeight - log.scrollTop - log.clientHeight < 160) log.scrollTop = log.scrollHeight;
+    };
+    vv.addEventListener('resize', fitScreen); vv.addEventListener('scroll', fitScreen);
+    win.fitScreen = fitScreen;
+  }
   document.addEventListener('visibilitychange', () => { if (!document.hidden && win.thread && win.node && !win.node.hidden && !win.watch) win.read(); });
   window.addEventListener('pagehide', () => { if (call.id && (call.pc || call.role === 'caller')) navigator.sendBeacon?.(`/dm/${call.thread}/call`, new Blob([JSON.stringify({ type: 'end', call: call.id })], { type: 'application/json' })); });
 

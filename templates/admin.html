@@ -23,7 +23,7 @@
             <strong>Add photo</strong><small>Take a picture or choose one</small>
           </span>
         </label>
-        <input class="sr" id="photo" type="file" name="photo" accept="image/*">
+        <input class="sr" id="photo" type="file" name="photo" accept="image/*" data-card-cam>
         <div class="photo-acts">
           <button type="button" class="pbtn" id="retake" {% if image.is_empty() %}hidden{% endif %}>Change photo</button>
           <button type="button" class="pbtn danger" id="rmphoto" data-id="{{ id }}" {% if image.is_empty() || !editing %}hidden{% endif %}>Remove photo</button>
