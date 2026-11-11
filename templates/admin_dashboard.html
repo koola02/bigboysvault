@@ -86,7 +86,7 @@
     <article class="dash-panel dash-wide dash-ops" id="vmJobs">
       <h2 class="dash-h">VM jobs</h2>
       <p class="dash-sub">The jobs the backup computer runs each night. A warning means a job failed or hasn't reported in time.</p>
-      <ul class="dash-links">{% for j in ops %}<li><span>{% if j.2 && !j.4 %}✓{% else %}⚠{% endif %} <b>{{ j.0 }}</b> · {{ j.1 }}{% if j.4 %} · late{% endif %}{% if !j.2 %} · failed{% endif %}</span>{% if !j.3.is_empty() %}<span>{{ j.3 }}</span>{% endif %}</li>{% endfor %}</ul>
+      <ul class="dash-links">{% for j in ops %}<li><span>{% if j.1 == "never reported" && !j.4 %}–{% else if j.2 && !j.4 %}✓{% else %}⚠{% endif %} <b>{{ j.0 }}</b> · {{ j.1 }}{% if j.4 %} · late{% endif %}{% if !j.2 %} · failed{% endif %}</span>{% if !j.3.is_empty() %}<span>{{ j.3 }}</span>{% endif %}</li>{% endfor %}</ul>
     </article>
 
     {% if !movers.is_empty() %}

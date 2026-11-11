@@ -1962,13 +1962,8 @@ type OpsRow = (String, String, bool, String, bool);
 
 /// The VM's jobs for the dashboard: when each last reported, whether it went well, and whether it's late.
 fn ops_rows(c: &rusqlite::Connection, now: i64) -> rusqlite::Result<Vec<OpsRow>> {
-    let late_after = |job: &str| -> Option<i64> {
-        match job {
-            "backup" | "prices" => Some(30 * 3600),
-            "images" => Some(50 * 3600),
-            _ => None,
-        }
-    };
+    // How long each job may go without a report (crate::ops::OPS_JOBS; 0: never late).
+    let late_after = |job: &str| -> Option<i64> { Some(crate::ops::late_after_hours(job) * 3600).filter(|h| *h > 0) };
     Ok(crate::ops::ops_status(c)?
         .into_iter()
         .map(|(job, at, ok, note)| {
