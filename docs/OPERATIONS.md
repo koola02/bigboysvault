@@ -16,7 +16,7 @@ the CDN answers most requests, and the heavy chores run elsewhere: on a Google V
 
 | What | Header | Why |
 |---|---|---|
-| `/static/*.js?v=N`, `*.css?v=N` | `public, max-age=31536000, immutable` | Versioned: bump `?v=` when a file changes (GEMINI.md §5) |
+| `/static/*.js?v=N`, `*.css?v=N` | `public, max-age=31536000, immutable` | Versioned: bump `?v=` when a file changes (docs/HANDOFF.md §5) |
 | `/static/*` without `?v=` | `no-cache` | Revalidates each load (304) |
 | `/uploads/*` | `public, max-age=86400, stale-while-revalidate=604800` + `Vary: Accept` | A day, then refreshed in the background |
 | `/cards.tsv` | `public, max-age=0, s-maxage=30, stale-while-revalidate=120` + ETag | Browsers revalidate (cheap 304); the CDN keeps it 30 s |

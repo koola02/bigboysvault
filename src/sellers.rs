@@ -25,7 +25,7 @@ const RESERVED_SLUGS: [&str; 35] = [
     "support", "login", "logout", "new", "edit", "delete", "settings", "bigboysvault",
 ];
 
-/// Adds what the store needs to an existing database. Only ever adds (see GEMINI.md §5).
+/// Adds what the store needs to an existing database. Only ever adds (see docs/HANDOFF.md §5).
 pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
     for (col, def) in [
         ("email", "TEXT NOT NULL DEFAULT ''"),

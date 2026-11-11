@@ -12,7 +12,7 @@ if command -v cargo >/dev/null; then
 else
   log "no cargo here: tests ran where the commit was made (Fly builds from source)"
 fi
-# Back up before every schema change (GEMINI.md §5): the nightly job may be hours old.
+# Back up before every schema change (docs/HANDOFF.md §5): the nightly job may be hours old.
 "$OPS_DIR/backup.sh" | tail -1
 log "deploying $FLY_APP"
 fly deploy -a "$FLY_APP" --remote-only --strategy immediate
