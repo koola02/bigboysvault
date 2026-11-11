@@ -166,8 +166,12 @@ pub async fn answer(app: &App, ip: &str, question: &str, prev: Option<&str>) -> 
             Some(v)
         }
         Err(e) => {
+            // Too many at once: a minute. The key, the project's billing or its access is the problem: ten minutes,
+            // so visitors don't wait on Google for every question until someone fixes it.
             if e.starts_with("429") {
                 PAUSED_UNTIL.store(now + 60, Ordering::Relaxed);
+            } else if ["400 API key", "401", "402", "403"].iter().any(|p| e.starts_with(p)) || (e.starts_with("400") && e.contains("API key")) {
+                PAUSED_UNTIL.store(now + 600, Ordering::Relaxed);
             }
             tracing::warn!("Ask the Vault AI: {e}");
             let note = format!("{now}|{}", e.chars().take(300).collect::<String>());

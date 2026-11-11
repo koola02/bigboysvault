@@ -689,7 +689,7 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
 /// GET /dm/ice: how the browsers reach each other for a call. With CF_TURN_KEY_ID and CF_TURN_API_TOKEN set,
 /// Cloudflare's relay too (credentials good for a day, made again every 12 hours); otherwise public STUN only.
 pub async fn ice(State(app): State<App>, h: HeaderMap) -> Res {
-    if current(&app, &h).await?.is_none() {
+    if current(&app, &h).await?.is_none() && !admin::authed(&app, &h) {
         return Ok(signed_out());
     }
     let now = crate::unix_now();
