@@ -1815,11 +1815,10 @@ body:has(.v-fab) .cart-fab { right: 14px; bottom: calc(80px + var(--sab)); }
   #cardsRoot .mc-grid > .ctile, #listings .ls-grid > .ls-tile { --thumb: 120px; }
 }
 
-/* ---------- F06 Dock: six places, Stores beside Browse ----------
-   Three tabs left of the Ask logo, two on the right. The right two grow 1.5 times as much, so both sides are
-   the same width and the logo stays right in the middle. Narrower letters on phones so no label touches the next. */
+/* ---------- F06 Dock: five places ----------
+   Home and Stores left of the Ask logo, Chat and Trainers right, so the logo sits in the middle. (Browse left the
+   dock: All cards is one tap away from Home and the search.) Narrower letters on phones so no label touches the next. */
 .tabs a { min-width: 0; }
-.tabs .tab-ask ~ a { flex-grow: 1.5; }
 @media (max-width: 899px) { .tabs a:not(.tab-ask) { font-stretch: 72%; letter-spacing: .02em; white-space: nowrap; } }
 
 /* ---------- F07 Phone top bar: the bell sits left of the profile picture, and its list opens on screen ----------
