@@ -38,9 +38,16 @@ def details(api_id):
     path = os.path.join(CACHE, api_id.replace(":", "_").replace("/", "_") + ".json")
     if os.path.exists(path):
         with open(path, encoding="utf-8") as f:
-            return json.load(f)
-    lang, _, cid = api_id.partition(":")
-    lang = "ja" if lang.endswith("-ja") else ("zh-tw" if lang.endswith("-zh") else "en")
+            d = json.load(f)
+        return d if isinstance(d, dict) else {}
+    # "tcgdex:base1-4", "tcgdex-ja:SV1a-001", "tcgdex-zh-tw:…", or a bare id like "cel25c-73A".
+    src, sep, cid = api_id.partition(":")
+    if not sep:
+        src, cid = "tcgdex", api_id
+    cid = cid.strip()
+    if not cid:
+        return {}
+    lang = "ja" if src.endswith("-ja") else ("zh-tw" if src.endswith(("-zh", "-zh-tw")) else "en")
     try:
         d = get(f"https://api.tcgdex.net/v2/{lang}/cards/{urllib.request.quote(cid)}")
     except urllib.error.HTTPError as e:
@@ -49,6 +56,8 @@ def details(api_id):
         d = None
     if d is None:
         return {}  # the service didn't answer: try again tomorrow, nothing kept
+    if not isinstance(d, dict):
+        d = {}  # not one card's details: kept as a miss
     with open(path, "w", encoding="utf-8") as f:
         json.dump(d, f)
     time.sleep(0.08)
