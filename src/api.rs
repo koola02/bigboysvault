@@ -299,6 +299,25 @@ pub async fn searched(State(app): State<App>, h: HeaderMap, Query(p): Query<Sear
     StatusCode::NO_CONTENT
 }
 
+/// "cards like X", "similar to X", "something like X", "more like X": the X, when a question asks for look-alikes.
+fn like_target(q: &str) -> Option<String> {
+    let t = q.trim().to_lowercase().replace('?', "");
+    for lead in ["cards similar to ", "similar to ", "cards like ", "something like ", "more like ", "anything like ", "like "] {
+        if let Some(i) = t.find(lead) {
+            // A bare "like" counts only at the start or after "show me" / "find": "I'd like a Pikachu" is not a look-alike question.
+            let before = t[..i].trim_end();
+            if lead == "like " && !(before.is_empty() || before.ends_with("show me") || before.ends_with("find") || before.ends_with("cards")) {
+                continue;
+            }
+            let rest = t[i + lead.len()..].trim().trim_start_matches("the ").trim().to_string();
+            if rest.chars().count() >= 2 {
+                return Some(rest);
+            }
+        }
+    }
+    None
+}
+
 /// Ask the Vault: a plain question in, an answer and some cards out, worked out here from the live catalogue.
 #[derive(Deserialize)]
 pub struct AskReq {
@@ -318,6 +337,39 @@ pub async fn ask_vault(State(app): State<App>, h: HeaderMap, axum::Json(req): ax
     let body = catalogue(&app).await?;
     let question: String = req.q.chars().take(200).collect();
     let ctx: Option<String> = req.ctx.map(|c| c.chars().take(200).collect());
+    // "Cards like Charizard": find that card, then answer with the cards most like it (the VM's model picks them
+    // from each card's type, stage, artist, rarity and set; see similar.rs).
+    if let Some(target) = like_target(&question) {
+        let b2 = body.clone();
+        let first = tokio::task::spawn_blocking(move || {
+            let (binders, cards) = parse(&b2);
+            let a = ask::answer(&target, None, &cards, &binders, &[]);
+            a.picks.first().map(|i| (cards[*i].handle.clone(), vault_search::title_and_set(&cards[*i].title, &cards[*i].set).0))
+        })
+        .await
+        .map_err(crate::ise)?;
+        if let Some((handle, title)) = first {
+            let rel = with_db(&app, move |c| match db::product(c, &handle)? {
+                Some(p) => db::related(c, &p, 8),
+                None => Ok(vec![]),
+            })
+            .await?;
+            if !rel.is_empty() {
+                let tiles: Vec<serde_json::Value> = rel
+                    .iter()
+                    .map(|p| {
+                        let mut t = serde_json::json!({ "handle": p.handle, "title": p.short_title(), "full": p.title, "img": p.img(360), "price": peso(p.price), "c": p.cond_class(), "cond": vault_search::tile_condition(&p.variant), "set": p.set_text(), "sym": "", "foil": vault_search::foil_class(&format!("{} {}", p.title, p.variant)), "grade": p.grade().unwrap_or_default(), "notes": "", "tags": [] });
+                        if p.available && p.price > 0.0 {
+                            t["id"] = p.id.into();
+                            t["amount"] = p.price.into();
+                        }
+                        t
+                    })
+                    .collect();
+                return Ok(json(serde_json::json!({ "say": format!("Cards like {title}: alike in type, artist, rarity or set."), "cards": tiles, "chips": [], "ctx": serde_json::Value::Null })));
+            }
+        }
+    }
     let trainers = with_db(&app, |c| members::approved(c)).await?;
     let trainers: Vec<ask::Trainer> = trainers.into_iter().map(|t| ask::Trainer { name: t.name, stars: t.stars, worth: t.worth }).collect();
     let (mut out, handles) = tokio::task::spawn_blocking(move || {
@@ -356,4 +408,19 @@ pub async fn ask_vault(State(app): State<App>, h: HeaderMap, axum::Json(req): ax
         }
     }
     Ok(json(out))
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn look_alike_questions_are_recognised() {
+        assert_eq!(like_target("Cards like Charizard?").as_deref(), Some("charizard"));
+        assert_eq!(like_target("show me something like the Pikachu V").as_deref(), Some("pikachu v"));
+        assert_eq!(like_target("similar to umbreon vmax").as_deref(), Some("umbreon vmax"));
+        assert_eq!(like_target("like mewtwo").as_deref(), Some("mewtwo"));
+        assert_eq!(like_target("I'd like a pikachu"), None);
+        assert_eq!(like_target("i like pikachu"), None);
+        assert_eq!(like_target("cheapest holo cards"), None);
+    }
 }

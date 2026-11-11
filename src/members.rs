@@ -364,6 +364,10 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         ("is_custom", "INTEGER NOT NULL DEFAULT 0"),
         // Bytes on disk of a trainer's own card photo (both sizes), so the photo-space limit counts it.
         ("photo_bytes", "INTEGER NOT NULL DEFAULT 0"),
+        // The VM tidies trainers' own card photos (straightened and cropped to the card): 0 not yet, 1 tidied,
+        // 2 left as it was (no card found), 3 the trainer went back to their original. The original's paths.
+        ("photo_clean", "INTEGER NOT NULL DEFAULT 0"),
+        ("photo_original", "TEXT NOT NULL DEFAULT ''"),
     ] {
         let there: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('member_cards') WHERE name=?1", [col], |r| r.get(0))?;
         if there == 0 {
@@ -537,6 +541,8 @@ pub struct MemberCard {
     pub flagged: bool,
     /// "own": a card they have and show off. "sale": for sale in their store. "wish": a card they're after.
     pub kind: String,
+    /// The VM tidied this own photo (1), found no card in it (2), or the trainer put the original back (3).
+    pub photo_clean: i64,
 }
 
 impl MemberCard {
@@ -697,9 +703,9 @@ fn map_member(r: &Row) -> rusqlite::Result<Member> {
     })
 }
 
-pub const CARD_COLS: &str = "c.id,c.member_id,c.title,c.number,c.card_set,c.image,c.image_large,c.cond,c.card_id,c.value,c.value_own,c.binder_id,c.status,c.expires_at,c.is_custom,c.qty,c.finish,c.notes,c.sold,c.view_n,c.save_n,c.updated_at,c.review_flag,c.kind";
+pub const CARD_COLS: &str = "c.id,c.member_id,c.title,c.number,c.card_set,c.image,c.image_large,c.cond,c.card_id,c.value,c.value_own,c.binder_id,c.status,c.expires_at,c.is_custom,c.qty,c.finish,c.notes,c.sold,c.view_n,c.save_n,c.updated_at,c.review_flag,c.kind,c.photo_clean";
 /// How many columns `CARD_COLS` has: anything selected after it starts here.
-pub const CARD_N: usize = 24;
+pub const CARD_N: usize = 25;
 
 pub fn map_card(r: &Row, at: usize) -> rusqlite::Result<MemberCard> {
     Ok(MemberCard {
@@ -727,6 +733,7 @@ pub fn map_card(r: &Row, at: usize) -> rusqlite::Result<MemberCard> {
         updated_at: r.get(at + 21)?,
         flagged: r.get::<_, i64>(at + 22)? != 0,
         kind: r.get(at + 23)?,
+        photo_clean: r.get(at + 24)?,
     })
 }
 

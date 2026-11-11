@@ -89,6 +89,14 @@
       <ul class="dash-links">{% for j in ops %}<li><span>{% if j.2 && !j.4 %}✓{% else %}⚠{% endif %} <b>{{ j.0 }}</b> · {{ j.1 }}{% if j.4 %} · late{% endif %}{% if !j.2 %} · failed{% endif %}</span>{% if !j.3.is_empty() %}<span>{{ j.3 }}</span>{% endif %}</li>{% endfor %}</ul>
     </article>
 
+    {% if !movers.is_empty() %}
+    <article class="dash-panel dash-wide">
+      <h2 class="dash-h">Prices worth a look</h2>
+      <p class="dash-sub">Prices you set yourself, on cards whose market moved 15% or more lately.</p>
+      <ul class="dash-links">{% for m in movers %}<li><a href="/admin/edit/{{ m.id }}" data-float>{{ m.title }}</a><span>Yours {{ m.price_text() }} · market {{ m.market_text() }} · {{ m.trend.text() }}</span></li>{% endfor %}</ul>
+    </article>
+    {% endif %}
+
     <article class="dash-panel dash-wide">
       <h2 class="dash-h">To do</h2>
       <div class="dash-todo">

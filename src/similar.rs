@@ -155,3 +155,36 @@ mod tests {
         assert_eq!(words("Pikachu & Zekrom GX - 33/181"), vec!["pikachu", "zekrom", "gx"]);
     }
 }
+
+/// Picks worked out on the VM by a small language model from each card's full details (type, stage, artist,
+/// rarity, set). Replaced whole every night. `card_id` is any copy of the card; `picks` are copy ids, best first.
+pub const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS similar_cards(card_id INTEGER PRIMARY KEY, picks TEXT NOT NULL, at INTEGER NOT NULL);";
+
+/// Replaces every stored pick at once. Returns how many cards have picks.
+pub fn save(c: &rusqlite::Connection, rows: &[(i64, Vec<i64>)], now: i64) -> rusqlite::Result<usize> {
+    let tx = c.unchecked_transaction()?;
+    tx.execute("DELETE FROM similar_cards", [])?;
+    let mut n = 0;
+    for (id, picks) in rows {
+        if picks.is_empty() {
+            continue;
+        }
+        let list = picks.iter().take(24).map(i64::to_string).collect::<Vec<_>>().join(",");
+        tx.execute("INSERT OR REPLACE INTO similar_cards(card_id, picks, at) VALUES(?1,?2,?3)", rusqlite::params![id, list, now])?;
+        n += 1;
+    }
+    tx.commit()?;
+    Ok(n)
+}
+
+/// The stored picks for a card, given the ids of its copies. None when the VM hasn't worked this card out.
+pub fn picks_for(c: &rusqlite::Connection, copy_ids: &[i64]) -> rusqlite::Result<Option<Vec<i64>>> {
+    let mut st = c.prepare_cached("SELECT picks FROM similar_cards WHERE card_id=?1")?;
+    for id in copy_ids {
+        let found: Option<String> = st.query_row([id], |r| r.get(0)).ok();
+        if let Some(list) = found {
+            return Ok(Some(list.split(',').filter_map(|x| x.parse().ok()).collect()));
+        }
+    }
+    Ok(None)
+}

@@ -284,6 +284,8 @@ pub(crate) fn save_market(
     // Remembered even when nothing was found (0), so the card isn't asked for again today.
     c.execute("UPDATE products SET market_php=?3, market_at=?4 WHERE api_id=?1 AND finish=?2", rusqlite::params![api_id, finish, nm.unwrap_or(0.0), now])?;
     let Some(nm) = nm else { return Ok(0) };
+    // One price a day per card and finish, for the "up 12% this month" line on card pages.
+    marcuru_rs::history::record(c, api_id, finish, nm, today)?;
     let mut st = c.prepare("SELECT id, variant FROM products WHERE api_id=?1 AND finish=?2 AND price_src IN ('market','suggested')")?;
     let rows: Vec<(i64, String)> = st.query_map([api_id, finish], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
     let mut n = 0;
@@ -452,7 +454,17 @@ pub async fn warm_catalog(State(app): State<App>, h: HeaderMap, Query(q): Query<
 // ---------- what the VM's jobs say ----------
 
 /// The jobs the VM runs, and after how many hours without a good report each one counts as late (0: never late).
-pub const OPS_JOBS: [(&str, i64); 5] = [("backup", 30), ("prices", 30), ("images", 50), ("uptime", 0), ("update", 0)];
+pub const OPS_JOBS: [(&str, i64); 9] = [
+    ("backup", 30),
+    ("prices", 30),
+    ("images", 50),
+    ("checks", 1),
+    ("drill", 30),
+    ("photos", 0),
+    ("similar", 50),
+    ("uptime", 0),
+    ("update", 0),
+];
 
 /// Hours after which a job with no good report counts as late, for the admin dashboard (0: it is never late).
 pub fn late_after_hours(job: &str) -> i64 {
@@ -531,12 +543,12 @@ pub fn ops_status(c: &rusqlite::Connection) -> rusqlite::Result<Vec<(String, i64
     Ok(out)
 }
 
-/// Run every hour: when the backup (30 hours) or the picture job (50 hours) hasn't gone well for too long, the admins
+/// Run every hour: when a watched VM job (backup, pictures, page checks, drill, similar cards; `OPS_JOBS` hours) hasn't gone well for too long, the admins
 /// are told, once a day. A job that has never reported is skipped: the VM isn't set up yet.
 /// This also catches a VM that stopped, because then nothing reports at all. Returns how many jobs are late.
 pub fn ops_watchdog(c: &rusqlite::Connection, now: i64) -> rusqlite::Result<usize> {
     let mut late = 0;
-    for job in ["backup", "images"] {
+    for job in ["backup", "images", "checks", "drill", "similar"] {
         let Some(s) = read_job(c, job)? else { continue };
         let hours = late_after_hours(job);
         let good = if s.last_ok > 0 { s.last_ok } else { s.since };
@@ -586,6 +598,126 @@ pub async fn ops_report(State(app): State<App>, h: HeaderMap, body: axum::body::
     Ok(json_reply(StatusCode::OK, json!({ "ok": true, "told": told })))
 }
 
+// ---------- Work the VM does for the site ----------
+
+#[derive(Deserialize)]
+pub struct PendingQs {
+    limit: Option<i64>,
+}
+
+/// `GET /admin/photos/pending`: trainers' own card photos the VM hasn't tidied yet (id and the large picture).
+pub async fn photos_pending(State(app): State<App>, h: HeaderMap, Query(q): Query<PendingQs>) -> Res {
+    if !admin::authed(&app, &h) {
+        return Ok(deny());
+    }
+    let limit = q.limit.unwrap_or(20).clamp(1, 100);
+    let rows = with_db(&app, move |c| {
+        let mut st = c.prepare(
+            "SELECT id, image_large FROM member_cards WHERE card_id LIKE 'own:%' AND photo_clean=0 AND image_large LIKE '/uploads/%' ORDER BY id LIMIT ?1",
+        )?;
+        let v: Vec<Value> = st.query_map([limit], |r| Ok(json!({ "id": r.get::<_, i64>(0)?, "image": r.get::<_, String>(1)? })))?.collect::<Result<_, _>>()?;
+        Ok(v)
+    })
+    .await?;
+    Ok(json_reply(StatusCode::OK, json!({ "photos": rows })))
+}
+
+#[derive(Deserialize)]
+pub struct CleanQs {
+    skip: Option<u8>,
+}
+
+/// `POST /admin/photos/{id}`: the VM sends back the tidied photo (the JPEG is the request body), or `?skip=1`
+/// when it found no card to straighten. The original stays on disk, so the trainer can put it back.
+pub async fn photo_clean(State(app): State<App>, h: HeaderMap, axum::extract::Path(id): axum::extract::Path<i64>, Query(q): Query<CleanQs>, body: axum::body::Bytes) -> Res {
+    if !admin::authed(&app, &h) {
+        return Ok(deny());
+    }
+    let row: Option<(i64, i64)> = with_db(&app, move |c| {
+        Ok(c.query_row("SELECT member_id, photo_clean FROM member_cards WHERE id=?1 AND card_id LIKE 'own:%'", [id], |r| Ok((r.get(0)?, r.get(1)?))).ok())
+    })
+    .await?;
+    let Some((member, state)) = row else { return Ok(json_reply(StatusCode::NOT_FOUND, json!({ "ok": false, "error": "No such photo." }))) };
+    if state != 0 {
+        return Ok(json_reply(StatusCode::CONFLICT, json!({ "ok": false, "error": "Already done." })));
+    }
+    if q.skip.unwrap_or(0) == 1 || body.is_empty() {
+        with_db(&app, move |c| c.execute("UPDATE member_cards SET photo_clean=2 WHERE id=?1", [id]).map(|_| ())).await?;
+        return Ok(json_reply(StatusCode::OK, json!({ "ok": true, "skipped": true })));
+    }
+    let dir = PathBuf::from(&*app.uploads);
+    let stem = format!("m{member}-{}-t", members::temp_password());
+    let bytes = body.to_vec();
+    let made = crate::community::gated(move || crate::community::store_photo(bytes, dir, stem)).await?;
+    let Ok((large, small, _, _, size)) = made else {
+        with_db(&app, move |c| c.execute("UPDATE member_cards SET photo_clean=2 WHERE id=?1", [id]).map(|_| ())).await?;
+        return Ok(json_reply(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": "That picture couldn't be read." })));
+    };
+    with_db(&app, move |c| {
+        c.execute(
+            "UPDATE member_cards SET photo_original=image || '|' || image_large, image=?2, image_large=?3, photo_clean=1, photo_bytes=photo_bytes+?4 WHERE id=?1 AND photo_clean=0",
+            rusqlite::params![id, small, large, size],
+        )
+        .map(|_| ())
+    })
+    .await?;
+    app.forget();
+    Ok(json_reply(StatusCode::OK, json!({ "ok": true })))
+}
+
+/// `GET /admin/similar/cards`: every card in the vault once (copies grouped), with what the VM needs to work out
+/// which cards are alike: the catalogue id, name, set, finish, condition and price.
+pub async fn similar_cards(State(app): State<App>, h: HeaderMap) -> Res {
+    if !admin::authed(&app, &h) {
+        return Ok(deny());
+    }
+    let rows = with_db(&app, |c| {
+        let sql = format!(
+            "SELECT MIN(p.id), group_concat(p.id), p.api_id, p.title, p.card_set, p.finish, p.variant, MIN(p.price), MAX(p.available)
+             FROM products p GROUP BY {} ORDER BY MIN(p.id)",
+            marcuru_rs::db::DUP_KEY
+        );
+        let mut st = c.prepare(&sql)?;
+        let v: Vec<Value> = st
+            .query_map([], |r| {
+                Ok(json!({
+                    "id": r.get::<_, i64>(0)?, "ids": r.get::<_, String>(1)?, "api_id": r.get::<_, String>(2)?,
+                    "title": r.get::<_, String>(3)?, "set": r.get::<_, String>(4)?, "finish": r.get::<_, String>(5)?,
+                    "cond": r.get::<_, String>(6)?, "price": r.get::<_, f64>(7)?, "available": r.get::<_, i64>(8)? != 0,
+                }))
+            })?
+            .collect::<Result<_, _>>()?;
+        Ok(v)
+    })
+    .await?;
+    Ok(json_reply(StatusCode::OK, json!({ "cards": rows })))
+}
+
+#[derive(Deserialize)]
+struct SimilarRow {
+    id: i64,
+    picks: Vec<i64>,
+}
+#[derive(Deserialize)]
+struct SimilarReq {
+    cards: Vec<SimilarRow>,
+}
+
+/// `POST /admin/similar` with `{"cards": [{"id": 12, "picks": [40, 7, ...]}, ...]}`: tonight's "More like this".
+pub async fn similar_save(State(app): State<App>, h: HeaderMap, body: axum::body::Bytes) -> Res {
+    if !admin::authed(&app, &h) {
+        return Ok(deny());
+    }
+    let Ok(r) = serde_json::from_slice::<SimilarReq>(&body) else {
+        return Ok(json_reply(StatusCode::BAD_REQUEST, json!({ "ok": false, "error": "Send JSON with cards." })));
+    };
+    let rows: Vec<(i64, Vec<i64>)> = r.cards.into_iter().map(|x| (x.id, x.picks)).collect();
+    let now = crate::unix_now();
+    let n = with_db(&app, move |c| marcuru_rs::similar::save(c, &rows, now)).await?;
+    app.forget();
+    Ok(json_reply(StatusCode::OK, json!({ "ok": true, "saved": n })))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -620,7 +752,7 @@ mod tests {
         assert!(record_report(&c, "backup", false, "still full", 1_000_100 + 6 * 3600).unwrap());
         assert_eq!(told(&c), 2);
         let s = ops_status(&c).unwrap();
-        assert_eq!(s.len(), 5);
+        assert_eq!(s.len(), OPS_JOBS.len(), "every VM job has a row");
         assert_eq!(s[0], ("backup".to_string(), 1_000_100 + 6 * 3600, false, "still full".to_string()));
         assert_eq!(s[1], ("prices".to_string(), 0, false, String::new()), "never reported");
         assert_eq!(read_job(&c, "backup").unwrap().unwrap().last_ok, 1_000_000, "a failure keeps the last good time");
@@ -690,8 +822,11 @@ mod tests {
                (4, 'x-1', 'normal', 'Near Mint', 444, '', 100);",
         )
         .unwrap();
+        c.execute_batch(marcuru_rs::history::SCHEMA).unwrap();
         let shares = pricing::current();
         let n = save_market(&c, "x-1", "normal", Some(200.0), 10, "2026-11-11", &shares).unwrap();
+        let kept: f64 = c.query_row("SELECT php FROM price_history WHERE api_id='x-1' AND finish='normal' AND day='2026-11-11'", [], |r| r.get(0)).unwrap();
+        assert_eq!(kept, 200.0, "today's market price goes into the history");
         assert_eq!(n, 1);
         let price = |id: i64| -> f64 { c.query_row("SELECT price FROM products WHERE id=?1", [id], |r| r.get(0)).unwrap() };
         let market = |id: i64| -> f64 { c.query_row("SELECT market_php FROM products WHERE id=?1", [id], |r| r.get(0)).unwrap() };

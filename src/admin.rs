@@ -1878,6 +1878,8 @@ struct DashboardPage {
     condition_shares: Vec<(String, u32)>,
     /// The VM's jobs: (job, when in words, all right, note, late).
     ops: Vec<OpsRow>,
+    /// Prices typed by hand whose market moved 15% or more this month: worth a look.
+    movers: Vec<marcuru_rs::history::Mover>,
 }
 
 /// For bar widths: never under 2%, so a short bar still shows.
@@ -2049,10 +2051,11 @@ pub async fn dashboard(State(app): State<App>, h: HeaderMap) -> Res {
             condition_shares.push((cond.to_string(), (pct * 100.0).round() as u32));
         }
         let ops = ops_rows(c, now)?;
+        let movers = marcuru_rs::history::movers(c, 15, 8)?;
         Ok(DashboardPage {
             nav, tab: "dash", value: db::peso(total_value), copies: db::thousands(i64::from(copies)), distinct: db::thousands(cards.len() as i64), average, median, top10,
             week_n, week_value: db::peso(week_v), month_n, month_value: db::peso(month_v), insights, days, days_first, binders, viewed, searches, missing_searches,
-            no_photo_n, no_photo, no_price_n, no_price, cond_notes_n, cond_notes, trainers, pending, vouches_week, chat_week, top_trainers, condition_shares, ops,
+            no_photo_n, no_photo, no_price_n, no_price, cond_notes_n, cond_notes, trainers, pending, vouches_week, chat_week, top_trainers, condition_shares, ops, movers,
         })
     })
     .await?;

@@ -7,3 +7,4 @@ graphify-out/
 backups/
 *.log
 ops/env
+__pycache__/

@@ -97,6 +97,7 @@
       <div class="ls-tile-acts">
         <button type="button" class="linkbtn inline" data-renew>{% if c.needs_update() %}Renew for 30 days{% else if c.expires_at > 0 %}Change end date{% else %}Set an end date{% endif %}</button>
         <button type="button" class="linkbtn inline danger" data-del>Remove</button>
+        {% if c.photo_clean == 1 %}<form method="post" action="/me/cards/{{ c.id }}/original-photo" class="photo-orig"><button type="submit" class="linkbtn inline">Use my own photo</button></form>{% endif %}
       </div>
     </li>
     {% endfor %}

@@ -1181,6 +1181,44 @@ pub struct CardAction {
     kind: Option<String>,
 }
 
+/// `POST /me/cards/{card}/original-photo`: the photo the VM tidied goes back to the one the trainer took.
+/// A plain form post: it goes back to the page it came from.
+pub async fn original_photo(State(app): State<App>, h: HeaderMap, Path(cid): Path<i64>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let id = m.id;
+    let tidied: Option<(String, String)> = with_db(&app, move |c| {
+        let row: Option<(String, String, String)> = c
+            .query_row(
+                "SELECT photo_original, image, image_large FROM member_cards WHERE id=?1 AND member_id=?2 AND photo_clean=1",
+                [cid, id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .ok();
+        let Some((orig, small, large)) = row else { return Ok(None) };
+        let Some((o_small, o_large)) = orig.split_once('|') else { return Ok(None) };
+        c.execute(
+            "UPDATE member_cards SET image=?3, image_large=?4, photo_original='', photo_clean=3 WHERE id=?1 AND member_id=?2",
+            rusqlite::params![cid, id, o_small, o_large],
+        )?;
+        Ok(Some((small, large)))
+    })
+    .await?;
+    if let Some((_, large)) = tidied {
+        admin::remove_upload(&app.uploads, &large); // the tidied copy (both sizes)
+        app.forget();
+    }
+    let back = h
+        .get(axum::http::header::REFERER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|r| r.find("://").map(|i| &r[i + 3..]).and_then(|r| r.find('/').map(|j| r[j..].to_string())))
+        .filter(|p| p.starts_with('/') && !p.starts_with("//"))
+        .unwrap_or_else(|| "/me".to_string());
+    Ok(axum::response::Redirect::to(&back).into_response())
+}
+
 pub async fn card_action(State(app): State<App>, h: HeaderMap, Path(cid): Path<i64>, Json(req): Json<CardAction>) -> Res {
     let m = match acting(&app, &h).await? {
         Ok(m) => m,

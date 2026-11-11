@@ -339,6 +339,9 @@ pub fn open(path: &str) -> rusqlite::Result<Connection> {
     c.execute_batch(crate::members::SCHEMA)?;
     crate::members::migrate(&c)?;
     migrate(&c)?;
+    crate::history::migrate(&c)?;
+    crate::wishes::migrate(&c)?;
+    c.execute_batch(crate::similar::SCHEMA)?;
     Ok(c)
 }
 
@@ -780,8 +783,36 @@ pub fn related(c: &Connection, p: &Product, n: usize) -> rusqlite::Result<Vec<Pr
     // The same card in another condition is already listed under "Other copies", so it isn't repeated here.
     let key = |x: &Product| (x.short_title().to_lowercase(), x.set_text().to_lowercase());
     let mine = key(p);
-    let picked = crate::similar::pick(&items, q, n, |i| key(&all[i]) == mine);
-    Ok(picked.into_iter().map(|i| all[i].clone()).collect())
+    let skip = |i: usize| i == q || key(&all[i]) == mine;
+    let mut out: Vec<usize> = vec![];
+    // The VM's language-model picks, when it has worked this card out (crate::similar::save).
+    let ids: Vec<i64> = all[q].copy_ids.split(',').filter_map(|x| x.parse().ok()).collect();
+    if let Some(picks) = crate::similar::picks_for(c, &ids)? {
+        let mut at: std::collections::HashMap<i64, usize> = std::collections::HashMap::new();
+        for (i, x) in all.iter().enumerate() {
+            for id in x.copy_ids.split(',').filter_map(|v| v.parse::<i64>().ok()) {
+                at.insert(id, i);
+            }
+        }
+        for id in picks {
+            if let Some(&i) = at.get(&id) {
+                if !skip(i) && !out.contains(&i) && all[i].available {
+                    out.push(i);
+                }
+            }
+            if out.len() >= n {
+                break;
+            }
+        }
+    }
+    if out.len() < n {
+        for i in crate::similar::pick(&items, q, n, |i| key(&all[i]) == mine) {
+            if !out.contains(&i) && out.len() < n {
+                out.push(i);
+            }
+        }
+    }
+    Ok(out.into_iter().map(|i| all[i].clone()).collect())
 }
 
 /// The address search engines should use for this card: copies of the same card share one page, the first copy

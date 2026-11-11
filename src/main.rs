@@ -370,6 +370,8 @@ struct ProductPage {
     versions: Vec<db::Version>,
     /// The share of the vault that costs less (0–100).
     standing: u8,
+    /// How the market price moved lately, once there are two days of history.
+    trend: Option<marcuru_rs::history::Trend>,
 }
 
 /// The same card details, without the site around them, for the floating card window.
@@ -381,6 +383,7 @@ struct ProductPart {
     copies: i64,
     versions: Vec<db::Version>,
     standing: u8,
+    trend: Option<marcuru_rs::history::Trend>,
 }
 
 #[derive(Template)]
@@ -803,17 +806,18 @@ async fn product(State(app): State<App>, Path(h): Path<String>, Qs(q): Qs<PartQs
                     let copies = db::copies(c, &p)?;
                     let versions = db::versions(c, &p)?;
                     let standing = db::standing(c, p.price)?;
+                    let trend = marcuru_rs::history::trend(c, &p.api_id, &p.finish)?;
                     let mut nav = nav;
                     nav.seo = product_seo(&nav, &p, &db::canonical_handle(c, &p)?, db::total(c)?);
-                    Ok((p, related, copies, versions, standing, nav))
+                    Ok((p, related, copies, versions, standing, trend, nav))
                 }
                 None => Err(NotFound { nav }),
             })
         })
         .await?;
         match r {
-            Ok((p, related, copies, versions, standing, _)) if part => render(ProductPart { p, related, copies, versions, standing }),
-            Ok((p, related, copies, versions, standing, nav)) => render(ProductPage { p, related, nav, copies, versions, standing }),
+            Ok((p, related, copies, versions, standing, trend, _)) if part => render(ProductPart { p, related, copies, versions, standing, trend }),
+            Ok((p, related, copies, versions, standing, trend, nav)) => render(ProductPage { p, related, nav, copies, versions, standing, trend }),
             Err(t) => Err((StatusCode::NOT_FOUND, render(t)?)),
         }
     })
@@ -1231,6 +1235,8 @@ async fn main() {
             loop {
                 let now = unix_now();
                 let _ = with_db(&app, move |c| ops::ops_watchdog(c, now)).await;
+                // Wishlist alerts: a wanted card that is for sale somewhere new rings its trainer's bell once.
+                let _ = with_db(&app, move |c| marcuru_rs::wishes::run(c, now)).await;
                 tokio::time::sleep(Duration::from_secs(3600)).await;
             }
         });
@@ -1275,6 +1281,10 @@ async fn main() {
         .route("/favicon.ico", get(favicon))
         .route("/healthz", get(ops::healthz))
         .route("/admin/ops/report", post(ops::ops_report))
+        .route("/admin/photos/pending", get(ops::photos_pending))
+        .route("/admin/photos/{id}", post(ops::photo_clean).layer(axum::extract::DefaultBodyLimit::max(12 * 1024 * 1024)))
+        .route("/admin/similar/cards", get(ops::similar_cards))
+        .route("/admin/similar", post(ops::similar_save).layer(axum::extract::DefaultBodyLimit::max(4 * 1024 * 1024)))
         .route("/admin/backup/db", get(ops::backup_db))
         .route("/admin/backup/uploads", get(ops::backup_uploads))
         .route("/admin/prices/refresh", post(ops::refresh_prices))
@@ -1360,6 +1370,7 @@ async fn main() {
         .route("/admin/member-cards/{id}/delete", post(community::staff_remove_card))
         .route("/me/cards/order", post(community::order_cards))
         .route("/me/cards/{card}", post(community::card_action))
+        .route("/me/cards/{card}/original-photo", post(community::original_photo))
         .route("/me/password", post(community::change_password))
         .route("/me/delete", post(community::delete_me))
         .route("/admin/trainers", get(community::admin_page))

@@ -1469,6 +1469,7 @@ pub fn start_housekeeping(app: App) {
                     "follow" => "A new follower",
                     "expiry" => "A listing expired",
                     "announcement" => "News from the vault",
+                    "wish" => "A card from your wishlist is here",
                     _ => "Something happened in your store",
                 };
                 let url = if link.starts_with('/') { format!("{site}{link}") } else { link };

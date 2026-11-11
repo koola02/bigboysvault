@@ -64,6 +64,7 @@
         <select data-nodrag data-cond aria-label="Condition of {{ c.title }}">{% for o in conditions %}<option{% if *o == c.cond %} selected{% endif %}>{{ o }}</option>{% endfor %}</select>
         <label class="me-val" data-nodrag><span>Value ₱</span><input data-value type="number" min="0" step="1" inputmode="numeric" value="{{ c.own_text() }}" placeholder="{% if c.value > 0.0 %}{{ c.market_text() }}{% else %}Not known yet{% endif %}" aria-label="Value of {{ c.title }} in pesos"></label>
         <p class="me-c-sug" data-market="{{ c.value }}" data-own="{{ c.value_own }}" data-cond="{{ c.cond }}"{% if c.own_photo() %} data-own-photo{% endif %}></p>
+        {% if c.photo_clean == 1 %}<form method="post" action="/me/cards/{{ c.id }}/original-photo" class="photo-orig" data-nodrag><button type="submit" class="linkbtn inline">Use my own photo</button></form>{% endif %}
       </li>
       {% endfor %}
     </ul>

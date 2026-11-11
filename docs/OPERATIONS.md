@@ -78,17 +78,22 @@ The VM's clock is set to Asia/Manila, so the times below are Philippine time.
 | `backup.sh` | 02:30 | `GET /admin/backup/db` (a `VACUUM INTO` snapshot, checked with `PRAGMA integrity_check`) → `~/bbv/backups/db/data-DATE.db(.gz)`; new pictures from `GET /admin/backup/uploads?since=` → `~/bbv/backups/uploads/` (three tries each; the "since" marker only moves when every picture arrived; every Sunday all pictures are checked again); then `gcloud storage` to the bucket. 30 days of `.db` and 90 days of `.db.gz` kept locally. Warns when the VM disk is 85% full |
 | `prices.sh` | 03:00 | `POST /admin/prices/refresh?limit=50` in a loop until nothing is stale: today's Near Mint market price for every catalogue card (`market_php`, what the **SRP** on My cards is worked out from), the suggested price for cards whose price follows the market (graded, sealed and hand-set prices untouched), and the sellers' cards; sellers far off the market are told once a week per card. Then `POST /admin/catalog/warm`. The site also fills missing market prices by itself, 40 cards every ten minutes, and set release dates (`card_sets`, for "sort by set") soon after boot and every six hours (`POST /admin/sets/refresh` does it on demand) |
 | `images.sh` | 03:30 | WebP/AVIF beside every backed-up JPEG (in `~/bbv/converted`). Everything not yet on the site's list (`~/bbv/pushed.txt`) is first asked for on the site (files it already has just go on the list), and the rest goes up in batches of 300: one tar file per batch (`fly ssh sftp put`), unpacked on the site, then every file is checked at `$ORIGIN/uploads/…`; only files that answer are added to the list. A failed night is simply tried again the next night. Before each batch it checks the site's disk, and stops (with an alert) when that batch would leave under 150 MB free; batches already pushed stay done |
+| `checks.sh` | every 15 min | Opens the pages a buyer uses (home, All cards, Stores, log-in, the cart, `/healthz`, and one card and one store taken from the sitemap), each from the US. Each must answer 200 with the right words on it, in under 3 seconds (`CHECK_SLOW_S`); a miss is tried once more after 20 seconds before it alerts |
+| `photos.sh` | every 30 min | Trainers' own card photos (`member_cards.photo_clean=0`, from `GET /admin/photos/pending`): `ops/cardcrop.py` (OpenCV) finds the card's four corners, straightens it and crops off the table, and the result goes back with `POST /admin/photos/{id}`. The original is kept (`photo_original`) and the trainer can put it back with "Use my own photo". A photo with no clear card, or already straight, is left as it is (`?skip=1`) |
+| `drill.sh` | 04:15 | The restore drill: last night's backup is opened (must be under 30 hours old), checked (`integrity_check`, the main tables, counts close to `/healthz`), every picture the site lists is looked for in the backup, and, with Docker, the site's live image is started on that copy at 127.0.0.1:18080 and four pages must load. Proves the backup would actually bring the site back |
+| `similar.sh` | 04:45 | "More like this" and Ask the Vault's "cards like …": `ops/similar.py` describes every card (name, type, evolution, attacks, rarity, artist, set, from TCGdex, cached in `~/bbv/tcgdex`), turns each description into numbers with a small language model on the VM's CPU (all-MiniLM-L6-v2), and sends each card's 24 closest available cards to `POST /admin/similar`. The site falls back to its own name/set/price match when a card has no picks yet |
 | `deploy.sh` | by hand | fetch, test, back up, `fly deploy --remote-only`, check `/healthz` (builds from `~/bbv/deploy-src`, so the jobs' own scripts never change branch) |
 | `staging.sh` | by hand | last night's copy in the site's Docker image, on the VM only (127.0.0.1:8080), with a random admin password, for 4 hours. See below |
 | `restore-pictures.sh` | by hand | puts the backed-up pictures back on the site (see Restore) |
 | `install-cron.sh` | by `setup-vm.sh` and `update.sh` | writes the cron lines from `crontab.example` |
+| `setup-extras.sh` | once, by hand | the tools for `photos.sh`, `drill.sh`, `similar.sh` and `staging.sh`: Docker, and Python with OpenCV and the language model in `~/bbv/venv` (about 1.5 GB). Without them those jobs quietly do nothing (the drill still checks the backup file and pictures) |
 
 ### When something goes wrong
 
 - **Every job tells the site how it went** (`POST /admin/ops/report`). The admin dashboard shows a "VM jobs" panel:
   when each job last ran, a tick or a warning, and a note. A failure also rings the admins' bell.
-- The site itself notices a quiet VM: no good backup report for 30 hours (or pictures for 50 hours) rings the bell
-  too, so a stopped VM or a broken cron is still noticed.
+- The site itself notices a quiet VM: no good backup or drill report for 30 hours (pictures and
+  similar cards: 50 hours; page checks: 1 hour) rings the bell too, so a stopped VM or a broken cron is still noticed.
 - Any job that stops with an error raises an alert on the way out (`ops/lib.sh`), with the line it stopped at.
 - Telegram (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`) or a webhook (`ALERT_WEBHOOK`) in `ops/env` also sends each
   alert to a phone. Needed for "the site is DOWN", which can't reach a site that is down.
@@ -97,8 +102,10 @@ The VM's clock is set to Asia/Manila, so the times below are Philippine time.
 
 ### Staging (try a change on last night's data)
 
-On the VM: `bash ~/bigboysvault/ops/staging.sh [branch]`. On your own computer:
-`gcloud compute ssh <vm-name> -- -L 8080:localhost:8080`, then open http://localhost:8080. The admin password is in
+On the VM: `bash ~/bigboysvault/ops/staging.sh [branch]`. It builds the change on Fly's builders (the VM is too
+small to compile it) and runs it on last night's copy. To look at it from a phone or any browser: open Google Cloud
+Shell (the `>_` button in the Cloud console), run `gcloud compute ssh <vm-name> --zone <zone> -- -N -L 8080:localhost:8080`,
+then Web Preview → port 8080. From your own computer with gcloud installed, the same command and http://localhost:8080. The admin password is in
 `~/bbv/staging/admin-password.txt`. Never open port 8080 in the VM's firewall: the copy holds members' real data.
 It stops by itself after 4 hours (`STAGING_HOURS`), or now with `docker rm -f bbv-staging`.
 

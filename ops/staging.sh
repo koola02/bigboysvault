@@ -16,8 +16,14 @@ rsync -a --delete "$BK/uploads/" "$ST/uploads/" 2>/dev/null || cp -r "$BK/upload
 # Build from a separate copy of the code, so the scripts cron runs (in $REPO_DIR) never change branch.
 if [ ! -d "$SRC/.git" ]; then git clone -q "$(git -C "$REPO_DIR" remote get-url origin)" "$SRC"; fi
 cd "$SRC" && git fetch -q origin && git checkout -q -B "$BRANCH" "origin/$BRANCH"
-log "building $(git log --oneline -1)"
-docker build -q -t bbv-staging . >/dev/null
+log "building $(git log --oneline -1) on Fly's builder (a few minutes; nothing is deployed)"
+IMG="registry.fly.io/${FLY_APP:-bigboysvault}:preview"
+if fly deploy -a "${FLY_APP:-bigboysvault}" --build-only --push --remote-only --image-label preview >"$DATA_DIR/staging-build.log" 2>&1    && fly auth docker >/dev/null 2>&1 && docker pull -q "$IMG" >/dev/null; then
+  docker tag "$IMG" bbv-staging
+else
+  log "Fly's builder didn't work (see $DATA_DIR/staging-build.log); building here instead, which is slow"
+  docker build -q -t bbv-staging . >/dev/null
+fi
 # Never a fixed password: STAGING_ADMIN_TOKEN from ops/env, or a new random one each time.
 TOKEN="${STAGING_ADMIN_TOKEN:-}"
 if [ -z "$TOKEN" ] || [ "$TOKEN" = staging ] || [ "${#TOKEN}" -lt 16 ]; then TOKEN="$(openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n')"; fi
@@ -28,6 +34,8 @@ nohup sh -c "sleep $((HOURS * 3600)); docker rm -f bbv-staging >/dev/null 2>&1" 
 sleep 3
 curl -sS --max-time 20 "http://127.0.0.1:8080/healthz" && echo
 log "staging is running on this VM only, for $HOURS hours."
-log "On your own computer run:  gcloud compute ssh <vm-name> -- -L 8080:localhost:8080"
-log "then open http://localhost:8080 . The admin password is in $ST/admin-password.txt"
+log "To see it: open Google Cloud Shell (the >_ button in the Cloud console) and run"
+log "  gcloud compute ssh $(hostname) --zone $(curl -s -H 'Metadata-Flavor: Google' http://metadata.google.internal/computeMetadata/v1/instance/zone 2>/dev/null | awk -F/ '{print $NF}') -- -N -L 8080:localhost:8080"
+log "then Web Preview (the eye button) > Preview on port 8080. Only you can open that link."
+log "The preview's admin password is in $ST/admin-password.txt"
 log "Do not open port 8080 in the firewall. Stop it early with: docker rm -f bbv-staging"

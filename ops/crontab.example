@@ -6,3 +6,7 @@
 30 2 * * *   bash OPS/backup.sh  >> LOGS/backup.log 2>&1   # bigboysvault/ops
 0 3 * * *    bash OPS/prices.sh  >> LOGS/prices.log 2>&1   # bigboysvault/ops
 30 3 * * *   bash OPS/images.sh  >> LOGS/images.log 2>&1   # bigboysvault/ops
+*/15 * * * * bash OPS/checks.sh  >> LOGS/checks.log 2>&1   # bigboysvault/ops
+*/30 * * * * bash OPS/photos.sh  >> LOGS/photos.log 2>&1   # bigboysvault/ops
+15 4 * * *   bash OPS/drill.sh   >> LOGS/drill.log 2>&1    # bigboysvault/ops
+45 4 * * *   bash OPS/similar.sh >> LOGS/similar.log 2>&1  # bigboysvault/ops

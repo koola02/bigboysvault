@@ -1524,8 +1524,9 @@ pub fn popular_binders(c: &Connection, seller: i64) -> rusqlite::Result<Vec<(Mem
 
 /// Kinds of notification a member can switch on or off, with what each means. "my_order" is the buyer's side:
 /// news about cards they are buying. The others are about their own store.
-pub const EVENTS: [(&str, &str); 12] = [
+pub const EVENTS: [(&str, &str); 13] = [
     ("my_order", "News about cards I'm buying (accepted, declined, counter offers, replies, ran out)"),
+    ("wish", "A card on my wishlist turns up in the vault or a store"),
     ("follow", "Someone follows my store"),
     ("view", "Someone looks at or saves a card (summarised, once a day per card)"),
     ("inquiry", "Someone asks me a question"),
