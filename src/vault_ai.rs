@@ -405,7 +405,14 @@ pub fn tidy(said: &str) -> (String, Vec<usize>) {
     // Plain text: the reply is shown as typed, so markdown marks would show as they are.
     let out = out.replace("**", "").replace("__", "").replace('`', "");
     let lines: Vec<String> = out.lines().map(|l| l.trim().trim_start_matches(['*', '-', '•']).trim().to_string()).filter(|l| !l.is_empty()).collect();
-    let mut text = lines.join(" ");
+    // A list written one item per line reads as sentences once the lines are joined.
+    let mut text = String::new();
+    for (i, l) in lines.iter().enumerate() {
+        text.push_str(l);
+        if i + 1 < lines.len() {
+            text.push_str(if l.ends_with(['.', '!', '?', ':', ',', ';']) { " " } else { ". " });
+        }
+    }
     while text.contains("  ") {
         text = text.replace("  ", " ");
     }
@@ -450,6 +457,10 @@ mod tests {
         assert_eq!(p, vec![2, 3]);
         assert_eq!(tidy("Try [[1, 4]]").1, vec![1, 4]);
         assert_eq!(tidy("No marks here").1, Vec::<usize>::new());
+        assert_eq!(tidy("Under ₱500:
+Charizard ex [[1]] for ₱300
+Moltres [[2]] for ₱50
+Want more?").0, "Under ₱500: Charizard ex for ₱300. Moltres for ₱50. Want more?");
     }
 
     #[test]
