@@ -279,7 +279,8 @@
         const r = await fetch(`/me/search?q=${encodeURIComponent(text)}&lang=${lang}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
         const j = await r.json(); if (mine !== seq) return;
         const cards = j.cards || [];
-        say.textContent = j.error && !cards.length ? j.error : cards.length ? `${cards.length} found. Tap the one you’re selling.` : `No cards called “${text}”. Check the spelling.`;
+        const more = (j.total ?? cards.length) > cards.length ? ' Showing the first 120: type more of the name or the card number.' : '';
+        say.textContent = j.error && !cards.length ? j.error : cards.length ? `${j.total ?? cards.length} found. Tap the one you’re selling.${more}` : `No cards called “${text}”. Check the spelling.`;
         into.replaceChildren(...cards.slice(0, 120).map(result));
       } catch (_) { if (mine === seq) say.textContent = 'Couldn’t search just now. Check your connection.'; }
     }
@@ -489,6 +490,17 @@
       const get = (k) => tr.querySelector(`[data-ch="${k}"]`).checked;
       try { await send('/me/notifications/prefs', { event: tr.dataset.event, site: get('site'), email: get('email'), push: get('push') }); A.toast('Saved ✓', { kind: 'ok' }); }
       catch (err) { e.target.checked = !e.target.checked; A.toast(err.message, { kind: 'err' }); }
+    });
+    // Buyers keep their email here (sellers have it in Store settings). Saving it switches on the email boxes.
+    $('emailForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault(); const f = e.currentTarget, btn = f.querySelector('button'); btn.disabled = true;
+      try {
+        const j = await send('/me/notifications/prefs', { address: f.address.value.trim() });
+        f.address.value = j.email || '';
+        nRoot.querySelectorAll('[data-ch="email"]').forEach((b) => { b.disabled = !j.email; if (!j.email) b.checked = false; });
+        A.toast(j.email ? 'Email saved ✓ Tick Email next to what you want to hear about.' : 'Email removed ✓', { kind: 'ok' });
+      } catch (err) { A.toast(err.message, { kind: 'err' }); }
+      btn.disabled = false;
     });
     $('pushOn')?.addEventListener('click', async () => {
       const key = nRoot.dataset.pushKey; if (!key || !('serviceWorker' in navigator) || !('PushManager' in window)) { A.toast('This browser can’t do push notifications.', { kind: 'err' }); return; }

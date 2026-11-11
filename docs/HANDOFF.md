@@ -57,7 +57,7 @@ The Docker image builds the server and the WebAssembly widget itself (see `Docke
 | `insights.rs`, `suggest.rs`, `translate.rs`, `bulk.rs` | Price charts, search suggestions, Japanese/Chinese ↔ English, bulk admin actions |
 | `sellers.rs` | **Sellers' stores, database side**: listings with stock and prices, reservations and offers (the informal GCash/bank flow), questions, reviews, followers, views, notifications, dashboard numbers. Tests inside |
 | `store.rs` | **Sellers' stores, pages**: the seller panel under `/me/store`, `/me/listings`, `/me/binders`, `/me/orders`, `/me/settings`, `/me/notifications`; the public `/store/{name}` and `/stores`; the admin Sellers tab; mail and housekeeping. See `docs/SELLER_API.md` |
-| `ops.rs` | Speed and upkeep: WebP/AVIF for `/uploads`, cache headers for `/static`, `/healthz`, and the routes the VM's jobs call (database snapshot, pictures list, price refresh, search warm-up). See `docs/OPERATIONS.md` and `ops/` |
+| `ops.rs` | Speed and upkeep: WebP/AVIF for `/uploads`, cache headers for `/static`, `/healthz`, and the routes the VM's jobs call (database snapshot, pictures list, price refresh, search warm-up, job reports for the dashboard's "VM jobs" panel). See `docs/OPERATIONS.md` and `ops/` |
 | `pricing.rs` | One rule for suggested prices by condition (shares of Near Mint, the owner's saved shares, rounding), used by admins, sellers and the SQL totals |
 | `lib.rs` | Module list for the library half (main.rs is the binary) |
 
@@ -99,7 +99,7 @@ The Docker image builds the server and the WebAssembly widget itself (see `Docke
   - `/collections/{handle}`. In the floating window, the server sends `binder_part.html` with the first 48 cards.
   - The search widget then takes over and loads everything. `card-float.js` shows 9 per page.
 - **Floating window:** any link to `/products/…`, `/collections/…` or `/trainers/…` opens in it (`card-float.js`). The address changes, so links can be shared, and opening the address directly shows a normal page.
-- **Admin access** (`admin.rs` `power()`): either the owner's `ADMIN_TOKEN` cookie, or a signed-in trainer whose role is admin (full access) or moderator (trainers and vouches only).
+- **Admin access** (`admin.rs` `power()`): either the owner's `ADMIN_TOKEN` cookie, or a signed-in trainer whose role is admin (full access) or moderator (trainers and vouches only). Admin trainers sign in at `/login` with their own trainer password; that gives them admin through their session only (no owner cookie), so demoting or blocking them ends *that session's* admin on their next click. It does **not** end access for anyone who knows `ADMIN_TOKEN` (every admin who used the old `name/<ADMIN_TOKEN>` sign-in knows it) or still holds an owner cookie from before this change (they last 30 days): the cookie and the token are checked before any role, block or lock. **Rotating `ADMIN_TOKEN` is what ends that access:** `fly secrets set ADMIN_TOKEN=$(openssl rand -hex 24) -a bigboysvault`, then put the same value in `ops/env` on the VM (the jobs send it), and give it to the owner only. Do this once after deploying this change, and again whenever an admin is removed. Keep `ADMIN_TOKEN` long and random; the server warns at start when it is shorter than 24 characters.
 - **Lite mode:**
   - `<html data-lite>` is set in `base.html` for phones, low-power devices and data saver.
   - CSS turns off blur and endless animations, and JS skips or lightens the WebGL.
@@ -113,8 +113,13 @@ The Docker image builds the server and the WebAssembly widget itself (see `Docke
 
 - **Version every asset:** `<script src="/static/x.js?v=N">`. Bump N whenever that file changes, or browsers keep the old one. The `?v=` lives in the template (mostly `base.html`, `home.html`, `admin_*.html`).
 - **Database migrations only add:** `CREATE TABLE IF NOT EXISTS`, or `ALTER TABLE … ADD COLUMN` guarded by a check (see `members.rs`). Never drop or rename on the live database.
-- **Back up the live database before any schema change:**
-  `fly ssh sftp get -a bigboysvault /data/data.db ./backup-YYYYMMDD.db`
+- **Back up the live database before any schema change:** on the VM run `bash ~/bigboysvault/ops/backup.sh`
+  (`ops/deploy.sh` does it for you), or from any machine:
+  `curl -fsS -H "Cookie: marcuru_admin=$ADMIN_TOKEN" -o backup-YYYYMMDD.db https://bigboysvault.fly.dev/admin/backup/db`
+  then `python3 -c "import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute('pragma integrity_check').fetchone()[0])" backup-YYYYMMDD.db`,
+  which must print `ok`. `/admin/backup/db` uses `VACUUM INTO`, so the copy is clean even while the site is busy.
+  Never copy `/data/data.db` by itself while the app runs: the newest writes can still be in `data.db-wal`.
+  To put a copy back, see `docs/OPERATIONS.md` › Restore.
 - **Every write clears the cache:** call `app.forget()` (not `cache.invalidate_all()`), so the change counter stops stale pages being stored (the bug fixed in v61).
 - **Comments and words for people:** short, plain English, written for a 10-year-old. No jargon in the interface.
 - **Design rules:** see `05-owner-preferences.md`. In short:
@@ -134,7 +139,7 @@ set ADMIN_TOKEN=local-test-token        (PowerShell: $env:ADMIN_TOKEN = "local-t
 target\release\marcuru-rs.exe           (serves http://localhost:3000, database ./data.db, uploads ./uploads)
 ```
 - Environment variables: `DATABASE`, `UPLOADS`, `PORT` (default 3000 locally), `HOST`, `ADMIN_TOKEN`, `PUBLIC_URL` (defaults to the live domain).
-- The search widget's WebAssembly is already built in `static/wasm/`. Rebuild it only if `crates/finder` changes; this needs wasm-bindgen 0.2.130 and binaryen; see `build-wasm.sh`.
+- The search widget's WebAssembly is already built in `static/wasm/`. Rebuild it only if `crates/finder` changes; this needs wasm-bindgen 0.2.130 and binaryen; see `build-wasm.sh`. After a rebuild (or a change in `crates/finder` or `crates/vault-search`), bump only `<meta name="finder-v">` in `templates/base.html`: every page loads the finder through it.
 
 ### Tests
 - **Rust tests:** run `cargo test --lib`, which should report 36 passing, and `cargo test -p vault-search` (14 passing).
@@ -158,6 +163,14 @@ target\release\marcuru-rs.exe           (serves http://localhost:3000, database 
   - `reset-local.ps1 stop` stops the server and restores the local database.
   - The paths inside them point at the previous assistant's scratch folder; adjust them.
 
+### The VM's nightly jobs
+A small Google VM runs the backups, prices, WebP/AVIF pictures and an uptime check from `ops/` (see
+`docs/OPERATIONS.md` §4). Each job reports to the site, so the admin dashboard shows how last night went. Once the
+VM has the `update.sh` cron line, changes to `ops/` reach it by themselves the next night (`ops/update.sh`, 02:15).
+A VM set up before `update.sh` existed doesn't have that line: run the one-time upgrade step in `docs/OPERATIONS.md`
+§4 (*Upgrading the VM that is already running*) first:
+`cd ~/bigboysvault && git config core.fileMode false && git pull -q --ff-only origin master && bash ops/install-cron.sh && crontab -l | grep bigboysvault/ops`.
+
 ### Deploy
 ```
 cd marcuru-rs
@@ -168,10 +181,10 @@ The build takes about 3 to 5 minutes, and Fly swaps the machine with no downtime
 
 ## 7. Things to know (gotchas)
 
-- **Not a git repository.** Run `git init` first.
+- **Git:** the code is on GitHub (`koola02/bigboysvault`, branch `master`). The VM's jobs run from their own checkout at `~/bigboysvault`, which `ops/update.sh` pulls every night at 02:15, so a pushed fix to `ops/` reaches the VM by itself the next night, once the VM has had the one-time upgrade step (`docs/OPERATIONS.md` §4) that installs the `update.sh` cron line.
 - **Templates are compiled in:** after editing anything in `templates/`, rebuild.
 - **Edit the right CSS rule:** `vault.css` is long and layered; a rule near the end usually wins. Search for the selector first.
-- **WAL files:** the live database has no WAL file, and the server has no sqlite3. Back up with `fly ssh sftp get`.
+- **WAL files:** the database runs in WAL mode (`src/db.rs`), so while the site is busy the newest writes sit in `data.db-wal`, and the server has no sqlite3. A raw `fly ssh sftp get` of `data.db` can miss them or catch a half-written checkpoint: back up with `/admin/backup/db` or `ops/backup.sh`, and restore through `/data/restore.db` (`docs/OPERATIONS.md` › Restore).
 - **Seal-erasing:** `stamp.rs` was checked on 21 vintage scans and all came out clean. Cards whose seal can't be found keep their original picture.
 - **Rate limits:** sign-in, join, search and Ask use `app.limits` (per IP).
 - **Lite mode:** CSS and JS check `html[data-lite]`. Test phones with that on.

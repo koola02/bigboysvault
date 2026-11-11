@@ -166,7 +166,23 @@
   }, { passive: false });
 })();
 
+// ---------- Who's here: asked once per page, shared by every script that needs it ----------
+// vault-staff.js and vault-talk.js call the same window.bbvWho(), so the page asks the server only once.
+window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
+  .then((r) => (r.ok ? r.json() : {})).catch(() => ({}))));
+
+// ---------- The binders menu in the top bar: closes when you tap elsewhere, press Esc, or pick a binder ----------
+(() => {
+  const dd = document.querySelector('.menu-dd');
+  if (!dd) return;
+  document.addEventListener('click', (e) => { if (dd.open && !dd.contains(e.target)) dd.open = false; });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && dd.open) { dd.open = false; dd.querySelector('summary')?.focus(); } });
+  dd.querySelector('.menu')?.addEventListener('click', (e) => { if (e.target.closest('a')) dd.open = false; });
+})();
+
 // ---------- Notifications Bell ----------
+// Only signed-in trainers have notifications, so the bell asks only once /me/who says someone is signed in.
+// Signed-out visitors never ask (no failed request), and signing in shows the bell on the very next page.
 (() => {
   const notifBtn = document.getElementById('notifBtn');
   if (!notifBtn) return;
@@ -175,9 +191,8 @@
   const notifList = document.getElementById('notifList');
   const notifDropdown = document.getElementById('notifDropdown');
   let loaded = false;
-  // Only trainers have notifications. Once a page gets "not signed in", the rest of the visit doesn't ask again.
-  const SKIP = 'bbv:no-notif';
-  try { if (sessionStorage.getItem(SKIP)) return; } catch (_) {}
+  // Old copies of this script kept a "not signed in" flag for the whole visit: it isn't used any more.
+  try { sessionStorage.removeItem('bbv:no-notif'); } catch (_) {}
   const ago = (t) => {
     const s = Math.max(0, Math.floor(Date.now() / 1000 - (Number(t) || 0)));
     if (s < 60) return 'Just now';
@@ -189,8 +204,8 @@
 
   async function loadNotifs() {
     try {
-      const res = await fetch('/api/notifications');
-      if (!res.ok) { notifDropdown.hidden = true; if (res.status === 401 || res.status === 403) { try { sessionStorage.setItem(SKIP, '1'); } catch (_) {} } return; }
+      const res = await fetch('/api/notifications', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      if (!res.ok) { notifDropdown.hidden = true; return; }
       const j = await res.json();
       notifDropdown.hidden = false;
       if (j.unread_count > 0) {
@@ -232,24 +247,26 @@
   document.getElementById('notifRead')?.addEventListener('click', async (e) => {
     e.stopPropagation();
     try {
-      await fetch('/api/notifications/read', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+      await fetch('/api/notifications/read', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' });
       notifBadge.hidden = true;
       notifList.querySelectorAll('.unread').forEach(el => el.classList.remove('unread'));
     } catch (_) {}
   });
 
-  // Fetch count on load
-  setTimeout(loadNotifs, 500);
+  // Ask for the count once we know a trainer is signed in.
+  window.bbvWho().then((j) => { if (j && j.member) loadNotifs(); else notifDropdown.hidden = true; });
 })();
 
 // ---------- Who's here: the profile chip in the top bar, and no "Log in" while signed in ----------
 (() => {
-  const chip = document.getElementById('barMe'), av = document.getElementById('barMeAv'), label = document.getElementById('barMeT');
   const root = document.documentElement;
+  // Looked up each time, so it still works if part of the page was swapped.
+  const $ = (id) => document.getElementById(id);
   const paint = (me, admin) => {
+    const chip = $('barMe'), av = $('barMeAv'), label = $('barMeT');
     if (me && me.name) {
       root.dataset.me = me.role === 'admin' || admin ? 'admin' : '1';
-      if (chip) {
+      if (chip && av && label) {
         chip.hidden = false; chip.href = '/me';
         av.replaceChildren();
         if (me.avatar) { const i = document.createElement('img'); i.src = me.avatar; i.alt = ''; i.width = 36; i.height = 36; av.append(i); av.classList.add('has-pic'); }
@@ -260,20 +277,21 @@
     } else if (admin) {
       // The owner, signed in with the admin password alone.
       root.dataset.me = 'admin';
-      if (chip) { chip.hidden = false; chip.href = '/admin'; av.replaceChildren(); av.textContent = '★'; av.classList.remove('has-pic'); label.textContent = 'Admin'; chip.title = 'Admin'; }
+      if (chip && av && label) { chip.hidden = false; chip.href = '/admin'; av.replaceChildren(); av.textContent = '★'; av.classList.remove('has-pic'); label.textContent = 'Admin'; chip.title = 'Admin'; }
     } else {
       delete root.dataset.me;
       if (chip) chip.hidden = true;
     }
-    const login = document.getElementById('barLogin'); if (login) login.hidden = !!root.dataset.me;
+    const login = $('barLogin'); if (login) login.hidden = !!root.dataset.me;
   };
   // Last visit's answer first (no flash), then today's.
   let last = null;
   try { last = JSON.parse(localStorage.getItem('bbv:me') || 'null'); } catch (_) {}
   if (last) paint(last.me, last.admin);
-  fetch('/me/who', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then((r) => r.json()).then((j) => {
+  window.bbvWho().then((j) => {
+    if (!j || !('member' in j)) return; // no answer (offline): keep what's shown
     const me = j.member || null, admin = !!j.full;
     paint(me, admin);
     try { if (me || admin) localStorage.setItem('bbv:me', JSON.stringify({ me, admin })); else localStorage.removeItem('bbv:me'); } catch (_) {}
-  }).catch(() => {});
+  });
 })();

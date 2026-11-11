@@ -62,10 +62,40 @@
   /* ----- reserve or make an offer ----- */
   const sheet = $('buySheet'), form = $('buyForm');
   let mode = 'reserve', cardId = 0;
-  const open = (s) => { s.hidden = false; document.body.classList.add('sheet-open'); s.querySelector('input, textarea, select')?.focus(); };
-  const close = (s) => { s.hidden = true; document.body.classList.remove('sheet-open'); };
+  // A sheet slides up on phones and sits in the middle on big screens (the "open" class does that).
+  // While it's open, Tab stays inside it, and closing it puts the keyboard back on the button that opened it.
+  let back = null;
+  const focusables = (s) => [...s.querySelectorAll('.sheet-panel input, .sheet-panel textarea, .sheet-panel select, .sheet-panel button, .sheet-panel a[href]')]
+    .filter((n) => !n.disabled && !n.closest('[hidden]') && n.getClientRects().length > 0);
+  const open = (s) => {
+    if (!s) return;
+    clearTimeout(s._t);
+    back = document.activeElement;
+    s.hidden = false; document.body.style.overflow = 'hidden';
+    requestAnimationFrame(() => {
+      s.classList.add('open');
+      const first = focusables(s).find((n) => n.matches('input, textarea, select')) || focusables(s)[0];
+      first?.focus({ preventScroll: true });
+    });
+  };
+  const close = (s) => {
+    if (!s || s.hidden || !s.classList.contains('open')) return;
+    s.classList.remove('open'); document.body.style.overflow = '';
+    s._t = setTimeout(() => { s.hidden = true; }, 320);
+    if (back && back.isConnected) back.focus({ preventScroll: true });
+    back = null;
+  };
   document.querySelectorAll('[data-close]').forEach((n) => n.addEventListener('click', () => close(n.closest('.sheet'))));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') document.querySelectorAll('.sheet:not([hidden])').forEach(close); });
+  document.addEventListener('keydown', (e) => {
+    const s = document.querySelector('.sheet.open'); if (!s) return;
+    if (e.key === 'Escape') { e.preventDefault(); close(s); return; }
+    if (e.key !== 'Tab') return;
+    const f = focusables(s); if (!f.length) return;
+    const first = f[0], last = f[f.length - 1];
+    if (!s.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
+    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
   root.addEventListener('click', (e) => {
     const b = e.target.closest('[data-offer]'); if (!b) return;
     if (!me) return signIn();

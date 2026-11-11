@@ -52,8 +52,17 @@
   });
 
   /* ----- the drawer ----- */
-  const open = async () => { drawer.hidden = false; fab.hidden = false; document.body.classList.add('cart-open'); paint(); await refresh(); };
-  const close = () => { drawer.hidden = true; document.body.classList.remove('cart-open'); badge(); };
+  // Opening moves focus into the drawer; closing brings it back to the cart button, so keyboard users don't get lost.
+  const open = async () => {
+    drawer.hidden = false; fab.hidden = false; fab.setAttribute('aria-expanded', 'true'); document.body.classList.add('cart-open'); paint();
+    const x = drawer.querySelector('[data-cart-close]'); if (x) x.focus();
+    await refresh();
+  };
+  const close = () => {
+    const inside = drawer.contains(document.activeElement);
+    drawer.hidden = true; fab.setAttribute('aria-expanded', 'false'); document.body.classList.remove('cart-open'); badge();
+    if (inside && !fab.hidden) fab.focus();
+  };
   fab.addEventListener('click', () => (drawer.hidden ? open() : close()));
   drawer.querySelectorAll('[data-cart-close]').forEach((b) => b.addEventListener('click', close));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !drawer.hidden) close(); });
@@ -72,6 +81,8 @@
       save(); paint();
     } catch (_) {}
   }
+  // A line the vault was short of becomes sendable again once its count changes. A card with none left stays off.
+  const unmark = (l) => { if (l.kind === 'vault' && l.ok === false && l.left !== 0) { delete l.ok; delete l.why; } };
   function paint() {
     list.replaceChildren();
     const groups = new Map();
@@ -94,8 +105,10 @@
         const minus = el('button', null, '−'); minus.type = 'button'; minus.setAttribute('aria-label', 'One fewer');
         const num = el('span', null, String(l.qty || 1));
         const plus = el('button', null, '+'); plus.type = 'button'; plus.setAttribute('aria-label', 'One more');
-        minus.onclick = () => { l.qty = (l.qty || 1) - 1; if (l.qty <= 0) lines = lines.filter((x) => x !== l); save(); paint(); };
-        plus.onclick = () => { l.qty = Math.min(99, l.left ? Math.min(l.left, (l.qty || 1) + 1) : (l.qty || 1) + 1); save(); paint(); };
+        // Changing how many clears "not available", so the line can be sent again (the server checks it once more).
+        minus.onclick = () => { l.qty = (l.qty || 1) - 1; if (l.qty <= 0) lines = lines.filter((x) => x !== l); unmark(l); save(); paint(); };
+        // '+' never lowers the count, even when fewer are left than asked for (the line then stays as it is).
+        plus.onclick = () => { const q = l.qty || 1; l.qty = Math.min(99, l.left ? Math.max(q, Math.min(l.left, q + 1)) : q + 1); unmark(l); save(); paint(); };
         qty.append(minus, num, plus);
         const line = el('b', 'cart-sum', peso((l.price || 0) * (l.qty || 1)));
         const x = el('button', 'cart-x', '✕'); x.type = 'button'; x.setAttribute('aria-label', `Take ${l.title} out`); x.onclick = () => { lines = lines.filter((y) => y !== l); save(); paint(); };
@@ -118,21 +131,39 @@
     go.disabled = true; go.textContent = 'Sending…';
     try {
       const r = await fetch('/cart/checkout', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ items, message: note.value }) });
-      if (r.status === 401) { try { sessionStorage.setItem('bbv:after-login', '/?cart=1'); } catch (_) {} location.href = '/login'; return; }
+      if (r.status === 401) {
+        // After signing in, the sign-in page brings the buyer back here with the cart open.
+        const back = /[?&]cart=1(&|$)/.test(location.search) ? location.pathname + location.search : location.pathname + (location.search ? location.search + '&' : '?') + 'cart=1';
+        try { sessionStorage.setItem('bbv:after-login', back); } catch (_) {}
+        location.href = '/login'; return;
+      }
       const j = await r.json();
       if (!r.ok) throw new Error(j.error || 'That didn’t go through. Please try again.');
       const placedIds = new Set();
       for (const p of j.placed || []) { if (p.kind === 'vault') (p.ids || []).forEach((id) => placedIds.add('vault:' + id)); else placedIds.add('card:' + p.id); }
       lines = lines.filter((l) => !placedIds.has(l.kind + ':' + l.id));
-      for (const f of j.failed || []) { if (f.kind === 'vault') (f.ids || []).forEach((id) => { const l = lines.find((x) => x.kind === 'vault' && x.id === id); if (l) { l.ok = false; l.why = f.error; } }); else { const l = lines.find((x) => x.kind === 'card' && x.id === f.id); if (l) { l.ok = false; l.why = f.error; } } }
-      note.value = ''; save(); paint();
+      for (const f of j.failed || []) {
+        if (f.kind === 'vault') {
+          // Only the lines the vault is really short of are greyed out, each with its own reason. With no ids the
+          // order as a whole was refused (too many cards, or orders already open): the toast below says why.
+          (f.ids || []).forEach((id) => {
+            const l = lines.find((x) => x.kind === 'vault' && x.id === id); if (!l) return;
+            const d = (f.lines || []).find((x) => x.id === id);
+            l.ok = false; l.why = (d && d.why) || f.error;
+            // As refresh() does: the count comes down to what's left, so '+' never lowers it afterwards.
+            if (d && typeof d.left === 'number') { l.left = d.left; if (d.left > 0 && (l.qty || 1) > d.left) l.qty = d.left; }
+          });
+        } else { const l = lines.find((x) => x.kind === 'card' && x.id === f.id); if (l) { l.ok = false; l.why = f.error; } }
+      }
+      if ((j.placed || []).length) note.value = '';
+      save(); paint();
+      // The message stays in the drawer (paint() isn't run again after it), with the way to the orders.
       if ((j.placed || []).length) {
         toast('Order sent ✓ You’ll see how to pay once it’s accepted.');
         const done = el('p', 'cart-done'); done.innerHTML = 'Order sent. Follow it under <a href="/me/orders?tab=buying">My orders</a>.'; list.prepend(done);
       }
       if ((j.failed || []).length) toast((j.failed[0].error || 'Some lines could not be ordered.') + (j.failed.length > 1 ? ` (+${j.failed.length - 1} more)` : ''), true);
-    } catch (err) { toast(err.message, true); }
-    go.disabled = false; paint();
+    } catch (err) { toast(err.message, true); paint(); }
   });
 
   badge();

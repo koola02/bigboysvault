@@ -12,18 +12,21 @@ pub struct Snap {
     pub finish: String,
     #[serde(default)]
     pub price_updated: String,
+    /// Where the price came from. Missing in an Undo made before this was kept: then it stays as it is.
+    #[serde(default)]
+    pub price_src: Option<String>,
 }
 
 pub fn snapshot(c: &Connection, ids: &[i64]) -> rusqlite::Result<Vec<Snap>> {
     let mut out = vec![];
     for id in ids {
-        let row = c.query_row("SELECT price,variant,finish,price_updated FROM products WHERE id=?1", [id], |r| {
-            Ok((r.get::<_, f64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?))
+        let row = c.query_row("SELECT price,variant,finish,price_updated,price_src FROM products WHERE id=?1", [id], |r| {
+            Ok((r.get::<_, f64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?))
         });
-        if let Ok((price, variant, finish, price_updated)) = row {
+        if let Ok((price, variant, finish, price_updated, price_src)) = row {
             let mut st = c.prepare("SELECT collection FROM collection_products WHERE product_id=?1")?;
             let binders = st.query_map([id], |r| r.get(0))?.collect::<Result<Vec<String>, _>>()?;
-            out.push(Snap { id: *id, price, variant, binders, finish, price_updated });
+            out.push(Snap { id: *id, price, variant, binders, finish, price_updated, price_src: Some(price_src) });
         }
     }
     Ok(out)
@@ -33,8 +36,8 @@ pub fn restore(c: &Connection, snaps: &[Snap]) -> rusqlite::Result<usize> {
     let tx = c.unchecked_transaction()?;
     for s in snaps {
         tx.execute(
-            "UPDATE products SET price=?2,variant=?3,finish=?4,price_updated=?5 WHERE id=?1",
-            rusqlite::params![s.id, s.price, s.variant, s.finish, s.price_updated],
+            "UPDATE products SET price=?2,variant=?3,finish=?4,price_updated=?5,price_src=COALESCE(?6,price_src) WHERE id=?1",
+            rusqlite::params![s.id, s.price, s.variant, s.finish, s.price_updated, s.price_src],
         )?;
         tx.execute("DELETE FROM collection_products WHERE product_id=?1", [s.id])?;
         for b in &s.binders {
@@ -85,38 +88,46 @@ pub fn set_variant(c: &Connection, ids: &[i64], v: &str) -> rusqlite::Result<()>
     tx.commit()
 }
 
+/// Every selected card gets this price. It's the owner's own now ('own'), so the nightly market refresh leaves it alone.
 pub fn set_price(c: &Connection, ids: &[i64], price: f64) -> rusqlite::Result<()> {
     let tx = c.unchecked_transaction()?;
     for id in ids {
-        tx.execute("UPDATE products SET price=?2 WHERE id=?1", rusqlite::params![id, price.max(0.0).round()])?;
+        tx.execute("UPDATE products SET price=?2, price_src='own', price_updated='' WHERE id=?1", rusqlite::params![id, price.max(0.0).round()])?;
     }
     tx.commit()
 }
 
-/// Raise or lower every value by a percentage (e.g. +10 or -15).
+/// Raise or lower every value by a percentage (e.g. +10 or -15). Like set_price, the new prices are the owner's own.
 pub fn adjust_price(c: &Connection, ids: &[i64], pct: f64) -> rusqlite::Result<()> {
     let tx = c.unchecked_transaction()?;
     for id in ids {
-        tx.execute("UPDATE products SET price=MAX(0,ROUND(price*(1+?2/100.0))) WHERE id=?1", rusqlite::params![id, pct])?;
+        tx.execute("UPDATE products SET price=MAX(0,ROUND(price*(1+?2/100.0))), price_src='own', price_updated='' WHERE id=?1", rusqlite::params![id, pct])?;
     }
     tx.commit()
 }
 
-/// Cards that were matched to a catalogue entry, with the info needed to refresh their price.
-pub fn priced_cards(c: &Connection, ids: &[i64]) -> rusqlite::Result<Vec<(i64, String, String)>> {
+/// Cards that were matched to a catalogue entry, with what's needed to price them: (id, catalogue id, finish, condition).
+/// A card with no condition counts as Near Mint, as it does everywhere else.
+pub fn priced_cards(c: &Connection, ids: &[i64]) -> rusqlite::Result<Vec<(i64, String, String, String)>> {
     let mut out = vec![];
     for id in ids {
-        if let Ok(row) = c.query_row("SELECT api_id,finish FROM products WHERE id=?1 AND api_id<>''", [id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))) {
-            out.push((*id, row.0, row.1));
+        let row = c.query_row("SELECT api_id,finish,variant FROM products WHERE id=?1 AND api_id<>''", [id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+        });
+        if let Ok((api_id, finish, variant)) = row {
+            let cond = if variant.trim().is_empty() { "Near Mint".to_string() } else { variant };
+            out.push((*id, api_id, finish, cond));
         }
     }
     Ok(out)
 }
 
-pub fn apply_market(c: &Connection, updates: &[(i64, f64, String)], today: &str) -> rusqlite::Result<()> {
+/// Today's suggested prices: (id, price). These follow the market from now on ('suggested'), each copy in its own
+/// finish: the finish is never changed here.
+pub fn apply_market(c: &Connection, updates: &[(i64, f64)], today: &str) -> rusqlite::Result<()> {
     let tx = c.unchecked_transaction()?;
-    for (id, php, finish) in updates {
-        tx.execute("UPDATE products SET price=?2,finish=?3,price_updated=?4 WHERE id=?1", rusqlite::params![id, php, finish, today])?;
+    for (id, php) in updates {
+        tx.execute("UPDATE products SET price=?2,price_updated=?3,price_src='suggested' WHERE id=?1", rusqlite::params![id, php, today])?;
     }
     tx.commit()
 }
@@ -135,4 +146,63 @@ pub fn delete_many(c: &Connection, ids: &[i64]) -> rusqlite::Result<Vec<String>>
     }
     tx.commit()?;
     Ok(images)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A real database file in the temp folder, with the site's tables and one card that follows the market.
+    fn db(name: &str) -> (Connection, std::path::PathBuf) {
+        let path = std::env::temp_dir().join(format!("bbv-bulk-{name}-{}.db", std::process::id()));
+        for ext in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(format!("{}{ext}", path.display()));
+        }
+        let c = crate::db::open(path.to_str().unwrap()).unwrap();
+        c.execute(
+            "INSERT INTO products(id,handle,title,variant,price,api_id,finish,price_updated,price_src,created_at) VALUES(1,'a-1','A','Lightly Played',100,'tcgdex:x-1','normal','2026-11-01','suggested','2026-11-01T00:00:00')",
+            [],
+        )
+        .unwrap();
+        (c, path)
+    }
+    fn src(c: &Connection) -> (f64, String, String) {
+        c.query_row("SELECT price,price_src,price_updated FROM products WHERE id=1", [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap()
+    }
+
+    #[test]
+    fn a_bulk_price_is_the_owners_own_and_undo_brings_the_market_back() {
+        let (c, path) = db("own");
+        let undo = snapshot(&c, &[1]).unwrap();
+        set_price(&c, &[1], 250.0).unwrap();
+        assert_eq!(src(&c), (250.0, "own".into(), String::new()), "the nightly refresh must leave it alone");
+        adjust_price(&c, &[1], 10.0).unwrap();
+        assert_eq!(src(&c), (275.0, "own".into(), String::new()));
+        restore(&c, &undo).unwrap();
+        assert_eq!(src(&c), (100.0, "suggested".into(), "2026-11-01".into()));
+        // An Undo made before price_src was kept leaves it as it is.
+        let mut old = undo.clone();
+        old[0].price_src = None;
+        set_price(&c, &[1], 5.0).unwrap();
+        restore(&c, &old).unwrap();
+        assert_eq!(src(&c), (100.0, "own".into(), "2026-11-01".into()));
+        drop(c);
+        let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn market_today_reads_each_copys_condition() {
+        let (c, path) = db("market");
+        c.execute("INSERT INTO products(id,handle,title,variant,price,api_id,created_at) VALUES(2,'b-2','B','',50,'tcgdex:x-2','2026-11-01T00:00:00')", []).unwrap();
+        let cards = priced_cards(&c, &[1, 2, 3]).unwrap();
+        assert_eq!(cards.len(), 2, "a card that doesn't exist is skipped");
+        assert_eq!(cards[0].3, "Lightly Played");
+        assert_eq!(cards[1].3, "Near Mint", "no condition counts as Near Mint");
+        apply_market(&c, &[(1, 80.0)], "2026-11-11").unwrap();
+        assert_eq!(src(&c), (80.0, "suggested".into(), "2026-11-11".into()));
+        let finish: String = c.query_row("SELECT finish FROM products WHERE id=1", [], |r| r.get(0)).unwrap();
+        assert_eq!(finish, "normal", "the copy keeps its own finish");
+        drop(c);
+        let _ = std::fs::remove_file(path);
+    }
 }

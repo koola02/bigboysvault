@@ -18,7 +18,7 @@
     let r;
     try { r = await fetch(url, opts); } catch (_) { throw new Error('No connection. Please try again.'); }
     const j = await r.json().catch(() => ({}));
-    if (r.status === 401) { location.href = '/login'; throw new Error('Please sign in again.'); }
+    if (r.status === 401) { location.href = '/login'; throw new Error('Please log in again.'); }
     if (!r.ok) throw new Error(j.error || 'That didn’t save. Please try again.');
     return j;
   }
@@ -194,7 +194,8 @@
       const r = await fetch(`/me/search?q=${encodeURIComponent(text)}&lang=${lang}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
       const j = await r.json(); if (mine !== seq) return;
       const cards = j.cards || [];
-      state.textContent = j.error && !cards.length ? j.error : cards.length ? `${cards.length} found. Tap the one you own.` : `No cards called “${text}”. Check the spelling.`;
+      const more = (j.total ?? cards.length) > cards.length ? ' Showing the first 120: type more of the name or the card number.' : '';
+      state.textContent = j.error && !cards.length ? j.error : cards.length ? `${j.total ?? cards.length} found. Tap the one you own.${more}` : `No cards called “${text}”. Check the spelling.`;
       results.replaceChildren(...cards.slice(0, 120).map(result));
       paint();
     } catch (_) { if (mine === seq) state.textContent = 'Couldn’t search just now. Check your connection.'; }

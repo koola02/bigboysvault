@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}Trainers · {{ nav.brand }}{% endblock %}
+{% block title %}Trainers &amp; collectors · {{ nav.brand }}{% endblock %}
 {% block content %}
 <section class="wrap trainers">
   <div class="tr-head">
     <p class="eyebrow plate">The community</p>
     <h1 class="h1">Trainers</h1>
     <p class="tr-sub">Collectors who share their favorite cards here.</p>
-    {% if let Some(m) = me %}<a class="btn" href="/me">My trainer: {{ m.name }}</a>{% else %}<a class="btn" href="/join">Become a trainer</a><a class="linkbtn" href="/login">Sign in</a>{% endif %}
+    {% if let Some(m) = me %}<a class="btn" href="/me">My trainer: {{ m.name }}</a>{% else %}<a class="btn" href="/join">Become a trainer</a><a class="linkbtn" href="/login">Log in</a>{% endif %}
     <a class="linkbtn" href="/vouches">Read the vouches</a>
   </div>
   {% if trainers.is_empty() %}

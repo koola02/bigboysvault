@@ -78,10 +78,13 @@
   const peso = (n) => '₱' + Math.round(n || 0).toLocaleString('en-US');
   const make = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 
-  function copies(wrap, ids, solo) {
+  function copies(wrap, ids, solo, sold = new Set()) {
     const form = wrap.querySelector('#entry');
     const field = (id) => wrap.querySelector('#' + id);
     const start = { finish: field('finishKey').value, price: field('price').value.replace(/[^\d.]/g, ''), cond: field('variant').value.trim() };
+    // A card whose price follows the market keeps following it when only its name or notes change. A typed price stays typed.
+    const src0 = field('priceSrc')?.value || '';
+    const market0 = src0 === 'market' || src0 === 'suggested';
     let rarity = '';
     // Older imports keep everything in one line: "near-mint / reverse-holofoil / holo-rare". Show it as proper choices.
     const pretty = (t) => t.replace(/[-_]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()).trim();
@@ -94,7 +97,7 @@
       if (parts[2]) rarity = pretty(parts[2]);
     } else if (known) start.cond = known;
     if (start.finish === 'market') start.finish = '';
-    const rows = ids.map((id) => ({ id, ...start, market: false }));
+    const rows = ids.map((id) => ({ id, ...start, market: market0, src: market0 ? src0 : 'own', sold: sold.has(id) }));
     const removed = [];
     let finishes = [];
     // Notes, photo, binders and so on, to tell whether a copy edited on its own really differs.
@@ -130,7 +133,7 @@
       shared.hidden = !shared.textContent;
       list.replaceChildren(...rows.map((c, i) => {
         const row = make('li', 'qa-copy');
-        const label = make('span', 'qa-copy-n', solo ? 'This card' : `Card ${i + 1}`);
+        const label = make('span', 'qa-copy-n', (solo ? 'This card' : `Card ${i + 1}`) + (c.sold ? ' · sold' : ''));
         const fin = document.createElement('select'); fin.setAttribute('aria-label', `Finish of card ${i + 1}`);
         if (!c.finish) fin.append(new Option('Pick a finish', '', true, true));
         const A = window.Admin;
@@ -142,7 +145,7 @@
         const pr = document.createElement('input'); pr.className = 'qa-price'; pr.inputMode = 'decimal'; pr.placeholder = '₱0'; pr.value = c.price; pr.setAttribute('aria-label', `Price of card ${i + 1} in pesos`);
         const sug = make('p', 'qa-sug');
         const marketOf = (key) => finishes.find((x) => x.key === key);
-        const usePrice = (v) => { c.price = String(v); c.market = true; pr.value = c.price; changed(); sync(); paintSug(); };
+        const usePrice = (v) => { c.price = String(v); c.market = true; c.src = 'suggested'; pr.value = c.price; changed(); sync(); paintSug(); };
         const paintSug = () => {
           const f = marketOf(c.finish);
           A.sugLine(sug, { nm: f?.php || 0, cond: c.cond, label: f?.label, price: c.price, onUse: usePrice });
@@ -155,10 +158,10 @@
           const still = c.market || (was != null && Number(c.price) === was);
           if (!still || !now) return;
           const v = A.suggest(now.php, c.cond);
-          if (v != null) { c.price = String(v); c.market = true; pr.value = c.price; }
+          if (v != null) { c.price = String(v); c.market = true; c.src = 'suggested'; pr.value = c.price; }
         };
         fin.onchange = () => { const pf = c.finish; c.finish = fin.value; follow(pf, c.cond); changed(); sync(); paintSug(); };
-        pr.oninput = () => { c.price = pr.value.replace(/[^\d.]/g, ''); c.market = false; changed(); sync(); paintSug(); };
+        pr.oninput = () => { c.price = pr.value.replace(/[^\d.]/g, ''); c.market = false; c.src = 'own'; changed(); sync(); paintSug(); };
         const cond = document.createElement('select'); cond.setAttribute('aria-label', `Condition of card ${i + 1}`);
         if (!c.cond) cond.append(new Option('Pick a condition', '', true, true));
         else if (!CONDS.includes(c.cond)) cond.append(new Option(c.cond, c.cond, true, true));
@@ -189,10 +192,17 @@
         paintSug();
         return row;
       }));
-      minus.disabled = rows.length < 2;
+      minus.disabled = rows.length < 2 || !rows.some((c) => !c.sold);
     }
-    minus.onclick = () => { if (rows.length < 2) return; const c = rows.pop(); if (c.id) removed.push(c.id); changed(); sync(); paint(); };
-    plus.onclick = () => { const last = rows[rows.length - 1]; rows.push({ ...last, id: null }); changed(); paint(); };
+    // One copy fewer takes away the last copy that's still for sale (the first row too, when it's the only one).
+    // Sold copies are the vault's record: − never takes one (each row's ✕ still can, on purpose).
+    minus.onclick = () => {
+      if (rows.length < 2) return;
+      const unsold = rows.map((c, i) => (c.sold ? -1 : i)).filter((i) => i >= 0);
+      if (!unsold.length) return;
+      const [c] = rows.splice(unsold[unsold.length - 1], 1); if (c.id) removed.push(c.id); changed(); sync(); paint();
+    };
+    plus.onclick = () => { const last = rows[rows.length - 1]; rows.push({ ...last, id: null, sold: false }); changed(); paint(); };
     paint();
     // The owner's own condition shares arrive a moment later: refresh the suggestions if nobody is typing.
     document.addEventListener('bbv:shares', () => { if (wrap.isConnected && !list.contains(document.activeElement)) paint(); }, { once: true });
@@ -218,7 +228,7 @@
         // One new photo is stored once and shared by every copy.
         if (newPhoto && first) { f.delete('photo'); f.delete('photo_url'); f.set('image_from', first); }
         first = first || c.id;
-        f.set('id', c.id); f.set('variant', c.cond); f.set('price', String(Number(c.price) || 0)); f.set('finish', c.finish); f.set('price_src', c.market ? 'suggested' : '');
+        f.set('id', c.id); f.set('variant', c.cond); f.set('price', String(Number(c.price) || 0)); f.set('finish', c.finish); f.set('price_src', c.market ? (c.src === 'market' ? 'market' : 'suggested') : 'own');
         if (rarity) f.set('rarity', rarity);
         if (ownThings) f.set('solo', '1');
         const r = await fetch('/admin/save', { method: 'POST', body: f, headers: { Accept: 'application/json' }, credentials: 'same-origin' });
@@ -229,7 +239,7 @@
     };
   }
 
-  async function open(href, ids, solo = false) {
+  async function open(href, ids, solo = false, sold = new Set()) {
     if (closing) await closing;
     const mine = ++asking;
     let doc;
@@ -272,7 +282,7 @@
     panel.focus({ preventScroll: true });
     window.mountCardForm();
     wrap.querySelectorAll('[data-tag-box]').forEach((b) => delete b.dataset.ready);
-    copies(wrap, ids, solo);
+    copies(wrap, ids, solo, sold);
 
     const form = wrap.querySelector('#entry');
     form.addEventListener('input', () => { dirty = true; });
@@ -334,7 +344,9 @@
     if (!a) return;
     e.preventDefault();
     const href = a.getAttribute('href'), own = Number(href.split('/').pop());
-    const ids = (a.closest('.ctile')?.dataset.ids || '').split(',').filter(Boolean).map(Number);
-    open(href, ids.length ? ids : [own]);
+    const tile = a.closest('.ctile');
+    const ids = (tile?.dataset.ids || '').split(',').filter(Boolean).map(Number);
+    const sold = new Set((tile?.dataset.sold || '').split(',').filter(Boolean).map(Number));
+    open(href, ids.length ? ids : [own], false, sold);
   });
 })();

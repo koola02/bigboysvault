@@ -113,7 +113,7 @@
   </ul>
   {% endif %}
 </section>
-<script src="/static/admin-ui.js?v=9" defer></script>
+<script src="/static/admin-ui.js?v=10" defer></script>
 <script src="/static/tag-editor.js?v=1" defer></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
@@ -146,7 +146,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const row = setSeller.closest('.at-row'), on = setSeller.dataset.sellerSet === '1', name = row.dataset.name;
         if (setSeller.classList.contains('on')) return;
         if (on && !confirm(`Let ${name} sell cards? They get a store page, listings with stock and prices, and orders.`)) return;
-        if (!on && !confirm(`Switch ${name}'s store off? Their cards stay in their binder; nothing is for sale.`)) return;
+        if (!on && !confirm(`Switch ${name}'s store off? Their cards stay in their binder; nothing is for sale. Open orders on their store are cancelled and the buyers are told.`)) return;
         await send(row, { action: 'seller', seller: on });
         return;
       }
@@ -165,8 +165,8 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       const b = e.target.closest('[data-act]'); if (!b) return;
       const row = b.closest('.at-row'), act = b.dataset.act, name = row.dataset.name;
-      if (act === 'delete' && !confirm(`Remove ${name}, with their binder, vouches, replies and photos? This can't be undone.`)) return;
-      if (act === 'block' && !confirm(`Block ${name}? They're signed out, can't sign in, and everything of theirs comes off the site until you unblock them.`)) return;
+      if (act === 'delete' && !confirm(`Remove ${name}, with their binder, vouches, replies and photos? Their open orders are cancelled. This can't be undone.`)) return;
+      if (act === 'block' && !confirm(`Block ${name}? They're signed out, can't sign in, and everything of theirs comes off the site until you unblock them. Their open orders, buying and selling, are cancelled and the other side is told.`)) return;
       if (act === 'password' && !confirm(`Make a new password for ${name}? Their old one stops working.`)) return;
       await send(row, { action: act });
     } catch (err) { A.toast(err.message, { kind: 'err' }); }

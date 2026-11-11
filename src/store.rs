@@ -1,7 +1,7 @@
 //! Each seller's store: the seller panel under /me (dashboard, listings, binders, orders, settings,
 //! notifications) and the public storefront at /store/<name>. The database side is `sellers.rs`.
-use crate::community::{acting, acting_any, client_ip, fail, html, not_found, ok, over_limit, render, store_photo, PHOTO_GATE};
-use crate::{admin, chrome, ise, with_db, App, Chrome, Res};
+use crate::community::{acting, acting_any, client_ip, fail, html, not_found, ok, over_limit, render, store_photo, gated};
+use crate::{admin, chrome, with_db, App, Chrome, Res};
 use askama::Template;
 use axum::{
     extract::{Multipart, Path, Query, State},
@@ -46,7 +46,7 @@ fn panel(c: &rusqlite::Connection, m: Member, tab: &'static str) -> rusqlite::Re
 async fn signed_in(app: &App, h: &HeaderMap) -> Result<Result<Member, Response>, (StatusCode, String)> {
     Ok(match crate::community::current(app, h).await? {
         Some(m) => Ok(m),
-        None => Err(Redirect::to("/join?signin=1").into_response()),
+        None => Err(Redirect::to("/login").into_response()),
     })
 }
 
@@ -460,9 +460,12 @@ pub async fn orders(State(app): State<App>, h: HeaderMap, Query(q): Query<TabQs>
         Err(r) => return Ok(r),
     };
     let id = m.id;
+    // A member who doesn't sell only has the buying side.
     let tab = match q.tab.as_str() {
-        "buying" | "questions" | "sales" => q.tab.clone(),
-        _ => "selling".to_string(),
+        "buying" => "buying".to_string(),
+        "questions" | "sales" if m.seller => q.tab.clone(),
+        _ if m.seller => "selling".to_string(),
+        _ => "buying".to_string(),
     };
     let (nav, p, selling, buying, sales, purchases, pay) = with_db(&app, move |c| {
         sellers::expire_due(c)?;
@@ -704,16 +707,15 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
     }
     let mut new_cover = None;
     if let Some(bytes) = cover {
-        let gate = PHOTO_GATE.acquire().await.map_err(ise)?;
         let dir = PathBuf::from(&*app.uploads);
         let stem = format!("cover{}-{}", m.id, members::temp_password());
-        let made = tokio::task::spawn_blocking(move || store_photo(bytes, dir, stem)).await.map_err(ise)?;
-        drop(gate);
+        let made = gated(move || store_photo(bytes, dir, stem)).await?;
         match made {
             Ok((large, small, _, _, _)) => {
                 admin::remove_upload(&app.uploads, &small);
                 new_cover = Some(large);
             }
+            Err(e) if e == crate::community::TOO_BIG => return Ok(fail(StatusCode::BAD_REQUEST, "That photo is too big. Please use a smaller one (under 16 megapixels).")),
             Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "That cover photo couldn't be read. Try a JPEG or PNG.")),
         }
     }
@@ -803,10 +805,16 @@ pub async fn notifications(State(app): State<App>, h: HeaderMap, Query(q): Query
 
 #[derive(Deserialize)]
 pub struct PrefReq {
+    #[serde(default)]
     event: String,
+    #[serde(default)]
     site: bool,
+    #[serde(default)]
     email: bool,
+    #[serde(default)]
     push: bool,
+    /// Sent instead of a switch: the member's email address for notifications (buyers have no Store settings page).
+    address: Option<String>,
 }
 
 pub async fn save_pref(State(app): State<App>, h: HeaderMap, Json(req): Json<PrefReq>) -> Res {
@@ -815,6 +823,17 @@ pub async fn save_pref(State(app): State<App>, h: HeaderMap, Json(req): Json<Pre
         Err(r) => return Ok(r),
     };
     let id = m.id;
+    if let Some(address) = req.address {
+        if over_limit(&app, format!("email|{id}"), 20) {
+            return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "Too many changes. Please wait a few minutes."));
+        }
+        let typed = !address.trim().is_empty();
+        let saved = with_db(&app, move |c| sellers::set_email(c, id, &address)).await?;
+        if typed && saved.is_empty() {
+            return Ok(fail(StatusCode::BAD_REQUEST, "That doesn't look like an email address."));
+        }
+        return Ok(ok(json!({ "ok": true, "email": saved })));
+    }
     if !with_db(&app, move |c| sellers::set_pref(c, id, &req.event, req.site, req.email, req.push)).await? {
         return Ok(fail(StatusCode::BAD_REQUEST, "Unknown kind of notification."));
     }
@@ -844,6 +863,9 @@ pub async fn push_subscribe(State(app): State<App>, h: HeaderMap, Json(req): Jso
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
+    if over_limit(&app, format!("push|{}", m.id), 30) {
+        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "Too many tries. Please wait a few minutes."));
+    }
     let id = m.id;
     with_db(&app, move |c| if req.remove { sellers::push_unsubscribe(c, id, &req.endpoint) } else { sellers::push_subscribe(c, id, &req.endpoint, &req.keys.p256dh, &req.keys.auth) }).await?;
     Ok(ok(json!({ "ok": true, "enabled": std::env::var("PUSH_ENABLED").is_ok_and(|v| v == "1") })))
@@ -910,20 +932,25 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
     };
     let bid = binder.as_ref().map(|b| b.id);
     let cards: Vec<MemberCard> = with_db(app, move |c| match bid {
-        Some(b) => Ok(members::cards_of_binder(c, id, Some(b))?.into_iter().filter(|k| k.on_sale() || k.status == "Sold").collect()),
+        // The same cards the whole store shows (for sale: on sale, reserved or out of stock), just this binder's.
+        // Highlights and wishlist cards in the binder are never offered for sale.
+        Some(b) => Ok(members::cards_of_binder(c, id, Some(b))?.into_iter().filter(|k| k.is_sale() && matches!(k.status.as_str(), "Active" | "Reserved" | "Out of stock")).collect()),
         None => sellers::storefront_listings(c, id),
     })
     .await?;
     let cards: Vec<(MemberCard, bool)> = cards.into_iter().map(|k| { let s = saved.contains(&k.id); (k, s) }).collect();
     let mut nav = nav;
+    // "Hayme's store", so the store page and the trainer page don't share one title. A store with its own name keeps it.
+    let name = store_page_name(&m);
     let title = match &binder {
-        Some(b) => format!("{} · {} · {}", b.title, m.store_title(), nav.brand),
-        None => format!("{} · {}", m.store_title(), nav.brand),
+        Some(b) => format!("{} · {} · {}", b.title, name, nav.brand),
+        None => format!("{} · {}", name, nav.brand),
     };
-    let desc = if m.bio.trim().is_empty() {
-        format!("{} sells Pokémon cards on {}: {} on sale.", m.store_title(), nav.brand, stats.on_sale)
-    } else {
-        crate::clip(&m.bio, 150)
+    // Say what the page is first, then a little of the seller's own words.
+    let about = if m.bio.trim().is_empty() { String::new() } else { format!(" {}", crate::clip(&m.bio, 90)) };
+    let desc = match &binder {
+        Some(b) => crate::clip(&format!("{}, a Pokémon card binder from {} on {}: {} on sale.{about}", b.title, m.store_title(), nav.brand, cards.iter().filter(|(k, _)| k.on_sale()).count()), 165),
+        None => crate::clip(&format!("{} sells Pokémon cards on {}: {} on sale.{about}", m.store_title(), nav.brand, stats.on_sale), 165),
     };
     nav.seo = crate::Seo {
         title,
@@ -941,6 +968,52 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
     }
     let links = m.social_links();
     Ok(html(render(StorePage { nav, m, stats, cards, binders, binder, reviews, me, following, is_me, links, conditions: members::CONDITIONS })?))
+}
+
+/// The store's name for titles: what the seller called it, or "Hayme's store".
+fn store_page_name(m: &Member) -> String {
+    if m.store_name.trim().is_empty() { format!("{}'s store", m.name) } else { m.store_name.trim().to_string() }
+}
+
+/// What a shared link to one listing shows (title, words, picture, price), for `/trainers/{id}/cards/{card}`.
+/// Only for an open store (approved and not blocked); a closed one keeps the plain, unindexed page.
+/// Listings for sale are indexed; highlights and wishlist cards are shared nicely but kept out of search.
+pub(crate) fn listing_seo(nav: &Chrome, m: &Member, k: &MemberCard) -> crate::Seo {
+    let page = format!("/trainers/{}/cards/{}", m.id, k.id);
+    let url = nav.abs(&page);
+    let price = if k.has_price() { k.price_text() } else { String::new() };
+    let for_sale = k.is_sale() && matches!(k.status.as_str(), "Active" | "Reserved" | "Out of stock");
+    let mut bits: Vec<String> = vec![];
+    for b in [&k.card_set, &k.cond] {
+        if !b.trim().is_empty() {
+            bits.push(b.trim().to_string());
+        }
+    }
+    if for_sale && !price.is_empty() {
+        bits.push(price.clone());
+    }
+    let store = m.store_title();
+    let title = if for_sale && !price.is_empty() { format!("{} · {} · {} · {}", k.title, price, store, nav.brand) } else { format!("{} · {} · {}", k.title, m.name, nav.brand) };
+    let what = if for_sale { format!("for sale by {store}") } else if k.is_wish() { format!("wanted by {}", m.name) } else { format!("in the binder of {}", m.name) };
+    let desc = crate::clip(&format!("{} {what} on {}{}.", k.title, nav.brand, if bits.is_empty() { String::new() } else { format!(": {}", bits.join(", ")) }), 165);
+    let img = k.big().to_string();
+    let mut ld = json!({ "@context": "https://schema.org", "@type": "Product", "name": k.title, "url": url, "sku": format!("m{}", k.id), "category": "Collectible trading cards" });
+    if !img.is_empty() {
+        ld["image"] = json!([nav.abs(&img)]);
+    }
+    if for_sale && k.has_price() {
+        let stock = if k.status == "Active" && k.qty > 0 { "https://schema.org/InStock" } else { "https://schema.org/OutOfStock" };
+        ld["offers"] = json!({ "@type": "Offer", "price": format!("{:.2}", k.worth()), "priceCurrency": "PHP", "url": url, "availability": stock, "seller": { "@type": "Person", "name": store } });
+    }
+    let open = m.profile_ok && !m.blocked;
+    crate::Seo {
+        title,
+        desc,
+        path: if open && for_sale { page } else { String::new() },
+        image: if open { img } else { String::new() },
+        kind: "product",
+        ld: if open && for_sale { crate::ld(ld) } else { String::new() },
+    }
 }
 
 pub async fn storefront(State(app): State<App>, h: HeaderMap, Path(slug): Path<String>) -> Res {
@@ -1143,9 +1216,24 @@ pub async fn checkout(State(app): State<App>, h: HeaderMap, Json(req): Json<Chec
     let mut failed: Vec<serde_json::Value> = vec![];
     if !vault.is_empty() {
         let (v2, msg) = (vault.clone(), message.clone());
-        match with_db(&app, move |c| sellers::place_vault_order(c, me, &v2, &msg)).await? {
+        // The whole vault order goes through or none of it. When it can't, only the lines that are really short
+        // come back in "ids" (with why for each in "lines"), so the cart greys out just those. "ids" is empty when
+        // the trouble is the order as a whole (too many cards, or three orders open already).
+        let res = with_db(&app, move |c| {
+            Ok(match sellers::place_vault_order(c, me, &v2, &msg)? {
+                Ok(id) => Ok(id),
+                Err(e) => Err((e, sellers::vault_short_lines(c, &v2)?)),
+            })
+        })
+        .await?;
+        match res {
             Ok(id) => placed.push(json!({ "kind": "vault", "order": id, "ids": vault.iter().map(|x| x.0).collect::<Vec<_>>() })),
-            Err(e) => failed.push(json!({ "kind": "vault", "ids": vault.iter().map(|x| x.0).collect::<Vec<_>>(), "error": e })),
+            Err((e, short)) => failed.push(json!({
+                "kind": "vault",
+                "ids": short.iter().map(|x| x.0).collect::<Vec<_>>(),
+                "lines": short.iter().map(|(id, left, why)| json!({ "id": id, "left": left, "why": why })).collect::<Vec<_>>(),
+                "error": e,
+            })),
         }
     }
     for (cid, qty) in cards {
@@ -1371,6 +1459,8 @@ pub fn start_housekeeping(app: App) {
                     continue;
                 }
                 let subject = match kind.as_str() {
+                    "my_order" => "An update on your order",
+                    "order" => "A new vault order",
                     "reservation" => "Someone reserved a card",
                     "offer" => "You have an offer",
                     "sale" => "A sale is done",

@@ -1,8 +1,9 @@
 {% extends "base.html" %}
-{% block title %}Orders · My store · {{ nav.brand }}{% endblock %}
+{% block title %}{% if p.m.seller %}Orders · My store{% else %}My orders{% endif %} · {{ nav.brand }}{% endblock %}
 {% block content %}
 <section class="wrap admin wide st" id="storeOrders">
   {% include "store_tabs.html" %}
+  {% if p.m.seller %}
   <p class="mc-how">Buying stays simple: a buyer reserves a card, you accept, they pay you in GCash, Maya or at the bank, and you mark it <b>Paid</b>. The stock goes down by itself.</p>
 
   <nav class="seg st-subtabs" aria-label="Orders">
@@ -11,6 +12,9 @@
     <a href="/me/orders?tab=sales" class="{% if tab == "sales" %}on{% endif %}">Sales</a>
     <a href="/me/orders?tab=buying" class="{% if tab == "buying" %}on{% endif %}">My buying</a>
   </nav>
+  {% else %}
+  <p class="mc-how">Your orders, offers and questions. When a seller or the vault accepts, you'll see how to pay them here. Pay in your own app, then they mark it <b>Paid</b>.</p>
+  {% endif %}
 
   {% if tab == "selling" %}
   <h2 class="h2">Reservations</h2>
@@ -92,7 +96,7 @@
         <p class="st-order-who">{{ o.when() }} · <span class="st-status" data-s="{{ o.status }}">{{ o.status }}</span></p>
         <p class="st-line">{{ o.buyer_line() }}</p>
         {% if o.status == "Confirmed" %}
-        <div class="st-pay"><b>How to pay {{ nav.brand }}</b>{% if !vault_pay.0.is_empty() %}<span class="st-pay-m">{{ vault_pay.0 }}</span>{% endif %}<p>{% if vault_pay.1.is_empty() %}The vault hasn't written pay details yet. Ask in the chat.{% else %}{{ vault_pay.1 }}{% endif %}</p><small>Pay in your own app, then wait for the vault to mark it paid.</small></div>
+        <div class="st-pay"><b>How to pay {{ nav.brand }}</b>{% if !vault_pay.0.is_empty() %}<span class="st-pay-m">{{ vault_pay.0.replace(",", " · ") }}</span>{% endif %}<p>{% if vault_pay.1.is_empty() %}The vault hasn't written pay details yet. Ask in the chat.{% else %}{{ vault_pay.1 }}{% endif %}</p><small>Pay in your own app, then wait for the vault to mark it paid.</small></div>
         {% endif %}
         {% if o.is_open() %}<div class="st-order-acts"><button type="button" class="btn ghost" data-vcancel>Cancel</button><a class="linkbtn inline" href="/chat">Ask the vault</a></div>{% endif %}
       </div>
@@ -106,7 +110,7 @@
         <p class="st-order-who">from <a href="/store/{{ o.seller_slug }}">{{ o.seller_name }}</a> · {{ o.when() }} · <span class="st-status" data-s="{{ o.status }}">{{ o.status }}</span></p>
         <p class="st-line">{{ o.buyer_line() }}</p>
         {% for (rid, methods, info) in pay %}{% if *rid == o.id %}
-        <div class="st-pay"><b>How to pay {{ o.seller_name }}</b>{% if !methods.is_empty() %}<span class="st-pay-m">{{ methods }}</span>{% endif %}<p>{% if info.is_empty() %}The seller hasn't written pay details yet. Ask them with the button below.{% else %}{{ info }}{% endif %}</p><small>Pay in your own app, then wait for the seller to mark it paid. {{ nav.brand }} never handles the money.</small></div>
+        <div class="st-pay"><b>How to pay {{ o.seller_name }}</b>{% if !methods.is_empty() %}<span class="st-pay-m">{{ methods.replace(",", " · ") }}</span>{% endif %}<p>{% if info.is_empty() %}The seller hasn't written pay details yet. Ask them with the button below.{% else %}{{ info }}{% endif %}</p><small>Pay in your own app, then wait for the seller to mark it paid. {{ nav.brand }} never handles the money.</small></div>
         {% endif %}{% endfor %}
         {% if o.is_open() %}<div class="st-order-acts"><button type="button" class="btn ghost" data-res="Cancelled">Cancel</button><a class="linkbtn inline" href="/store/{{ o.seller_slug }}#ask">Ask the seller</a></div>{% endif %}
       </div>
@@ -161,6 +165,6 @@
   {% endif %}
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-<script src="/static/admin-ui.js?v=9" defer></script>
-<script src="/static/store.js?v=3" defer></script>
+<script src="/static/admin-ui.js?v=10" defer></script>
+<script src="/static/store.js?v=4" defer></script>
 {% endblock %}

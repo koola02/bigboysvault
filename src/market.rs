@@ -76,7 +76,7 @@ pub fn label(key: &str) -> String {
         "reverse" | "reverseHolofoil" | "reverse-holofoil" => "Reverse Holo".into(),
         "1stEditionHolofoil" | "1st-edition-holofoil" => "1st Ed. Holo".into(),
         "1stEditionNormal" | "1st-edition" | "1st-edition-normal" => "1st Ed.".into(),
-        "unlimitedHolofoil" => "Unlimited Holo".into(),
+        "unlimitedHolofoil" | "unlimited-holofoil" => "Unlimited Holo".into(),
         "market" => "Market".into(),
         other => {
             let s = other.replace('-', " ");
@@ -86,13 +86,80 @@ pub fn label(key: &str) -> String {
     }
 }
 
+/// Every name the price lists use for one finish. Saved cards use the first kind ("holofoil"); TCGdex prices
+/// Wizards-era cards under its own ("unlimited-holofoil", "1st-edition"). Anything else is only itself.
+pub fn finish_aliases(f: &str) -> &'static [&'static str] {
+    match f {
+        "1stEditionHolofoil" | "1st-edition-holofoil" => &["1stEditionHolofoil", "1st-edition-holofoil"],
+        "1stEditionNormal" | "1st-edition" | "1st-edition-normal" => &["1stEditionNormal", "1st-edition", "1st-edition-normal"],
+        "holofoil" | "holo" | "unlimited-holofoil" | "unlimitedHolofoil" => &["holofoil", "unlimited-holofoil", "unlimitedHolofoil", "holo"],
+        "normal" | "unlimited" => &["normal", "unlimited"],
+        "reverseHolofoil" | "reverse-holofoil" | "reverse" => &["reverseHolofoil", "reverse-holofoil", "reverse"],
+        _ => &[],
+    }
+}
+
+/// True when two finish names mean the same finish ("normal" and TCGdex's "unlimited").
+pub fn same_finish(a: &str, b: &str) -> bool {
+    a == b || finish_aliases(a).contains(&b)
+}
+
+/// The order finishes are listed in, and the one a copy takes when it names none: the common printing first
+/// (Holofoil, Normal or Unlimited, Reverse Holo), 1st Edition last, so nothing borrows a 1st Edition price by accident.
 fn rank(key: &str) -> u8 {
     match key {
-        "holofoil" | "holo" => 0,
-        "normal" => 1,
+        "holofoil" | "holo" | "unlimited-holofoil" | "unlimitedHolofoil" => 0,
+        "normal" | "unlimited" => 1,
         "reverse" | "reverseHolofoil" | "reverse-holofoil" => 2,
+        k if k.starts_with("1st") => 4,
         _ => 3,
     }
+}
+
+/// The finish a copy with no finish (or one nobody knows) takes: the common printing, never 1st Edition while
+/// another finish is listed. Works whatever order the list is in.
+pub fn default_finish(fin: &[Value]) -> Option<&Value> {
+    fin.iter().min_by_key(|f| rank(f["key"].as_str().unwrap_or("")))
+}
+
+/// The market's entry for one finish of a card (`card["finishes"]`), matched by any name the price lists use for it
+/// ("normal" is TCGdex's "unlimited"). A copy with no finish, "market", or a finish this site doesn't know takes the
+/// default finish. A known finish the service doesn't list gets nothing, so an Unlimited copy never borrows the
+/// 1st Edition price. The vault's nightly prices and the owner's bulk "Market price today" both use this.
+pub fn finish_pick<'a>(card: &'a Value, finish: &str) -> Option<&'a Value> {
+    let fin = card["finishes"].as_array()?;
+    match fin.iter().find(|f| same_finish(finish, f["key"].as_str().unwrap_or(""))) {
+        Some(f) => Some(f),
+        None if finish.is_empty() || finish == "market" || finish_aliases(finish).is_empty() => default_finish(fin),
+        None => None,
+    }
+}
+
+/// The Near Mint price of that finish, in pesos (see `finish_pick`).
+pub fn finish_price(card: &Value, finish: &str) -> Option<f64> {
+    finish_pick(card, finish).and_then(|f| f["php"].as_f64()).filter(|v| *v > 0.0)
+}
+
+/// A seller's finish is typed as words or a key ("Reverse Holo", "Normal", "reverseHolofoil"), any letter case:
+/// the matching market finish's Near Mint price, else the default finish's.
+pub fn member_finish_price(card: &Value, finish: &str) -> Option<f64> {
+    let fin = card["finishes"].as_array()?;
+    let f = finish.trim();
+    let lower = f.to_ascii_lowercase();
+    let dashed = lower.split_whitespace().collect::<Vec<_>>().join("-");
+    let pick = fin
+        .iter()
+        .find(|x| {
+            let key = x["key"].as_str().unwrap_or("");
+            !f.is_empty()
+                && (same_finish(f, key)
+                    || same_finish(&lower, key)
+                    || same_finish(&dashed, key)
+                    || x["label"].as_str().is_some_and(|l| l.eq_ignore_ascii_case(f))
+                    || label(key).eq_ignore_ascii_case(f))
+        })
+        .or_else(|| default_finish(fin));
+    pick.and_then(|x| x["php"].as_f64()).filter(|v| *v > 0.0)
 }
 
 fn finishes_json(mut finishes: Vec<(String, f64)>, fx: Fx) -> Vec<Value> {
@@ -792,7 +859,8 @@ pub struct Printing {
     pub key: String,
     /// For people: "1st Edition", "Unlimited", "Shadowless, red cheeks".
     pub label: String,
-    /// The finish to start with: 1stEditionHolofoil, holofoil, 1stEditionNormal, normal, reverseHolofoil.
+    /// The finish to start with: 1stEditionHolofoil, holofoil, 1stEditionNormal, normal, reverseHolofoil,
+    /// or the name the card is really priced under ("1st-edition", "unlimited-holofoil"; see `finish_aliases`).
     pub finish: &'static str,
     pub first: bool,
 }
@@ -807,6 +875,8 @@ fn pretty_words(t: &str) -> String {
 /// Every printing of one card, from TCGdex's detailed variants. Empty when it only had one.
 pub fn printings_of(card: &Value) -> Vec<Printing> {
     let mut out: Vec<Printing> = vec![];
+    // The finish names this card is priced under, so each printing starts on one that has a price.
+    let priced: Vec<&str> = card["pricing"]["tcgplayer"].as_object().map(|o| o.iter().filter(|(_, v)| v.is_object()).map(|(k, _)| k.as_str()).collect()).unwrap_or_default();
     for v in card["variants_detailed"].as_array().cloned().unwrap_or_default() {
         let kind = v["type"].as_str().unwrap_or("normal");
         let sub = v["subtype"].as_str().unwrap_or("unlimited");
@@ -845,6 +915,7 @@ pub fn printings_of(card: &Value) -> Vec<Printing> {
             (_, true) => "1stEditionNormal",
             _ => "normal",
         };
+        let finish = if priced.contains(&finish) { finish } else { finish_aliases(finish).iter().copied().find(|a| priced.contains(a)).unwrap_or(finish) };
         let key: String = label.to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect::<String>().split('-').filter(|w| !w.is_empty()).collect::<Vec<_>>().join("-");
         if !out.iter().any(|p| p.key == key) {
             out.push(Printing { key, label, finish, first });
@@ -989,6 +1060,29 @@ mod printing_tests {
         assert_eq!(p[1].finish, "holofoil");
         assert!(p[0].first && !p[1].first);
         assert_eq!(p[0].key, "1st-edition");
+    }
+
+    #[test]
+    fn printings_start_on_a_finish_with_a_price() {
+        // Jungle Pikachu: TCGdex prices Wizards-era cards under its own names.
+        let pikachu = json!({
+            "variants_detailed": [
+                { "type": "normal", "subtype": "unlimited", "stamp": null },
+                { "type": "normal", "subtype": "unlimited", "stamp": ["1st-edition"] } ],
+            "pricing": { "tcgplayer": { "updated": "2026-11-01", "1st-edition": { "marketPrice": 30.0 }, "unlimited": { "marketPrice": 5.0 } } } });
+        let p = printings_of(&pikachu);
+        assert_eq!(p.iter().map(|x| x.finish).collect::<Vec<_>>(), ["1st-edition", "unlimited"]);
+        // Base Set keeps the plain names, because that's what it's priced under.
+        let base = json!({
+            "variants_detailed": [
+                { "type": "holo", "subtype": "unlimited", "stamp": null },
+                { "type": "holo", "subtype": "shadowless", "stamp": null } ],
+            "pricing": { "tcgplayer": { "holofoil": { "marketPrice": 300.0 } } } });
+        let p = printings_of(&base);
+        assert_eq!(p.iter().map(|x| x.finish).collect::<Vec<_>>(), ["holofoil", "holofoil"]);
+        assert!(same_finish("normal", "unlimited") && same_finish("1st-edition-holofoil", "1stEditionHolofoil"));
+        assert!(!same_finish("normal", "1st-edition") && !same_finish("holofoil", "1st-edition-holofoil"));
+        assert_eq!(label("unlimited-holofoil"), "Unlimited Holo");
     }
 
     #[test]

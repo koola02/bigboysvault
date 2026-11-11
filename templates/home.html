@@ -10,7 +10,7 @@
   <div class="mn-in">
     <p class="ed-label"><b>① Top menu</b><span>✋ drag a name to move it</span><span>✕ take it out</span><span>＋ put one in</span><span>✎ tap the site name to rename</span></p>
     <div class="mn-bar">
-      <span class="mn-brand"><img src="/static/img/logo-sm.png" width="36" height="36" alt=""><span class="mn-name" id="mnName" data-ph="Site name">{{ nav.brand }}</span></span>
+      <span class="mn-brand"><img src="/static/img/logo-sm-144.png?v=1" width="36" height="36" alt=""><span class="mn-name" id="mnName" data-ph="Site name">{{ nav.brand }}</span></span>
       <ul class="mn-list" id="mnList" aria-label="Binders in the top menu">{% for c in nav.menu %}<li class="mn-chip" data-h="{{ c.handle }}"><span class="mn-t">{{ c.title }}</span><button type="button" class="mn-x" data-nodrag aria-label="Take {{ c.title }} out of the menu">✕</button></li>{% endfor %}</ul>
       <button type="button" class="mn-add" id="mnAdd" aria-label="Put a binder in the menu">＋</button>
     </div>
@@ -96,14 +96,14 @@
   <div class="bx" data-bx tabindex="0" role="group" aria-label="Binders. Use the left and right arrow keys to turn them one at a time.">
     <div class="bx-stage" data-stage>
       {% for (c, pk) in b.shelf %}<a class="bk bx-i" href="/collections/{{ c.handle }}" draggable="false" data-tone="{{ c.tone() }}" data-t="{{ c.title }}" data-n="{{ c.count_text() }}" aria-label="{{ c.title }}, {{ c.count_text() }} cards">
-        <span class="bk-f bk-back" aria-hidden="true"><img class="bk-emb" src="/static/img/logo-sm.png" alt="" width="36" height="36" loading="lazy" decoding="async"></span>
-        <span class="bk-f bk-spine" aria-hidden="true"><b>{{ c.title }}</b><img class="bk-emb" src="/static/img/logo-sm.png" alt="" width="36" height="36" loading="lazy" decoding="async"></span>
+        <span class="bk-f bk-back" aria-hidden="true"><img class="bk-emb" src="/static/img/logo-sm-144.png?v=1" alt="" width="36" height="36" loading="lazy" decoding="async"></span>
+        <span class="bk-f bk-spine" aria-hidden="true"><b>{{ c.title }}</b><img class="bk-emb" src="/static/img/logo-sm-144.png?v=1" alt="" width="36" height="36" loading="lazy" decoding="async"></span>
         <span class="bk-f bk-edge bk-er" aria-hidden="true"></span>
         <span class="bk-f bk-edge bk-et" aria-hidden="true"></span>
         <span class="bk-f bk-edge bk-eb" aria-hidden="true"></span>
         <span class="bk-f bk-page" aria-hidden="true"><span class="bk-rings"><i></i><i></i><i></i></span><span class="bk-pk">{% for im in pk %}<span><img data-src="{{ im }}" alt="" draggable="false"></span>{% endfor %}{% for _ in pk.len()..9 %}<span></span>{% endfor %}</span></span>
         <span class="bk-cover" aria-hidden="true">
-          <span class="bk-f bk-out"><span class="bk-win">{% if c.has_image() %}<img src="{{ c.img(400) }}" loading="lazy" decoding="async" alt="" draggable="false">{% endif %}</span><span class="bk-name">{{ c.title }}</span><span class="bk-n">{{ c.count_text() }} cards</span><img class="bk-emb" src="/static/img/logo-sm.png" alt="" width="36" height="36" loading="lazy" decoding="async"></span>
+          <span class="bk-f bk-out"><span class="bk-win">{% if c.has_image() %}<img src="{{ c.img(400) }}" loading="lazy" decoding="async" alt="" draggable="false">{% endif %}</span><span class="bk-name">{{ c.title }}</span><span class="bk-n">{{ c.count_text() }} cards</span><img class="bk-emb" src="/static/img/logo-sm-144.png?v=1" alt="" width="36" height="36" loading="lazy" decoding="async"></span>
           <span class="bk-f bk-in"><b>{{ c.title }}</b><small>Tap again to see every card</small></span>
         </span>
         <span class="bk-f bk-strap" aria-hidden="true"></span>
@@ -280,9 +280,9 @@
 {% endfor %}
 {% if edit %}
 </div>
-<script src="/static/admin-ui.js?v=9" defer></script>
+<script src="/static/admin-ui.js?v=10" defer></script>
 <script src="/static/dragsort.js?v=5" defer></script>
-<script src="/static/home-edit.js?v=12" defer></script>
+<script src="/static/home-edit.js?v=13" defer></script>
 {% else if blocks.is_empty() %}
 <section class="hero"><div class="hero-copy"><h1>Coming soon.</h1><p class="lede">The vault is being set up. Have a look around in the meantime.</p><a class="btn" href="/all">Browse all cards</a></div></section>
 {% endif %}

@@ -142,7 +142,8 @@ fn Finder(binders: Vec<Binder>, cards: Vec<Arc<Card>>, embedded: bool) -> impl I
     let sort = RwSignal::new(Sort::parse(&param("sort").unwrap_or_default()));
     let binder = RwSignal::new(start_binder);
     let shown = RwSignal::new(STEP);
-    let total_cards: usize = cards.iter().map(|c| c.qty as usize).sum();
+    // A card whose copies have all sold is still listed (qty 0, no "+"), so every listed card counts at least once.
+    let total_cards: usize = cards.iter().map(|c| c.qty.max(1) as usize).sum();
 
     // What the filters can offer: only what's really in the vault.
     let cond_options: Vec<Token> = COND_LABELS.iter().filter(|(k, _)| cards.iter().any(|c| vault_search::cond_class(&c.variant) == *k || (*k == "gr" && !c.grade.is_empty()))).map(|(k, _)| Token::Cond((*k).to_string())).collect();
@@ -157,7 +158,7 @@ fn Finder(binders: Vec<Binder>, cards: Vec<Arc<Card>>, embedded: bool) -> impl I
     for c in &cards {
         let n = pokemon_name(c);
         if !n.is_empty() {
-            *tally.entry(n).or_default() += c.qty;
+            *tally.entry(n).or_default() += c.qty.max(1);
         }
     }
     let mut known: Vec<(String, u32)> = tally.into_iter().collect();
@@ -456,7 +457,8 @@ fn Finder(binders: Vec<Binder>, cards: Vec<Arc<Card>>, embedded: bool) -> impl I
             <p class="sub fd-count" aria-live="polite">
                 {move || {
                     let (hits, typo) = found.get();
-                    let n: usize = all.with_value(|c| hits.iter().map(|i| c[*i].copies_in(binder.get()) as usize).sum());
+                    // Every hit is a tile on screen, so it counts at least once, sold out or not.
+                    let n: usize = all.with_value(|c| hits.iter().map(|i| c[*i].copies_in(binder.get()).min(c[*i].qty).max(1) as usize).sum());
                     let word = if n == 1 { "card" } else { "cards" };
                     if n == total_cards { format!("{n} {word}") } else if typo { format!("Closest spelling: {n} {word}") } else { format!("{n} of {total_cards} {word}") }
                 }}
@@ -522,12 +524,13 @@ pub async fn start_in_binder(slot: web_sys::HtmlElement, data_url: String, handl
     let text = fetch_text(&data_url).await?;
     let (binders, cards) = parse(&text);
     let Some(at) = binders.iter().position(|b| b.handle == handle) else { return Ok(None) };
-    // Only what this binder holds, counted by the copies in this binder.
+    // Only what this binder holds, counted by the copies in this binder. `qty` is the copies still for sale,
+    // so a binder never offers more than that, and a sold card gets no "+".
     let cards: Vec<Arc<Card>> = cards
         .into_iter()
         .filter(|c| c.binders.contains(&(at as u16)))
         .map(|mut c| {
-            c.qty = c.copies_in(Some(at as u16));
+            c.qty = c.copies_in(Some(at as u16)).min(c.qty);
             Arc::new(c)
         })
         .collect();

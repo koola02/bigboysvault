@@ -385,6 +385,14 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         c.execute("ALTER TABLE collections ADD COLUMN menu_pos INTEGER NOT NULL DEFAULT 0", [])?;
         c.execute("UPDATE collections SET menu_pos=position", [])?;
     }
+    // Once: prices saved before `price_src` existed say where they came from. The old nightly job repriced every catalogue
+    // copy that had a market date, so those prices are the market's and keep following it; the rest were typed by hand.
+    c.execute_batch("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)")?;
+    if crate::blocks::setting(c, "price_src_v")?.as_deref() != Some("1") {
+        c.execute("UPDATE products SET price_src='suggested' WHERE price_src='' AND price_updated<>'' AND api_id<>''", [])?;
+        c.execute("UPDATE products SET price_src='own' WHERE price_src=''", [])?;
+        crate::blocks::set_setting(c, "price_src_v", "1")?;
+    }
     Ok(())
 }
 
@@ -489,7 +497,7 @@ pub fn set_names_to_fetch(c: &Connection) -> rusqlite::Result<Vec<String>> {
     Ok(v)
 }
 
-const DUP_KEY: &str = "(p.api_id || '|' || lower(trim(p.title)) || '|' || lower(trim(p.variant)) || '|' || lower(trim(p.finish)) || '|' || printf('%.2f', p.price) || '|' || p.solo)";
+pub const DUP_KEY: &str = "(p.api_id || '|' || lower(trim(p.title)) || '|' || lower(trim(p.variant)) || '|' || lower(trim(p.finish)) || '|' || printf('%.2f', p.price) || '|' || p.solo)";
 
 /// "holo-rare" reads as "Holo Rare" and "common" as "Common". Anything already capitalised stays as it is.
 fn words_from_slug(t: &str) -> String {
@@ -531,13 +539,10 @@ pub fn share_image(c: &Connection, id: i64, from: i64) -> rusqlite::Result<usize
     c.execute("UPDATE products SET image=(SELECT image FROM products WHERE id=?2) WHERE id=?1", [id, from])
 }
 
-/// How many copies of this card (same card, same condition) the collection holds.
+/// How many copies of this card (same card, same condition) the vault still has for sale. Sold copies stay in the
+/// table as the vault's record and aren't counted.
 pub fn copies(c: &Connection, p: &Product) -> rusqlite::Result<i64> {
-    c.query_row(
-        &format!("SELECT COUNT(*) FROM products p WHERE {DUP_KEY} = (SELECT {DUP_KEY} FROM products p WHERE p.id=?1)"),
-        [p.id],
-        |r| r.get(0),
-    )
+    copies_for_sale(c, p.id)
 }
 
 /// One version of a card: its condition and finish, and how many of them the vault holds.
@@ -553,11 +558,12 @@ pub struct Version {
 }
 
 /// Every version of this card in the vault, best condition first. A page only lists them when there's more than one.
+/// `qty` counts copies for sale, and a version links to a copy for sale wherever there is one.
 pub fn versions(c: &Connection, p: &Product) -> rusqlite::Result<Vec<Version>> {
     let (sql, key) = if p.api_id.is_empty() {
-        (format!("SELECT {COLS}, {DUP_KEY} FROM products p WHERE p.api_id='' AND lower(trim(p.title))=lower(trim(?1)) ORDER BY p.id"), p.title.clone())
+        (format!("SELECT {COLS}, {DUP_KEY} FROM products p WHERE p.api_id='' AND lower(trim(p.title))=lower(trim(?1)) ORDER BY p.available DESC, p.id"), p.title.clone())
     } else {
-        (format!("SELECT {COLS}, {DUP_KEY} FROM products p WHERE p.api_id=?1 ORDER BY p.id"), p.api_id.clone())
+        (format!("SELECT {COLS}, {DUP_KEY} FROM products p WHERE p.api_id=?1 ORDER BY p.available DESC, p.id"), p.api_id.clone())
     };
     let mut st = c.prepare(&sql)?;
     let rows = st.query_map([key], |r| Ok((map(r)?, r.get::<_, String>(NCOLS)?)))?.collect::<Result<Vec<_>, _>>()?;
@@ -566,7 +572,7 @@ pub fn versions(c: &Connection, p: &Product) -> rusqlite::Result<Vec<Version>> {
         let current = r.id == p.id;
         match out.iter_mut().find(|(k, _)| *k == key) {
             Some((_, v)) => {
-                v.qty += 1;
+                v.qty += i64::from(r.available);
                 v.current |= current;
             }
             None => out.push((key, Version {
@@ -575,7 +581,7 @@ pub fn versions(c: &Connection, p: &Product) -> rusqlite::Result<Vec<Version>> {
                 rarity: r.rarity_text(),
                 price: r.price_text(),
                 handle: r.handle.clone(),
-                qty: 1,
+                qty: i64::from(r.available),
                 current,
             })),
         }
@@ -651,8 +657,8 @@ pub fn list(c: &Connection, q: &Query) -> rusqlite::Result<(Vec<Product>, i64)> 
     let cols = COLS.replace("p.", "");
     let sql = format!(
         "WITH m AS ({matched}),
-              g AS (SELECT *, COUNT(*) OVER (PARTITION BY gk) AS qty, group_concat(id) OVER (PARTITION BY gk) AS ids, MIN(pos) OVER (PARTITION BY gk) AS gpos,
-                           ROW_NUMBER() OVER (PARTITION BY gk ORDER BY created DESC, id DESC) AS rn FROM m)
+              g AS (SELECT *, SUM(available) OVER (PARTITION BY gk) AS qty, group_concat(id) OVER (PARTITION BY gk) AS ids, MIN(pos) OVER (PARTITION BY gk) AS gpos,
+                           ROW_NUMBER() OVER (PARTITION BY gk ORDER BY available DESC, created DESC, id DESC) AS rn FROM m)
          SELECT {cols}, qty, ids FROM g WHERE rn=1 ORDER BY {order} LIMIT ? OFFSET ?"
     );
     let mut st = c.prepare(&sql)?;
@@ -688,18 +694,24 @@ pub fn catalogue(c: &Connection) -> rusqlite::Result<String> {
     }
     let mut st = c.prepare(&format!("SELECT {COLS}, {DUP_KEY} AS gk FROM products p ORDER BY p.position ASC, p.created_at DESC, p.id DESC"))?;
     let rows = st.query_map([], |r| Ok((map(r)?, r.get::<_, String>(NCOLS)?)))?;
+    // qty counts only copies still for sale, so a sold card gets no "+" in the finder. A copy that's for sale stands for the
+    // card, so the cart gets one it can really buy. The card keeps its place in the list either way.
     let (mut order, mut seen): (Vec<(Product, Vec<u16>, u32)>, HashMap<String, usize>) = (vec![], HashMap::new());
     for row in rows {
         let (p, key) = row?;
         let mine = member.remove(&p.id).unwrap_or_default();
+        let sale = u32::from(p.available);
         match seen.get(&key) {
             Some(&at) => {
-                order[at].2 += 1;
+                order[at].2 += sale;
                 order[at].1.extend(mine); // once per copy, so each binder can count its own
+                if p.available && !order[at].0.available {
+                    order[at].0 = p;
+                }
             }
             None => {
                 seen.insert(key, order.len());
-                order.push((p, mine, 1));
+                order.push((p, mine, sale));
             }
         }
     }
@@ -771,15 +783,20 @@ pub fn related(c: &Connection, p: &Product, n: usize) -> rusqlite::Result<Vec<Pr
     Ok(picked.into_iter().map(|i| all[i].clone()).collect())
 }
 
-/// The address search engines should use for this card: copies of the same card share the first copy's page.
+/// The address search engines should use for this card: copies of the same card share one page, the first copy
+/// still for sale (the first copy of all once every one has sold).
 pub fn canonical_handle(c: &Connection, p: &Product) -> rusqlite::Result<String> {
-    let sql = format!("SELECT p.handle FROM products p WHERE {DUP_KEY} = (SELECT {DUP_KEY} FROM products p WHERE p.id=?1) ORDER BY p.id LIMIT 1");
+    let sql = format!("SELECT p.handle FROM products p WHERE {DUP_KEY} = (SELECT {DUP_KEY} FROM products p WHERE p.id=?1) ORDER BY p.available DESC, p.id LIMIT 1");
     Ok(c.query_row(&sql, [p.id], |r| r.get(0)).optional()?.unwrap_or_else(|| p.handle.clone()))
 }
 
-/// One entry per card for the sitemap (copies share the first copy's page): handle, title, when added, photo.
+/// One entry per card for the sitemap (copies share one page, as `canonical_handle` picks it): handle, title, when added, photo.
 pub fn sitemap_cards(c: &Connection) -> rusqlite::Result<Vec<(String, String, String, String)>> {
-    let sql = format!("SELECT p.handle, p.title, p.created_at, p.image FROM products p WHERE p.id IN (SELECT MIN(p.id) FROM products p GROUP BY {DUP_KEY}) ORDER BY p.position, p.id LIMIT 45000");
+    let sql = format!(
+        "SELECT handle, title, created_at, image FROM (SELECT p.handle, p.title, p.created_at, p.image, p.position, p.id,
+           ROW_NUMBER() OVER (PARTITION BY {DUP_KEY} ORDER BY p.available DESC, p.id) AS rn FROM products p)
+         WHERE rn=1 ORDER BY position, id LIMIT 45000"
+    );
     let mut st = c.prepare(&sql)?;
     let v = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<Result<Vec<_>, _>>()?;
     Ok(v)
@@ -964,6 +981,7 @@ pub fn binder_cover_choices(c: &Connection, handle: &str, limit: i64) -> rusqlit
 }
 
 /// One more copy of a card: same details, photo and binders; a new id and link. Returns the new id.
+/// The new copy is for sale, even when the one it was copied from has sold.
 pub fn duplicate(c: &Connection, id: i64) -> rusqlite::Result<Option<i64>> {
     c.execute_batch("BEGIN IMMEDIATE")?;
     let r = (|| {
@@ -971,7 +989,7 @@ pub fn duplicate(c: &Connection, id: i64) -> rusqlite::Result<Option<i64>> {
         let nid: i64 = c.query_row("SELECT MAX(COALESCE(MAX(id),0),1000000)+1 FROM products", [], |r| r.get(0))?;
         c.execute(
             "INSERT INTO products(id,handle,title,body,tags,variant,price,compare_at,available,image,image_w,image_h,created_at,card_no,card_set,api_id,finish,price_updated,price_src,rarity,solo,market_php,market_at)
-             SELECT ?1, ?2, title,body,tags,variant,price,compare_at,available,image,image_w,image_h,strftime('%Y-%m-%dT%H:%M:%S','now'),card_no,card_set,api_id,finish,price_updated,price_src,rarity,solo,market_php,market_at FROM products WHERE id=?3",
+             SELECT ?1, ?2, title,body,tags,variant,price,compare_at,1,image,image_w,image_h,strftime('%Y-%m-%dT%H:%M:%S','now'),card_no,card_set,api_id,finish,price_updated,price_src,rarity,solo,market_php,market_at FROM products WHERE id=?3",
             rusqlite::params![nid, format!("{}-{nid}", slug(&p.title)), id],
         )?;
         // A copy stays beside its card in the owner's order.
@@ -1088,6 +1106,21 @@ pub fn copies_for_sale(c: &Connection, id: i64) -> rusqlite::Result<i64> {
         [id],
         |r| r.get(0),
     )
+}
+
+/// The copy a cart line or an order should take: this one while it's for sale, else another copy of the same card
+/// (same card, condition, finish and price) that still is. None when no copy of it is for sale. A buyer who added a
+/// card that has since sold keeps it in the cart while identical copies remain.
+pub fn sale_copy(c: &Connection, id: i64) -> rusqlite::Result<Option<i64>> {
+    c.query_row(
+        &format!(
+            "SELECT p.id FROM products p WHERE p.available=1 AND {DUP_KEY} = (SELECT {DUP_KEY} FROM products p WHERE p.id=?1)
+             ORDER BY (p.id=?1) DESC, p.id LIMIT 1"
+        ),
+        [id],
+        |r| r.get(0),
+    )
+    .optional()
 }
 
 /// Copies of this card the vault can still promise: copies for sale, less the ones in open orders (waiting or accepted).
@@ -1399,6 +1432,31 @@ mod dashboard_tests {
         let (rows, total) = list(&c, &Query::default()).unwrap();
         assert_eq!(total, 2);
         assert_eq!(rows.iter().map(|p| p.qty).sum::<i64>(), 3);
+
+        // A sold copy is never what the finder offers: the count is copies for sale, and a copy for sale stands for the card.
+        let base = |tsv: &str| vault_search::parse(tsv).1.into_iter().find(|x| x.title.contains("Base Set")).unwrap();
+        assert_eq!((base(&tsv).handle, base(&tsv).qty), ("h3".to_string(), 2), "the newest copy leads while both are for sale");
+        mark_sold(&c, 3, 1).unwrap();
+        let tsv = catalogue(&c).unwrap();
+        assert_eq!((base(&tsv).handle, base(&tsv).qty), ("h1".to_string(), 1), "the copy still for sale takes over");
+        let (rows, _) = list(&c, &Query::default()).unwrap();
+        assert!(rows.iter().any(|p| p.handle == "h1" && p.available), "the lists show the copy for sale too");
+        // Tiles, the product page, its versions, its canonical address and the sitemap count and point at what's for sale.
+        let (rows, _) = list(&c, &Query::default()).unwrap();
+        assert_eq!(rows.iter().find(|p| p.handle == "h1").unwrap().qty, 1, "a sold copy isn't 'in the vault'");
+        let p3 = product_by_id(&c, 3).unwrap().unwrap();
+        assert_eq!(copies(&c, &p3).unwrap(), 1);
+        let v = versions(&c, &p3).unwrap();
+        assert_eq!((v[0].qty, v[0].handle.as_str()), (1, "h1"));
+        assert_eq!(canonical_handle(&c, &p3).unwrap(), "h1");
+        assert!(sitemap_cards(&c).unwrap().iter().any(|x| x.0 == "h1"));
+        assert!(!sitemap_cards(&c).unwrap().iter().any(|x| x.0 == "h3"));
+        mark_sold(&c, 1, 1).unwrap();
+        let tsv = catalogue(&c).unwrap();
+        assert_eq!(base(&tsv).qty, 0, "all sold: still listed, but nothing to buy");
+        assert_eq!(canonical_handle(&c, &p3).unwrap(), "h1", "all sold: the first copy, as before");
+        assert_eq!(copies(&c, &p3).unwrap(), 0);
+        assert_eq!(tsv.lines().filter(|l| l.starts_with("C\t")).count(), 2);
     }
 
     /// Sorting by set: release date from the set code, else the set's name; unknown sets last.
@@ -1455,6 +1513,31 @@ mod dashboard_tests {
         assert_eq!(condition_in_note("Sealed"), Some("Sealed"));
         assert_eq!(condition_in_note("Poke ball holo, LP-NM"), None);
         assert_eq!(condition_in_note("W/ crease"), None);
+    }
+
+    #[test]
+    fn old_prices_say_where_they_came_from_once() {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch(SCHEMA).unwrap();
+        // A database from before price_src: the columns exist, the rows don't say, and the flag isn't set yet.
+        migrate(&c).unwrap();
+        c.execute("DELETE FROM settings WHERE key='price_src_v'", []).unwrap();
+        let add = |id: i64, api: &str, upd: &str, src: &str| {
+            c.execute("INSERT INTO products(id,handle,title,api_id,price_updated,price_src) VALUES(?1,?1,'x',?2,?3,?4)", rusqlite::params![id, api, upd, src]).unwrap();
+        };
+        add(1, "tcgdex:a-1", "2026-11-10", "");
+        add(2, "tcgdex:a-1", "", "");
+        add(3, "", "2026-11-10", "");
+        add(4, "tcgdex:a-1", "2026-11-10", "market");
+        migrate(&c).unwrap();
+        let src = |id: i64| -> String { c.query_row("SELECT price_src FROM products WHERE id=?1", [id], |r| r.get(0)).unwrap() };
+        assert_eq!(src(1), "suggested", "the old nightly job repriced it, so it keeps following the market");
+        assert_eq!(src(2), "own");
+        assert_eq!(src(3), "own");
+        assert_eq!(src(4), "market");
+        add(5, "tcgdex:a-1", "2026-11-10", "");
+        migrate(&c).unwrap();
+        assert_eq!(src(5), "", "only once");
     }
 }
 

@@ -167,7 +167,8 @@ textarea { field-sizing: content; }
 .fd-binders::-webkit-scrollbar { display: none; }
 .fd-b { flex: none; position: relative; display: grid; justify-items: center; gap: 4px; width: 92px; padding: 6px 6px 8px; border: 1px solid #343a45; border-radius: 12px; background: var(--steel-plate); color: var(--text); font: 600 .75rem/1.2 var(--font); text-align: center; cursor: pointer; scroll-snap-align: start; }
 .fd-b small { position: absolute; right: 6px; top: 6px; padding: 2px 6px; border-radius: 8px; background: rgba(11,13,18,.85); color: var(--gold-hi); font: 700 .75rem/1.2 var(--cond); }
-.fd-b-t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+/* Long binder names wrap to two lines instead of being squeezed until they can't be read. */
+.fd-b-t { max-width: 100%; white-space: normal; font-stretch: 80%; line-height: 1.1; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; }
 .fd-b-pic { display: grid; place-items: center; width: 100%; aspect-ratio: 5 / 7; border-radius: 8px; overflow: hidden; background: var(--surface-2); }
 .fd-b-pic img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 0; }
 .fd-b.on { border-color: var(--gold); color: var(--gold-hi); box-shadow: 0 0 0 2px var(--gold), 0 6px 18px rgba(226,185,75,.25); }

@@ -88,6 +88,34 @@ const FILLER: [&str; 64] = [
     "may", "meron", "ba", "kayo", "kayong", "magkano", "mura", "pinakamura", "mahal", "pinakamahal", "lang", "pa", "piso", "pesos", "php", "ko", "na",
 ];
 
+/// Words that are never part of a set's name in a question: the question's own words and card types.
+const SET_SKIP: [&str; 17] = ["cards", "card", "show", "me", "from", "in", "the", "pokemon", "pokémon", "ex", "gx", "v", "vmax", "vstar", "played", "all", "a"];
+
+/// The words left once conditions, finishes and languages are taken out: "near mint base set" is "base set".
+fn set_phrase(words: &str) -> String {
+    read_tokens(words, &|_| false)
+        .into_iter()
+        .filter_map(|t| if let Token::Name(n) = t { Some(n.to_lowercase()) } else { None })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// True when the set's name holds the phrase as whole words: "holo" is not in "Holon Phantoms".
+fn set_has(set: &str, phrase: &str) -> bool {
+    let words = set.to_lowercase().split(|c: char| !c.is_alphanumeric()).filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ");
+    format!(" {words} ").contains(&format!(" {phrase} "))
+}
+
+/// True when some card's own name (not its set) has every word of the phrase.
+fn names_a_card(cards: &[&Card], phrase: &str) -> bool {
+    let want: Vec<&str> = phrase.split(' ').filter(|w| !w.is_empty() && !matches!(*w, "set" | "sets")).collect();
+    !want.is_empty()
+        && cards.iter().any(|c| {
+            let head = vault_search::norm(&vault_search::title_and_set(&c.title, &c.set).0);
+            want.iter().all(|w| head.split(' ').any(|t| t == *w))
+        })
+}
+
 /// The cards that use a budget best. Prices are rounded up to a unit, so the result can never go over. Ties go to more cards.
 pub fn best_for_budget(prices: &[f64], budget: f64) -> Vec<usize> {
     let unit = (budget / 20_000.0).max(10.0);
@@ -130,7 +158,7 @@ fn budget_in(text: &str) -> Option<f64> {
     })
 }
 
-fn listing(cards: &[Card], hits: &[usize], typo: bool, what: &str) -> Answer {
+fn listing(cards: &[&Card], hits: &[usize], typo: bool, what: &str) -> Answer {
     let shown: Vec<usize> = hits.iter().copied().take(8).collect();
     let copies: u32 = hits.iter().map(|i| cards[*i].qty.max(1)).sum();
     let prices: Vec<f64> = hits.iter().map(|i| cards[*i].price).filter(|p| *p > 0.0).collect();
@@ -147,6 +175,15 @@ fn listing(cards: &[Card], hits: &[usize], typo: bool, what: &str) -> Answer {
 }
 
 pub fn answer(question: &str, prev_ctx: Option<&str>, cards: &[Card], binders: &[Binder], trainers: &[Trainer]) -> Answer {
+    // A card with every copy sold is only a record now: the guide talks about what can be bought.
+    let keep: Vec<usize> = (0..cards.len()).filter(|&i| cards[i].qty > 0).collect();
+    let pool: Vec<&Card> = keep.iter().map(|&i| &cards[i]).collect();
+    let mut a = answer_in(question, prev_ctx, &pool, binders, trainers);
+    a.picks = a.picks.into_iter().map(|k| keep[k]).collect();
+    a
+}
+
+fn answer_in(question: &str, prev_ctx: Option<&str>, cards: &[&Card], binders: &[Binder], trainers: &[Trainer]) -> Answer {
     let text = question.trim().to_lowercase().replace('?', " ").replace(['“', '”'], "\"");
     let text = text.trim().to_string();
     let text = preprocess_text(&text);
@@ -159,7 +196,7 @@ pub fn answer(question: &str, prev_ctx: Option<&str>, cards: &[Card], binders: &
         return Answer { say: "Sign in as a trainer, then tap the Vouch button on any page. Your words and photos go up straight away.".into(), link: Some(("Read the vouches".into(), "/vouches".into())), ..Default::default() };
     }
     if has(&text, &["join", "sign up", "signup", "account", "become", "register"]) {
-        return Answer { say: "Pick a trainer name and a password. There's no email to give. You get a page and a binder for your 50 favorite cards.".into(), link: Some(("Become a trainer".into(), "/join".into())), ..Default::default() };
+        return Answer { say: "Pick a trainer name and a password. There's no email to give. You get a page and a binder for your favorite cards.".into(), link: Some(("Become a trainer".into(), "/join".into())), ..Default::default() };
     }
     if has(&text, &["chat", "talk", "message"]) {
         return Answer { say: "The chat is open to everyone to read. Sign in as a trainer to join in.".into(), link: Some(("Open the chat".into(), "/chat".into())), ..Default::default() };
@@ -210,28 +247,25 @@ pub fn answer(question: &str, prev_ctx: Option<&str>, cards: &[Card], binders: &
         return Answer { say: format!("Everything in the vault adds up to {}, across {total} cards.", peso(value)), ..Default::default() };
     }
 
-    // Set questions: answer with count from Card.set (case-insensitive partial) and show some.
-    if has(&text, &["how many", "what do you have", "show me", "from", "in"]) || text.contains("set") {
-        let words: Vec<String> = text.split_whitespace()
+    // Set questions ("how many base set cards", "what do you have from 151"): a count per set, and some of its cards.
+    // A set name only counts as whole words. Words about the card itself (holo, near mint, ex, vmax) are never a set,
+    // and unless the question really names a set, a card name wins: "how many pikachu" is about Pikachu, not Detective Pikachu.
+    if has(&text, &["how many", "what do you have", "show me", "from", "in", "set", "sets"]) {
+        let all: Vec<String> = text.split_whitespace()
             .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric() && c != '₱' && c != '$').to_lowercase())
-            .filter(|w| !w.is_empty() && !FILLER.contains(&w.as_str()))
+            .filter(|w| !w.is_empty())
             .collect();
-        let exclude = ["cards", "how", "many", "what", "do", "you", "have", "show", "me", "from", "in"];
-        let set_words: Vec<String> = words.into_iter().filter(|w| !exclude.contains(&w.as_str())).collect();
-        let candidates: Vec<String> = if set_words.len() > 1 {
-            let joined = set_words.join(" ");
-            let mut c = vec![joined];
-            for w in &set_words {
-                if !c.contains(w) { c.push(w.clone()); }
-            }
-            c
-        } else {
-            set_words
-        };
-        for sw in candidates {
-            if sw.is_empty() { continue; }
-            let hits: Vec<usize> = (0..cards.len()).filter(|&i| cards[i].set.to_lowercase().contains(&sw)).collect();
-            if !hits.is_empty() {
+        // After "from" or "in", the rest is the set: "pikachu from detective pikachu".
+        let after = all.iter().rposition(|w| w == "from" || w == "in").map_or(0, |k| k + 1);
+        let named = after > 0 || all.iter().any(|w| w == "set" || w == "sets");
+        let picked: Vec<&str> = all[after..].iter().map(String::as_str).filter(|w| !FILLER.contains(w) && !SET_SKIP.contains(w)).collect();
+        let phrase = set_phrase(&picked.join(" "));
+        if !phrase.is_empty() && (named || !names_a_card(cards, &phrase)) {
+            let short: String = phrase.split(' ').filter(|w| !matches!(*w, "set" | "sets")).collect::<Vec<_>>().join(" ");
+            for sw in [phrase.clone(), short] {
+                if sw.is_empty() { continue; }
+                let hits: Vec<usize> = (0..cards.len()).filter(|&i| set_has(&cards[i].set, &sw)).collect();
+                if hits.is_empty() { continue; }
                 let mut groups: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
                 for &i in &hits {
                     *groups.entry(cards[i].set.clone()).or_default() += cards[i].qty.max(1);
@@ -240,13 +274,7 @@ pub fn answer(question: &str, prev_ctx: Option<&str>, cards: &[Card], binders: &
                 set_list.sort_by(|(sa, _), (sb, _)| {
                     let a_ex = sa.to_lowercase() == sw;
                     let b_ex = sb.to_lowercase() == sw;
-                    if a_ex && !b_ex {
-                        std::cmp::Ordering::Less
-                    } else if !a_ex && b_ex {
-                        std::cmp::Ordering::Greater
-                    } else {
-                        sa.cmp(sb)
-                    }
+                    b_ex.cmp(&a_ex).then_with(|| sa.cmp(sb))
                 });
                 let parts: Vec<String> = set_list.iter().map(|(s, c)| format!("{}: {}", s, c)).collect();
                 let say = parts.join(", ");
@@ -538,6 +566,43 @@ mod tests {
         assert_eq!(a.picks.len(), 2);
         let a = answer("what do you have from 151", None, &d, &[], &[]);
         assert!(!a.picks.is_empty());
+    }
+
+    #[test]
+    fn card_words_are_not_set_names() {
+        let d = vec![
+            make_card("Pikachu", 100.0, "Near Mint", "Jungle", "", ""),
+            make_card("Detective Pikachu", 150.0, "Near Mint", "Detective Pikachu", "", ""),
+            make_card("Mew", 300.0, "Near Mint", "Holon Phantoms", "Holofoil", ""),
+            make_card("Charizard ex", 900.0, "Near Mint", "Obsidian Flames", "Holofoil", ""),
+            make_card("Zekrom", 50.0, "Near Mint", "Dark Explorers", "", ""),
+            make_card("Snorlax", 20.0, "Near Mint", "Base Set", "", ""),
+        ];
+        let a = answer("Show me Near Mint Pikachu", None, &d, &[], &[]);
+        assert!(a.picks.contains(&0) && a.picks.contains(&1), "every Pikachu, not just the Detective Pikachu set: {a:?}");
+        let a = answer("how many pikachu do you have", None, &d, &[], &[]);
+        assert!(a.picks.contains(&0), "{a:?}");
+        let a = answer("show me holo cards", None, &d, &[], &[]);
+        assert!(!a.say.contains("Holon Phantoms:"), "{a:?}");
+        assert!(a.picks.contains(&3), "{a:?}");
+        let a = answer("show me charizard ex", None, &d, &[], &[]);
+        assert_eq!(a.picks, vec![3], "{a:?}");
+        let a = answer("how many base set cards do you have", None, &d, &[], &[]);
+        assert!(a.say.starts_with("Base Set: 1"), "{a:?}");
+        let a = answer("show me holon phantoms", None, &d, &[], &[]);
+        assert!(a.say.starts_with("Holon Phantoms: 1"), "a set name nobody's card has still finds the set: {a:?}");
+        let a = answer("do you have pikachu from detective pikachu", None, &d, &[], &[]);
+        assert!(a.say.starts_with("Detective Pikachu: 1"), "{a:?}");
+    }
+
+    #[test]
+    fn sold_cards_are_not_offered() {
+        let mut d = vec![make_card("Pikachu", 100.0, "Near Mint", "", "", ""), make_card("Pikachu", 200.0, "Near Mint", "", "", ""), make_card("Mew", 50.0, "Near Mint", "", "", "")];
+        d[0].qty = 0;
+        let a = answer("pikachu", None, &d, &[], &[]);
+        assert_eq!(a.picks, vec![1], "the sold one is left out, and the pick still points at the right card: {a:?}");
+        let a = answer("how many cards do you have?", None, &d, &[], &[]);
+        assert!(a.say.starts_with("The vault holds 2"), "{a:?}");
     }
 
     #[test]

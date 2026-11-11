@@ -37,6 +37,27 @@ pub enum Power {
     Admin(Option<i64>),
 }
 
+/// Wrong guesses at the owner's key from one address. After this many, its guesses aren't even checked for a while.
+const KEY_TRIES: u32 = 10;
+
+/// The counter for wrong owner-key guesses at /admin/login from this visitor's address, and how many there have been.
+/// Counted per address only, so nobody can lock the owner out from somewhere else. The owner cookie is never counted here.
+fn key_guesses(app: &App, h: &HeaderMap) -> (String, u32) {
+    let key = format!("admin-key|{}", crate::community::client_ip(h));
+    let n = app.limits.get(&key).unwrap_or(0);
+    (key, n)
+}
+
+/// "Market price today" for one copy: the suggested price for its condition from its own finish's market price,
+/// matched the way the nightly refresh matches it (market::finish_price). A finish the service doesn't price gives
+/// nothing, so the copy is skipped rather than given another finish's price.
+fn market_suggestion(card: &Value, finish: &str, cond: &str, shares: &std::collections::HashMap<String, f64>) -> Option<f64> {
+    market::finish_price(card, finish).and_then(|nm| marcuru_rs::pricing::suggest_with_shares(shares, nm, cond))
+}
+
+/// Who is asking. The owner's key (the cookie the VM's jobs send, or /admin/login) gives everything.
+/// A signed-in trainer made admin, not blocked and not locked, gets everything too, through their own session;
+/// demoting or blocking them takes it away on their next click.
 pub fn power(app: &App, h: &HeaderMap) -> Power {
     if app.admin_token.is_empty() {
         return Power::Admin(None);
@@ -44,14 +65,19 @@ pub fn power(app: &App, h: &HeaderMap) -> Power {
     let cookie = |name: &str| -> Option<String> {
         h.get(header::COOKIE)?.to_str().ok()?.split(';').find_map(|p| p.trim().strip_prefix(&format!("{name}=")).map(str::to_owned))
     };
-    if cookie(COOKIE).is_some_and(|t| eq(&t, &app.admin_token)) {
+    // A wrong owner cookie (an old one after the key was changed, say) is simply not signed in. It is not counted as a
+    // guess: browsing with a stale cookie must never lock the owner out of /admin/login, which counts its own tries.
+    // The key is long and random, so trying cookies one by one gets nowhere anyway.
+    if cookie(COOKIE).is_some_and(|t| !t.is_empty() && eq(&t, &app.admin_token)) {
         return Power::Admin(None);
     }
     // A trainer's powers only ever count for requests made from this site itself.
     let host = h.get(header::HOST).and_then(|v| v.to_str().ok()).unwrap_or("");
     let from_here = h.get(header::ORIGIN).and_then(|v| v.to_str().ok()).is_none_or(|o| o.split_once("://").map(|(_, x)| x) == Some(host));
     let Some(raw) = cookie("bbv_trainer").filter(|_| from_here) else { return Power::Nothing };
-    let Ok(Some((id, role))) = db::open(&app.db_path).and_then(|c| crate::members::staff_from_session(&c, &raw)) else { return Power::Nothing };
+    // Opening the database blocks: let the runtime move other requests to another thread meanwhile.
+    let looked = tokio::task::block_in_place(|| db::open(&app.db_path).and_then(|c| crate::members::staff_from_session(&c, &raw)));
+    let Ok(Some((id, role))) = looked else { return Power::Nothing };
     match role.as_str() {
         "admin" => Power::Admin(Some(id)),
         "mod" => Power::Moderator(id),
@@ -141,13 +167,50 @@ struct CardsPage {
     /// Different cards matching (copies of one card count once).
     total: i64,
     shown: usize,
-    items: Vec<Product>,
+    /// Each card (its count is the copies still for sale) and its sold copies.
+    items: Vec<(Product, Sold)>,
     next: Option<usize>,
     binders: Vec<BinderOpt>,
     /// Whole collection, for the header plates.
     copies: String,
     distinct: String,
     value: String,
+}
+
+/// A card's sold copies. They stay in the table as the vault's record (available=0), but aren't stock.
+struct Sold {
+    n: i64,
+    /// Their ids, comma-separated, so − and ＋ can leave them alone.
+    ids: String,
+}
+
+/// The copies of each listed card split into for sale and sold. Copies for sale come first in each card's list,
+/// so ＋ copies one of them and the count on the card is what buyers can order.
+fn split_sold(c: &rusqlite::Connection, items: Vec<Product>) -> rusqlite::Result<Vec<(Product, Sold)>> {
+    let ids_of = |p: &Product| -> Vec<i64> {
+        let v: Vec<i64> = p.copy_ids.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+        if v.is_empty() { vec![p.id] } else { v }
+    };
+    let all: Vec<i64> = items.iter().flat_map(ids_of).collect();
+    let mut sold = std::collections::HashSet::new();
+    for chunk in all.chunks(400) {
+        let marks = vec!["?"; chunk.len()].join(",");
+        let mut st = c.prepare(&format!("SELECT id FROM products WHERE available=0 AND id IN ({marks})"))?;
+        for id in st.query_map(rusqlite::params_from_iter(chunk.iter()), |r| r.get::<_, i64>(0))? {
+            sold.insert(id?);
+        }
+    }
+    Ok(items
+        .into_iter()
+        .map(|mut p| {
+            let mut ids = ids_of(&p);
+            ids.sort_by_key(|id| (sold.contains(id), *id));
+            let gone: Vec<String> = ids.iter().filter(|id| sold.contains(*id)).map(i64::to_string).collect();
+            p.qty = (ids.len() - gone.len()) as i64;
+            p.copy_ids = ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+            (p, Sold { n: gone.len() as i64, ids: gone.join(",") })
+        })
+        .collect())
 }
 
 struct BlockRow {
@@ -193,8 +256,17 @@ pub struct LoginForm {
     token: String,
 }
 
+/// The owner's emergency way in: the key itself. Wrong guesses are counted, so it can't be guessed by trying again and again.
 pub async fn login(State(app): State<App>, h: HeaderMap, Form(f): Form<LoginForm>) -> Res {
+    if !crate::community::same_site(&h) {
+        return Ok(StatusCode::FORBIDDEN.into_response());
+    }
+    let (key, n) = key_guesses(&app, &h);
+    if n >= KEY_TRIES {
+        return Ok((StatusCode::TOO_MANY_REQUESTS, "Too many wrong tries. Wait 15 minutes, then try again.").into_response());
+    }
     if !eq(f.token.trim(), &app.admin_token) {
+        app.limits.insert(key, n + 1);
         return login_page(&app, true).await;
     }
     Ok(admin_cookie(&app, &h, "/admin"))
@@ -264,7 +336,9 @@ pub async fn cards(State(app): State<App>, h: HeaderMap, Qs(qs): Qs<ListQs>) -> 
             items.extend(rows);
             total = t;
         }
-        Ok((chrome(c)?, items, total, db::total(c)?, db::distinct_cards(c)?, db::peso(db::total_value(c)?)))
+        let items = split_sold(c, items)?;
+        let (copies, value, distinct) = in_vault(c)?;
+        Ok((chrome(c)?, items, total, copies, distinct, db::peso(value)))
     })
     .await?;
     let shown = items.len();
@@ -334,23 +408,71 @@ pub async fn edit(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -> 
     }
 }
 
+/// Where a saved price came from, always said out loud: 'market' or 'suggested' follow the market every night,
+/// 'own' is a price a person typed, which nothing changes by itself.
+pub(crate) fn price_source(src: &str) -> String {
+    match src.trim() {
+        "market" => "market".into(),
+        "suggested" => "suggested".into(),
+        _ => "own".into(),
+    }
+}
+
 fn parse_price(s: &str) -> f64 {
     s.chars().filter(|c| c.is_ascii_digit() || *c == '.').collect::<String>().parse().unwrap_or(0.0)
 }
 
+/// The most pixels a photo may have: 16 megapixels. The server is small, so bigger ones are refused before they're opened.
+const MAX_PIXELS: u64 = 16_000_000;
+/// The most memory one opened photo may take (a 16 megapixel photo with see-through parts fits).
+const MAX_PHOTO_BYTES: u64 = 64 * 1024 * 1024;
+/// Every picture the site keeps is at most this wide or tall, so an opened photo is shrunk to it straight away.
+const OPEN_SIDE: u32 = 1600;
+/// What open_image says when a photo is too big to open.
+pub const TOO_BIG: &str = "too big";
+
+/// Opens an uploaded picture safely. Its size is read from the file's header first, and a picture too big for the
+/// server's memory is refused (TOO_BIG) without being opened. What comes back is at most 1600 pixels on its longest side,
+/// turned the right way up.
 pub fn open_image(bytes: Vec<u8>) -> Result<image::DynamicImage, String> {
-    use image::{DynamicImage, ImageDecoder, ImageReader};
-    let mut dec = ImageReader::new(Cursor::new(bytes))
-        .with_guessed_format()
-        .map_err(|e| e.to_string())?
-        .into_decoder()
-        .map_err(|e| format!("unsupported image: {e}"))?;
+    use image::{DynamicImage, ImageDecoder, ImageError, ImageReader, Limits};
+    let mut reader = ImageReader::new(Cursor::new(bytes)).with_guessed_format().map_err(|e| e.to_string())?;
+    let mut limits = Limits::default();
+    limits.max_image_width = Some(12_000);
+    limits.max_image_height = Some(12_000);
+    limits.max_alloc = Some(96 * 1024 * 1024);
+    reader.limits(limits);
+    let mut dec = reader.into_decoder().map_err(|e| match e {
+        ImageError::Limits(_) => TOO_BIG.to_string(),
+        e => format!("unsupported image: {e}"),
+    })?;
+    // Only the header has been read so far: check the size before a single pixel is unpacked.
+    let (w, h) = dec.dimensions();
+    if u64::from(w) * u64::from(h) > MAX_PIXELS || dec.total_bytes() > MAX_PHOTO_BYTES {
+        return Err(TOO_BIG.into());
+    }
     let orient = dec.orientation().ok();
-    let mut img = DynamicImage::from_decoder(dec).map_err(|e| e.to_string())?;
+    let mut img = DynamicImage::from_decoder(dec).map_err(|e| match e {
+        ImageError::Limits(_) => TOO_BIG.to_string(),
+        e => e.to_string(),
+    })?;
+    // Shrunk first (a quick way that needs no big working copy), then turned, so turning it copies only a small picture.
+    if img.width().max(img.height()) > OPEN_SIDE {
+        img = img.thumbnail(OPEN_SIDE, OPEN_SIDE);
+    }
     if let Some(o) = orient {
         img.apply_orientation(o); // honour iPhone EXIF rotation
     }
     Ok(img)
+}
+
+/// What to tell someone whose photo couldn't be used.
+pub(crate) fn photo_problem(e: &str) -> String {
+    if e == TOO_BIG {
+        "That photo is too big. Please use a smaller one (under 16 megapixels).".into()
+    } else {
+        format!("That photo couldn't be read ({e}). Try a JPEG or PNG.")
+    }
 }
 
 /// Card photo: large + thumbnail JPEGs.
@@ -359,7 +481,7 @@ fn store_image(bytes: Vec<u8>, dir: PathBuf, stem: String) -> Result<String, Str
     let img = open_image(bytes)?;
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     for (suffix, max) in [("_l", 1400u32), ("_s", 480u32)] {
-        let out = if img.width().max(img.height()) > max { img.resize(max, max, FilterType::Lanczos3) } else { img.clone() };
+        let out = if img.width().max(img.height()) > max { img.resize(max, max, FilterType::Triangle) } else { img.clone() };
         let file = std::fs::File::create(dir.join(format!("{stem}{suffix}.jpg"))).map_err(|e| e.to_string())?;
         let mut w = std::io::BufWriter::new(file);
         JpegEncoder::new_with_quality(&mut w, 86).encode_image(&out.to_rgb8()).map_err(|e| e.to_string())?;
@@ -372,7 +494,7 @@ fn store_block_image(bytes: Vec<u8>, dir: PathBuf, stem: String) -> Result<(Stri
     use image::{imageops::FilterType, DynamicImage};
     let mut img = open_image(bytes)?;
     if img.width().max(img.height()) > 1200 {
-        img = img.resize(1200, 1200, FilterType::Lanczos3);
+        img = img.resize(1200, 1200, FilterType::Triangle);
     }
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let (name, out) = if img.color().has_alpha() { (format!("{stem}.png"), img.clone()) } else { (format!("{stem}.jpg"), DynamicImage::ImageRgb8(img.to_rgb8())) };
@@ -410,7 +532,7 @@ pub async fn heal_photos(app: &App) {
         }
         let Ok(bytes) = r.bytes().await else { continue };
         let (d, stem, data) = (dir.clone(), format!("c0-{}", nanos()), bytes.to_vec());
-        let Ok(Ok(new)) = tokio::task::spawn_blocking(move || store_image(data, d, stem)).await else { continue };
+        let Ok(Ok(new)) = crate::community::gated(move || store_image(data, d, stem)).await else { continue };
         let old = image.clone();
         if with_db(app, move |c| db::replace_image(c, &old, &new)).await.is_ok() {
             healed += 1;
@@ -429,7 +551,7 @@ pub async fn heal_photos(app: &App) {
         }
         let Ok(bytes) = r.bytes().await else { continue };
         let (d, stem, data) = (dir.clone(), format!("c{id}-{}", nanos()), bytes.to_vec());
-        let Ok(Ok(new)) = tokio::task::spawn_blocking(move || store_image(data, d, stem)).await else { continue };
+        let Ok(Ok(new)) = crate::community::gated(move || store_image(data, d, stem)).await else { continue };
         if with_db(app, move |c| db::set_picture(c, id, &new)).await.is_ok() {
             healed += 1;
         }
@@ -447,9 +569,20 @@ pub fn remove_upload(dir: &str, path: &str) {
         return;
     }
     let base = PathBuf::from(dir);
-    let _ = std::fs::remove_file(base.join(name));
+    // The picture, its small copy beside a large one, and the WebP/AVIF copies the VM made of either.
+    let mut names = vec![name.to_string()];
     if let Some(stem) = name.strip_suffix("_l.jpg") {
-        let _ = std::fs::remove_file(base.join(format!("{stem}_s.jpg")));
+        names.push(format!("{stem}_s.jpg"));
+    }
+    for n in names {
+        let _ = std::fs::remove_file(base.join(&n));
+        if let Some((stem, ext)) = n.rsplit_once('.') {
+            if matches!(ext, "jpg" | "jpeg" | "png") {
+                for alt in ["webp", "avif"] {
+                    let _ = std::fs::remove_file(base.join(format!("{stem}.{alt}")));
+                }
+            }
+        }
     }
 }
 
@@ -544,15 +677,25 @@ async fn save_inner(app: &App, mut mp: Multipart) -> Result<Saved, (StatusCode, 
     let image = match photo {
         Some(bytes) => {
             let stem = format!("c{}-{}", id.unwrap_or(0), nanos());
-            let r = tokio::task::spawn_blocking(move || store_image(bytes, dir, stem)).await.map_err(ise)?;
-            Some(r.map_err(|e| (StatusCode::BAD_REQUEST, format!("That photo couldn't be read ({e}). Try a JPEG or PNG.")))?)
+            let r = crate::community::gated(move || store_image(bytes, dir, stem)).await?;
+            Some(r.map_err(|e| (StatusCode::BAD_REQUEST, photo_problem(&e)))?)
         }
         None => None,
     };
+    // The picture this card had, so it can be cleaned up once nothing uses it any more.
+    let old_image = match (image.is_some(), id) {
+        (true, Some(pid)) => with_db(app, move |c| db::product_by_id(c, pid)).await?.map(|p| p.image).unwrap_or_default(),
+        _ => String::new(),
+    };
     let value = parse_price(&price);
-    let price_updated = ((price_src == "market" || price_src == "suggested") && !api_id.is_empty()).then(today);
+    let price_src = price_source(&price_src);
+    // A price that follows the market is dated today. A price a person typed has no market date, so nothing overnight replaces it.
+    let price_updated = if price_src == "own" { Some(String::new()) } else { (!api_id.is_empty()).then(today) };
     let entry = Entry { id, title: title.clone(), variant, price: value, body: notes, tags, image, binders: binders.clone(), card_no, card_set, api_id, finish, price_updated, price_src, rarity, solo };
     let (id, handle) = with_db(app, move |c| db::save_entry(c, &entry)).await?;
+    if !old_image.is_empty() {
+        remove_if_unused(app, &old_image).await?;
+    }
     if let Some(from) = image_from {
         let old = with_db(app, move |c| db::product_by_id(c, id)).await?.map(|p| p.image).unwrap_or_default();
         with_db(app, move |c| db::share_image(c, id, from)).await?;
@@ -625,7 +768,8 @@ pub async fn photo(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, mu
     let dir = PathBuf::from(&*app.uploads);
     let stem = format!("c{id}-{}", nanos());
     let old = with_db(&app, move |c| db::product_by_id(c, id)).await?.map(|p| p.image).unwrap_or_default();
-    match tokio::task::spawn_blocking(move || store_image(bytes, dir, stem)).await.map_err(ise)? {
+    let stored = crate::community::gated(move || store_image(bytes, dir, stem)).await?;
+    match stored {
         Ok(path) => {
             let p2 = path.clone();
             with_db(&app, move |c| blocks::set_product_image(c, id, Some(&p2))).await?;
@@ -633,7 +777,7 @@ pub async fn photo(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, mu
             app.forget();
             Ok(ok_json(json!({ "ok": true, "src": path.replace("_l.jpg", "_s.jpg") })))
         }
-        Err(e) => Ok(err_json(StatusCode::BAD_REQUEST, &format!("That photo couldn't be read ({e}). Try a JPEG or PNG."))),
+        Err(e) => Ok(err_json(StatusCode::BAD_REQUEST, &photo_problem(&e))),
     }
 }
 
@@ -951,7 +1095,8 @@ pub async fn block_save(State(app): State<App>, h: HeaderMap, Path(id): Path<i64
         if let Some(bytes) = files.remove(*k) {
             let dir = PathBuf::from(&*app.uploads);
             let stem = format!("blk{id}-{k}-{}", nanos());
-            match tokio::task::spawn_blocking(move || store_block_image(bytes, dir, stem)).await.map_err(ise)? {
+            let stored = crate::community::gated(move || store_block_image(bytes, dir, stem)).await?;
+            match stored {
                 Ok((path, w, h)) => {
                     // Hero characters are fitted into the same 250×286 box so any picture lands at a consistent scale.
                     let (dw, dh) = if blk.kind == "hero" {
@@ -965,7 +1110,7 @@ pub async fn block_save(State(app): State<App>, h: HeaderMap, Path(id): Path<i64
                     data[&kw] = json!(dw);
                     data[&kh] = json!(dh);
                 }
-                Err(e) => return Ok(err_json(StatusCode::BAD_REQUEST, &format!("That picture couldn't be read ({e}). Try a PNG or JPEG."))),
+                Err(e) => return Ok(err_json(StatusCode::BAD_REQUEST, &photo_problem(&e))),
             }
         }
     }
@@ -1256,7 +1401,9 @@ pub async fn quick_edit(State(app): State<App>, h: HeaderMap, Json(req): Json<Qu
     }
     let tags = req.tags.map(|t| db::clean_tags(&t));
     let shown = tags.clone();
-    let (ids, price, price_src) = (req.ids, req.price, req.price_src);
+    // A typed price is the owner's own ('own'); only a tapped suggestion keeps following the market.
+    let price_src = req.price.is_some().then(|| price_source(req.price_src.as_deref().unwrap_or("")));
+    let (ids, price) = (req.ids, req.price);
     // The tile's grade badge follows the condition, so a card set to PSA 10 shows it straight away.
     let grade = with_db(&app, move |c| {
         db::quick_edit(c, &ids, price, price_src.as_deref(), notes.as_deref(), condition.as_deref(), tags.as_deref())?;
@@ -1350,23 +1497,23 @@ pub async fn bulk(State(app): State<App>, h: HeaderMap, Json(req): Json<BulkReq>
             let ids2 = ids.clone();
             let mut cards = with_db(&app, move |c| bulk::priced_cards(c, &ids2)).await?;
             skipped = n - cards.len();
+            // Graded and sealed cards have no market price of their own: they keep the owner's price.
+            let before = cards.len();
+            cards.retain(|(_, _, _, cond)| !marcuru_rs::pricing::is_graded(cond) && !marcuru_rs::pricing::is_sealed(cond));
+            skipped += before - cards.len();
             if cards.len() > 40 {
                 capped = true;
                 cards.truncate(40); // be polite to the free price service; run again for the rest
             }
-            let mut updates: Vec<(i64, f64, String)> = vec![];
+            let shares = marcuru_rs::pricing::current();
+            let mut updates: Vec<(i64, f64)> = vec![];
             let mut failed = 0usize;
-            for (id, api_id, finish) in cards {
+            for (id, api_id, finish, cond) in cards {
                 match market::by_id_lang(&app.http, &app.fx, &api_id).await {
-                    Ok(Some(card)) => {
-                        let fin = card["finishes"].as_array().cloned().unwrap_or_default();
-                        let pick = fin.iter().find(|f| f["key"].as_str() == Some(finish.as_str())).or_else(|| fin.first());
-                        if let Some(f) = pick {
-                            updates.push((id, f["php"].as_f64().unwrap_or(0.0), f["key"].as_str().unwrap_or("").to_string()));
-                        } else {
-                            skipped += 1;
-                        }
-                    }
+                    Ok(Some(card)) => match market_suggestion(&card, &finish, &cond, &shares) {
+                        Some(p) => updates.push((id, p)),
+                        None => skipped += 1,
+                    },
                     Ok(None) => skipped += 1,
                     Err(_) => {
                         skipped += 1;
@@ -1541,9 +1688,10 @@ pub async fn binder_cover_upload(State(app): State<App>, h: HeaderMap, Path(hand
     let Some(bytes) = bytes else { return Ok(err_json(StatusCode::BAD_REQUEST, "Choose a photo first.")) };
     let dir = PathBuf::from(&*app.uploads);
     let stem = format!("b-{}-{}", handle.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-').collect::<String>(), nanos());
-    let path = match tokio::task::spawn_blocking(move || store_image(bytes, dir, stem)).await.map_err(ise)? {
+    let stored = crate::community::gated(move || store_image(bytes, dir, stem)).await?;
+    let path = match stored {
         Ok(p) => p,
-        Err(e) => return Ok(err_json(StatusCode::BAD_REQUEST, &format!("That photo couldn't be read ({e}). Try a JPEG or PNG."))),
+        Err(e) => return Ok(err_json(StatusCode::BAD_REQUEST, &photo_problem(&e))),
     };
     let (links, old) = with_db(&app, move |c| {
         let old = db::set_binder_cover(c, &handle, &path)?;
@@ -1655,7 +1803,16 @@ pub async fn dup(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -> R
     if !authed(&app, &h) {
         return Ok(deny(&h));
     }
-    match with_db(&app, move |c| db::duplicate(c, id)).await? {
+    // ＋ means one more copy on the shelf, so the new copy is for sale even when the one it was copied from has sold.
+    let made = with_db(&app, move |c| {
+        let nid = db::duplicate(c, id)?;
+        if let Some(n) = nid {
+            c.execute("UPDATE products SET available=1 WHERE id=?1", [n])?;
+        }
+        Ok(nid)
+    })
+    .await?;
+    match made {
         Some(nid) => {
             app.forget();
             Ok(ok_json(json!({ "ok": true, "id": nid })))
@@ -1675,7 +1832,8 @@ struct DashboardPage {
     distinct: String,
     average: String,
     median: String,
-    top10: u32,
+    /// "37%" of the value is in the 10 dearest copies, "Under 1%", or "" when nothing is priced.
+    top10: String,
     week_n: i64,
     week_value: String,
     month_n: i64,
@@ -1704,10 +1862,121 @@ struct DashboardPage {
     top_trainers: Vec<(i64, String, String, i64, u32)>,
     /// Array of condition shares: (condition_name, percentage_as_number)
     condition_shares: Vec<(String, u32)>,
+    /// The VM's jobs: (job, when in words, all right, note, late).
+    ops: Vec<OpsRow>,
 }
 
+/// For bar widths: never under 2%, so a short bar still shows.
 fn share(part: f64, whole: f64) -> u32 {
     if whole <= 0.0 { 0 } else { ((part / whole) * 100.0).round().clamp(2.0, 100.0) as u32 }
+}
+
+/// How much of the total value the 10 dearest copies hold, as words: "37%", "Under 1%", or "" when nothing is priced.
+/// Not like share(): this is a real number, so it has no 2% floor.
+fn top10_text(each: &[f64], total_value: f64) -> String {
+    if total_value <= 0.0 {
+        return String::new();
+    }
+    let pct = (each.iter().take(10).sum::<f64>() / total_value * 100.0).round().min(100.0);
+    if pct < 1.0 { "Under 1%".into() } else { format!("{pct:.0}%") }
+}
+
+/// Copies of one card, grouped exactly as db.rs groups them.
+const SAME_CARD: &str = db::DUP_KEY;
+
+/// What the vault holds right now: (copies, their value, different cards). Sold copies stay in the table as a record
+/// (available=0) and don't count.
+pub(crate) fn in_vault(c: &rusqlite::Connection) -> rusqlite::Result<(i64, f64, i64)> {
+    let (n, v) = c.query_row("SELECT COUNT(*), COALESCE(SUM(price),0) FROM products WHERE available=1", [], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    let d = c.query_row(&format!("SELECT COUNT(DISTINCT {SAME_CARD}) FROM products p WHERE p.available=1"), [], |r| r.get(0))?;
+    Ok((n, v, d))
+}
+
+/// The cards still in the vault, as the finder reads them. db::catalogue already counts only the copies for sale
+/// (sold copies stay in the table as a record), so a card whose copies have all sold is simply left out.
+pub(crate) fn vault_cards(c: &rusqlite::Connection) -> rusqlite::Result<Vec<vault_search::Card>> {
+    let (_, mut cards) = vault_search::parse(&db::catalogue(c)?);
+    cards.retain(|x| x.qty > 0);
+    Ok(cards)
+}
+
+/// Value by binder, counting only the copies still in the vault: (title, handle, copies, value), dearest first.
+fn binder_values_in_vault(c: &rusqlite::Connection) -> rusqlite::Result<Vec<(String, String, i64, f64)>> {
+    let mut st = c.prepare(
+        "SELECT c.title, c.handle, COUNT(p.id), COALESCE(SUM(p.price),0) FROM collections c
+         JOIN collection_products cp ON cp.collection=c.handle JOIN products p ON p.id=cp.product_id AND p.available=1
+         GROUP BY c.handle ORDER BY 4 DESC",
+    )?;
+    let v = st.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?.collect::<Result<Vec<_>, _>>()?;
+    Ok(v)
+}
+
+/// The newest card still in the vault that has a picture, as the finder would show it. Copies added to an older card,
+/// or cards dragged up in the owner's order, don't change which card is newest.
+pub(crate) fn newest_arrival(c: &rusqlite::Connection) -> rusqlite::Result<Option<vault_search::Card>> {
+    use rusqlite::OptionalExtension;
+    let handle: Option<String> = c
+        .query_row(
+            "SELECT handle FROM products WHERE available=1 AND image<>'' AND image NOT LIKE '%placeholder%' ORDER BY created_at DESC, id DESC LIMIT 1",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?;
+    let Some(p) = (match handle {
+        Some(h) => db::product(c, &h)?,
+        None => None,
+    }) else {
+        return Ok(None);
+    };
+    Ok(Some(vault_search::Card {
+        grade: p.grade().unwrap_or_default(),
+        img: p.img(360),
+        variant: p.condition_text(),
+        set: p.set_text(),
+        price: p.price,
+        qty: 1,
+        handle: p.handle,
+        title: p.title,
+        ..Default::default()
+    }))
+}
+
+/// One line per job the VM runs: (job, when in words, all right, note, late).
+type OpsRow = (String, String, bool, String, bool);
+
+/// The VM's jobs for the dashboard: when each last reported, whether it went well, and whether it's late.
+fn ops_rows(c: &rusqlite::Connection, now: i64) -> rusqlite::Result<Vec<OpsRow>> {
+    let late_after = |job: &str| -> Option<i64> {
+        match job {
+            "backup" | "prices" => Some(30 * 3600),
+            "images" => Some(50 * 3600),
+            _ => None,
+        }
+    };
+    Ok(crate::ops::ops_status(c)?
+        .into_iter()
+        .map(|(job, at, ok, note)| {
+            let late = late_after(job.as_str()).is_some_and(|max| at == 0 || now - at > max);
+            let when = if at == 0 { "never reported".to_string() } else { ago(now - at) };
+            // A job that has never reported hasn't failed: it's only late if it should have run by now.
+            (job, when, at == 0 || ok, note, late)
+        })
+        .collect())
+}
+
+/// "just now", "5 minutes ago", "3 hours ago", "2 days ago".
+fn ago(secs: i64) -> String {
+    let s = secs.max(0);
+    let (n, unit) = if s < 60 {
+        return "just now".into();
+    } else if s < 3600 {
+        (s / 60, "minute")
+    } else if s < 86_400 {
+        (s / 3600, "hour")
+    } else {
+        (s / 86_400, "day")
+    };
+    format!("{n} {unit}{} ago", if n == 1 { "" } else { "s" })
 }
 
 pub async fn dashboard(State(app): State<App>, h: HeaderMap) -> Res {
@@ -1717,23 +1986,28 @@ pub async fn dashboard(State(app): State<App>, h: HeaderMap) -> Res {
     if !authed(&app, &h) {
         return login_page(&app, false).await;
     }
-    let week_ago = crate::unix_now() - 7 * 86_400;
+    let now = crate::unix_now();
+    let week_ago = now - 7 * 86_400;
     let page = with_db(&app, move |c| {
         let nav = chrome(c)?;
-        let (_, cards) = vault_search::parse(&db::catalogue(c)?);
-        let insights = marcuru_rs::insights::read(&cards);
-        let total_value: f64 = cards.iter().map(|x| x.price * f64::from(x.qty.max(1))).sum();
-        let copies: u32 = cards.iter().map(|x| x.qty.max(1)).sum();
-        let mut each: Vec<f64> = cards.iter().flat_map(|x| std::iter::repeat_n(x.price, x.qty.max(1) as usize)).collect();
+        // Only what the vault still holds: sold copies stay in the table as a record, but they aren't the vault's any more.
+        let cards = vault_cards(c)?;
+        let mut insights = marcuru_rs::insights::read(&cards);
+        if let Some(i) = insights.as_mut() {
+            i.newest = newest_arrival(c)?.as_ref().map(marcuru_rs::insights::spot_of);
+        }
+        let total_value: f64 = cards.iter().map(|x| x.price * f64::from(x.qty)).sum();
+        let copies: u32 = cards.iter().map(|x| x.qty).sum();
+        let mut each: Vec<f64> = cards.iter().flat_map(|x| std::iter::repeat_n(x.price, x.qty as usize)).collect();
         each.sort_by(|a, b| b.total_cmp(a));
-        let top10 = share(each.iter().take(10).sum(), total_value);
+        let top10 = top10_text(&each, total_value);
         let (week_n, week_v) = db::added_since(c, "-7 days")?;
         let (month_n, month_v) = db::added_since(c, "-30 days")?;
         let per_day = db::added_per_day(c, 30)?;
         let busiest = per_day.iter().map(|d| d.1).max().unwrap_or(0).max(1) as f64;
         let days_first = per_day.first().map(|d| d.0.clone()).unwrap_or_default();
         let days = per_day.into_iter().map(|(d, n)| { let h = if n == 0 { 0 } else { ((n as f64 / busiest) * 100.0).max(6.0) as u32 }; (d, n, h) }).collect();
-        let bvals = db::binder_values(c)?;
+        let bvals = binder_values_in_vault(c)?;
         let top_b = bvals.first().map_or(1.0, |b| b.3);
         let binders = bvals.into_iter().map(|(t, hd, n, v)| (t, hd, n, db::peso(v), share(v, top_b))).collect();
         let viewed = db::most_viewed(c, 8)?;
@@ -1760,10 +2034,11 @@ pub async fn dashboard(State(app): State<App>, h: HeaderMap) -> Res {
             let pct = shares.get(cond).copied().unwrap_or(1.0);
             condition_shares.push((cond.to_string(), (pct * 100.0).round() as u32));
         }
+        let ops = ops_rows(c, now)?;
         Ok(DashboardPage {
             nav, tab: "dash", value: db::peso(total_value), copies: db::thousands(i64::from(copies)), distinct: db::thousands(cards.len() as i64), average, median, top10,
             week_n, week_value: db::peso(week_v), month_n, month_value: db::peso(month_v), insights, days, days_first, binders, viewed, searches, missing_searches,
-            no_photo_n, no_photo, no_price_n, no_price, cond_notes_n, cond_notes, trainers, pending, vouches_week, chat_week, top_trainers, condition_shares,
+            no_photo_n, no_photo, no_price_n, no_price, cond_notes_n, cond_notes, trainers, pending, vouches_week, chat_week, top_trainers, condition_shares, ops,
         })
     })
     .await?;
@@ -1800,4 +2075,71 @@ pub async fn order(State(app): State<App>, h: HeaderMap, Json(req): Json<OrderRe
     with_db(&app, move |c| if top { db::groups_to_top(c, &groups) } else { db::reorder_groups(c, &groups) }).await?;
     app.forget();
     Ok(ok_json(json!({ "ok": true })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn png(w: u32, h: u32) -> Vec<u8> {
+        let img = image::GrayImage::new(w, h);
+        let mut out = Cursor::new(Vec::new());
+        img.write_to(&mut out, image::ImageFormat::Png).unwrap();
+        out.into_inner()
+    }
+
+    #[test]
+    fn a_huge_picture_is_refused_before_it_is_opened() {
+        // Tiny on disk (one flat colour), but over 16 megapixels once opened.
+        let bomb = png(4100, 4100);
+        assert!(bomb.len() < 2_000_000);
+        assert_eq!(open_image(bomb).unwrap_err(), TOO_BIG);
+        assert!(photo_problem(TOO_BIG).contains("too big"));
+    }
+
+    #[test]
+    fn an_ordinary_photo_opens_already_shrunk() {
+        let img = open_image(png(3000, 1500)).unwrap();
+        assert_eq!((img.width(), img.height()), (1600, 800));
+        let small = open_image(png(400, 300)).unwrap();
+        assert_eq!((small.width(), small.height()), (400, 300));
+    }
+
+    #[test]
+    fn market_today_prices_each_copy_from_its_own_finish() {
+        let shares = marcuru_rs::pricing::current();
+        let nm = |v: f64| marcuru_rs::pricing::suggest_with_shares(&shares, v, "Near Mint");
+        let wotc = json!({ "finishes": [{ "key": "1st-edition", "php": 5000.0 }, { "key": "unlimited", "php": 800.0 }] });
+        assert_eq!(market_suggestion(&wotc, "normal", "Near Mint", &shares), nm(800.0), "normal is TCGdex's unlimited");
+        assert_eq!(market_suggestion(&wotc, "", "Near Mint", &shares), nm(800.0), "no finish: never the 1st Edition price");
+        assert_eq!(market_suggestion(&wotc, "holofoil", "Near Mint", &shares), None, "a finish with no market price is skipped");
+        let modern = json!({ "finishes": [{ "key": "holofoil", "php": 900.0 }, { "key": "reverse-holofoil", "php": 750.0 }] });
+        assert_eq!(market_suggestion(&modern, "reverseHolofoil", "Near Mint", &shares), nm(750.0), "an old key still finds its finish");
+    }
+
+    #[test]
+    fn a_typed_price_is_the_owners_own() {
+        assert_eq!(price_source("suggested"), "suggested");
+        assert_eq!(price_source("market"), "market");
+        assert_eq!(price_source(""), "own");
+        assert_eq!(price_source("anything"), "own");
+    }
+
+    #[test]
+    fn the_top_ten_share_has_no_floor() {
+        let mut each = vec![1.0; 5000];
+        each[0] = 2.0;
+        assert_eq!(top10_text(&each, each.iter().sum()), "Under 1%");
+        assert_eq!(top10_text(&[50.0, 30.0, 20.0], 100.0), "100%");
+        assert_eq!(top10_text(&[], 0.0), "");
+        assert_eq!(share(1.0, 1000.0), 2, "bars still keep their 2% floor");
+    }
+
+    #[test]
+    fn how_long_ago_in_words() {
+        assert_eq!(ago(10), "just now");
+        assert_eq!(ago(60), "1 minute ago");
+        assert_eq!(ago(3 * 3600 + 5), "3 hours ago");
+        assert_eq!(ago(2 * 86_400), "2 days ago");
+    }
 }

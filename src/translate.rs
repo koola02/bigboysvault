@@ -59,6 +59,8 @@ const PREFIXES: &[(&str, &str, &str)] = &[
     ("Hisuian ", "ヒスイ", "洗翠"),
     ("Paldean ", "パルデア", "帕底亞"),
     ("Radiant ", "かがやく", "光輝"),
+    ("Rapid Strike ", "れんげき", "連擊"),
+    ("Single Strike ", "いちげき", "一擊"),
     ("Team Rocket's ", "ロケット団の", "火箭隊的"),
     ("Iono's ", "ナンジャモの", "奇樹的"),
     ("Ethan's ", "ヒビキの", "阿響的"),
@@ -103,6 +105,11 @@ const SETS: &[(&str, &str)] = &[
     ("VSTARユニバース", "VSTAR Universe"),
     ("白熱のアルカナ", "Incandescent Arcana"),
     ("25週年收藏款", "25th Anniversary Collection"),
+    ("メガブレイブ", "Mega Brave"),
+    ("メガシンフォニア", "Mega Symphonia"),
+    ("インフェルノX", "Inferno X"),
+    ("MEGAドリームex", "Mega Dream ex"),
+    ("ムニキスゼロ", "Munikis Zero"),
 ];
 
 fn pick<'a>(row: (&'a str, &'a str, &'a str), to: &str) -> &'a str {
@@ -221,6 +228,7 @@ fn drop_label(name: &str) -> String {
 }
 
 pub fn card_name(name: &str, to: &str, names: &Names) -> String {
+    let native = is_cjk(name);
     let mut s = drop_label(name.trim());
     // Prefix words: to a placeholder first, so they can't interfere with the name lookup.
     let mut front = String::new();
@@ -238,11 +246,12 @@ pub fn card_name(name: &str, to: &str, names: &Names) -> String {
     // Latin and Japanese or Chinese read better without a gap after the prefix, and with one before "ex" only in English.
     let joined = done.replace('\u{1}', &front);
     if to == "en" {
-        // "カビゴンex" -> "Snorlax ex"
+        // "カビゴンex" -> "Snorlax ex". A lone "V" only gets its space when the name was Japanese or Chinese
+        // ("ウーラオスV" -> "Urshifu V"), so English names that happen to end in V stay as they are.
         let t = joined.trim_end();
         for tail in ["VMAX", "VSTAR", "ex", "EX", "GX", "V"] {
             if let Some(head) = t.strip_suffix(tail) {
-                if head.ends_with(|c: char| c.is_ascii_lowercase()) && !head.is_empty() && tail != "V" {
+                if head.ends_with(|c: char| c.is_ascii_lowercase()) && !head.is_empty() && (tail != "V" || native) {
                     return format!("{head} {tail}");
                 }
             }
@@ -296,7 +305,7 @@ mod tests {
         NameRow { en: en.into(), en_lower: en.to_lowercase(), ja: vec![ja.into()], zh: vec![zh.into()] }
     }
     fn table() -> Names {
-        vec![row("Pikachu", "ピカチュウ", "皮卡丘"), row("Mew", "ミュウ", "夢幻"), row("Mewtwo", "ミュウツー", "超夢"), row("Snorlax", "カビゴン", "卡比獸"), row("Bellibolt", "ハラバリー", "電肚蛙"), row("Floette", "フラエッテ", "花葉蒂")]
+        vec![row("Pikachu", "ピカチュウ", "皮卡丘"), row("Mew", "ミュウ", "夢幻"), row("Mewtwo", "ミュウツー", "超夢"), row("Snorlax", "カビゴン", "卡比獸"), row("Bellibolt", "ハラバリー", "電肚蛙"), row("Floette", "フラエッテ", "花葉蒂"), row("Urshifu", "ウーラオス", "武道熊師")]
     }
 
     #[test]
@@ -333,6 +342,10 @@ mod tests {
         assert_eq!(card_name("Iono's Bellibolt ex", "zh", &n), "奇樹的電肚蛙 ex");
         assert_eq!(card_name("メガフラエッテex", "en", &n), "Mega Floette ex");
         assert_eq!(card_name("PSA 10 Pikachu", "ja", &n), "PSA 10 ピカチュウ");
+        assert_eq!(card_name("れんげきウーラオスV (Urshifu)", "en", &n), "Rapid Strike Urshifu V");
+        assert_eq!(card_name("いちげきウーラオスVMAX", "en", &n), "Single Strike Urshifu VMAX");
+        assert_eq!(title("ピカチュウex - 051/193 - MEGAドリームex", "en", &n), "Pikachu ex - 051/193 - Mega Dream ex");
+        assert_eq!(set_name("ムニキスゼロ", "en"), "Munikis Zero");
     }
 
     #[test]

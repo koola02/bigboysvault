@@ -28,13 +28,22 @@ fly volumes create data --size 1 --region sin
 fly secrets set ADMIN_TOKEN="your-long-secret"
 fly deploy
 ```
-Then copy your data up (only if you want to keep what's on this PC):
+Then copy your data up (only if you want to keep what's on this PC). Stop the local server first, so `data.db`
+is complete. The site swaps `restore.db` in safely when it restarts; never `put` straight over `/data/data.db`.
 ```powershell
-fly ssh sftp shell        # then: put data.db /data/data.db   and   put -r uploads /data/uploads
+fly ssh sftp put data.db /data/restore.db.part
+fly ssh console -C "mv /data/restore.db.part /data/restore.db"
+fly apps restart bigboysvault
+# pictures: one tar file (tar is built into Windows 10 and 11), unpacked on the server, then deleted
+tar -cf up.tar -C uploads .
+fly ssh sftp put up.tar /data/up.tar
+fly ssh console -C "mkdir -p /data/uploads"
+fly ssh console -C "tar -xf /data/up.tar --no-same-owner -C /data/uploads"
+fly ssh console -C "rm /data/up.tar"
 ```
 Custom domain: `fly certs add yourdomain.com`, then add the DNS records it prints.
 
-Keep it at one machine (SQLite is a single-writer database). Fly takes volume snapshots daily; also download `data.db` and `uploads/` now and then.
+Keep it at one machine (SQLite is a single-writer database). Fly takes volume snapshots daily, and the Google VM in `docs/OPERATIONS.md` keeps nightly copies of the database and pictures.
 
 ## Route C: home PC, permanent address
 A named Cloudflare Tunnel plus a domain on Cloudflare gives a fixed address for free, but the PC must stay on.

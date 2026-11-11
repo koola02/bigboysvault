@@ -1,3 +1,4 @@
+{% if p.m.seller %}
 <div class="st-head">
   <div>
     <p class="eyebrow">My store</p>
@@ -20,4 +21,22 @@
     <a href="/me/settings" class="{% if p.tab == "settings" %}on{% endif %}">Store settings</a>
   </nav>
 </div>
+{% else %}
+{# A member who doesn't sell: just their orders and notifications, no store. #}
+<div class="st-head">
+  <div>
+    <p class="eyebrow">My trainer</p>
+    <h1 class="h1 a-title">{% if p.tab == "notifications" %}Notifications{% else %}My orders{% endif %}</h1>
+  </div>
+  <div class="st-head-acts">
+    <a class="linkbtn" href="/me">← My trainer</a>
+  </div>
+</div>
+<div class="adm-top">
+  <nav class="seg" aria-label="My orders and notifications">
+    <a href="/me/orders?tab=buying" class="{% if p.tab == "orders" %}on{% endif %}">My orders</a>
+    <a href="/me/notifications" class="{% if p.tab == "notifications" %}on{% endif %}">Notifications{% if p.unread > 0 %} <span class="seg-n">{{ p.unread }}</span>{% endif %}</a>
+  </nav>
+</div>
+{% endif %}
 <script>{ const s = document.querySelector('.adm-top .seg'), a = s && s.querySelector('a.on'); if (a && s.scrollWidth > s.clientWidth) s.scrollLeft = a.getBoundingClientRect().left - s.getBoundingClientRect().left + s.scrollLeft - (s.clientWidth - a.offsetWidth) / 2; }</script>

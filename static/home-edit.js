@@ -369,9 +369,14 @@
   /* ---------- ① the top menu: drag the binder names, ✕ to take one out, ＋ to put one in, tap the name to rename ---------- */
   const mnList = document.getElementById('mnList'), mnName = document.getElementById('mnName');
   const menuHandles = () => [...mnList.querySelectorAll('.mn-chip')].map((c) => c.dataset.h);
+  // The top bar's Binders dropdown follows the menu: the binders in order, then "All cards". With no binders it hides.
   function syncSiteMenu() {
-    const nav = document.querySelector('.bar .menu'); if (!nav) return;
-    nav.replaceChildren(...[...mnList.querySelectorAll('.mn-chip')].map((c) => { const a = el('a', null, c.querySelector('.mn-t').textContent); a.href = '/collections/' + c.dataset.h; return a; }));
+    const dd = document.querySelector('.bar .menu-dd'), nav = dd && dd.querySelector('.menu'); if (!nav) return;
+    const links = [...mnList.querySelectorAll('.mn-chip')].map((c) => { const a = el('a', null, c.querySelector('.mn-t').textContent); a.href = '/collections/' + c.dataset.h; return a; });
+    const all = nav.querySelector('.menu-all');
+    nav.replaceChildren(...links, ...(all ? [all] : []));
+    dd.hidden = links.length === 0;
+    if (dd.hidden) dd.open = false;
   }
   async function saveMenu(msg) {
     try { await A.postJSON('/admin/menu', { handles: menuHandles() }); syncSiteMenu(); A.toast(msg, { kind: 'ok' }); }

@@ -1,0 +1,4 @@
+# The VM runs these with bash: they must keep Unix line endings, even from a Windows checkout.
+ops/*.sh text eol=lf
+ops/crontab.example text eol=lf
+ops/env.example text eol=lf

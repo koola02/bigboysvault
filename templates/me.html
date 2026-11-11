@@ -1,12 +1,11 @@
 {% extends "base.html" %}
-{% block title %}My trainer · {{ nav.brand }}{% endblock %}
 {% block content %}
 <section class="wrap me" id="me" data-max="{{ max }}" data-seller="{{ m.seller }}" data-highlight="{% if let Some(h) = m.highlight %}{{ h }}{% endif %}">
   <div class="me-top">
     <h1 class="h1">My trainer</h1>
     <div class="me-top-acts">
       <a class="linkbtn" href="/trainers/{{ m.id }}">See my page</a>
-      <form method="post" action="/signout"><button class="linkbtn" type="submit">Sign out</button></form>
+      <form method="post" action="/signout"><button class="linkbtn" type="submit">Log out</button></form>
     </div>
   </div>
   <p class="me-status {% if m.profile_ok %}ok{% endif %}" id="meStatus">{% if m.profile_ok %}✓ Your page is live.{% else %}⏳ The vault owner still has to approve your picture, description and binder. Your vouches go up straight away.{% endif %}</p>
@@ -100,8 +99,8 @@
 
   <section class="me-card">
     <h2 class="h2">My vouches</h2>
-    <p class="me-how">Tap the Vouch button on any page. Your words and photos go up straight away, and you can delete them any time.</p>
-    <a class="btn ghost" href="/trainers/{{ m.id }}">See my vouches</a>
+    <p class="me-how">Tap the gold Vouch button on Home, Trainers or Vouches. Your words and photos go up straight away, and you can delete them any time.</p>
+    <div style="display:flex;flex-wrap:wrap;gap:10px"><a class="btn" href="/vouches">Write a vouch</a><a class="btn ghost" href="/trainers/{{ m.id }}">See my vouches</a></div>
   </section>
 
   <details class="me-card me-account">
@@ -116,5 +115,5 @@
 </section>
 <script src="/static/dragsort.js?v=5" defer></script>
 <script src="/static/pricing.js?v=1" defer></script>
-<script src="/static/me.js?v=9" defer></script>
+<script src="/static/me.js?v=10" defer></script>
 {% endblock %}

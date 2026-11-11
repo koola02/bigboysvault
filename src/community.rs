@@ -53,13 +53,39 @@ pub(crate) fn same_site(h: &HeaderMap) -> bool {
     origin.split_once("://").map(|(_, o)| o) == Some(host)
 }
 
-/// The visitor's address: Cloudflare's header when the site sits behind it, else Fly's.
+/// Cloudflare's own addresses (cloudflare.com/ips). Only a request that really came from one of these may name the visitor.
+const CLOUDFLARE: [&str; 22] = [
+    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22", "141.101.64.0/18", "108.162.192.0/18",
+    "190.93.240.0/20", "188.114.96.0/20", "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
+    "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22",
+    "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32", "2405:b500::/32", "2405:8100::/32", "2a06:98c0::/29", "2c0f:f248::/32",
+];
+
+/// True when `ip` sits inside one of Cloudflare's ranges.
+fn from_cloudflare(ip: &str) -> bool {
+    use std::net::IpAddr;
+    let Ok(ip) = ip.parse::<IpAddr>() else { return false };
+    CLOUDFLARE.iter().any(|range| {
+        let Some((net, bits)) = range.split_once('/') else { return false };
+        let (Ok(net), Ok(bits)) = (net.parse::<IpAddr>(), bits.parse::<u32>()) else { return false };
+        match (ip, net) {
+            (IpAddr::V4(a), IpAddr::V4(n)) => bits <= 32 && (u32::from(a) ^ u32::from(n)).checked_shr(32 - bits).unwrap_or(0) == 0,
+            (IpAddr::V6(a), IpAddr::V6(n)) => bits <= 128 && (u128::from(a) ^ u128::from(n)).checked_shr(128 - bits).unwrap_or(0) == 0,
+            _ => false,
+        }
+    })
+}
+
+/// The visitor's address. Fly's proxy sets `fly-client-ip` itself (a visitor can't fake it): that is the machine that
+/// connected. When that machine is Cloudflare, Cloudflare's `cf-connecting-ip` names the real visitor. Anyone else
+/// could write any `cf-connecting-ip` they like (the fly.dev address skips Cloudflare), so it is ignored for them.
 pub(crate) fn client_ip(h: &HeaderMap) -> String {
-    ["cf-connecting-ip", "fly-client-ip"]
-        .iter()
-        .find_map(|k| h.get(*k).and_then(|v| v.to_str().ok()).map(str::trim).filter(|v| !v.is_empty()))
-        .unwrap_or("local")
-        .to_string()
+    let header = |k: &str| h.get(k).and_then(|v| v.to_str().ok()).map(str::trim).filter(|v| !v.is_empty());
+    match header("fly-client-ip") {
+        Some(peer) if from_cloudflare(peer) => header("cf-connecting-ip").unwrap_or(peer).to_string(),
+        Some(peer) => peer.to_string(),
+        None => "local".into(),
+    }
 }
 
 /// Counts attempts for a while. True means the limit has been reached.
@@ -69,13 +95,46 @@ pub(crate) fn over_limit(app: &App, key: String, max: u32) -> bool {
     n > max
 }
 
-fn known_picture(url: &str) -> bool {
-    market::image_host_ok(url)
+/// True when this count has reached `max`. Only looks: it doesn't add one or restart the wait.
+fn limit_hit(app: &App, key: &str, max: u32) -> bool {
+    app.limits.get(key).unwrap_or(0) >= max
 }
 
-/// What the market says a card is worth, in pesos. 0 if it doesn't say.
-fn market_php(info: &Value) -> f64 {
-    info["finishes"].as_array().and_then(|f| f.first()).and_then(|f| f["php"].as_f64()).unwrap_or(0.0)
+/// Adds one to a count of failed tries.
+fn count_fail(app: &App, key: &str) {
+    let n = app.limits.get(key).unwrap_or(0) + 1;
+    app.limits.insert(key.to_string(), n);
+}
+
+/// Password work at the same time. Each one needs about 19 MB, and the server is small.
+static HASH_GATE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+const BUSY: &str = "The vault is busy right now. Please try again in a moment.";
+
+/// Runs a password hash or check, at most two at once, so a burst of sign-ins can't use up the memory.
+/// Ok(None): it waited a few seconds and it still wasn't its turn.
+pub(crate) async fn hashing<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> Result<Option<T>, (StatusCode, String)> {
+    let Ok(Ok(permit)) = tokio::time::timeout(std::time::Duration::from_secs(4), HASH_GATE.acquire()).await else { return Ok(None) };
+    let out = tokio::task::spawn_blocking(f).await.map_err(ise)?;
+    drop(permit);
+    Ok(Some(out))
+}
+
+/// Where to go after logging in, when the page asked: only a path on this site ("/..."), never another site.
+fn safe_next(next: &str) -> Option<&str> {
+    let n = next.trim();
+    // Plain visible letters only (a browser sends a path %-coded), so it is always a safe address to send people to.
+    let ok = n.starts_with('/') && !n.starts_with("//") && !n.contains('\\') && n.len() <= 300 && n.bytes().all(|b| b.is_ascii_graphic());
+    ok.then_some(n)
+}
+
+/// The page's name in the tab, in links people share, and for search engines: one title everywhere.
+fn titled(mut nav: Chrome, title: &str) -> Chrome {
+    nav.seo.title = format!("{title} · {}", nav.brand);
+    nav
+}
+
+fn known_picture(url: &str) -> bool {
+    market::image_host_ok(url)
 }
 
 /// Looks up prices for trainers' cards a few at a time, politely. Runs in the background.
@@ -89,20 +148,9 @@ pub async fn refresh_values(app: &App) {
             tokio::time::sleep(std::time::Duration::from_millis(350)).await;
             continue;
         };
-        let market = info.as_ref().map_or(0.0, market_php);
-        let key = id.clone();
-        let done = with_db(app, move |c| {
-            let value = if market > 0.0 { market } else { members::vault_price(c, &key)? };
-            if value > 0.0 {
-                members::set_card_value(c, &key, value, crate::unix_now())?;
-            } else {
-                // No price anywhere today: keep the last one and don't ask again for a while.
-                c.execute("UPDATE member_cards SET value_at=?2 WHERE card_id=?1 OR card_id LIKE ?1 || '#%'", rusqlite::params![key, crate::unix_now()])?;
-            }
-            Ok(value)
-        })
-        .await;
-        changed |= done.is_ok_and(|v| v > 0.0);
+        // Finish by finish, as the nightly job does: a Reverse Holo listing never takes the Holofoil price.
+        let done = with_db(app, move |c| members::price_listings(c, &id, info.as_ref(), crate::unix_now())).await;
+        changed |= done.unwrap_or(false);
         tokio::time::sleep(std::time::Duration::from_millis(350)).await;
     }
     if changed {
@@ -117,6 +165,8 @@ struct LoginPage {
     nav: Chrome,
     error: String,
     name: String,
+    /// Where to go after logging in (a path on this site), or empty for "My trainer".
+    next: String,
 }
 
 #[derive(Template)]
@@ -125,7 +175,8 @@ struct JoinPage {
     nav: Chrome,
     error: String,
     name: String,
-    mode: &'static str,
+    /// Where to go after joining (a path on this site), or empty for "My trainer".
+    next: String,
 }
 
 #[derive(Template)]
@@ -251,40 +302,66 @@ struct AdminRow {
 #[derive(Deserialize, Default)]
 pub struct JoinQs {
     signin: Option<String>,
+    #[serde(default)]
+    next: String,
+}
+
+/// The page to land on after logging in or joining.
+fn landing(next: &str) -> String {
+    safe_next(next).unwrap_or("/me").to_string()
+}
+
+/// Makes a path safe to put after "?next=": letters, digits and "/-_.~" stay, everything else is %-coded.
+fn encode_next(p: &str) -> String {
+    p.bytes().map(|b| if b.is_ascii_alphanumeric() || b"/-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") }).collect()
 }
 
 pub async fn join_page(State(app): State<App>, h: HeaderMap, Query(q): Query<JoinQs>) -> Res {
     if current(&app, &h).await?.is_some() {
-        return Ok(Redirect::to("/me").into_response());
+        return Ok(Redirect::to(&landing(&q.next)).into_response());
+    }
+    // There's one log-in page, /login. Old "/join?signin=1" links go there.
+    if q.signin.is_some() {
+        let to = match safe_next(&q.next) {
+            Some(n) => format!("/login?next={}", encode_next(n)),
+            None => "/login".to_string(),
+        };
+        return Ok(Redirect::to(&to).into_response());
     }
     let nav = with_db(&app, chrome).await?;
-    Ok(html(render(JoinPage { nav, error: String::new(), name: String::new(), mode: if q.signin.is_some() { "signin" } else { "join" } })?))
+    let next = safe_next(&q.next).unwrap_or("").to_string();
+    Ok(html(render(JoinPage { nav: titled(nav, "Join"), error: String::new(), name: String::new(), next })?))
 }
 
-/// `GET /login`: the sign-in landing for trainers, with the vault owner's admin password tucked underneath.
+/// `GET /login`: where trainers log in. The vault owner's own way in is /admin.
 pub async fn login_page(State(app): State<App>, h: HeaderMap, Query(q): Query<LoginQs>) -> Res {
     if current(&app, &h).await?.is_some() {
-        return Ok(Redirect::to("/me").into_response());
+        return Ok(Redirect::to(&landing(&q.next)).into_response());
     }
     if admin::authed(&app, &h) && !app.admin_token.is_empty() {
         return Ok(Redirect::to("/admin").into_response());
     }
     let nav = with_db(&app, chrome).await?;
     let error = if q.wrong.is_some() { "That password isn't right.".to_string() } else { String::new() };
-    Ok(html(render(LoginPage { nav, error, name: String::new() })?))
+    let next = safe_next(&q.next).unwrap_or("").to_string();
+    Ok(html(render(LoginPage { nav: titled(nav, "Log in"), error, name: String::new(), next })?))
 }
 
 #[derive(Deserialize)]
 pub struct LoginQs {
     wrong: Option<String>,
+    #[serde(default)]
+    next: String,
 }
 
-async fn join_again(app: &App, code: StatusCode, mode: &'static str, name: String, error: &str) -> Res {
+/// Shows the form again with a message. `mode` is "signin" (the log-in page) or "join".
+async fn join_again(app: &App, code: StatusCode, mode: &'static str, name: String, error: &str, next: &str) -> Res {
     let nav = with_db(app, chrome).await?;
+    let next = safe_next(next).unwrap_or("").to_string();
     if mode == "signin" {
-        return Ok((code, html(render(LoginPage { nav, error: error.to_string(), name })?)).into_response());
+        return Ok((code, html(render(LoginPage { nav: titled(nav, "Log in"), error: error.to_string(), name, next })?)).into_response());
     }
-    Ok((code, html(render(JoinPage { nav, error: error.to_string(), name, mode })?)).into_response())
+    Ok((code, html(render(JoinPage { nav: titled(nav, "Join"), error: error.to_string(), name, next })?)).into_response())
 }
 
 #[derive(Deserialize)]
@@ -297,16 +374,21 @@ pub struct JoinForm {
     /// "Remember me": stay signed in for a year instead of until the browser closes.
     #[serde(default)]
     remember: String,
+    /// Where to go afterwards, say back to the cart. Only a path on this site is followed.
+    #[serde(default)]
+    next: String,
 }
 
-/// How long a sign-in lasts: a year when "remember me" is ticked, else the browser session (the server keeps it a month).
+/// How long the browser keeps a sign-in: a year when "remember me" is ticked, else until it closes (0).
 fn session_age(remember: &str) -> i64 {
-    if remember == "1" || remember == "on" { 365 * 86_400 } else { 0 }
+    if remember == "1" || remember == "on" { members::REMEMBER_SECS } else { 0 }
 }
 
-async fn signed_in(app: &App, h: &HeaderMap, id: i64, age: i64) -> Res {
-    let raw = with_db(app, move |c| members::new_session(c, id)).await?;
-    Ok(([(header::SET_COOKIE, session_cookie(h, &raw, age))], Redirect::to("/me")).into_response())
+/// Starts a session and goes on to `to`. The server keeps it as long as the cookie says (a month for "until the browser closes").
+async fn signed_in(app: &App, h: &HeaderMap, id: i64, age: i64, to: &str) -> Res {
+    let keep = if age > 0 { age } else { members::SESSION_SECS };
+    let raw = with_db(app, move |c| members::new_session(c, id, keep)).await?;
+    Ok(([(header::SET_COOKIE, session_cookie(h, &raw, age))], Redirect::to(to)).into_response())
 }
 
 pub async fn join(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm>) -> Res {
@@ -320,26 +402,35 @@ pub async fn join(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm>)
     // Typos don't count against anyone. New accounts are limited, and so is the number of tries overall.
     let ip = client_ip(&h);
     if app.limits.get(&format!("joined|{ip}")).unwrap_or(0) >= 5 || over_limit(&app, format!("join|{ip}"), 40) {
-        return join_again(&app, StatusCode::TOO_MANY_REQUESTS, "join", typed, "Too many new trainers from here. Please try again in a little while.").await;
+        return join_again(&app, StatusCode::TOO_MANY_REQUESTS, "join", typed, "Too many new trainers from here. Please try again in a little while.", &f.next).await;
     }
     let name = match members::valid_name(&f.name) {
         Ok(n) => n,
-        Err(e) => return join_again(&app, StatusCode::BAD_REQUEST, "join", typed, e).await,
+        Err(e) => return join_again(&app, StatusCode::BAD_REQUEST, "join", typed, e, &f.next).await,
     };
     if let Err(e) = members::valid_password(&f.password) {
-        return join_again(&app, StatusCode::BAD_REQUEST, "join", typed, e).await;
+        return join_again(&app, StatusCode::BAD_REQUEST, "join", typed, e, &f.next).await;
     }
     if with_db(&app, members::unapproved_count).await? >= members::MAX_PENDING {
-        return join_again(&app, StatusCode::SERVICE_UNAVAILABLE, "join", typed, "New sign-ups are paused for a moment. Please try again later.").await;
+        return join_again(&app, StatusCode::SERVICE_UNAVAILABLE, "join", typed, "New sign-ups are paused for a moment. Please try again later.", &f.next).await;
+    }
+    // A taken name is turned away before the slow password work.
+    const TAKEN: &str = "That trainer name is taken. Please pick another.";
+    let n0 = name.clone();
+    if with_db(&app, move |c| members::for_signin(c, &n0)).await?.is_some() {
+        return join_again(&app, StatusCode::CONFLICT, "join", typed, TAKEN, &f.next).await;
     }
     let pass = f.password;
-    let hash = tokio::task::spawn_blocking(move || members::hash_password(&pass)).await.map_err(ise)?.map_err(ise)?;
+    let Some(hash) = hashing(move || members::hash_password(&pass)).await? else {
+        return join_again(&app, StatusCode::SERVICE_UNAVAILABLE, "join", typed, BUSY, &f.next).await;
+    };
+    let hash = hash.map_err(ise)?;
     let n2 = name.clone();
     let Some(id) = with_db(&app, move |c| members::create(c, &n2, &hash)).await? else {
-        return join_again(&app, StatusCode::CONFLICT, "join", typed, "That trainer name is taken. Please pick another.").await;
+        return join_again(&app, StatusCode::CONFLICT, "join", typed, TAKEN, &f.next).await;
     };
     over_limit(&app, format!("joined|{ip}"), u32::MAX);
-    signed_in(&app, &h, id, 365 * 86_400).await
+    signed_in(&app, &h, id, members::REMEMBER_SECS, &landing(&f.next)).await
 }
 
 pub async fn signin(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm>) -> Res {
@@ -347,42 +438,70 @@ pub async fn signin(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm
         return Ok(StatusCode::FORBIDDEN.into_response());
     }
     let typed = members::clean_line(&f.name, 40);
-    let by_ip = over_limit(&app, format!("in|{}", client_ip(&h)), 20);
-    let by_name = over_limit(&app, format!("in|{}", members::name_key(&typed)), 8);
-    if by_ip || by_name {
-        return join_again(&app, StatusCode::TOO_MANY_REQUESTS, "signin", typed, "Too many tries. Please wait 15 minutes and try again.").await;
+    let next = f.next.clone();
+    // Only wrong passwords count, per name and device: a stranger's wrong tries lock out only the stranger.
+    // A much higher count per name, from every device together, stops guessing spread over many addresses.
+    let ip = client_ip(&h);
+    let nk = members::name_key(&typed);
+    let (pair, by_name) = (format!("fail|{nk}|{ip}"), format!("fail|{nk}"));
+    let by_ip = over_limit(&app, format!("in|{ip}"), 20);
+    if by_ip || limit_hit(&app, &pair, 8) || limit_hit(&app, &by_name, 100) {
+        return join_again(&app, StatusCode::TOO_MANY_REQUESTS, "signin", typed, "Too many tries. Please wait 15 minutes and try again.", &next).await;
     }
-    // An admin trainer signs in with "name/secret": that opens the admin and their own trainer at once.
+    let wrong = |app: &App| {
+        count_fail(app, &pair);
+        count_fail(app, &by_name);
+    };
+    // An admin may still log in with "name/secret". It opens their own trainer only, never the owner's cookie:
+    // admin powers come from their role, checked on every request, so taking the role away or blocking them ends it at once.
     if admin::admin_password_ok(&app, &typed, &f.password) {
         let n3 = typed.clone();
-        let who = with_db(&app, move |c| members::for_signin(c, &n3)).await?;
-        let Some((id, _)) = who else { return join_again(&app, StatusCode::UNAUTHORIZED, "signin", typed, "There's no trainer with that name. Make one first, then an admin can make it staff.").await };
-        let is_admin = with_db(&app, move |c| members::get(c, id)).await?.is_some_and(|m| m.role == "admin");
-        if !is_admin {
-            return join_again(&app, StatusCode::UNAUTHORIZED, "signin", typed, "That trainer isn't an admin.").await;
+        let who = with_db(&app, move |c| match members::for_signin(c, &n3)? {
+            Some((id, _)) => members::get(c, id),
+            None => Ok(None),
+        })
+        .await?;
+        let Some(m) = who else {
+            wrong(&app);
+            return join_again(&app, StatusCode::UNAUTHORIZED, "signin", typed, "There's no trainer with that name. Make one first, then an admin can make it staff.", &next).await;
+        };
+        if m.role != "admin" {
+            wrong(&app);
+            return join_again(&app, StatusCode::UNAUTHORIZED, "signin", typed, "That trainer isn't an admin.", &next).await;
         }
-        let raw = with_db(&app, move |c| members::new_session(c, id)).await?;
-        // Two cookies: AppendHeaders keeps both (a plain array would keep only the last Set-Cookie).
-        return Ok((axum::response::AppendHeaders([(header::SET_COOKIE, session_cookie(&h, &raw, session_age(&f.remember))), (header::SET_COOKIE, admin::admin_cookie_text(&app, &h))]), Redirect::to("/admin")).into_response());
+        if m.blocked {
+            return join_again(&app, StatusCode::FORBIDDEN, "signin", typed, "This trainer has been blocked by the vault owner.", &next).await;
+        }
+        app.limits.invalidate(&pair);
+        let to = safe_next(&next).unwrap_or("/admin").to_string();
+        return signed_in(&app, &h, m.id, session_age(&f.remember), &to).await;
     }
     let n2 = typed.clone();
     let found = with_db(&app, move |c| members::for_signin(c, &n2)).await?;
     let pass = f.password;
-    let good = tokio::task::spawn_blocking(move || match &found {
+    let checked = hashing(move || match &found {
         Some((id, stored)) => members::verify_password(&pass, stored).then_some(*id),
         None => {
             members::waste_time(&pass);
             None
         }
     })
-    .await
-    .map_err(ise)?;
+    .await?;
+    let Some(good) = checked else {
+        return join_again(&app, StatusCode::SERVICE_UNAVAILABLE, "signin", typed, BUSY, &next).await;
+    };
     match good {
         Some(id) if with_db(&app, move |c| members::is_blocked(c, id)).await? => {
-            join_again(&app, StatusCode::FORBIDDEN, "signin", typed, "This trainer has been blocked by the vault owner.").await
+            join_again(&app, StatusCode::FORBIDDEN, "signin", typed, "This trainer has been blocked by the vault owner.", &next).await
         }
-        Some(id) => signed_in(&app, &h, id, session_age(&f.remember)).await,
-        None => join_again(&app, StatusCode::UNAUTHORIZED, "signin", typed, "That name and password don't match.").await,
+        Some(id) => {
+            app.limits.invalidate(&pair);
+            signed_in(&app, &h, id, session_age(&f.remember), &landing(&next)).await
+        }
+        None => {
+            wrong(&app);
+            join_again(&app, StatusCode::UNAUTHORIZED, "signin", typed, "That name and password don't match.", &next).await
+        }
     }
 }
 
@@ -393,7 +512,7 @@ pub async fn signout(State(app): State<App>, h: HeaderMap) -> Res {
     if let Some(raw) = cookie_value(&h) {
         with_db(&app, move |c| members::end_session(c, &raw)).await?;
     }
-    // Both cookies go: an admin signed in with name/secret holds the owner's too.
+    // The owner's cookie goes too, in case this browser still holds one from an older sign-in.
     Ok((axum::response::AppendHeaders([(header::SET_COOKIE, session_cookie(&h, "", -1)), (header::SET_COOKIE, "marcuru_admin=; Path=/; Max-Age=0".to_string())]), Redirect::to("/")).into_response())
 }
 
@@ -454,7 +573,10 @@ pub async fn seller_binder(State(app): State<App>, h: HeaderMap, Path((slug, b_s
     let (nav, cards, vouches, awards) = with_db(&app, move |c| {
         Ok((chrome(c)?, members::cards_of_binder(c, mid, Some(bid))?, members::public_vouches(c, Some(mid), None, 20)?, members::awards_of(c, mid, 10)?))
     }).await?;
+    let nav = titled(nav, &format!("{} · {}", b.title, m.name));
     let awards: Vec<Award> = awards.into_iter().filter(|a| !a.reason.is_empty()).collect();
+    // Hidden, sold or ended listings stay off the public page, as in the store. The trainer and staff see everything.
+    let cards: Vec<MemberCard> = cards.into_iter().filter(|c| is_me || owner || c.on_show()).collect();
     let highlight = m.highlight.and_then(|h| cards.iter().find(|c| c.id == h).cloned());
     let (cards, wishes, selling) = split_kinds(cards);
     Ok(html(if q.part.is_some() {
@@ -495,16 +617,24 @@ pub async fn trainer(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, 
     if t.blocked && !owner {
         return not_found(&app).await;
     }
-    // Not approved yet: the public sees the name and vouches. The picture, description and binder wait for the owner.
+    // Not approved yet: the public sees the name and vouches. The picture, description, links and binder wait for the owner.
     let full = t.profile_ok || is_me || owner;
     if !full {
         t.avatar.clear();
         t.bio.clear();
+        t.fb_url.clear();
+        t.tiktok_url.clear();
+        t.links.clear();
+        t.fb_group_url.clear();
+        t.ig_url.clear();
+        t.shopee_url.clear();
     }
     let cards = if full { cards } else { vec![] };
+    // Hidden, sold or ended listings stay off the public page, as in the store. The trainer and staff see everything.
+    let cards: Vec<MemberCard> = cards.into_iter().filter(|c| is_me || owner || c.on_show()).collect();
     let highlight = t.highlight.and_then(|h| cards.iter().find(|c| c.id == h).cloned());
     let (cards, wishes, selling) = split_kinds(cards);
-    let mut nav = nav;
+    let mut nav = titled(nav, &t.name);
     // An approved trainer's page is worth finding: a profile with their picture and binder.
     if t.profile_ok && !t.blocked {
         let site = nav.site.clone();
@@ -542,9 +672,17 @@ pub async fn member_card(State(app): State<App>, h: HeaderMap, Path((id, cid)): 
     let me = current(&app, &h).await?;
     let (nav, t, card) = with_db(&app, move |c| Ok((chrome(c)?, members::get(c, id)?, members::card(c, id, cid)?))).await?;
     let (Some(t), Some(c)) = (t, card) else { return not_found(&app).await };
-    if (!t.profile_ok || t.blocked) && me.as_ref().is_none_or(|m| m.id != t.id) && !admin::can_moderate(&app, &h) {
+    let staff_view = me.as_ref().is_some_and(|m| m.id == t.id) || admin::can_moderate(&app, &h);
+    if (!t.profile_ok || t.blocked) && !staff_view {
         return not_found(&app).await;
     }
+    // A hidden or ended listing is off the site, as in the store. A sold one stays, so order links still work.
+    if !staff_view && c.is_sale() && matches!(c.status.as_str(), "Hidden" | "Expired") {
+        return not_found(&app).await;
+    }
+    // A shared link shows the card, its picture and price; listings for sale in an open store are indexed.
+    let mut nav = nav;
+    nav.seo = crate::store::listing_seo(&nav, &t, &c);
     // A look at a card in a store counts for its seller (once a day per viewer, never the owner).
     let (cid2, who, viewer) = (c.id, crate::store::viewer_hash(&h), me.as_ref().map(|m| m.id));
     with_db(&app, move |c| marcuru_rs::sellers::count_view(c, cid2, &who, viewer)).await.ok();
@@ -553,10 +691,14 @@ pub async fn member_card(State(app): State<App>, h: HeaderMap, Path((id, cid)): 
 
 // ---------- my trainer ----------
 pub async fn me(State(app): State<App>, h: HeaderMap) -> Res {
-    let Some(m) = current(&app, &h).await? else { return Ok(Redirect::to("/join").into_response()) };
+    // Signed out (or the sign-in ran out): log in again, not "Become a trainer".
+    let Some(m) = current(&app, &h).await? else { return Ok(Redirect::to("/login").into_response()) };
     let id = m.id;
-    let (nav, cards, binders, stats) = with_db(&app, move |c| Ok((chrome(c)?, members::cards_of(c, id)?, members::binders_of(c, id)?, members::seller_stats(c, id)?))).await?;
-    Ok(html(render(MePage { nav, m, cards, binders, stats, max: members::MAX_CARDS, conditions: members::CONDITIONS })?))
+    let (nav, cards, binders, stats, max) = with_db(&app, move |c| {
+        Ok((chrome(c)?, members::cards_of(c, id)?, members::binders_of(c, id)?, members::seller_stats(c, id)?, marcuru_rs::sellers::max_cards(c)))
+    })
+    .await?;
+    Ok(html(render(MePage { nav: titled(nav, "My trainer"), m, cards, binders, stats, max, conditions: members::CONDITIONS })?))
 }
 
 /// Signed in and really from this site, whatever their lock says. For things a locked trainer may still do: their password, deleting what's theirs.
@@ -564,7 +706,7 @@ pub(crate) async fn acting_any(app: &App, h: &HeaderMap) -> Result<Result<Member
     if !same_site(h) {
         return Ok(Err(fail(StatusCode::FORBIDDEN, "That request didn't come from this site.")));
     }
-    Ok(current(app, h).await?.ok_or_else(|| fail(StatusCode::UNAUTHORIZED, "Please sign in again.")))
+    Ok(current(app, h).await?.ok_or_else(|| fail(StatusCode::UNAUTHORIZED, "Please log in again.")))
 }
 
 /// Every action on "My trainer" and every post starts here: signed in, really from this site, and not locked.
@@ -575,15 +717,38 @@ pub(crate) async fn acting(app: &App, h: &HeaderMap) -> Result<Result<Member, Re
     })
 }
 
+/// Pictures bigger than this are turned away before they're opened: the server is small.
+const MAX_PIXELS: u64 = 16_000_000;
+/// The error a too-big picture gives, so the page can say so in plain words.
+pub(crate) const TOO_BIG: &str = admin::TOO_BIG; // one word for "too big", whichever check finds it
+const TOO_BIG_TEXT: &str = "That photo is too big. Please use a smaller one (under 16 megapixels).";
+
+/// Reads only the picture's size from its first bytes, and refuses one that is too big to open safely.
+fn check_size(bytes: &[u8]) -> Result<(), String> {
+    let (w, h) = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().map_err(|e| e.to_string())?.into_dimensions().map_err(|e| e.to_string())?;
+    if u64::from(w) * u64::from(h) > MAX_PIXELS {
+        return Err(TOO_BIG.into());
+    }
+    Ok(())
+}
+
 /// A profile picture: square, sharp enough to enlarge, and re-made from the pixels, so nothing hidden in the upload survives.
+/// It is made small first, then cut square, so no second full-size copy is ever held in memory.
 fn store_avatar(bytes: Vec<u8>, dir: PathBuf, stem: String) -> Result<String, String> {
     use image::{codecs::jpeg::JpegEncoder, imageops::FilterType};
+    check_size(&bytes)?;
     let img = admin::open_image(bytes)?;
-    let side = img.width().min(img.height());
-    if side < 16 {
+    let (w, h) = (u64::from(img.width()), u64::from(img.height()));
+    let short = w.min(h);
+    if short < 16 {
         return Err("too small".into());
     }
-    let square = img.crop_imm((img.width() - side) / 2, (img.height() - side) / 2, side, side).resize_exact(side.clamp(400, 640), side.clamp(400, 640), FilterType::Lanczos3);
+    let target = short.clamp(400, 640);
+    // Shrink first, keeping the shape, so the short side is `target`.
+    let img = if short > target { img.thumbnail((w * target).div_ceil(short) as u32, (h * target).div_ceil(short) as u32) } else { img };
+    let side = img.width().min(img.height());
+    let target = target as u32;
+    let square = img.crop_imm((img.width() - side) / 2, (img.height() - side) / 2, side, side).resize_exact(target, target, FilterType::Triangle);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let name = format!("{stem}.jpg");
     let file = std::fs::File::create(dir.join(&name)).map_err(|e| e.to_string())?;
@@ -595,13 +760,11 @@ fn store_avatar(bytes: Vec<u8>, dir: PathBuf, stem: String) -> Result<String, St
 /// One photo for a vouch: a full size and a small one, both re-made from the pixels. The server is small, so very large pictures are refused before they're opened.
 /// Returns (full, small, width, height, bytes on disk).
 pub(crate) fn store_photo(bytes: Vec<u8>, dir: PathBuf, stem: String) -> Result<(String, String, i64, i64, i64), String> {
-    use image::{codecs::jpeg::JpegEncoder, imageops::FilterType, DynamicImage, ImageReader};
-    let (w, h) = ImageReader::new(std::io::Cursor::new(&bytes)).with_guessed_format().map_err(|e| e.to_string())?.into_dimensions().map_err(|e| e.to_string())?;
-    if u64::from(w) * u64::from(h) > 24_000_000 {
-        return Err("too large".into());
-    }
+    use image::{codecs::jpeg::JpegEncoder, imageops::FilterType, DynamicImage};
+    check_size(&bytes)?;
     let img = admin::open_image(bytes)?;
-    let big = if img.width().max(img.height()) > 1600 { img.resize(1600, 1600, FilterType::Triangle) } else { img };
+    // `thumbnail` shrinks without the big working copy a full resize needs.
+    let big = if img.width().max(img.height()) > 1600 { img.thumbnail(1600, 1600) } else { img };
     let small = if big.width().max(big.height()) > 480 { big.resize(480, 480, FilterType::Triangle) } else { big.clone() };
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let write = |pic: &DynamicImage, name: &str, quality: u8| -> Result<i64, String> {
@@ -616,12 +779,45 @@ pub(crate) fn store_photo(bytes: Vec<u8>, dir: PathBuf, stem: String) -> Result<
     Ok((format!("/uploads/{l}"), format!("/uploads/{s}"), i64::from(big.width()), i64::from(big.height()), size))
 }
 
-/// Room for vouch photos, so they can never fill the disk the whole site lives on. Raise it after growing the volume.
+/// Room for trainers' photos (vouch photos and their own card photos), so they can never fill the disk the whole site
+/// lives on. Raise it after growing the volume.
 pub(crate) fn photo_cap_mb() -> i64 {
     std::env::var("PHOTO_SPACE_MB").ok().and_then(|v| v.parse().ok()).unwrap_or(650)
 }
 
-pub(crate) static PHOTO_GATE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(2);
+/// One picture is opened at a time, everywhere on the site: opening a big photo takes a lot of the small server's memory.
+pub(crate) static PHOTO_GATE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
+
+/// Opens a picture behind PHOTO_GATE. The permit moves into the blocking work and is let go only when that work
+/// ends, so a request that is cancelled mid-way can't free the slot while its picture is still being opened.
+pub(crate) async fn gated<T: Send + 'static>(work: impl FnOnce() -> T + Send + 'static) -> Result<T, (StatusCode, String)> {
+    let gate = PHOTO_GATE.acquire().await.map_err(ise)?;
+    tokio::task::spawn_blocking(move || {
+        let _gate = gate;
+        work()
+    })
+    .await
+    .map_err(ise)
+}
+
+/// Card photos added before their size was kept are measured once, so the photo-space limit counts them too.
+async fn measure_old_card_photos(app: &App) -> Result<(), (StatusCode, String)> {
+    let dir = PathBuf::from(&*app.uploads);
+    with_db(app, move |c| {
+        for (id, small, big) in members::unmeasured_card_photos(c, 500)? {
+            let size: i64 = [small, big]
+                .iter()
+                .filter_map(|u| u.strip_prefix("/uploads/"))
+                .filter(|f| !f.is_empty() && !f.contains('/') && !f.contains('\\') && !f.contains(".."))
+                .map(|f| std::fs::metadata(dir.join(f)).map_or(0, |m| m.len() as i64))
+                .sum();
+            // At least 1, so a photo whose files are gone isn't measured again and again.
+            members::set_card_photo_bytes(c, id, size.max(1))?;
+        }
+        Ok(())
+    })
+    .await
+}
 
 pub async fn save_profile(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> Res {
     let m = match acting(&app, &h).await? {
@@ -658,8 +854,10 @@ pub async fn save_profile(State(app): State<App>, h: HeaderMap, mut mp: Multipar
         Some(bytes) => {
             let dir = PathBuf::from(&*app.uploads);
             let stem = format!("t{}-{}", m.id, members::temp_password());
-            match tokio::task::spawn_blocking(move || store_avatar(bytes, dir, stem)).await.map_err(ise)? {
+            let made = gated(move || store_avatar(bytes, dir, stem)).await?;
+            match made {
                 Ok(p) => Some(p),
+                Err(e) if e == TOO_BIG => return Ok(fail(StatusCode::BAD_REQUEST, TOO_BIG_TEXT)),
                 Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "That picture couldn't be read. Try a JPEG or PNG.")),
             }
         }
@@ -721,9 +919,10 @@ pub async fn vouch_one(State(app): State<App>, Path(id): Path<i64>) -> Res {
 /// Who's looking. Pages are shared and saved, so the buttons that depend on the visitor are added in the browser.
 pub async fn who(State(app): State<App>, h: HeaderMap) -> Res {
     let m = current(&app, &h).await?;
+    let p = admin::power(&app, &h);
     Ok(ok(json!({
-        "admin": admin::can_moderate(&app, &h),
-        "full": admin::authed(&app, &h),
+        "admin": p != admin::Power::Nothing,
+        "full": matches!(p, admin::Power::Admin(_)),
         "member": m.map(|m| json!({ "id": m.id, "name": m.name, "locked": m.locked(), "lock_left": m.lock_left(), "avatar": m.avatar, "initial": m.initial(), "seller": m.seller, "role": m.role })),
     })))
 }
@@ -766,6 +965,7 @@ pub async fn upload_photo(State(app): State<App>, h: HeaderMap, mut mp: Multipar
         Err(r) => return Ok(r),
     };
     let id = m.id;
+    measure_old_card_photos(&app).await?;
     let (used, room, old) = with_db(&app, move |c| Ok((members::photos_last_hour(c, id)?, members::photo_bytes(c)?, members::sweep_waiting_photos(c)?))).await?;
     for f in &old {
         admin::remove_upload(&app.uploads, f);
@@ -783,13 +983,12 @@ pub async fn upload_photo(State(app): State<App>, h: HeaderMap, mut mp: Multipar
         }
     }
     let Some(bytes) = bytes.filter(|b| !b.is_empty()) else { return Ok(fail(StatusCode::BAD_REQUEST, "That photo didn't upload.")) };
-    let gate = PHOTO_GATE.acquire().await.map_err(ise)?;
     let dir = PathBuf::from(&*app.uploads);
     let stem = format!("v{id}-{}", members::temp_password());
-    let made = tokio::task::spawn_blocking(move || store_photo(bytes, dir, stem)).await.map_err(ise)?;
-    drop(gate);
+    let made = gated(move || store_photo(bytes, dir, stem)).await?;
     let (path, thumb, w, h2, size) = match made {
         Ok(x) => x,
+        Err(e) if e == TOO_BIG => return Ok(fail(StatusCode::BAD_REQUEST, TOO_BIG_TEXT)),
         Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "That photo couldn't be read. Try a JPEG or PNG.")),
     };
     let (p2, t2) = (path.clone(), thumb.clone());
@@ -836,7 +1035,7 @@ pub async fn vouch_act(State(app): State<App>, h: HeaderMap, Path(vid): Path<i64
         }
         "delete" => {
             if !owner {
-                let Some(m) = current(&app, &h).await? else { return Ok(fail(StatusCode::UNAUTHORIZED, "Please sign in again.")) };
+                let Some(m) = current(&app, &h).await? else { return Ok(fail(StatusCode::UNAUTHORIZED, "Please log in again.")) };
                 if with_db(&app, move |c| members::vouch_owner(c, vid)).await? != Some(m.id) {
                     return Ok(fail(StatusCode::FORBIDDEN, "That isn't yours to delete."));
                 }
@@ -855,7 +1054,7 @@ pub async fn vouch_act(State(app): State<App>, h: HeaderMap, Path(vid): Path<i64
 pub async fn admin_photo_delete(State(app): State<App>, h: HeaderMap, Path(pid): Path<i64>) -> Res {
     let power = admin::power(&app, &h);
     if power == admin::Power::Nothing || !same_site(&h) {
-        return Ok(fail(StatusCode::UNAUTHORIZED, "Your session expired. Sign in again."));
+        return Ok(fail(StatusCode::UNAUTHORIZED, "Your session expired. Please log in again."));
     }
     if let admin::Power::Moderator(me) = power {
         let author = with_db(&app, move |c| members::photo_author(c, pid)).await?;
@@ -880,7 +1079,7 @@ pub struct SearchQs {
 
 /// The same card catalogue the owner uses, so everyone picks from real card pictures.
 pub async fn search_cards(State(app): State<App>, h: HeaderMap, Query(q): Query<SearchQs>) -> Res {
-    let Some(m) = current(&app, &h).await? else { return Ok(fail(StatusCode::UNAUTHORIZED, "Please sign in again.")) };
+    let Some(m) = current(&app, &h).await? else { return Ok(fail(StatusCode::UNAUTHORIZED, "Please log in again.")) };
     if over_limit(&app, format!("search|{}", m.id), 120) {
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of searching. Please wait a few minutes."));
     }
@@ -938,10 +1137,13 @@ pub async fn add_card(State(app): State<App>, h: HeaderMap, Json(req): Json<AddR
             if let Some(k) = req.kind.filter(|k| k == "own" || k == "wish" || k == "sale") {
                 with_db(&app, move |c| marcuru_rs::sellers::set_kind(c, id, cid, &k)).await?.ok();
             }
-            let (market, key) = (market_php(&info), req.id.chars().take(60).collect::<String>());
+            // Only the new listing gets a value (its finish is still empty, so the card's default finish). Other sellers'
+            // listings of this card keep their own finish's price from the nightly job.
+            let market = market::member_finish_price(&info, "").unwrap_or(0.0);
+            let key = req.id.chars().take(60).collect::<String>();
             let value = with_db(&app, move |c| {
                 let value = if market > 0.0 { market } else { members::vault_price(c, &key)? };
-                members::set_card_value(c, &key, value, crate::unix_now())?;
+                members::set_listing_value(c, id, cid, value, crate::unix_now())?;
                 Ok(value)
             })
             .await
@@ -1114,7 +1316,8 @@ pub struct NotificationQuery {
 }
 
 pub async fn get_notifications(State(app): State<App>, h: HeaderMap, Query(q): Query<NotificationQuery>) -> Res {
-    let m = match acting(&app, &h).await? {
+    // A locked trainer still sees and clears their own bell.
+    let m = match acting_any(&app, &h).await? {
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
@@ -1131,7 +1334,7 @@ pub struct ReadNotificationReq {
 }
 
 pub async fn read_notifications(State(app): State<App>, h: HeaderMap, Json(req): Json<ReadNotificationReq>) -> Res {
-    let m = match acting(&app, &h).await? {
+    let m = match acting_any(&app, &h).await? {
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
@@ -1170,7 +1373,9 @@ pub async fn change_password(State(app): State<App>, h: HeaderMap, Json(req): Js
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
-    if over_limit(&app, format!("in|{}", members::name_key(&m.name)), 8) {
+    // Its own count, separate from logging in: only wrong current passwords add to it, and only this trainer can.
+    let k = format!("pw|{}", m.id);
+    if limit_hit(&app, &k, 8) {
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "Too many tries. Please wait 15 minutes."));
     }
     if let Err(e) = members::valid_password(&req.new) {
@@ -1179,16 +1384,26 @@ pub async fn change_password(State(app): State<App>, h: HeaderMap, Json(req): Js
     let id = m.id;
     let stored = with_db(&app, move |c| members::password_of(c, id)).await?.unwrap_or_default();
     let (cur, new) = (req.current, req.new);
-    let hash = tokio::task::spawn_blocking(move || members::verify_password(&cur, &stored).then(|| members::hash_password(&new))).await.map_err(ise)?;
-    let Some(hash) = hash else { return Ok(fail(StatusCode::UNAUTHORIZED, "Your current password isn't right.")) };
+    let Some(hash) = hashing(move || members::verify_password(&cur, &stored).then(|| members::hash_password(&new))).await? else {
+        return Ok(fail(StatusCode::SERVICE_UNAVAILABLE, BUSY));
+    };
+    let Some(hash) = hash else {
+        count_fail(&app, &k);
+        return Ok(fail(StatusCode::UNAUTHORIZED, "Your current password isn't right."));
+    };
     let hash = hash.map_err(ise)?;
-    let raw = with_db(&app, move |c| {
+    // The new sign-in lasts as long as the old one was meant to: "remember me" stays a year, "this visit only" stays that way.
+    let old = cookie_value(&h).unwrap_or_default();
+    let (raw, remembered) = with_db(&app, move |c| {
+        let remembered = members::session_remembered(c, &old)?.unwrap_or(false);
         members::set_password(c, id, &hash)?;
-        members::new_session(c, id)
+        let keep = if remembered { members::REMEMBER_SECS } else { members::SESSION_SECS };
+        Ok((members::new_session(c, id, keep)?, remembered))
     })
     .await?;
+    let age = if remembered { members::REMEMBER_SECS } else { 0 };
     let mut r = ok(json!({ "ok": true }));
-    r.headers_mut().insert(header::SET_COOKIE, HeaderValue::from_str(&session_cookie(&h, &raw, members::SESSION_SECS)).map_err(ise)?);
+    r.headers_mut().insert(header::SET_COOKIE, HeaderValue::from_str(&session_cookie(&h, &raw, age)).map_err(ise)?);
     Ok(r)
 }
 
@@ -1227,12 +1442,13 @@ pub async fn admin_page(State(app): State<App>, h: HeaderMap, Query(q): Query<Ad
         admin::Power::Moderator(me) => (false, Some(me)),
         admin::Power::Nothing => (false, None),
     };
-    // An admin signed in with name/secret carries the owner's cookie too: their own row is still "you".
+    // The owner's cookie and a trainer's session can sit side by side in one browser: their own row is still "you".
     let me = match me {
         Some(m) => Some(m),
         None => current(&app, &h).await?.map(|m| m.id),
     };
     let showing_vouches = q.view.as_deref() == Some("vouches");
+    measure_old_card_photos(&app).await?;
     let (nav, rows, feed, bytes) = with_db(&app, move |c| {
         let nav = chrome(c)?;
         let mut rows = vec![];
@@ -1276,14 +1492,14 @@ fn moderator_may(action: &str) -> bool {
 pub async fn admin_action(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Json(req): Json<AdminAction>) -> Res {
     let power = admin::power(&app, &h);
     if power == admin::Power::Nothing || !same_site(&h) {
-        return Ok(fail(StatusCode::UNAUTHORIZED, "Your session expired. Sign in again."));
+        return Ok(fail(StatusCode::UNAUTHORIZED, "Your session expired. Please log in again."));
     }
     let (full, me) = match power {
         admin::Power::Admin(me) => (true, me),
         admin::Power::Moderator(me) => (false, Some(me)),
         admin::Power::Nothing => (false, None),
     };
-    // The owner's cookie and a trainer's session can sit side by side (an admin signed in with name/secret): the trainer is who's acting.
+    // The owner's cookie and a trainer's session can sit side by side in one browser: the trainer is who's acting.
     let me = match me {
         Some(m) => Some(m),
         None => current(&app, &h).await?.map(|m| m.id),
@@ -1347,7 +1563,8 @@ pub async fn admin_action(State(app): State<App>, h: HeaderMap, Path(id): Path<i
         "password" => {
             let temp = members::temp_password();
             let t2 = temp.clone();
-            let hash = tokio::task::spawn_blocking(move || members::hash_password(&t2)).await.map_err(ise)?.map_err(ise)?;
+            let Some(hash) = hashing(move || members::hash_password(&t2)).await? else { return Ok(fail(StatusCode::SERVICE_UNAVAILABLE, BUSY)) };
+            let hash = hash.map_err(ise)?;
             with_db(&app, move |c| members::set_password(c, id, &hash)).await?;
             return Ok(ok(json!({ "ok": true, "password": temp })));
         }
@@ -1404,7 +1621,7 @@ pub async fn chat_page(State(app): State<App>, Query(q): Query<PartQs>) -> Res {
         return Ok(html(render(ChatPart)?));
     }
     let nav = with_db(&app, |c| chrome(c)).await?;
-    Ok(html(render(ChatPage { nav })?))
+    Ok(html(render(ChatPage { nav: titled(nav, "Vault chat") })?))
 }
 
 pub async fn ask_page(State(app): State<App>, Query(q): Query<PartQs>) -> Res {
@@ -1412,7 +1629,7 @@ pub async fn ask_page(State(app): State<App>, Query(q): Query<PartQs>) -> Res {
         return Ok(html(render(AskPart)?));
     }
     let nav = with_db(&app, |c| chrome(c)).await?;
-    Ok(html(render(AskPage { nav })?))
+    Ok(html(render(AskPage { nav: titled(nav, "Ask the Vault") })?))
 }
 
 fn chat_json(m: &ChatMessage) -> Value {
@@ -1511,6 +1728,9 @@ pub async fn chat_delete(State(app): State<App>, h: HeaderMap, Path(mid): Path<i
 }
 
 // ---------- trainers' own photos ----------
+/// How many of their own card photos a trainer can add before the vault owner approves their page.
+const UNAPPROVED_PHOTOS: i64 = 20;
+
 /// A card the catalogue doesn't have: the trainer's own photo, a name, and the rest if they like. It only shows on their page.
 pub async fn upload_card(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> Res {
     let m = match acting(&app, &h).await? {
@@ -1523,9 +1743,15 @@ pub async fn upload_card(State(app): State<App>, h: HeaderMap, mut mp: Multipart
     if over_limit(&app, format!("cardup|{}", m.id), 40) {
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of photos in a short time. Please take a short break and try again."));
     }
-    let room = with_db(&app, members::photo_bytes).await?;
+    measure_old_card_photos(&app).await?;
+    let id = m.id;
+    let (room, own) = with_db(&app, move |c| Ok((members::photo_bytes(c)?, members::own_photo_count(c, id)?))).await?;
     if room >= photo_cap_mb() * 1024 * 1024 {
         return Ok(fail(StatusCode::INSUFFICIENT_STORAGE, "The vault's photo space is full right now. Please try again later."));
+    }
+    // Until the vault owner approves a new trainer, they can add only a few of their own photos.
+    if !m.profile_ok && own >= UNAPPROVED_PHOTOS {
+        return Ok(fail(StatusCode::FORBIDDEN, "You can add more of your own photos once the vault owner approves your page."));
     }
     let (mut bytes, mut name, mut set, mut cond, mut value) = (None, String::new(), String::new(), String::new(), 0.0f64);
     while let Some(f) = mp.next_field().await.map_err(|_| (StatusCode::BAD_REQUEST, "That photo didn't upload.".to_string()))? {
@@ -1548,17 +1774,20 @@ pub async fn upload_card(State(app): State<App>, h: HeaderMap, mut mp: Multipart
     }
     let Some(bytes) = bytes.filter(|b| !b.is_empty()) else { return Ok(fail(StatusCode::BAD_REQUEST, "Add a photo of the card.")) };
     let cond = if members::CONDITIONS.contains(&cond.as_str()) { cond } else { "Near Mint".to_string() };
-    let gate = PHOTO_GATE.acquire().await.map_err(ise)?;
     let dir = PathBuf::from(&*app.uploads);
     let stem = format!("m{}-{}", m.id, members::temp_password());
-    let made = tokio::task::spawn_blocking(move || store_photo(bytes, dir, stem)).await.map_err(ise)?;
-    drop(gate);
-    let Ok((path, thumb, _, _, _)) = made else { return Ok(fail(StatusCode::BAD_REQUEST, "That photo couldn't be read. Try a JPEG or PNG.")) };
-    let (id, key) = (m.id, format!("own:{}", members::temp_password()));
+    let made = gated(move || store_photo(bytes, dir, stem)).await?;
+    let (path, thumb, size) = match made {
+        Ok((path, thumb, _, _, size)) => (path, thumb, size),
+        Err(e) if e == TOO_BIG => return Ok(fail(StatusCode::BAD_REQUEST, TOO_BIG_TEXT)),
+        Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "That photo couldn't be read. Try a JPEG or PNG.")),
+    };
+    let key = format!("own:{}", members::temp_password());
     let (n2, s2, t2, p2, c2) = (name.clone(), set.clone(), thumb.clone(), path.clone(), cond.clone());
     let added = with_db(&app, move |c| {
         let a = members::add_card(c, id, &key, &n2, "", &s2, &t2, &p2)?;
         if let Added::Yes(cid) = a {
+            members::set_card_photo_bytes(c, cid, size.max(1))?;
             members::set_condition(c, id, cid, &c2)?;
             if value > 0.0 {
                 members::set_own_value(c, id, cid, value.round())?;
@@ -1583,7 +1812,7 @@ pub async fn upload_card(State(app): State<App>, h: HeaderMap, mut mp: Multipart
 pub async fn staff_remove_card(State(app): State<App>, h: HeaderMap, Path(cid): Path<i64>) -> Res {
     let power = admin::power(&app, &h);
     if power == admin::Power::Nothing || !same_site(&h) {
-        return Ok(fail(StatusCode::UNAUTHORIZED, "Your session expired. Sign in again."));
+        return Ok(fail(StatusCode::UNAUTHORIZED, "Your session expired. Please log in again."));
     }
     let Some((owner, role, k)) = with_db(&app, move |c| members::card_owner(c, cid)).await? else { return Ok(ok(json!({ "ok": true }))) };
     if matches!(power, admin::Power::Moderator(_)) && !role.is_empty() {
@@ -1596,4 +1825,70 @@ pub async fn staff_remove_card(State(app): State<App>, h: HeaderMap, Path(cid): 
     }
     app.forget();
     Ok(ok(json!({ "ok": true })))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn headers(pairs: &[(&'static str, &'static str)]) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        for (k, v) in pairs {
+            h.insert(*k, HeaderValue::from_static(v));
+        }
+        h
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_cancelled_upload_keeps_the_photo_gate_until_its_picture_is_done() {
+        let (go, wait) = std::sync::mpsc::channel::<()>();
+        let job = tokio::spawn(gated(move || {
+            let _ = wait.recv();
+        }));
+        let busy = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while PHOTO_GATE.available_permits() > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        });
+        busy.await.expect("the picture work took the gate");
+        // The request goes away (the visitor closed the page): the picture is still being opened, so the gate stays shut.
+        job.abort();
+        let _ = job.await;
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        assert_eq!(PHOTO_GATE.available_permits(), 0);
+        // Once the work ends, the gate opens again.
+        go.send(()).unwrap();
+        let open = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            while PHOTO_GATE.available_permits() == 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+            }
+        });
+        open.await.expect("the gate opens when the work is done");
+    }
+
+    #[test]
+    fn the_visitor_address_cant_be_faked() {
+        // Straight to Fly (the fly.dev address): a made-up Cloudflare header is ignored.
+        assert_eq!(client_ip(&headers(&[("fly-client-ip", "203.0.113.9"), ("cf-connecting-ip", "1.2.3.4")])), "203.0.113.9");
+        // Through Cloudflare: Fly sees a Cloudflare machine, and Cloudflare names the visitor.
+        assert_eq!(client_ip(&headers(&[("fly-client-ip", "172.70.1.2"), ("cf-connecting-ip", "198.51.100.7")])), "198.51.100.7");
+        assert_eq!(client_ip(&headers(&[("fly-client-ip", "2606:4700:10::1"), ("cf-connecting-ip", "198.51.100.7")])), "198.51.100.7");
+        assert_eq!(client_ip(&headers(&[("fly-client-ip", "172.70.1.2")])), "172.70.1.2");
+        assert_eq!(client_ip(&headers(&[("cf-connecting-ip", "1.2.3.4")])), "local");
+        assert!(from_cloudflare("104.16.0.1"));
+        assert!(!from_cloudflare("104.32.0.1"));
+        assert!(!from_cloudflare("not an address"));
+    }
+
+    #[test]
+    fn only_paths_on_this_site_are_followed_after_logging_in() {
+        assert_eq!(safe_next("/?cart=1"), Some("/?cart=1"));
+        assert_eq!(safe_next("/store/ash?cart=1"), Some("/store/ash?cart=1"));
+        assert_eq!(safe_next("//evil.example"), None);
+        assert_eq!(safe_next("/\\evil.example"), None);
+        assert_eq!(safe_next("https://evil.example"), None);
+        assert_eq!(safe_next(""), None);
+        assert_eq!(safe_next("/a\nb"), None);
+        assert_eq!(encode_next("/?cart=1"), "/%3Fcart%3D1");
+    }
 }

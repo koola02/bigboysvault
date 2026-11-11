@@ -50,7 +50,9 @@
     if (r.ok) { off.hidden = true; history.back(); setTimeout(() => location.reload(), 350); }
     else alert((await r.json().catch(() => ({}))).error || 'That didn\u2019t work.');
   });
-  fetch('/me/who', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then((r) => r.json()).then((j) => {
+  // Who's here is asked once per page and shared (see vault-core.js).
+  const bbvWho = () => (window.bbvWho ? window.bbvWho() : (window.bbvWhoAnswer ||= fetch('/me/who', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))));
+  bbvWho().then((j) => {
     if (!j.admin && !j.full) return;
     who = j;
     paint();

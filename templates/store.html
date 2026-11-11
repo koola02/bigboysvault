@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% block title %}{{ m.store_title() }} · {{ nav.brand }}{% endblock %}
 {% block content %}
 <section class="wrap storefront" id="storefront" data-slug="{{ m.slug }}" data-seller="{{ m.id }}"{% if let Some(u) = me %} data-me="{{ u.id }}"{% endif %}{% if is_me %} data-mine{% endif %}>
   <header class="sf-head{% if m.has_cover() %} has-cover{% endif %}">
@@ -68,7 +67,7 @@
       </div>
       {% if !is_me %}
       <div class="sf-buy">
-        {% if c.status == "Active" && !m.on_vacation() %}{% if c.has_price() %}<button type="button" class="btn cart-add" data-cart-card="{{ c.id }}" data-title="{{ c.title }}" data-price="{{ c.worth() }}" data-image="{{ c.image }}" data-url="/trainers/{{ m.id }}/cards/{{ c.id }}" data-seller="{{ m.store_title() }}" data-seller-slug="{{ m.slug }}"><span class="cart-add-t">Add to cart</span><span class="cart-add-in">In cart ✓</span></button>{% endif %}<button type="button" class="btn ghost" data-offer>Offer</button>{% else if c.status == "Reserved" %}<span class="sf-held">Reserved for someone</span>{% else if c.status == "Out of stock" %}<span class="sf-held">Out of stock</span>{% endif %}
+        {% if c.is_sale() && c.status == "Active" && !m.on_vacation() %}{% if c.has_price() %}<button type="button" class="btn cart-add" data-cart-card="{{ c.id }}" data-title="{{ c.title }}" data-price="{{ c.worth() }}" data-image="{{ c.image }}" data-url="/trainers/{{ m.id }}/cards/{{ c.id }}" data-seller="{{ m.store_title() }}" data-seller-slug="{{ m.slug }}"><span class="cart-add-t">Add to cart</span><span class="cart-add-in">In cart ✓</span></button>{% endif %}<button type="button" class="btn ghost" data-offer>Offer</button>{% else if c.status == "Reserved" %}<span class="sf-held">Reserved for someone</span>{% else if c.status == "Out of stock" %}<span class="sf-held">Out of stock</span>{% endif %}
         <button type="button" class="sf-save" data-save aria-pressed="{% if *is_saved %}true{% else %}false{% endif %}" aria-label="Save {{ c.title }}">♥</button>
       </div>{% endif %}
     </li>
@@ -94,28 +93,32 @@
 <div class="sheet" id="buySheet" hidden>
   <div class="sheet-bg" data-close></div>
   <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="buyTitle">
-    <h2 class="sheet-h" id="buyTitle">Reserve</h2>
+    <header class="sheet-h"><span></span><h2 id="buyTitle">Make an offer</h2><span></span></header>
+    <div class="sheet-body">
     <form class="sheet-form" id="buyForm">
       <p class="sf-buy-card"><img id="buyImg" alt="" width="60" height="84"><span><b id="buyName"></b><small id="buyMeta"></small></span></p>
       <label class="sf-field" id="buyAmountRow" hidden><span>Your offer, per card ₱</span><input type="number" name="amount" min="1" step="1" inputmode="numeric" class="sheet-input"></label>
       <label class="sf-field"><span>How many</span><input type="number" name="qty" min="1" max="99" value="1" inputmode="numeric" class="sheet-input"></label>
       <label class="sf-field"><span>A note for the seller <small>(optional)</small></span><textarea name="message" rows="2" maxlength="300" class="sheet-input" placeholder="When can we meet? Can you ship?"></textarea></label>
       <p class="hint show" id="buyHint">The seller gets your reservation and accepts it. Then you'll see how to pay them. {{ nav.brand }} never handles the money.</p>
-      <div class="sheet-acts"><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn" id="buyGo">Reserve</button></div>
+      <div class="sheet-acts"><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn" id="buyGo">Send offer</button></div>
     </form>
+    </div>
   </div>
 </div>
 <div class="sheet" id="askSheet" hidden>
   <div class="sheet-bg" data-close></div>
   <div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="askTitle">
-    <h2 class="sheet-h" id="askTitle">Ask {{ m.store_title() }}</h2>
+    <header class="sheet-h"><span></span><h2 id="askTitle">Ask {{ m.store_title() }}</h2><span></span></header>
+    <div class="sheet-body">
     <form class="sheet-form" id="askForm">
       <label class="sf-field"><span>Your question</span><textarea name="message" rows="3" maxlength="500" class="sheet-input" required placeholder="Is this still available? Do you ship to Cebu?"></textarea></label>
       <p class="hint show">The reply shows in <a href="/me/orders?tab=buying">My orders</a> and the bell at the top.</p>
       <div class="sheet-acts"><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn">Send</button></div>
     </form>
+    </div>
   </div>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-<script src="/static/storefront.js?v=1" defer></script>
+<script src="/static/storefront.js?v=3" defer></script>
 {% endblock %}

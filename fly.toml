@@ -5,6 +5,8 @@
 
 app = 'bigboysvault'
 primary_region = 'sin'
+# A little swap, so a burst of photo uploads slows the 256 MB machine down instead of killing it.
+swap_size_mb = 512
 
 [build]
 [env]

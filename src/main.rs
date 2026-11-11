@@ -199,8 +199,10 @@ fn copyright_years() -> String {
 }
 
 type Res = Result<Response, (StatusCode, String)>;
+/// Something broke on the server. The real reason goes to the log; the visitor gets plain words, never technical text.
 pub(crate) fn ise<E: std::fmt::Display>(e: E) -> (StatusCode, String) {
-    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+    tracing::error!("{e}");
+    (StatusCode::INTERNAL_SERVER_ERROR, "Something went wrong on our side. Please try again in a moment.".into())
 }
 
 /// Run blocking SQLite work off the async reactor, on a fresh connection.
@@ -481,7 +483,13 @@ fn view(c: &rusqlite::Connection, b: &Block, nav: &Chrome, binders: &[Collection
             v.body = st(d, "body");
         }
         "stats" => {
-            v.insights = marcuru_rs::insights::read(&vault_search::parse(&db::catalogue(c)?).1);
+            // Only what the vault still holds: sold copies stay in the table as a record but aren't counted.
+            let cards = admin::vault_cards(c)?;
+            let mut i = marcuru_rs::insights::read(&cards);
+            if let Some(x) = i.as_mut() {
+                x.newest = admin::newest_arrival(c)?.as_ref().map(marcuru_rs::insights::spot_of);
+            }
+            v.insights = i;
             // Which boxes show, in what order, with what words: all owner-editable.
             const ALL: [(&str, &str); 4] = [("cards", "Cards"), ("graded", "Graded"), ("binders", "Binders"), ("value", "Collection value")];
             let order: Vec<String> = d["items"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_else(|| ALL.iter().map(|x| x.0.to_string()).collect());
@@ -547,8 +555,15 @@ struct Params {
     q: Option<String>,
     sort: Option<String>,
     stock: Option<String>,
-    page: Option<usize>,
+    /// Text, so a bad page number (?page=abc) opens the first page instead of an error.
+    page: Option<String>,
     part: Option<String>,
+}
+
+impl Params {
+    fn page_no(&self) -> usize {
+        self.page.as_deref().and_then(|s| s.trim().parse().ok()).unwrap_or(0)
+    }
 }
 
 fn is_htmx(h: &HeaderMap) -> bool {
@@ -560,8 +575,9 @@ async fn home(State(app): State<App>) -> Res {
     cached(&app, "home".into(), || async move {
         let t = with_db(&a, |c| {
             let nav = chrome(c)?;
-            let total = db::total(c)?;
-            let value = db::peso(db::total_value(c)?);
+            // What the vault still holds (copies for sale and their value), not the sold copies kept as a record.
+            let (total, value, _) = admin::in_vault(c)?;
+            let value = db::peso(value);
             let graded = nav.links.iter().find(|x| x.handle == "graded-cards").map(|x| x.count).unwrap_or(0);
             // The owner picks which binders appear on the home page, and their order, in Admin › Binders.
             let binders = nav.links.iter().filter(|x| x.on_home).cloned().collect::<Vec<_>>();
@@ -603,7 +619,7 @@ async fn browse(app: App, headers: HeaderMap, collection: Option<String>, p: Par
         q: p.q.clone().unwrap_or_default().trim().chars().take(80).collect(),
         sort: p.sort.clone().unwrap_or_default(),
         in_stock: p.stock.as_deref() == Some("1"),
-        page: p.page.unwrap_or(0).min(500),
+        page: p.page_no().min(500),
     };
     let htmx = is_htmx(&headers);
     // A binder opened in the floating window.
@@ -658,8 +674,10 @@ async fn browse(app: App, headers: HeaderMap, collection: Option<String>, p: Par
                 let list: Vec<serde_json::Value> = items.iter().take(24).enumerate().map(|(i, p)| serde_json::json!({ "@type": "ListItem", "position": i + 1, "url": format!("{site}/products/{}", p.handle), "name": p.title })).collect();
                 let low = items.iter().filter(|p| p.price > 0.0).map(|p| p.price).fold(f64::INFINITY, f64::min);
                 let range = if low.is_finite() { format!(" from {}", db::peso(low)) } else { String::new() };
+                // A binder's title says it holds cards, so a binder called "Trainers" isn't confused with the Trainers page.
+                let page_title = if q.collection.is_some() { format!("{title} · Pokémon cards · {}", nav.brand) } else { format!("{title} · {}", nav.brand) };
                 nav.seo = Seo {
-                    title: format!("{title} · {}", nav.brand),
+                    title: page_title,
                     desc: clip(&format!("{} Pokémon cards in {title} at {}{range}: real photos, condition and prices in pesos. Tap any card to see it up close.", db::thousands(total), nav.brand), 165),
                     image: items.iter().find(|p| p.has_image()).map(|p| p.img(900)).unwrap_or_default(),
                     kind: "website",
@@ -689,7 +707,11 @@ pub(crate) fn unix_now() -> i64 {
 /// Pages the browser fetches ahead of time ("Sec-Purpose: prefetch") aren't real searches.
 fn log_search(app: &App, headers: &HeaderMap, p: &Params) {
     let term = p.q.clone().unwrap_or_default();
-    if term.trim().len() < 2 || p.page.unwrap_or(0) > 0 || headers.contains_key("sec-purpose") {
+    if term.trim().len() < 2 || p.page_no() > 0 || headers.contains_key("sec-purpose") {
+        return;
+    }
+    // The same allowance as /api/searched, so nobody can fill the log by loading search pages.
+    if crate::community::over_limit(app, format!("slog|{}", crate::community::client_ip(headers)), 60) {
         return;
     }
     let path = app.db_path.clone();
@@ -754,7 +776,12 @@ async fn oops(body: String) -> StatusCode {
 }
 
 /// A card page was opened: counts toward how likely that card is to be wanted next.
-async fn hit(State(app): State<App>, Path(id): Path<i64>) -> StatusCode {
+/// Each visitor counts once per card every 15 minutes, and only so many cards in all, so nobody can push a card up.
+async fn hit(State(app): State<App>, headers: HeaderMap, Path(id): Path<i64>) -> StatusCode {
+    let ip = crate::community::client_ip(&headers);
+    if crate::community::over_limit(&app, format!("hit|{ip}|{id}"), 1) || crate::community::over_limit(&app, format!("hits|{ip}"), 300) {
+        return StatusCode::NO_CONTENT;
+    }
     let _ = with_db(&app, move |c| c.execute("UPDATE products SET hits=hits+1 WHERE id=?1", [id]).map(|_| ())).await;
     StatusCode::NO_CONTENT
 }
@@ -805,13 +832,14 @@ fn product_seo(nav: &Chrome, p: &Product, canonical: &str, total: i64) -> Seo {
         what.push_str(&format!(" from {set}"));
     }
     let mut bits: Vec<String> = vec![];
+    // The condition's words already name the finish; a grade doesn't, so a graded card adds it.
     if let Some(g) = p.grade() {
         bits.push(g);
+        if !p.finish_shown().is_empty() {
+            bits.push(p.finish_shown());
+        }
     } else if !cond.is_empty() {
         bits.push(cond.clone());
-    }
-    if !p.finish_shown().is_empty() {
-        bits.push(p.finish_shown());
     }
     if p.price > 0.0 {
         bits.push(p.price_text());
@@ -876,6 +904,8 @@ async fn sitemap(State(app): State<App>) -> Res {
         (*hit).clone()
     } else {
         let site = site();
+        // A change saved while this is being worked out means it may be out of date: then it isn't kept.
+        let since = app.change_count();
         let (links, cards, trainers) = with_db(&app, |c| Ok((db::collections(c)?, db::sitemap_cards(c)?, members::approved(c)?))).await?;
         let mut x = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\" xmlns:image=\"http://www.google.com/schemas/sitemap-image/1.1\">\n");
         let newest = cards.iter().map(|c| c.2.clone()).max().unwrap_or_default();
@@ -904,7 +934,7 @@ async fn sitemap(State(app): State<App>) -> Res {
             x.push_str(&format!("<url><loc>{site}/store/{}</loc></url>\n", xml_escape(&t.slug)));
         }
         x.push_str("</urlset>\n");
-        app.cache.insert(key, Arc::new(x.clone()));
+        app.keep(key, Arc::new(x.clone()), since);
         x
     };
     Ok(([(header::CONTENT_TYPE, "application/xml; charset=utf-8"), (header::CACHE_CONTROL, "public, max-age=1800")], xml).into_response())
@@ -938,8 +968,8 @@ async fn home_editor(State(app): State<App>, h: HeaderMap) -> Res {
     }
     let t = with_db(&app, |c| {
         let nav = chrome(c)?;
-        let total = db::total(c)?;
-        let value = db::peso(db::total_value(c)?);
+        let (total, value, _) = admin::in_vault(c)?;
+        let value = db::peso(value);
         let graded = nav.links.iter().find(|x| x.handle == "graded-cards").map(|x| x.count).unwrap_or(0);
         let binders = nav.links.iter().filter(|x| x.on_home).cloned().collect::<Vec<_>>();
         let mut views = vec![];
@@ -959,16 +989,181 @@ async fn home_editor(State(app): State<App>, h: HeaderMap) -> Res {
 /// Any address that isn't a page: the site's own "not found" page (with the menu and a way back), not a blank browser error.
 pub(crate) async fn not_found(State(app): State<App>) -> Response {
     let html = match with_db(&app, |c| chrome(c)).await {
-        Ok(nav) => NotFound { nav }.render().unwrap_or_default(),
-        Err(_) => String::new(),
+        Ok(nav) => NotFound { nav }.render().unwrap_or_else(|_| PLAIN_NOT_FOUND.to_string()),
+        Err(_) => PLAIN_NOT_FOUND.to_string(),
     };
     (StatusCode::NOT_FOUND, Html(html)).into_response()
+}
+
+/// The "not found" page when even the database can't answer: still words and a way home, never a blank page.
+const PLAIN_NOT_FOUND: &str = "<!doctype html><meta charset=\"utf-8\"><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"><title>Not found</title><body style=\"background:#03040a;color:#f3efe4;font-family:sans-serif;padding:24px\"><p>That page isn't here. <a href=\"/\" style=\"color:#efc873\">Back to the vault</a></p></body>";
+
+/// An address that only takes a form being sent, opened like a page (say, by reloading it): the site's own page, not a blank one.
+async fn wrong_method(State(app): State<App>) -> Response {
+    let mut r = not_found(State(app)).await;
+    *r.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
+    r
+}
+
+/// The address without "www" is the same site: send visitors to the one true address, so sign-ins and carts aren't split in two.
+/// Only that exact name is moved; the Fly address and localhost are left alone.
+async fn www_redirect(req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let host = req.uri().host().map(str::to_string).or_else(|| req.headers().get(header::HOST).and_then(|v| v.to_str().ok()).map(str::to_string)).unwrap_or_default();
+    if let Some(to) = www_target(&host, req.uri().path_and_query().map(|p| p.as_str()).unwrap_or("/")) {
+        return (StatusCode::MOVED_PERMANENTLY, [(header::LOCATION, to), (header::CACHE_CONTROL, "public, max-age=86400".to_string())]).into_response();
+    }
+    next.run(req).await
+}
+
+/// Where a request to the bare domain goes, keeping the path and the query. None for every other host.
+fn www_target(host: &str, path_and_query: &str) -> Option<String> {
+    let name = host.rsplit_once(':').filter(|(_, port)| port.chars().all(|c| c.is_ascii_digit())).map(|(h, _)| h).unwrap_or(host);
+    if !name.eq_ignore_ascii_case("bigboysvault.com") {
+        return None;
+    }
+    let pq = if path_and_query.starts_with('/') { path_and_query } else { "/" };
+    Some(format!("https://www.bigboysvault.com{pq}"))
+}
+
+/// `/favicon.ico`: browsers and link previews ask for it even though the pages name a PNG icon.
+async fn favicon() -> impl IntoResponse {
+    ([(header::CONTENT_TYPE, "image/png"), (header::CACHE_CONTROL, "public, max-age=604800")], &include_bytes!("../static/img/favicon-32.png")[..])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_restore_copy_replaces_the_database_only_when_it_checks_out() {
+        let dir = std::env::temp_dir().join(format!("bbv-restore-{}-{}", std::process::id(), unix_now()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("data.db");
+        let db_s = db.to_str().unwrap().to_string();
+        let make = |p: &std::path::Path, v: i64| {
+            let c = rusqlite::Connection::open(p).unwrap();
+            c.execute_batch("CREATE TABLE t(v INTEGER); CREATE TABLE products(id INTEGER); CREATE TABLE members(id INTEGER);").unwrap();
+            c.execute("INSERT INTO t VALUES(?1)", [v]).unwrap();
+        };
+        let read = |p: &std::path::Path| -> i64 { rusqlite::Connection::open(p).unwrap().query_row("SELECT v FROM t", [], |r| r.get(0)).unwrap() };
+        make(&db, 1);
+        // A broken copy is set aside and the database stays as it was.
+        std::fs::write(dir.join("restore.db"), b"not a database at all, just some bytes that are long enough").unwrap();
+        restore_if_present(&db_s);
+        assert_eq!(read(&db), 1);
+        assert!(!dir.join("restore.db").exists());
+        let names = || std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect::<Vec<_>>();
+        assert!(names().iter().any(|n| n.starts_with("restore.db.bad-")));
+        let bad = || names().iter().filter(|n| n.starts_with("restore.db.bad-")).count();
+        // An empty file (an upload that stopped at once) is set aside too: SQLite would open it as an empty database.
+        for n in names().into_iter().filter(|n| n.starts_with("restore.db.bad-")) {
+            std::fs::remove_file(dir.join(n)).unwrap();
+        }
+        std::fs::write(dir.join("restore.db"), b"").unwrap();
+        restore_if_present(&db_s);
+        assert_eq!(read(&db), 1);
+        assert!(!dir.join("restore.db").exists());
+        assert_eq!(bad(), 1);
+        // So is a sound SQLite file that isn't this site's database (a test copy, say).
+        std::thread::sleep(std::time::Duration::from_millis(1100)); // a new stamp for the new .bad- name
+        {
+            let c = rusqlite::Connection::open(dir.join("restore.db")).unwrap();
+            c.execute_batch("CREATE TABLE t(v INTEGER); INSERT INTO t VALUES(7);").unwrap();
+        }
+        restore_if_present(&db_s);
+        assert_eq!(read(&db), 1);
+        assert!(!dir.join("restore.db").exists());
+        assert_eq!(bad(), 2);
+        // A good copy becomes the database, and the old one is kept beside it.
+        make(&dir.join("restore.db"), 2);
+        restore_if_present(&db_s);
+        assert_eq!(read(&db), 2);
+        assert!(!dir.join("restore.db").exists());
+        assert!(names().iter().any(|n| n.starts_with("data.db.before-restore-")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn only_the_bare_domain_moves_to_www() {
+        assert_eq!(www_target("bigboysvault.com", "/all?q=pika"), Some("https://www.bigboysvault.com/all?q=pika".into()));
+        assert_eq!(www_target("BigBoysVault.com:443", "/"), Some("https://www.bigboysvault.com/".into()));
+        assert_eq!(www_target("www.bigboysvault.com", "/all"), None);
+        assert_eq!(www_target("bigboysvault.fly.dev", "/all"), None);
+        assert_eq!(www_target("localhost:3000", "/"), None);
+        assert_eq!(www_target("", "/"), None);
+    }
+
+    #[test]
+    fn a_bad_page_number_opens_the_first_page() {
+        let p = |s: Option<&str>| Params { page: s.map(str::to_string), ..Default::default() }.page_no();
+        assert_eq!(p(Some("3")), 3);
+        assert_eq!(p(Some("abc")), 0);
+        assert_eq!(p(Some("-1")), 0);
+        assert_eq!(p(None), 0);
+    }
+}
+
+/// Whether `restore.db` really is a copy of this site's database: not empty (SQLite opens an empty or half-uploaded
+/// file as a valid empty database), not the live file itself, intact, and holding the site's cards and trainers tables.
+fn restore_copy_ok(restore: &std::path::Path, live: &std::path::Path) -> bool {
+    if std::fs::metadata(restore).map(|m| m.len()).unwrap_or(0) == 0 {
+        return false;
+    }
+    if let (Ok(a), Ok(b)) = (std::fs::canonicalize(restore), std::fs::canonicalize(live)) {
+        if a == b {
+            return false;
+        }
+    }
+    let Ok(c) = rusqlite::Connection::open_with_flags(restore, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY) else { return false };
+    let intact = c.query_row("PRAGMA integrity_check", [], |r| r.get::<_, String>(0)).is_ok_and(|s| s == "ok");
+    intact && c.query_row("SELECT (SELECT COUNT(*) FROM products) + (SELECT COUNT(*) FROM members)", [], |r| r.get::<_, i64>(0)).is_ok()
+}
+
+/// A database copy put at `<folder>/restore.db` (docs/OPERATIONS.md › Restore) becomes the live one at start,
+/// before anything opens it. A copy that fails its check is set aside and the current database is kept.
+fn restore_if_present(db_path: &str) {
+    use std::path::Path;
+    let db = Path::new(db_path);
+    let dir = db.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let restore = dir.join("restore.db");
+    if !restore.is_file() {
+        return;
+    }
+    let stamp = unix_now();
+    let ok = restore_copy_ok(&restore, db);
+    // the connection is closed by now, before any rename
+    let _ = std::fs::remove_file(dir.join("restore.db-wal"));
+    let _ = std::fs::remove_file(dir.join("restore.db-shm"));
+    if !ok {
+        let bad = dir.join(format!("restore.db.bad-{stamp}"));
+        let _ = std::fs::rename(&restore, &bad);
+        tracing::error!("restore.db failed its check: kept the current database, moved the copy to {}", bad.display());
+        return;
+    }
+    let name = db.file_name().and_then(|n| n.to_str()).unwrap_or("data.db").to_string();
+    for suffix in ["", "-wal", "-shm"] {
+        let from = dir.join(format!("{name}{suffix}"));
+        if from.exists() {
+            let _ = std::fs::rename(&from, dir.join(format!("{name}.before-restore-{stamp}{suffix}")));
+        }
+    }
+    match std::fs::rename(&restore, db) {
+        Ok(()) => tracing::warn!("database restored from restore.db; the old one is {name}.before-restore-{stamp}"),
+        Err(e) => {
+            tracing::error!("could not move restore.db into place: {e}; putting the old database back");
+            let _ = std::fs::rename(dir.join(format!("{name}.before-restore-{stamp}")), db);
+            for suffix in ["-wal", "-shm"] {
+                let _ = std::fs::rename(dir.join(format!("{name}.before-restore-{stamp}{suffix}")), dir.join(format!("{name}{suffix}")));
+            }
+        }
+    }
 }
 
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
     let db_path = std::env::var("DATABASE").unwrap_or_else(|_| "data.db".into());
+    restore_if_present(&db_path);
     let port: u16 = std::env::var("PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(3000);
     let host = std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".into());
     let uploads = std::env::var("UPLOADS").unwrap_or_else(|_| "uploads".into());
@@ -981,9 +1176,13 @@ async fn main() {
         blocks::ensure_blocks(&c).expect("blocks");
         blocks::refresh_hero_art(&c).expect("hero art");
         blocks::community_once(&c).expect("community");
+        // Old prices that didn't say where they came from are sorted once in db::migrate (price_src_v).
     }
     if admin_token.is_empty() {
         println!("Admin is OPEN (no password). Set ADMIN_TOKEN before putting this online.");
+    } else if admin_token.chars().count() < 24 {
+        eprintln!("WARNING: ADMIN_TOKEN is only {} characters long. Anyone who guesses it owns the site: set a long random one (openssl rand -hex 24).", admin_token.chars().count());
+        tracing::warn!("ADMIN_TOKEN is shorter than 24 characters");
     }
 
     let app = App {
@@ -999,7 +1198,12 @@ async fn main() {
         fx: Arc::new(tokio::sync::Mutex::new(None)),
         // Market lookups are remembered for an hour: instant repeats, and polite to the free price service.
         prices: Cache::builder().max_capacity(500).time_to_live(Duration::from_secs(3600)).build(),
-        catalog: Cache::builder().max_capacity(3000).time_to_live(Duration::from_secs(24 * 3600)).build(),
+        // Kept by size (16 MB at most), not by count: each search keeps only its first cards (ops::CATALOG_SHOWN).
+        catalog: Cache::builder()
+            .weigher(|k: &String, v: &Arc<Value>| (k.len() + serde_json::to_vec(&**v).map(|b| b.len()).unwrap_or(0)).try_into().unwrap_or(u32::MAX))
+            .max_capacity(16 * 1024 * 1024)
+            .time_to_live(Duration::from_secs(24 * 3600))
+            .build(),
         // The suggestion model is rebuilt at most once a minute, so new cards and searches are learned quickly.
         sindex: Cache::builder().max_capacity(1).time_to_live(Duration::from_secs(60)).build(),
         limits: Cache::builder().max_capacity(20_000).time_to_live(Duration::from_secs(900)).build(),
@@ -1015,6 +1219,19 @@ async fn main() {
             loop {
                 community::refresh_values(&app).await;
                 tokio::time::sleep(Duration::from_secs(6 * 3600)).await;
+            }
+        });
+    }
+
+    // Every hour: has the VM's backup or picture job gone quiet for too long? Then the admins are told (see ops.rs).
+    {
+        let app = app.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_secs(300)).await;
+            loop {
+                let now = unix_now();
+                let _ = with_db(&app, move |c| ops::ops_watchdog(c, now)).await;
+                tokio::time::sleep(Duration::from_secs(3600)).await;
             }
         });
     }
@@ -1055,7 +1272,9 @@ async fn main() {
         .route("/products/{handle}", get(product))
         .route("/manifest.webmanifest", get(manifest))
         .route("/robots.txt", get(robots))
+        .route("/favicon.ico", get(favicon))
         .route("/healthz", get(ops::healthz))
+        .route("/admin/ops/report", post(ops::ops_report))
         .route("/admin/backup/db", get(ops::backup_db))
         .route("/admin/backup/uploads", get(ops::backup_uploads))
         .route("/admin/prices/refresh", post(ops::refresh_prices))
@@ -1076,8 +1295,9 @@ async fn main() {
         // trainers
         .route("/join", get(community::join_page).post(community::join))
         .route("/login", get(community::login_page))
-        .route("/signin", post(community::signin))
-        .route("/signout", post(community::signout))
+        // Opening these addresses like a page (a reload after a wrong password) goes somewhere useful.
+        .route("/signin", get(|| async { Redirect::to("/login") }).post(community::signin))
+        .route("/signout", get(|| async { Redirect::to("/") }).post(community::signout))
         .route("/trainers", get(community::trainers))
         .route("/trainers/{id}", get(community::trainer))
         .route("/trainer/{slug}", get(community::trainer_by_slug))
@@ -1151,8 +1371,8 @@ async fn main() {
         .route("/admin", get(admin::cards))
         .route("/admin/new", get(admin::new_card))
         .route("/admin/edit/{id}", get(admin::edit))
-        .route("/admin/login", post(admin::login))
-        .route("/admin/logout", post(admin::logout))
+        .route("/admin/login", get(|| async { Redirect::to("/admin") }).post(admin::login))
+        .route("/admin/logout", get(|| async { Redirect::to("/admin") }).post(admin::logout))
         .route("/admin/check", get(admin::check))
         .route("/admin/save", post(admin::save).layer(big()))
         .route("/admin/delete/{id}", post(admin::delete))
@@ -1199,12 +1419,16 @@ async fn main() {
         // App code with a version (?v=N) keeps for a year; without one it revalidates on every load (cheap 304).
         .nest("/static", Router::new().fallback_service(ServeDir::new("static")).layer(axum::middleware::from_fn(ops::static_cache)))
         .fallback(not_found)
+        .method_not_allowed_fallback(wrong_method)
         .layer(immutable)
         .layer(SetResponseHeaderLayer::if_not_present(header::X_CONTENT_TYPE_OPTIONS, HeaderValue::from_static("nosniff")))
         .layer(SetResponseHeaderLayer::if_not_present(header::REFERRER_POLICY, HeaderValue::from_static("same-origin")))
         .layer(SetResponseHeaderLayer::if_not_present(header::X_FRAME_OPTIONS, HeaderValue::from_static("SAMEORIGIN")))
+        // Browsers that have seen the site once only ever ask for it over https (they ignore this on plain http).
+        .layer(SetResponseHeaderLayer::if_not_present(header::STRICT_TRANSPORT_SECURITY, HeaderValue::from_static("max-age=15552000")))
         .layer(axum::middleware::from_fn(robots_header))
         .layer(CompressionLayer::new())
+        .layer(axum::middleware::from_fn(www_redirect))
         .with_state(app.clone());
     // Mail goes out and old listings come off sale in the background.
     store::start_housekeeping(app);

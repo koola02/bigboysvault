@@ -495,6 +495,8 @@ pub fn set_symbol(card_id: &str) -> String {
     }
     // The few sets TCGdex has no symbol for are in the Pokémon TCG image library, under their own codes.
     let elsewhere = match set {
+        "base1" => Some("base1"),
+        "sm3.5" => Some("sm35"),
         "sv07" => Some("sv7"),
         "sv08" => Some("sv8"),
         "sv08.5" => Some("sv8pt5"),
@@ -503,6 +505,10 @@ pub fn set_symbol(card_id: &str) -> String {
     };
     if let Some(code) = elsewhere {
         return format!("https://images.pokemontcg.io/{code}/symbol.png");
+    }
+    // TCGdex keeps a few newer symbols in its folder for every language.
+    if set == "me05" {
+        return "https://assets.tcgdex.net/univ/me/me05/symbol.png".into();
     }
     let series = match set {
         "cel25" => Some("swsh"),
@@ -585,7 +591,13 @@ pub fn parse(data: &str) -> (Vec<Binder>, Vec<Card>) {
             // Older files have no notes at the end.
             ["C", handle, title, variant, set, no, price, img, grade, qty, bs, tags, sym, finish, lang, extra @ ..] if extra.len() <= 1 => {
                 let notes = extra.first().copied().unwrap_or("");
-                let text = norm(&format!("{title} {variant} {set} {no} {grade} {tags} {notes}"));
+                // The finish is searchable too ("1st edition", "reverse holo"), but not "Normal", which nearly every card is.
+                let fin = match *finish {
+                    "Normal" => "",
+                    "1st Edition" => "1st Edition first",
+                    f => f,
+                };
+                let text = norm(&format!("{title} {variant} {set} {no} {grade} {tags} {notes} {fin}"));
                 cards.push(Card {
                     handle: handle.to_string(),
                     title: title.to_string(),
@@ -709,6 +721,10 @@ mod tests {
         assert_eq!(set_symbol(""), "");
         assert_eq!(set_symbol("tcgdex:30th-1"), "https://assets.tcgdex.net/en/me/30th/symbol.png");
         assert_eq!(set_symbol("tcgdex:unknown-1"), "", "no series known, so no broken picture");
+        assert_eq!(set_symbol("tcgdex:base1-4"), "https://images.pokemontcg.io/base1/symbol.png");
+        assert_eq!(set_symbol("tcgdex:sm3.5-9"), "https://images.pokemontcg.io/sm35/symbol.png");
+        assert_eq!(set_symbol("tcgdex:me05-001"), "https://assets.tcgdex.net/univ/me/me05/symbol.png");
+        assert_eq!(set_symbol("tcgdex:base2-1"), "https://assets.tcgdex.net/en/base/base2/symbol.png");
     }
 
     #[test]
@@ -753,6 +769,20 @@ mod tests {
         assert_eq!(search(&d, &Filter { binder: Some(1), ..Default::default() }, Sort::Newest).hits.len(), 2);
         assert_eq!(search(&d, &read_words("ピカチュウ"), Sort::Newest).hits.len(), 1);
         assert_eq!(search(&d, &read_words("psa 10"), Sort::Newest).hits.len(), 1);
+    }
+
+    #[test]
+    fn the_finish_can_be_searched() {
+        let mut data = String::new();
+        for (t, v, fin) in [("Graveler - 037/62 - Fossil", "Lightly Played · 1st Ed.", "1st Edition"), ("Zorua - 1/9", "Near Mint · Reverse Holo", "Reverse Holo"), ("Eevee - 2/9", "Near Mint", "Normal")] {
+            data += &card_line(&Card { title: t.into(), variant: v.into(), finish: fin.into(), handle: norm(t).replace(' ', "-"), price: 10.0, qty: 1, ..Default::default() });
+        }
+        let d = parse(&data).1;
+        let titles = |q: &str| search(&d, &read_words(q), Sort::Newest).hits.iter().map(|&i| d[i].title.clone()).collect::<Vec<_>>();
+        assert_eq!(titles("1st edition"), vec!["Graveler - 037/62 - Fossil"]);
+        assert_eq!(titles("first edition graveler"), vec!["Graveler - 037/62 - Fossil"]);
+        assert_eq!(titles("reverse holo"), vec!["Zorua - 1/9"]);
+        assert!(titles("normal").is_empty(), "almost every card is plain, so the word finds nothing extra");
     }
 
     #[test]

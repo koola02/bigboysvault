@@ -179,8 +179,10 @@ window.mountCardForm = () => {
   function say(msg) { mk.box.hidden = false; mk.card.hidden = true; mk.list.hidden = true; mk.state.hidden = false; mk.state.textContent = msg; }
   function resetMarket() { hideMarket(); current = null; curFinish = null; mk.api.value = ''; mk.cset.value = ''; mk.finish.value = ''; mk.src.value = ''; mk.purl.value = ''; priceDirty = false; }
   // 'market' is the Near Mint price as listed; 'suggested' is that price adjusted for the condition. Both follow a new finish or condition.
+  // 'own' (or '' on older cards) is a price someone typed: it is never replaced by a suggestion.
+  const follows = (s) => s === 'market' || s === 'suggested';
   let priceSrc = mk.src.value || '';
-  let priceDirty = !!el.price.value && !priceSrc, current = null, curFinish = null, seq = 0, lookT;
+  let priceDirty = !!el.price.value && !follows(priceSrc), current = null, curFinish = null, seq = 0, lookT;
   function setPrice(php, src = 'suggested') { el.price.value = php ? Math.round(php).toLocaleString('en-US') : ''; priceDirty = false; priceSrc = php ? src : ''; mk.src.value = priceSrc; saveDraft(); preview(); }
   function showFinish(f) {
     curFinish = f; mk.finish.value = f.key;
@@ -226,7 +228,7 @@ window.mountCardForm = () => {
   const scheduleLookup = () => { clearTimeout(lookT); lookT = setTimeout(lookup, 700); };
   el.title.addEventListener('input', scheduleLookup);
   el.cardno.addEventListener('input', scheduleLookup);
-  el.price.addEventListener('input', () => { priceDirty = true; priceSrc = ''; mk.src.value = ''; if (curFinish) showFinish(curFinish); });
+  el.price.addEventListener('input', () => { priceDirty = true; priceSrc = 'own'; mk.src.value = 'own'; if (curFinish) showFinish(curFinish); });
   el.variant.addEventListener('input', () => { if (curFinish) showFinish(curFinish); });
   mk.use.addEventListener('click', () => { if (curFinish) { setPrice(curFinish.php, 'market'); mk.use.hidden = true; } });
   mk.photo.addEventListener('click', () => {

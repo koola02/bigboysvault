@@ -187,9 +187,10 @@ pub async fn search_cards(State(app): State<App>, Query(p): Query<SearchQs>) -> 
         None => None,
     };
     let found = search(&cards, &f, Sort::parse(p.sort.as_deref().unwrap_or("")));
+    // A card with every copy sold is only a record now, so assistants aren't offered it.
+    let hits: Vec<usize> = found.hits.into_iter().filter(|&i| cards[i].qty > 0).collect();
     let limit = p.limit.unwrap_or(12).clamp(1, 50);
-    let rows: Vec<_> = found
-        .hits
+    let rows: Vec<_> = hits
         .iter()
         .take(limit)
         .map(|&i| {
@@ -200,14 +201,15 @@ pub async fn search_cards(State(app): State<App>, Query(p): Query<SearchQs>) -> 
             })
         })
         .collect();
-    Ok(json(serde_json::json!({ "total_matches": found.hits.len(), "returned": rows.len(), "closest_spelling": found.typo, "currency": "PHP", "cards": rows })))
+    Ok(json(serde_json::json!({ "total_matches": hits.len(), "returned": rows.len(), "closest_spelling": found.typo, "currency": "PHP", "cards": rows })))
 }
 
 pub async fn card(State(app): State<App>, Path(handle): Path<String>) -> Res {
     let h = handle.clone();
     let r = with_db(&app, move |c| {
         let Some(p) = db::product(c, &h)? else { return Ok(None) };
-        let copies = db::copies(c, &p)?;
+        // Only copies still for sale: sold ones stay in the records but can't be bought.
+        let copies = db::copies_for_sale(c, p.id)?;
         let mut st = c.prepare("SELECT co.title FROM collections co JOIN collection_products cp ON cp.collection=co.handle WHERE cp.product_id=?1 ORDER BY co.position")?;
         let binders = st.query_map([p.id], |r| r.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?;
         Ok(Some((p, copies, binders)))
@@ -216,7 +218,7 @@ pub async fn card(State(app): State<App>, Path(handle): Path<String>) -> Res {
     Ok(json(match r {
         Some((p, copies, binders)) => serde_json::json!({
             "title": p.title, "handle": p.handle, "url": format!("/products/{}", p.handle), "price": p.price, "price_text": p.price_text(), "currency": "PHP",
-            "price_updated": p.price_updated, "set": p.card_set, "number": p.card_no, "condition": p.variant, "grade": p.grade(), "copies": copies,
+            "price_updated": p.price_updated, "set": p.card_set, "number": p.card_no, "condition": p.variant, "grade": p.grade(), "copies": copies, "for_sale": copies > 0,
             "binders": binders, "notes": p.notes(), "image": p.img(900),
         }),
         None => serde_json::json!({ "error": format!("No card with the handle {handle}. Use search_cards to find it.") }),
@@ -237,6 +239,7 @@ pub async fn card_text(State(app): State<App>, Path(handle): Path<String>, Query
     if let Some(hit) = app.cache.get(&key) {
         return Ok(([(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, "no-cache")], (*hit).clone()).into_response());
     }
+    let since = app.change_count();
     let h = handle.clone();
     let found = with_db(&app, move |c| {
         let Some(p) = db::product(c, &h)? else { return Ok(None) };
@@ -268,7 +271,7 @@ pub async fn card_text(State(app): State<App>, Path(handle): Path<String>, Query
         "related": related.iter().map(|r| (format!("/products/{}", r.handle), serde_json::Value::String(translate::title(&r.short_title(), to, &names)))).collect::<serde_json::Map<_, _>>(),
     })
     .to_string();
-    app.cache.insert(key, Arc::new(body.clone()));
+    app.keep(key, Arc::new(body.clone()), since);
     Ok(([(header::CONTENT_TYPE, "application/json"), (header::CACHE_CONTROL, "no-cache")], body).into_response())
 }
 
@@ -286,7 +289,11 @@ pub struct SearchedQs {
 }
 
 /// The finder runs on the visitor's device, so it reports finished searches here to keep the suggestions learning.
-pub async fn searched(State(app): State<App>, Query(p): Query<SearchedQs>) -> StatusCode {
+/// Each visitor can add a few at a time (the search pages share the same limit), so nobody can flood the log.
+pub async fn searched(State(app): State<App>, h: HeaderMap, Query(p): Query<SearchedQs>) -> StatusCode {
+    if crate::community::over_limit(&app, format!("slog|{}", crate::community::client_ip(&h)), 60) {
+        return StatusCode::NO_CONTENT;
+    }
     let term: String = p.q.chars().take(60).collect();
     let _ = with_db(&app, move |c| suggest::log_search(c, &term, unix_now())).await;
     StatusCode::NO_CONTENT

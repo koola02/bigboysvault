@@ -7,7 +7,7 @@
   <p class="mc-how">How the vault is doing, worked out from your cards, your visitors and your trainers. Everything here is live.</p>
 
   <div class="dash-kpis">
-    <div class="kpi kpi-hero"><span>Total value</span><b>{{ value }}</b><small>{{ top10 }}% of it is in your 10 most valuable cards</small></div>
+    <div class="kpi kpi-hero"><span>Total value</span><b>{{ value }}</b>{% if !top10.is_empty() %}<small>{{ top10 }} of it is in your 10 most valuable cards</small>{% endif %}</div>
     <div class="kpi"><span>Cards</span><b>{{ copies }}</b><small>{{ distinct }} different</small></div>
     <div class="kpi"><span>Binders</span><b>{{ nav.links.len() }}</b><small>{{ binders.len() }} with cards in them</small></div>
     <div class="kpi"><span>Average price</span><b>{{ average }}</b><small>Half are under {{ median }}</small></div>
@@ -83,6 +83,12 @@
       {% endif %}
     </article>
 
+    <article class="dash-panel dash-wide dash-ops" id="vmJobs">
+      <h2 class="dash-h">VM jobs</h2>
+      <p class="dash-sub">The jobs the backup computer runs each night. A warning means a job failed or hasn't reported in time.</p>
+      <ul class="dash-links">{% for j in ops %}<li><span>{% if j.2 && !j.4 %}✓{% else %}⚠{% endif %} <b>{{ j.0 }}</b> · {{ j.1 }}{% if j.4 %} · late{% endif %}{% if !j.2 %} · failed{% endif %}</span>{% if !j.3.is_empty() %}<span>{{ j.3 }}</span>{% endif %}</li>{% endfor %}</ul>
+    </article>
+
     <article class="dash-panel dash-wide">
       <h2 class="dash-h">To do</h2>
       <div class="dash-todo">
@@ -141,7 +147,7 @@
     </article>
   </div>
 </section>
-<script src="/static/admin-ui.js?v=9" defer></script>
+<script src="/static/admin-ui.js?v=10" defer></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   const read = document.querySelector('[data-iv-read]');

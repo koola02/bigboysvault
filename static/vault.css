@@ -1846,3 +1846,106 @@ body:has(.v-fab) .cart-fab { right: 14px; bottom: calc(80px + var(--sab)); }
 .notif-list { margin: 0; padding: 0; list-style: none; }
 .notif-head { gap: 10px; }
 .notif-head .btn { flex: none; min-height: 32px; padding: 0 12px; font-size: .6875rem; letter-spacing: .04em; white-space: nowrap; }
+
+/* =====================================================================================
+   Fixes from the November audit. Kept together at the end, so they win over the rules above.
+   ===================================================================================== */
+
+/* ---------- Skip link: keyboard users jump straight past the top bar ---------- */
+.skip { position: absolute; left: -9999px; top: 8px; z-index: 2147483647; padding: 10px 14px; border-radius: 10px; background: #0b0b0b; color: var(--gold-hi); font: 700 .9375rem/1 var(--font); text-decoration: none; box-shadow: inset 0 0 0 1px rgba(239,200,115,.6); }
+.skip:focus { left: 16px; }
+main:focus { outline: none; }
+
+/* ---------- Space under the top bar: a page's first heading never touches it ---------- */
+main > .wrap:first-child { padding-top: var(--s5); }
+
+/* ---------- Short pages: the footer sits at the bottom of the screen, not halfway up ---------- */
+body:not(:has(.hero-x)) { display: flex; flex-direction: column; }
+body:not(:has(.hero-x)) > main { flex: 1 0 auto; }
+
+/* ---------- The binders menu in the top bar: one button that opens a list, for any number of binders ---------- */
+.menu-dd { display: none; position: relative; flex: none; }
+@media (min-width: 900px) { .menu-dd { display: block; } }
+.menu-dd[hidden] { display: none; }
+.menu-dd > summary { list-style: none; cursor: pointer; user-select: none; }
+.menu-dd > summary::-webkit-details-marker { display: none; }
+.menu-dd .menu-dd-arrow { display: inline-block; width: 14px; height: 14px; transition: rotate .2s var(--ease); }
+.menu-dd[open] > summary { color: #fff; }
+.menu-dd[open] .menu-dd-arrow { rotate: 180deg; }
+.menu-dd .menu { position: absolute; top: calc(100% + 10px); left: -10px; z-index: 40; display: flex; flex-direction: column; gap: 2px; flex: none; width: max-content; min-width: 220px; max-width: min(340px, 80vw); max-height: min(70vh, 520px); overflow: auto; padding: 8px; border-radius: 18px; background: rgba(9,11,20,.97); box-shadow: inset 0 0 0 1px rgba(239,200,115,.4), 0 20px 50px rgba(0,0,0,.6); white-space: normal; -webkit-mask-image: none; mask-image: none; scrollbar-width: thin; }
+.menu-dd .menu a { display: block; min-height: 40px; padding: 12px 12px; border: 0; border-radius: 10px; line-height: 1.25; letter-spacing: .06em; }
+.menu-dd .menu a:hover, .menu-dd .menu a:focus-visible { background: rgba(239,200,115,.12); color: #fff; }
+.menu-dd .menu .menu-all { margin-top: 4px; border-top: 1px solid rgba(239,200,115,.18); border-radius: 0 0 10px 10px; color: var(--gold-hi); }
+
+/* ---------- Sign in: the "Remember me" box sits beside its words ---------- */
+.join-form .login-remember { display: inline-flex; align-items: center; justify-content: flex-start; gap: 10px; justify-self: start; margin: -4px 0 2px; font-size: .875rem; }
+
+/* ---------- Bulk action bars (My cards, Listings, Binders): buttons wrap instead of running off the screen ---------- */
+.selbar select { min-width: 0; max-width: 100%; }
+/* Tablets and computers: one row as wide as its buttons (centred). Only a screen too narrow for that row wraps the buttons. */
+@media (min-width: 600px) {
+  .selbar { width: max-content; }
+  .selbar-acts { flex-wrap: wrap; justify-content: flex-end; min-width: 0; }
+}
+@media (max-width: 599px) {
+  .selbar { flex-wrap: wrap; justify-content: center; }
+  .selbar-acts { flex-wrap: wrap; justify-content: stretch; min-width: 0; }
+  .selbar .pbtn { flex: 1 1 auto; min-width: 0; padding-inline: var(--s3); }
+  .selbar .ibtn { flex: none; }
+  .selbar select { flex: 1 1 140px; }
+  body.has-sel { padding-bottom: 210px; }
+  body.has-sel .toast { bottom: calc(210px + var(--sab)); }
+}
+
+/* ---------- A seller's store ---------- */
+/* "Add to cart" always gets its own full row, so its words are never cut off. */
+.sf-buy .btn.cart-add { flex: 1 1 100%; overflow: visible; text-overflow: clip; }
+/* Search and sort fit a 360px phone: a long choice is cut inside its own box. */
+.sf-filter input, .sf-filter select { min-width: 0; }
+@media (max-width: 640px) { .sf-filter { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .sf-filter select { width: 100%; } }
+.sf-save { width: 40px; height: 40px; }
+
+/* ---------- The cart ---------- */
+.cart-note-l { color: var(--muted); font: 600 .8125rem/1.2 var(--font); }
+.cart-note-l small { font: inherit; font-weight: 500; }
+.cart-foot textarea { min-height: 64px; max-height: 120px; height: auto; padding: 10px 14px; border: 1px solid rgba(239,200,115,.3); border-radius: 12px; background: rgba(255,255,255,.06); color: var(--text); font-size: 16px; line-height: 1.4; resize: none; }
+.cart-body small { white-space: normal; }
+/* Phones: the name and the reason get the whole width; the count and the total go on a second line. */
+@media (max-width: 480px) {
+  .cart-line { grid-template-columns: 48px minmax(0, 1fr) 40px; grid-template-rows: auto auto; row-gap: 6px; }
+  .cart-pic { grid-column: 1; grid-row: 1 / 3; align-self: start; }
+  .cart-body { grid-column: 2; grid-row: 1; }
+  .cart-x { grid-column: 3; grid-row: 1; align-self: start; width: 40px; height: 40px; }
+  .cart-qty { grid-column: 2; grid-row: 2; justify-self: start; }
+  .cart-qty button { width: 40px; height: 40px; }
+  .cart-sum { grid-column: 2 / 4; grid-row: 2; justify-self: end; }
+  .cart-body b { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+}
+/* Phones: the "in your cart" message sits left of the cart button, never on top of it. */
+@media (max-width: 899px) {
+  .cart-toast { left: 12px; bottom: calc(100px + var(--sab)); translate: 0 20px; max-width: calc(100vw - 120px); text-align: left; border-radius: 18px; }
+  .cart-toast.on { translate: 0 0; }
+}
+
+/* ---------- Bigger places to tap on touch screens, with the same look ---------- */
+@media (pointer: coarse) {
+  /* The + on a card: a 42px circle to tap, the same 30px circle to see. The margins keep the tile the same size. */
+  .cart-mini { width: 42px; height: 42px; margin: -6px -6px -6px 0; border: 6px solid transparent; background-clip: padding-box; }
+  .cart-mini.in, .cart-mini:hover { background-clip: padding-box; }
+}
+.seller-social { min-height: 40px; }
+.bx-dots { gap: 0; }
+.bx-dots button { width: 32px; height: 40px; }
+
+/* ---------- Admin dashboard: what the VM's jobs last said (markup: ul.vm-jobs > li.vm-job[.bad|.late] > span.vm-i, b, span, small) ---------- */
+.vm-jobs { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.vm-job { display: grid; grid-template-columns: 24px minmax(0, 7em) minmax(0, 1fr); gap: 4px 10px; align-items: baseline; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,.04); box-shadow: inset 0 0 0 1px rgba(255,255,255,.08); font: 500 .875rem/1.35 var(--font); }
+.vm-job b { color: #fff; text-transform: capitalize; }
+.vm-job > span:not(.vm-i) { color: var(--muted); }
+.vm-job small { grid-column: 2 / -1; color: var(--muted); overflow-wrap: anywhere; }
+.vm-job .vm-i { color: #7ee2a8; font-weight: 800; }
+.vm-job.bad .vm-i, .vm-job.late .vm-i { color: #ffb4ad; }
+.vm-job.bad, .vm-job.late { box-shadow: inset 0 0 0 1px rgba(220,70,60,.55); }
+
+/* ---------- Narrow phones, signed in: the site name always fits beside the bell and the profile picture ---------- */
+@media (max-width: 399px) { html[data-me] .bar .brand-t { font-stretch: 110%; } }

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ title }} · {{ nav.brand }}{% endblock %}
+{% block title %}{% if nav.seo.title.is_empty() %}{{ title }} · {{ nav.brand }}{% else %}{{ nav.seo.title }}{% endif %}{% endblock %}
 {% block content %}
 <section class="wrap">
   <h1 class="h1">{{ title }}</h1>
@@ -20,6 +20,6 @@
     {% if items.is_empty() %}<p class="empty">Nothing here yet.</p>{% endif %}
   </div>
 </section>
-{% if base == "/search" %}<script type="module" src="/static/finder-boot.js?v=11"></script>
+{% if base == "/search" %}<script type="module" src="/static/finder-boot.js?v=12"></script>
 <script src="/static/browser-ai.js?v=2" defer></script>{% endif %}
 {% endblock %}

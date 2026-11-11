@@ -218,7 +218,9 @@
   document.addEventListener('float:filled', (e) => scan(e.detail));
 
   scan();
-  fetch('/me/who', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then((r) => r.json()).then((j) => {
+  // One answer per page, shared with vault-core.js and the others, whichever script asks first.
+  const bbvWho = () => (window.bbvWho ? window.bbvWho() : (window.bbvWhoAnswer ||= fetch('/me/who', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))));
+  bbvWho().then((j) => {
     me = j.member; owner = !!j.admin; full = !!j.full; known = true;
     if (me) addButton();
     scan();

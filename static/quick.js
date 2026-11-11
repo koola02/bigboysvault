@@ -263,7 +263,8 @@
     // Each finish shows its suggested price for this copy's condition (graded and sealed: the Near Mint price).
     const finLabel = (f) => `${f.label} · ${peso(A.suggest(f.php, c.cond) ?? f.php)}`;
     it.finishes.forEach((f) => fin.append(new Option(finLabel(f), f.key, false, f.key === c.finish)));
-    FINISHES.filter(([k]) => !it.finishes.some((f) => f.key === k)).forEach(([k, label]) => fin.append(new Option(label, k, false, k === c.finish)));
+    // A finish the price list already shows under the same name isn't offered twice.
+    FINISHES.filter(([k, label]) => !it.finishes.some((f) => f.key === k || (f.label === label && k !== c.finish))).forEach(([k, label]) => fin.append(new Option(label, k, false, k === c.finish)));
     const sug = document.createElement('p'); sug.className = 'qa-sug';
     const pr = document.createElement('input'); pr.className = 'qa-price'; pr.inputMode = 'decimal'; pr.placeholder = '₱0'; pr.value = c.price; pr.setAttribute('aria-label', `Value of card ${i + 1} in pesos`);
     const cond = document.createElement('select'); cond.setAttribute('aria-label', `Condition of card ${i + 1}`);

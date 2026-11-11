@@ -16,7 +16,7 @@
         {% for lk in t.link_list() %}<a class="seller-social vouch-ext" href="{{ lk }}" target="_blank" rel="noopener">Vouch link</a>{% endfor %}
       </div>
       {% endif %}
-      {% if t.seller && t.cards > 0 && !t.slug.is_empty() %}<a class="btn ghost tp-store" href="{{ t.store_url() }}">Visit the store →</a>{% endif %}
+      {% if full && t.seller && t.cards > 0 && !t.slug.is_empty() %}<a class="btn ghost tp-store" href="{{ t.store_url() }}">Visit the store →</a>{% endif %}
       {% if is_me %}<a class="linkbtn tp-edit" href="/me">Edit my trainer</a>{% endif %}
     </div>
   </header>

@@ -1,10 +1,13 @@
 // Starts the card finder (Rust compiled to WebAssembly). Until it's ready, or if it can't run, the server's page works as normal.
 const slot = document.getElementById('finder');
 
+// The finder's version is set once, in base.html (<meta name="finder-v">), so every page loads the same files.
+const FV = document.querySelector('meta[name="finder-v"]')?.content || '12';
+
 async function run() {
   try {
-    const finder = await import('/static/wasm/finder.js?v=11');
-    await finder.default({ module_or_path: '/static/wasm/finder_bg.wasm?v=11' });
+    const finder = await import(`/static/wasm/finder.js?v=${FV}`);
+    await finder.default({ module_or_path: `/static/wasm/finder_bg.wasm?v=${FV}` });
     await finder.start('finder', '/cards.tsv');
     // The Search tab means "I want to type": put the cursor in the box.
     if (location.pathname === '/search' && !location.search) document.querySelector('form.search input')?.focus({ preventScroll: true });

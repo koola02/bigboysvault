@@ -80,7 +80,9 @@
       if (j.v) version = j.v;
     }
 
-    try { who = await (await fetch('/me/who', { credentials: 'same-origin' })).json(); } catch (_) {}
+    // Who's here is asked once per page and shared (see vault-core.js).
+    const bbvWho = () => (window.bbvWho ? window.bbvWho() : (window.bbvWhoAnswer ||= fetch('/me/who', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))));
+    try { const w = await bbvWho(); if (w && 'member' in w) who = w; } catch (_) {}
     if (who.member) {
       form.hidden = false;
       if (who.member.locked) { form.hidden = true; say(`Your trainer is locked for another ${who.member.lock_left}.`); }

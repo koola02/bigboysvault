@@ -231,8 +231,10 @@
   async function startFinder(slot, handle) {
     const attempt = async (fresh) => {
       const q = fresh ? `&fresh=${Date.now()}` : '';
-      const finder = await import(`/static/wasm/finder.js?v=9${q}`);
-      await finder.default({ module_or_path: `/static/wasm/finder_bg.wasm?v=9${q}` });
+      // The same version as the search page (set once in base.html), so both load the same pair of files.
+      const v = document.querySelector('meta[name="finder-v"]')?.content || '12';
+      const finder = await import(`/static/wasm/finder.js?v=${v}${q}`);
+      await finder.default({ module_or_path: `/static/wasm/finder_bg.wasm?v=${v}${q}` });
       const m = await finder.start_in_binder(slot, fresh ? `/cards.tsv?fresh=${Date.now()}` : '/cards.tsv', handle);
       if (!m) throw new Error(`No cards found for ${handle}`);
       return m;
@@ -292,6 +294,9 @@
   }
 
   function raise() {
+    // A filter or sort left an htmx entry here. Closing the window steps back onto it, and htmx would then reload the
+    // whole page (it keeps no copy). So while the window is open it is an ordinary entry; closing puts htmx's mark back.
+    if (history.state?.htmx) history.replaceState({ floatBase: true }, '', location.href);
     baseUrl = location.href; baseTitle = document.title;
     document.documentElement.style.setProperty('--sbw', `${innerWidth - document.documentElement.clientWidth}px`);
     document.documentElement.dataset.float = '1';
@@ -306,7 +311,7 @@
     try { html = await load(href); } catch (_) { location.href = href; return; }
     if (mine !== asking) return;
     if (href.startsWith('/trainers/') || href.startsWith('/collections/')) cache.delete(href); // these change often, a card's page doesn't
-    if (!dialog) build();
+    if (!dialog?.isConnected) build(); // made again if the page was swapped out under it
     const thumb = link?.querySelector('.bk-win img') || link?.querySelector('img');
     if (dialog.open) {
       if (href === shown) return;
@@ -334,7 +339,7 @@
   function zoom(btn) {
     const group = btn.closest('.v-pics');
     const list = group ? [...group.querySelectorAll('[data-zoom]')] : [btn];
-    if (!dialog) build();
+    if (!dialog?.isConnected) build(); // made again if the page was swapped out under it
     const inWindow = dialog.open;
     if (!inWindow) { raise(); clear(); panel.replaceChildren(); shown = null; trail = []; depth = 0; }
     const label = btn.dataset.zoomBack || (inWindow && titleOf() ? `Back to ${titleOf()}` : 'Back');
@@ -439,7 +444,11 @@
   }
   addEventListener('popstate', (e) => {
     const s = e.state;
-    if (!s?.float) { hide(); done(); return; }
+    if (!s?.float) {
+      hide(); done();
+      if (s?.floatBase) history.replaceState({ htmx: true }, '', location.href);
+      return;
+    }
     if (!dialog?.open) return;
     unzoom();
     depth = s.depth; trail = s.trail || [];

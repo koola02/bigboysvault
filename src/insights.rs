@@ -67,6 +67,12 @@ fn spot(c: &Card) -> Spot {
     Spot { handle: c.handle.clone(), title: title_and_set(&c.title, &c.set).0, img: c.img.clone(), price: peso(c.price), cond: cond_class(&c.variant) }
 }
 
+/// A standout tile for one card. `read` can only guess the newest card from the list's order, and the owner can drag
+/// cards about, so callers that know the real newest card (by the date it was added) put it in with this.
+pub fn spot_of(c: &Card) -> Spot {
+    spot(c)
+}
+
 /// ₱20, ₱500, ₱2.5k, ₱18k, ₱1.2M: short enough to sit under a chart.
 fn short_money(v: f64) -> String {
     let trim = |x: f64| { let s = format!("{:.1}", x); s.trim_end_matches('0').trim_end_matches('.').to_string() };
@@ -86,17 +92,17 @@ fn condition_of(c: &Card) -> &'static str {
 
 /// Everything the panel shows. None when the vault has nothing priced to talk about.
 pub fn read(cards: &[Card]) -> Option<Insights> {
-    let priced: Vec<(f64, f64)> = cards.iter().filter(|c| c.price > 0.0).map(|c| (c.price, f64::from(c.qty.max(1)))).collect();
+    let priced: Vec<(f64, f64)> = cards.iter().filter(|c| c.price > 0.0 && c.qty > 0).map(|c| (c.price, f64::from(c.qty))).collect();
     if priced.is_empty() {
         return None;
     }
-    let total: u32 = cards.iter().map(|c| c.qty.max(1)).sum();
+    let total: u32 = cards.iter().map(|c| c.qty).sum();
 
     // The condition ring.
     let mut slices = vec![];
     let mut at = 0.0;
     for (key, label) in COND_LABELS {
-        let count: u32 = cards.iter().filter(|c| condition_of(c) == key).map(|c| c.qty.max(1)).sum();
+        let count: u32 = cards.iter().filter(|c| condition_of(c) == key).map(|c| c.qty).sum();
         if count == 0 {
             continue;
         }
@@ -184,6 +190,7 @@ pub fn read(cards: &[Card]) -> Option<Insights> {
     let median = sorted.iter().find(|(_, w)| { seen += w; seen >= weight / 2.0 }).map_or(0.0, |x| x.0);
 
     let top = cards.iter().filter(|c| !c.img.is_empty()).max_by(|a, b| a.price.total_cmp(&b.price)).map(spot);
+    // A first guess only: the list is in the owner's order. Callers that know the newest card by date set it with spot_of.
     let newest = cards.iter().find(|c| !c.img.is_empty()).map(spot);
     let total_text = peso(f64::from(total)).trim_start_matches('₱').to_string();
     Some(Insights { slices, bars, curve, area, ticks, total, total_text, median: peso(median), typical: peso(10f64.powf(typical)), top, newest })
@@ -217,6 +224,16 @@ mod tests {
         assert_eq!(short_money(8000.0), "₱8k");
         assert_eq!(short_money(2500.0), "₱2.5k");
         assert_eq!(two_figures(18_437.0), 18_000.0);
+    }
+
+    #[test]
+    fn a_standout_tile_for_any_card() {
+        let mut c = card("Pikachu - 057/191 - Surging Sparks", 450.0, "Lightly Played", 1);
+        c.set = "Surging Sparks".into();
+        let s = spot_of(&c);
+        assert_eq!(s.price, "₱450");
+        assert_eq!(s.handle, c.handle);
+        assert_eq!(s.cond, cond_class("Lightly Played"));
     }
 
     #[test]

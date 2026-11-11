@@ -18,9 +18,14 @@ Trainers are collectors by default: a profile and a binder. An admin switches se
 › Store: **Seller** / **Collector**, `POST /admin/trainers/{id}` with `{ "action": "seller", "seller": true }`).
 Only sellers get the store panel, a public `/store/<name>`, Reserve/Offer buttons and a place in `/stores`; a trainer
 whose store is off sees `/me/store` explain that, and still buys from stores like anyone else. Everyone signs in at `/login`: a trainer
-with their name and password; an admin trainer with their name and `name/<ADMIN_TOKEN>` (say `selhio/…`),
-which opens the admin and their own trainer at once. Only trainers whose role is admin can do that. An admin runs
-their own trainer like any other, except lock, block, removal and role: those are for another admin.
+with their name and password, admins included: an admin trainer's admin powers come from their role, checked on every
+request through their own session, so demoting or blocking them ends the admin powers of that session at once. It
+does not end access for someone who knows `ADMIN_TOKEN` or still holds an owner cookie from before (those are the
+owner's key, checked before any role or block); every admin who used the old `name/<ADMIN_TOKEN>` way knows the key.
+Rotating `ADMIN_TOKEN` (`fly secrets set`, plus the same value in `ops/env` on the VM) is what ends that. (The old
+`name/<ADMIN_TOKEN>` way, say `selhio/…`, still opens only that admin's own trainer session, never the owner's
+cookie; it goes away once every admin has their own password.) An admin runs their own trainer like any other, except lock, block, removal and role:
+those are for another admin.
 
 ## The SRP
 
@@ -91,7 +96,7 @@ The same card can be listed more than once (say a Near Mint and a Lightly Played
 | `POST /me/settings` | Multipart: `store_name`, `cover` (image), `drop_cover`, `status` (`Active`/`Away`/`Vacation`), `location`, `contact_info`, `contact_public`, `fb_url`, `fb_group_url`, `ig_url`, `tiktok_url`, `shopee_url`, `links` (lines of `Label \| https://…`), `pay_method` (repeatable; send `pay_methods_sent=1` to clear), `pay_info`, `email`, `notify_views`. Links must be `https://` |
 | `POST /me/settings/slug` | `{ slug }`: 3–30 of `a-z 0-9 -`, unique whatever the case, not a name the site uses |
 | `GET /me/notifications?page=` | Notifications (30 a page) and preferences. Opening it marks the page read |
-| `POST /me/notifications/prefs` | `{ event, site, email, push }`. Events: `follow`, `view`, `inquiry`, `offer`, `reservation`, `sale`, `expiry`, `status`, `announcement` |
+| `POST /me/notifications/prefs` | `{ event, site, email, push }`. Events: `my_order` (the buyer's news: accepted, declined, countered, replied, paid, ran out, off sale), `follow`, `view`, `inquiry`, `offer`, `reservation`, `order`, `sale`, `price`, `expiry`, `status`, `announcement`. `inquiry`, `offer` and `reservation` are the seller's side only; a reservation that runs out tells both the buyer and the seller. Also `{ address }` saves the email address and returns `{ ok, email }` |
 | `GET /api/notifications`, `POST /api/notifications/read` | The bell, as before |
 | `POST /api/notifications/push` | Saves a Web Push subscription (`{ endpoint, keys: { p256dh, auth } }`, or `remove: true`) |
 | `POST /api/cards/{id}/save` | Save a card for later, or unsave. Returns `saved` |

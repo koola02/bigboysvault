@@ -1,4 +1,4 @@
-//! Trainer accounts: profile, one binder of up to 50 cards, vouches, replies and star points.
+//! Trainer accounts: profile, a binder of cards (the limit is `sellers::max_cards`), vouches, replies and star points.
 //! A trainer's page (name, picture, description, binder) waits for the owner's approval. Vouches, replies and their photos
 //! post straight away, and the owner can hide or delete any of them, or lock, block or remove the trainer (Admin › Trainers).
 use argon2::password_hash::{rand_core::{OsRng, RngCore}, PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
@@ -8,7 +8,10 @@ use sha2::{Digest, Sha256};
 
 /// How many cards a store may hold unless the owner sets `seller_max_cards` (see `sellers::max_cards`).
 pub const MAX_CARDS: i64 = 500;
+/// How long a sign-in lasts on the server when "remember me" is off (the browser forgets it sooner).
 pub const SESSION_SECS: i64 = 30 * 86_400;
+/// How long a sign-in lasts with "remember me" on.
+pub const REMEMBER_SECS: i64 = 365 * 86_400;
 /// Sign-ups stop while this many are waiting for approval, so a bot can't fill the disk.
 pub const MAX_PENDING: i64 = 200;
 /// Enough for anyone being honest, and a stop for anyone who isn't.
@@ -44,7 +47,7 @@ CREATE TABLE IF NOT EXISTS members(
   bio TEXT NOT NULL DEFAULT '', avatar TEXT NOT NULL DEFAULT '', highlight INTEGER,
   profile_ok INTEGER NOT NULL DEFAULT 0, vouch TEXT NOT NULL DEFAULT '', vouch_ok INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS member_sessions(token TEXT PRIMARY KEY, member_id INTEGER NOT NULL, expires INTEGER NOT NULL);
+CREATE TABLE IF NOT EXISTS member_sessions(token TEXT PRIMARY KEY, member_id INTEGER NOT NULL, expires INTEGER NOT NULL, remember INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_sessions_member ON member_sessions(member_id);
 CREATE TABLE IF NOT EXISTS member_cards(
   id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, position INTEGER NOT NULL DEFAULT 0, card_id TEXT NOT NULL,
@@ -359,11 +362,20 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         ("status", "TEXT NOT NULL DEFAULT 'Active'"),
         ("expires_at", "INTEGER NOT NULL DEFAULT 0"),
         ("is_custom", "INTEGER NOT NULL DEFAULT 0"),
+        // Bytes on disk of a trainer's own card photo (both sizes), so the photo-space limit counts it.
+        ("photo_bytes", "INTEGER NOT NULL DEFAULT 0"),
     ] {
         let there: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('member_cards') WHERE name=?1", [col], |r| r.get(0))?;
         if there == 0 {
             c.execute_batch(&format!("ALTER TABLE member_cards ADD COLUMN {col} {def}"))?;
         }
+    }
+    // Whether a sign-in was "remember me", kept rather than guessed from the time it has left.
+    // Sign-ins from before this column with more than a month left were remembered ones.
+    let there: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('member_sessions') WHERE name='remember'", [], |r| r.get(0))?;
+    if there == 0 {
+        c.execute_batch("ALTER TABLE member_sessions ADD COLUMN remember INTEGER NOT NULL DEFAULT 0")?;
+        c.execute("UPDATE member_sessions SET remember=1 WHERE expires>?1", [now() + SESSION_SECS])?;
     }
     c.execute_batch("
     CREATE TABLE IF NOT EXISTS member_binders(
@@ -531,6 +543,10 @@ impl MemberCard {
     /// A photo the trainer took themselves, rather than a card from the catalogue. It isn't part of the vault.
     pub fn own_photo(&self) -> bool {
         self.card_id.starts_with("own:")
+    }
+    /// Shown to the public: anything not for sale, or a listing the store shows too (not hidden, sold or ended).
+    pub fn on_show(&self) -> bool {
+        self.kind != "sale" || matches!(self.status.as_str(), "Active" | "Out of stock" | "Reserved")
     }
     /// What this copy is worth: the trainer's own figure, or the market's adjusted for its condition.
     pub fn worth(&self) -> f64 {
@@ -813,14 +829,34 @@ pub fn temp_password() -> String {
 }
 
 /// Only a hash of the session token is stored, so a copy of the database can't be used to sign in.
-pub fn new_session(c: &Connection, member_id: i64) -> rusqlite::Result<String> {
+/// `keep_secs` is how long the server keeps it: `REMEMBER_SECS` for "remember me", else `SESSION_SECS`.
+pub fn new_session(c: &Connection, member_id: i64, keep_secs: i64) -> rusqlite::Result<String> {
     let mut b = [0u8; 32];
     OsRng.fill_bytes(&mut b);
     let raw = hex(&b);
     let t = now();
     c.execute("DELETE FROM member_sessions WHERE expires<?1", [t])?;
-    c.execute("INSERT INTO member_sessions(token,member_id,expires) VALUES(?1,?2,?3)", rusqlite::params![token_hash(&raw), member_id, t + SESSION_SECS])?;
+    let remember = i64::from(keep_secs > SESSION_SECS);
+    c.execute(
+        "INSERT INTO member_sessions(token,member_id,expires,remember) VALUES(?1,?2,?3,?4)",
+        rusqlite::params![token_hash(&raw), member_id, t + keep_secs.max(60), remember],
+    )?;
     Ok(raw)
+}
+
+/// Whether this sign-in was made with "remember me" ticked, if it's still good.
+pub fn session_remembered(c: &Connection, raw: &str) -> rusqlite::Result<Option<bool>> {
+    c.query_row("SELECT remember FROM member_sessions WHERE token=?1 AND expires>?2", rusqlite::params![token_hash(raw), now()], |r| r.get::<_, i64>(0))
+        .optional()
+        .map(|v| v.map(|v| v != 0))
+}
+
+/// How many seconds this sign-in has left, if it's still good.
+pub fn session_left(c: &Connection, raw: &str) -> rusqlite::Result<Option<i64>> {
+    let t = now();
+    c.query_row("SELECT expires FROM member_sessions WHERE token=?1 AND expires>?2", rusqlite::params![token_hash(raw), t], |r| r.get::<_, i64>(0))
+        .optional()
+        .map(|e| e.map(|e| e - t))
 }
 
 pub fn end_session(c: &Connection, raw: &str) -> rusqlite::Result<()> {
@@ -922,11 +958,8 @@ pub fn save_profile_seller(
         return Ok(false);
     }
     let same = m.name == name && m.bio == bio && avatar.is_none_or(|a| a == m.avatar) && m.fb_url == fb_url && m.tiktok_url == tiktok_url && m.links == links;
-    let slug = if m.name != name || m.slug.is_empty() {
-        unique_slug(c, name, m.id)?
-    } else {
-        m.slug.clone()
-    };
+    // The web address stays when the name changes, so links people shared keep working. It changes only in Store settings.
+    let slug = if m.slug.is_empty() { unique_slug(c, name, m.id)? } else { m.slug.clone() };
     c.execute(
         "UPDATE members SET name=?2,name_key=?3,bio=?4,avatar=COALESCE(?5,avatar),updated_at=?6,profile_ok=CASE WHEN ?7 THEN profile_ok ELSE 0 END,slug=?8,fb_url=?9,tiktok_url=?10,links=?11 WHERE id=?1",
         rusqlite::params![m.id, name, name_key(name), bio, avatar, now(), same, slug, fb_url, tiktok_url, links],
@@ -1112,12 +1145,34 @@ pub fn unlock(c: &Connection, id: i64) -> rusqlite::Result<()> {
 }
 
 /// Blocked: signed out, can't sign in, and everything of theirs comes off the site until they're unblocked.
+/// Their open orders close too, both ways: what they were buying, and what people wanted from their store (each buyer is told).
 pub fn set_blocked(c: &Connection, id: i64, blocked: bool) -> rusqlite::Result<()> {
-    c.execute("UPDATE members SET blocked=?2 WHERE id=?1", rusqlite::params![id, blocked])?;
-    if blocked {
-        c.execute("DELETE FROM member_sessions WHERE member_id=?1", [id])?;
+    one_write(c, || {
+        c.execute("UPDATE members SET blocked=?2 WHERE id=?1", rusqlite::params![id, blocked])?;
+        if blocked {
+            c.execute("DELETE FROM member_sessions WHERE member_id=?1", [id])?;
+            crate::sellers::close_member_orders(c, id)?;
+        }
+        Ok(())
+    })
+}
+
+/// Runs `f` as one write: all of it happens, or none. Inside a write that's already open, it simply joins it.
+fn one_write<T>(c: &Connection, f: impl FnOnce() -> rusqlite::Result<T>) -> rusqlite::Result<T> {
+    if !c.is_autocommit() {
+        return f();
     }
-    Ok(())
+    c.execute_batch("BEGIN IMMEDIATE")?;
+    let r = f();
+    if r.is_ok() {
+        if let Err(e) = c.execute_batch("COMMIT") {
+            c.execute_batch("ROLLBACK").ok();
+            return Err(e);
+        }
+    } else {
+        c.execute_batch("ROLLBACK").ok();
+    }
+    r
 }
 
 /// Gives a trainer a role, or takes it away.
@@ -1126,10 +1181,16 @@ pub fn set_tags(c: &Connection, id: i64, tags: &str) -> rusqlite::Result<()> {
     Ok(())
 }
 
-/// Switches a trainer's store on or off (admins only).
+/// Switches a trainer's store on or off (admins only). Off: open reservations and offers on their cards close, and each buyer is told.
+/// What they are buying from others stays as it is.
 pub fn set_seller(c: &Connection, id: i64, on: bool) -> rusqlite::Result<()> {
-    c.execute("UPDATE members SET seller=?2, updated_at=?3 WHERE id=?1", rusqlite::params![id, on, now()])?;
-    Ok(())
+    one_write(c, || {
+        c.execute("UPDATE members SET seller=?2, updated_at=?3 WHERE id=?1", rusqlite::params![id, on, now()])?;
+        if !on {
+            crate::sellers::close_store_orders(c, id)?;
+        }
+        Ok(())
+    })
 }
 
 pub fn set_role(c: &Connection, id: i64, role: &str) -> rusqlite::Result<()> {
@@ -1305,9 +1366,27 @@ pub fn photos_last_hour(c: &Connection, member_id: i64) -> rusqlite::Result<i64>
     c.query_row("SELECT COUNT(*) FROM vouch_images WHERE member_id=?1 AND created_at>?2", [member_id, now() - 3600], |r| r.get(0))
 }
 
-/// How much room all the vouch photos take.
+/// How much room trainers' photos take: vouch photos and their own card photos.
 pub fn photo_bytes(c: &Connection) -> rusqlite::Result<i64> {
-    c.query_row("SELECT COALESCE(SUM(bytes),0) FROM vouch_images", [], |r| r.get(0))
+    c.query_row("SELECT (SELECT COALESCE(SUM(bytes),0) FROM vouch_images) + (SELECT COALESCE(SUM(photo_bytes),0) FROM member_cards)", [], |r| r.get(0))
+}
+
+/// Keeps the size of a trainer's own card photo, so the photo-space limit counts it.
+pub fn set_card_photo_bytes(c: &Connection, card_id: i64, bytes: i64) -> rusqlite::Result<()> {
+    c.execute("UPDATE member_cards SET photo_bytes=?2 WHERE id=?1", [card_id, bytes])?;
+    Ok(())
+}
+
+/// Own card photos added before their size was kept: (card id, small picture, big picture).
+pub fn unmeasured_card_photos(c: &Connection, limit: i64) -> rusqlite::Result<Vec<(i64, String, String)>> {
+    let mut st = c.prepare("SELECT id,image,image_large FROM member_cards WHERE card_id LIKE 'own:%' AND photo_bytes=0 LIMIT ?1")?;
+    let v = st.query_map([limit], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<Vec<_>, _>>()?;
+    Ok(v)
+}
+
+/// How many of their own card photos a trainer has.
+pub fn own_photo_count(c: &Connection, member_id: i64) -> rusqlite::Result<i64> {
+    c.query_row("SELECT COUNT(*) FROM member_cards WHERE member_id=?1 AND card_id LIKE 'own:%'", [member_id], |r| r.get(0))
 }
 
 /// A photo uploaded and waiting for its vouch to be posted.
@@ -1391,7 +1470,7 @@ pub fn approved_faces(c: &Connection, limit: i64) -> rusqlite::Result<Vec<Member
 
 pub fn approved_highlights(c: &Connection, limit: i64) -> rusqlite::Result<Vec<Highlight>> {
     let n = MEMBER_COUNT;
-    let sql = format!("SELECT {MEMBER_COLS},{CARD_COLS} FROM members m JOIN member_cards c ON c.id=m.highlight AND c.member_id=m.id WHERE m.profile_ok=1 AND m.blocked=0 ORDER BY m.updated_at DESC, m.id DESC LIMIT ?1");
+    let sql = format!("SELECT {MEMBER_COLS},{CARD_COLS} FROM members m JOIN member_cards c ON c.id=m.highlight AND c.member_id=m.id WHERE m.profile_ok=1 AND m.blocked=0 AND (c.kind<>'sale' OR c.status IN ('Active','Out of stock','Reserved')) ORDER BY m.updated_at DESC, m.id DESC LIMIT ?1");
     let mut st = c.prepare(&sql)?;
     let v = st.query_map([limit], |r| Ok(Highlight { member: map_member(r)?, card: map_card(r, n)? }))?.collect::<Result<Vec<_>, _>>()?;
     Ok(v)
@@ -1456,7 +1535,7 @@ pub enum Added {
     Full,
 }
 
-/// Adds a card, inside one write so two quick taps can't pass the limit of 50. The first card becomes the highlight.
+/// Adds a card, inside one write so two quick taps can't pass the card limit. The first card becomes the highlight.
 pub fn add_card(c: &Connection, member_id: i64, card_id: &str, title: &str, number: &str, set: &str, image: &str, image_large: &str) -> rusqlite::Result<Added> {
     c.execute_batch("BEGIN IMMEDIATE")?;
     let r = (|| {
@@ -1519,10 +1598,20 @@ pub fn reorder_cards(c: &Connection, member_id: i64, ids: &[i64]) -> rusqlite::R
     Ok(())
 }
 
-/// The market's price for every copy of a card.
+/// One value for every listing of a card, whatever its finish. Only the tests use it: real prices go finish by
+/// finish through `price_listings`, so one finish's price never lands on another's listings.
+#[cfg(test)]
 pub fn set_card_value(c: &Connection, card_id: &str, value: f64, now: i64) -> rusqlite::Result<usize> {
     // A second listing of the same card is "id#2": it follows the market too.
     c.execute("UPDATE member_cards SET value=?2, value_at=?3 WHERE card_id=?1 OR card_id LIKE ?1 || '#%'", rusqlite::params![card_id, value, now])
+}
+
+/// The same, for only the listings of that card in one finish (the nightly job prices each finish on its own).
+pub fn set_card_value_finish(c: &Connection, card_id: &str, finish: &str, value: f64, now: i64) -> rusqlite::Result<usize> {
+    c.execute(
+        "UPDATE member_cards SET value=?2, value_at=?3 WHERE (card_id=?1 OR card_id LIKE ?1 || '#%') AND finish=?4",
+        rusqlite::params![card_id, value, now, finish],
+    )
 }
 
 /// A trainer's own figure for one card. 0 goes back to the market's.
@@ -1530,9 +1619,49 @@ pub fn set_own_value(c: &Connection, member_id: i64, card_id: i64, value: f64) -
     c.execute("UPDATE member_cards SET value_own=?3 WHERE member_id=?1 AND id=?2", rusqlite::params![member_id, card_id, value])
 }
 
-/// Cards whose market price hasn't been looked at since `before`.
+/// One new listing's value (its finish is still empty, so the card's default finish), leaving every other listing alone.
+pub fn set_listing_value(c: &Connection, member_id: i64, id: i64, value: f64, now: i64) -> rusqlite::Result<usize> {
+    c.execute("UPDATE member_cards SET value=?3, value_at=?4 WHERE member_id=?1 AND id=?2", rusqlite::params![member_id, id, value, now])
+}
+
+/// Prices every listing of one catalogue card, finish by finish, for every seller: each finish gets that finish's
+/// market price (`market::member_finish_price`, the matching the nightly job and the vault use), else the vault's own
+/// price for the card. A finish with neither keeps its value and isn't looked at again for a while.
+/// `card` is the price service's card, None when it has none. Returns whether any listing got a price.
+pub fn price_listings(c: &Connection, card_id: &str, card: Option<&serde_json::Value>, now: i64) -> rusqlite::Result<bool> {
+    let finishes: Vec<String> = {
+        let mut st = c.prepare("SELECT DISTINCT finish FROM member_cards WHERE card_id=?1 OR card_id LIKE ?1 || '#%'")?;
+        let v = st.query_map([card_id], |r| r.get(0))?.collect::<Result<_, _>>()?;
+        v
+    };
+    let vault = vault_price(c, card_id)?;
+    let mut priced = false;
+    for f in finishes {
+        let php = card.and_then(|x| crate::market::member_finish_price(x, &f)).unwrap_or(vault);
+        if php > 0.0 {
+            set_card_value_finish(c, card_id, &f, php, now)?;
+            priced = true;
+        } else {
+            c.execute(
+                "UPDATE member_cards SET value_at=?2 WHERE (card_id=?1 OR card_id LIKE ?1 || '#%') AND finish=?3 AND value_at<?2",
+                rusqlite::params![card_id, now, f],
+            )?;
+        }
+    }
+    Ok(priced)
+}
+
+/// The price service didn't answer for this card: every listing keeps its value, and isn't asked about again for a while.
+pub fn hold_listing_values(c: &Connection, card_id: &str, now: i64) -> rusqlite::Result<usize> {
+    c.execute("UPDATE member_cards SET value_at=?2 WHERE (card_id=?1 OR card_id LIKE ?1 || '#%') AND value_at<?2", rusqlite::params![card_id, now])
+}
+
+/// Catalogue cards (a second listing "id#2" counts as its card) whose market price hasn't been looked at since `before`.
 pub fn cards_to_price(c: &Connection, before: i64, limit: i64) -> rusqlite::Result<Vec<String>> {
-    let mut st = c.prepare("SELECT card_id FROM member_cards WHERE value_at<?1 AND card_id NOT LIKE 'own:%' GROUP BY card_id ORDER BY MIN(value_at) LIMIT ?2")?;
+    let mut st = c.prepare(
+        "SELECT CASE WHEN instr(card_id,'#')>0 THEN substr(card_id,1,instr(card_id,'#')-1) ELSE card_id END AS k FROM member_cards
+         WHERE value_at<?1 AND card_id NOT LIKE 'own:%' GROUP BY k ORDER BY MIN(value_at) LIMIT ?2",
+    )?;
     let v = st.query_map(rusqlite::params![before, limit], |r| r.get(0))?.collect::<Result<Vec<_>, _>>()?;
     Ok(v)
 }
@@ -1659,6 +1788,37 @@ mod tests {
     }
 
     #[test]
+    fn each_finish_of_a_listing_keeps_its_own_price() {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch(SCHEMA).unwrap();
+        c.execute_batch("CREATE TABLE products(id INTEGER, api_id TEXT, price REAL)").unwrap();
+        migrate(&c).unwrap();
+        for n in ["a", "b"] {
+            c.execute("INSERT INTO members(name,name_key,pass,created_at,updated_at,profile_ok) VALUES(?1,?1,'x',0,0,1)", [n]).unwrap();
+        }
+        let Added::Yes(a) = add_card(&c, 1, "tcgdex:x-1", "One", "", "", "", "").unwrap() else { panic!() };
+        c.execute("UPDATE member_cards SET finish='Reverse Holo' WHERE id=?1", [a]).unwrap();
+        let prices = serde_json::json!({ "finishes": [{ "key": "holofoil", "label": "Holofoil", "php": 900.0 }, { "key": "reverseHolofoil", "label": "Reverse Holo", "php": 750.0 }] });
+        assert!(price_listings(&c, "tcgdex:x-1", Some(&prices), 100).unwrap());
+        let value = |m: i64, id: i64| card(&c, m, id).unwrap().unwrap().value;
+        assert_eq!(value(1, a), 750.0);
+        // Another seller lists the same card: only their new listing gets a value.
+        let Added::Yes(b) = add_card(&c, 2, "tcgdex:x-1", "One", "", "", "", "").unwrap() else { panic!() };
+        set_listing_value(&c, 2, b, 900.0, 200).unwrap();
+        assert_eq!((value(1, a), value(2, b)), (750.0, 900.0), "the Reverse Holo listing keeps its own price");
+        assert!(price_listings(&c, "tcgdex:x-1", Some(&prices), 300).unwrap());
+        assert_eq!((value(1, a), value(2, b)), (750.0, 900.0));
+        // No market price: the vault's own price for the card.
+        c.execute("INSERT INTO products VALUES(1,'tcgdex:x-1',300.0)", []).unwrap();
+        assert!(price_listings(&c, "tcgdex:x-1", None, 400).unwrap());
+        assert_eq!((value(1, a), value(2, b)), (300.0, 300.0));
+        // The service didn't answer: values stay, and the card isn't asked about again for a while.
+        hold_listing_values(&c, "tcgdex:x-1", 500).unwrap();
+        assert_eq!(value(1, a), 300.0);
+        assert!(cards_to_price(&c, 450, 10).unwrap().is_empty());
+    }
+
+    #[test]
     fn worth_counts_what_a_trainer_has() {
         let c = Connection::open_in_memory().unwrap();
         c.execute_batch(SCHEMA).unwrap();
@@ -1721,7 +1881,7 @@ mod tests {
         assert!(!verify_password("x", "not a hash"));
         let c = db();
         let id = create(&c, "Misty", &h).unwrap().unwrap();
-        let raw = new_session(&c, id).unwrap();
+        let raw = new_session(&c, id, SESSION_SECS).unwrap();
         assert_eq!(from_session(&c, &raw).unwrap().unwrap().name, "Misty");
         // The database holds only a hash of the token.
         let stored: String = c.query_row("SELECT token FROM member_sessions", [], |r| r.get(0)).unwrap();
@@ -1792,7 +1952,7 @@ mod tests {
         let c = db();
         let id = create(&c, "Gary", "h").unwrap().unwrap();
         set_profile_ok(&c, id, true).unwrap();
-        let raw = new_session(&c, id).unwrap();
+        let raw = new_session(&c, id, SESSION_SECS).unwrap();
         let Posted::Yes(v) = post_vouch(&c, id, None, "Smell ya later", &[]).unwrap() else { panic!() };
         // Locked: still here, but marked.
         assert!(!get(&c, id).unwrap().unwrap().locked());
@@ -1834,7 +1994,7 @@ mod tests {
     fn staff_powers_go_with_the_role_and_stop_when_locked_or_blocked() {
         let c = db();
         let id = create(&c, "Lance", "h").unwrap().unwrap();
-        let raw = new_session(&c, id).unwrap();
+        let raw = new_session(&c, id, SESSION_SECS).unwrap();
         assert!(staff_from_session(&c, &raw).unwrap().is_none(), "a plain trainer has no powers");
         set_role(&c, id, "mod").unwrap();
         assert_eq!(staff_from_session(&c, &raw).unwrap(), Some((id, "mod".to_string())));
@@ -1849,7 +2009,7 @@ mod tests {
         set_blocked(&c, id, true).unwrap();
         assert!(staff_from_session(&c, &raw).unwrap().is_none(), "blocked: no powers");
         set_blocked(&c, id, false).unwrap();
-        let raw = new_session(&c, id).unwrap();
+        let raw = new_session(&c, id, SESSION_SECS).unwrap();
         set_role(&c, id, "").unwrap();
         assert!(staff_from_session(&c, &raw).unwrap().is_none(), "role taken away: no powers, at once");
         assert_eq!(role_of(&c, 9999).unwrap(), "");
@@ -1915,6 +2075,85 @@ mod tests {
         let b = create(&c, "Brock 2", "h").unwrap().unwrap();
         let m_b = get(&c, b).unwrap().unwrap();
         assert_eq!(m_b.slug, "brock-2");
+    }
+
+    #[test]
+    fn a_new_name_keeps_the_web_address() {
+        let c = db();
+        let id = create(&c, "Brock", "h").unwrap().unwrap();
+        c.execute("UPDATE members SET slug='pallet-town' WHERE id=?1", [id]).unwrap();
+        let m = get(&c, id).unwrap().unwrap();
+        assert!(save_profile(&c, &m, "Brock Two", "", None).unwrap());
+        let after = get(&c, id).unwrap().unwrap();
+        assert_eq!(after.name, "Brock Two");
+        assert_eq!(after.slug, "pallet-town", "shared store links keep working");
+    }
+
+    #[test]
+    fn remember_me_lasts_a_year_on_the_server_too() {
+        let c = db();
+        let id = create(&c, "Misty", "h").unwrap().unwrap();
+        let long = new_session(&c, id, REMEMBER_SECS).unwrap();
+        let short = new_session(&c, id, SESSION_SECS).unwrap();
+        let left = session_left(&c, &long).unwrap().unwrap();
+        assert!(left > SESSION_SECS && left <= REMEMBER_SECS);
+        let left = session_left(&c, &short).unwrap().unwrap();
+        assert!(left > 0 && left <= SESSION_SECS);
+        assert!(session_left(&c, "not a token").unwrap().is_none());
+        // Whether it was remembered is kept, not guessed from the time left.
+        assert_eq!(session_remembered(&c, &long).unwrap(), Some(true));
+        assert_eq!(session_remembered(&c, &short).unwrap(), Some(false));
+        assert_eq!(session_remembered(&c, "not a token").unwrap(), None);
+        // A remembered sign-in in its last month is still a remembered one.
+        c.execute("UPDATE member_sessions SET expires=?1 WHERE remember=1", [now() + 5 * 86_400]).unwrap();
+        assert_eq!(session_remembered(&c, &long).unwrap(), Some(true));
+    }
+
+    #[test]
+    fn sessions_from_before_the_remember_column_keep_remember_me() {
+        let c = Connection::open_in_memory().unwrap();
+        let old_schema = SCHEMA.replace(", remember INTEGER NOT NULL DEFAULT 0", "");
+        c.execute_batch(&old_schema).unwrap();
+        c.execute_batch("CREATE TABLE products(id INTEGER, api_id TEXT, price REAL)").unwrap();
+        let t = now();
+        c.execute("INSERT INTO member_sessions(token,member_id,expires) VALUES('long',1,?1),('short',1,?2)", [t + 200 * 86_400, t + 10 * 86_400]).unwrap();
+        migrate(&c).unwrap();
+        let r = |tok: &str| c.query_row("SELECT remember FROM member_sessions WHERE token=?1", [tok], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!((r("long"), r("short")), (1, 0));
+        migrate(&c).unwrap();
+    }
+
+    #[test]
+    fn own_card_photos_count_towards_photo_space() {
+        let c = db();
+        let id = create(&c, "Erika", "h").unwrap().unwrap();
+        add_photo(&c, id, "/uploads/v_l.jpg", "/uploads/v_s.jpg", 10, 10, 100).unwrap();
+        let Added::Yes(cid) = add_card(&c, id, "own:abc", "My card", "", "", "/uploads/m_s.jpg", "/uploads/m_l.jpg").unwrap() else { panic!() };
+        assert_eq!(own_photo_count(&c, id).unwrap(), 1);
+        assert_eq!(unmeasured_card_photos(&c, 10).unwrap().len(), 1);
+        set_card_photo_bytes(&c, cid, 250).unwrap();
+        assert!(unmeasured_card_photos(&c, 10).unwrap().is_empty());
+        assert_eq!(photo_bytes(&c).unwrap(), 350);
+        remove_card(&c, id, cid).unwrap();
+        assert_eq!(photo_bytes(&c).unwrap(), 100, "a removed card frees its room");
+    }
+
+    #[test]
+    fn hidden_or_ended_listings_stay_off_the_public_pages() {
+        let c = db();
+        let id = create(&c, "Sabrina", "h").unwrap().unwrap();
+        set_profile_ok(&c, id, true).unwrap();
+        let Added::Yes(cid) = add_card(&c, id, "tcgdex:x-1", "One", "", "", "i", "l").unwrap() else { panic!() };
+        c.execute("UPDATE member_cards SET kind='sale', status='Active' WHERE id=?1", [cid]).unwrap();
+        assert!(card(&c, id, cid).unwrap().unwrap().on_show());
+        assert_eq!(approved_highlights(&c, 8).unwrap().len(), 1);
+        for st in ["Hidden", "Expired", "Sold"] {
+            c.execute("UPDATE member_cards SET status=?2 WHERE id=?1", rusqlite::params![cid, st]).unwrap();
+            assert!(!card(&c, id, cid).unwrap().unwrap().on_show(), "{st}");
+            assert!(approved_highlights(&c, 8).unwrap().is_empty(), "{st}");
+        }
+        c.execute("UPDATE member_cards SET kind='own' WHERE id=?1", [cid]).unwrap();
+        assert!(card(&c, id, cid).unwrap().unwrap().on_show(), "a card not for sale always shows");
     }
 
     #[test]

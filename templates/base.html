@@ -15,9 +15,9 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
 <meta name="apple-mobile-web-app-title" content="{{ nav.brand }}">
 <link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" href="/static/img/favicon-32.png" type="image/png" sizes="32x32">
-<link rel="icon" href="/static/img/icon-192.png" type="image/png" sizes="192x192">
-<link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png">
+<link rel="icon" href="/static/img/favicon-32.png?v=1" type="image/png" sizes="32x32">
+<link rel="icon" href="/static/img/icon-192.png?v=1" type="image/png" sizes="192x192">
+<link rel="apple-touch-icon" href="/static/img/apple-touch-icon.png?v=1">
 <title>{% block title %}{{ nav.page_title() }}{% endblock %}</title>
 <meta name="description" content="{{ nav.description() }}">
 {% if nav.indexed() %}<meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
@@ -30,7 +30,7 @@
 <meta property="og:description" content="{{ nav.description() }}">
 <meta property="og:image" content="{{ nav.og_image() }}">
 <meta property="og:locale" content="en_PH">
-<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:card" content="{% if nav.seo.image.is_empty() %}summary{% else %}summary_large_image{% endif %}">
 <meta name="twitter:title" content="{{ nav.page_title() }}">
 <meta name="twitter:description" content="{{ nav.description() }}">
 <meta name="twitter:image" content="{{ nav.og_image() }}">
@@ -39,8 +39,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@50..150,100..900&display=swap">
 <link rel="stylesheet" href="/static/app.css?v=53">
-<link rel="stylesheet" href="/static/modern.css?v=26">
-<link rel="stylesheet" href="/static/vault.css?v=55">
+<link rel="stylesheet" href="/static/modern.css?v=27">
+<link rel="stylesheet" href="/static/vault.css?v=56">
 {% for t in nav.trials %}<meta http-equiv="origin-trial" content="{{ t }}">
 {% endfor %}<script type="speculationrules">
 {"prefetch":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/admin*"}},{"not":{"href_matches":"/products/*"}},{"not":{"href_matches":"/me*"}},{"not":{"href_matches":"/join*"}},{"not":{"href_matches":"/chat*"}},{"not":{"href_matches":"/ask*"}},{"not":{"href_matches":"/trainers/*"}},{"not":{"href_matches":"/collections/*"}},{"not":{"href_matches":"/static/*"}},{"not":{"href_matches":"/uploads/*"}}]},"eagerness":"moderate"}],
@@ -70,18 +70,23 @@
   if ('modelContext' in document) import('/static/webmcp.js?v=1');
 })();
 </script>
+<!-- Back after a filter or sort loads that page fresh, so the cart, the bell and the card window keep working. -->
+<meta name="htmx-config" content='{"historyCacheSize":0,"refreshOnHistoryMiss":true}'>
+<!-- The card finder's files: change this one number after build-wasm.sh. -->
+<meta name="finder-v" content="12">
 <script src="/static/htmx.min.js?v=4" defer></script>
 <script src="/static/suggest.js?v=3" defer></script>
-<script src="/static/card-float.js?v=22" defer></script>
+<script src="/static/card-float.js?v=23" defer></script>
 <script src="/static/tiles.js?v=2" defer></script>
-<script src="/static/vouches.js?v=3" defer></script>
-<script src="/static/vault-core.js?v=11" defer></script>
-<script src="/static/cart.js?v=1" defer></script>
-<script src="/static/vault-talk.js?v=6" defer></script>
-<script src="/static/vault-staff.js?v=2" defer></script>
+<script src="/static/vouches.js?v=4" defer></script>
+<script src="/static/vault-core.js?v=12" defer></script>
+<script src="/static/cart.js?v=2" defer></script>
+<script src="/static/vault-talk.js?v=7" defer></script>
+<script src="/static/vault-staff.js?v=3" defer></script>
 <script type="module" src="/static/vault-gl.js?v=4"></script>
 </head>
 <body>
+<a class="skip" href="#main">Skip to content</a>
 <script>(function () { try { // Signed in last time? Say so before the top bar paints, so "Log in" never flashes. Saved by vault-core.js as { me, admin }.
   var s = JSON.parse(localStorage.getItem('bbv:me') || 'null'); if (!s) return;
   var me = s.me || (s.name ? s : null), d = document.documentElement.dataset;
@@ -90,10 +95,14 @@
 <div class="hx-gate" aria-hidden="true"><img src="/static/img/logo-768.webp" width="768" height="768" alt=""></div>
 <header class="bar">
   <div class="bar-in">
-    <a class="brand" href="/" aria-label="{{ nav.brand }}"><img class="brand-mark" src="/static/img/logo-sm.png" width="44" height="44" alt="">{% if nav.split() %}<span class="brand-t"><span class="b1">{{ nav.left() }}</span> <span class="b2">{{ nav.right() }}</span></span>{% else %}<span class="brand-t"><span class="b2">{{ nav.brand }}</span></span>{% endif %}</a>
-    <nav class="menu" aria-label="Collections">
-      {% for c in nav.menu %}<a href="/collections/{{ c.handle }}">{{ c.title }}</a>{% endfor %}
-    </nav>
+    <a class="brand" href="/" aria-label="{{ nav.brand }}"><img class="brand-mark" src="/static/img/logo-sm-144.png?v=1" width="44" height="44" alt="">{% if nav.split() %}<span class="brand-t"><span class="b1">{{ nav.left() }}</span> <span class="b2">{{ nav.right() }}</span></span>{% else %}<span class="brand-t"><span class="b2">{{ nav.brand }}</span></span>{% endif %}</a>
+    <details class="menu-dd"{% if nav.menu.is_empty() %} hidden{% endif %}>
+      <summary class="bar-trainers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 7h8M8 11h8"/></svg>Binders<svg class="menu-dd-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
+      <nav class="menu" aria-label="Binders">
+        {% for c in nav.menu %}<a href="/collections/{{ c.handle }}">{{ c.title }}</a>{% endfor %}
+        <a class="menu-all" href="/all">All cards</a>
+      </nav>
+    </details>
     <form class="search" action="/search" role="search">
       <input type="search" name="q" placeholder="Search cards, sets, binders" aria-label="Search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" data-suggest>
     </form>
@@ -112,20 +121,21 @@
     </div>
   </div>
 </header>
-<main id="main">{% block content %}{% endblock %}</main>
+<main id="main" tabindex="-1">{% block content %}{% endblock %}</main>
 <footer class="foot">
   <div class="foot-legal">
     <p>© {{ nav.years }} {{ nav.brand }}. All rights reserved.</p>
     <p>Pokémon and all related names are trademarks of Nintendo, Creatures and GAME FREAK. {{ nav.brand }} is a private collection and isn’t affiliated with them.</p>
   </div>
 </footer>
-<button type="button" class="cart-fab" id="cartFab" hidden aria-label="Your cart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg><span class="cart-n" id="cartN">0</span></button>
+<button type="button" class="cart-fab" id="cartFab" hidden aria-label="Your cart" aria-expanded="false" aria-controls="cartDrawer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg><span class="cart-n" id="cartN">0</span></button>
 <aside class="cart" id="cartDrawer" hidden aria-label="Your cart">
   <div class="cart-head"><b>Your cart</b><button type="button" class="ibtn" data-cart-close aria-label="Close">✕</button></div>
   <p class="cart-empty" id="cartEmpty">Nothing in your cart yet. Tap <b>Add to cart</b> on any card for sale.</p>
   <ul class="cart-list" id="cartList"></ul>
   <div class="cart-foot">
-    <textarea id="cartNote" rows="2" maxlength="300" placeholder="A note for the seller (optional): meetup, shipping, questions"></textarea>
+    <label class="cart-note-l" for="cartNote">A note for the seller <small>(optional)</small></label>
+    <textarea id="cartNote" rows="2" maxlength="300" placeholder="Meetup, shipping, questions"></textarea>
     <div class="cart-sumrow"><span>Total</span><b id="cartTotal">₱0</b></div>
     <button type="button" class="btn cart-go" id="cartGo" disabled>Send order</button>
     <small>No payment here. The vault or the seller accepts your order and shows you how to pay them directly.</small>
@@ -135,7 +145,7 @@
   <a href="/"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</a>
   <a href="/all"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/></svg>Browse</a>
   <a href="/stores"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>Stores</a>
-  <a class="tab-ask" href="/ask" data-float aria-label="Ask the Vault"><img src="/static/img/logo-sm.png" width="52" height="52" alt=""><span>Ask</span></a>
+  <a class="tab-ask" href="/ask" data-float aria-label="Ask the Vault"><img src="/static/img/logo-sm-144.png?v=1" width="52" height="52" alt=""><span>Ask</span></a>
   <a href="/chat" data-float><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>Chat</a>
   <a href="/trainers"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>Trainers</a>
 </nav>

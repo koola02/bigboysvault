@@ -66,11 +66,23 @@ window.Admin = (() => {
     function ensure() {
       if (root) return;
       root = document.createElement('div'); root.className = 'sheet'; root.hidden = true;
-      root.innerHTML = '<div class="sheet-bg" data-close></div><div class="sheet-panel" role="dialog" aria-modal="true"><header class="sheet-h"><button class="linkbtn" type="button" data-close>Cancel</button><h2></h2><button class="linkbtn strong" type="button" data-save>Save</button></header><div class="sheet-body"></div></div>';
+      root.innerHTML = '<div class="sheet-bg" data-close></div><div class="sheet-panel" role="dialog" aria-modal="true" aria-labelledby="adminSheetTitle"><header class="sheet-h"><button class="linkbtn" type="button" data-close>Cancel</button><h2 id="adminSheetTitle"></h2><button class="linkbtn strong" type="button" data-save>Save</button></header><div class="sheet-body"></div></div>';
       document.body.appendChild(root);
       titleEl = root.querySelector('h2'); saveBtn = root.querySelector('[data-save]'); bodyEl = root.querySelector('.sheet-body');
       root.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) close(); });
-      addEventListener('keydown', (e) => { if (e.key === 'Escape' && !root.hidden) close(); });
+      addEventListener('keydown', (e) => {
+        if (root.hidden || !root.classList.contains('open')) return;
+        if (e.key === 'Escape') { close(); return; }
+        if (e.key !== 'Tab') return;
+        // While the sheet is open, Tab goes round the things inside it and never into the page behind.
+        const panel = root.querySelector('.sheet-panel');
+        const all = [...panel.querySelectorAll('button, input, select, textarea, a[href], [tabindex]:not([tabindex="-1"])')].filter((n) => !n.disabled && n.getClientRects().length);
+        if (!all.length) return;
+        const first = all[0], last = all[all.length - 1], at = document.activeElement;
+        if (!panel.contains(at)) { e.preventDefault(); (e.shiftKey ? last : first).focus(); }
+        else if (e.shiftKey && at === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && at === last) { e.preventDefault(); first.focus(); }
+      });
       saveBtn.addEventListener('click', save);
     }
     async function save() {
@@ -87,7 +99,10 @@ window.Admin = (() => {
     function close() {
       if (!root || root.hidden) return;
       root.classList.remove('open'); document.body.style.overflow = '';
-      setTimeout(() => { root.hidden = true; bodyEl.replaceChildren(); }, 280); lastFocus?.focus?.();
+      setTimeout(() => { root.hidden = true; bodyEl.replaceChildren(); }, 280);
+      // Back to the button that opened the sheet, if it's still on the page.
+      if (lastFocus?.isConnected && lastFocus.getClientRects().length) lastFocus.focus({ preventScroll: true });
+      lastFocus = null;
     }
     return { open, close, save };
   })();
@@ -219,17 +234,18 @@ window.Admin = (() => {
 
   function valueSheet() {
     let mode = 'set'; const node = el('div', 'sheet-form'); const inp = el('input'); inp.type = 'text'; inp.inputMode = 'decimal'; inp.className = 'sheet-input'; inp.placeholder = '₱ amount';
-    const hint = el('p', 'hint show', 'Every selected card gets exactly this value.');
+    const hint = el('p', 'hint show', 'Every selected card gets exactly this value. It stays until you change it: the nightly market update leaves it alone.');
     const lab = el('label', 'sf-label'); lab.append(el('span', 'sf-l', 'Amount'), inp);
     node.append(segment([['set', 'Set to'], ['up', 'Raise %'], ['down', 'Lower %'], ['market', 'Market today']], (v) => {
       mode = v; lab.hidden = v === 'market'; inp.placeholder = v === 'set' ? '₱ amount' : '% change';
-      hint.textContent = { set: 'Every selected card gets exactly this value.', up: 'Raises every value by this percentage.', down: 'Lowers every value by this percentage.',
-        market: 'Looks up today’s market price for cards that were added with a card number, and updates their value. Up to 40 at a time.' }[v];
+      hint.textContent = { set: 'Every selected card gets exactly this value. It stays until you change it: the nightly market update leaves it alone.',
+        up: 'Raises every value by this percentage. The new values stay until you change them.', down: 'Lowers every value by this percentage. The new values stay until you change them.',
+        market: 'Looks up today’s market price for cards added with a card number, and sets the suggested price for each card’s condition. These then follow the market every night. Graded and sealed cards keep your price. Up to 40 at a time.' }[v];
     }), lab, hint);
     A.sheet.open(`Value · ${plural(selCount())}`, node, async () => {
       const n = parseFloat(inp.value.replace(/[^0-9.]/g, ''));
       if (mode === 'market') {
-        await run({ action: 'market' }, (j) => j.n ? `Updated ${plural(j.n)} to today’s market price${j.skipped ? ` · ${j.skipped} had no card number` : ''}${j.capped ? ' · run again for the rest' : ''}` : 'None of the selected cards have a card number to look up.');
+        await run({ action: 'market' }, (j) => j.n ? `Updated ${plural(j.n)} to today’s price for their condition${j.skipped ? ` · ${j.skipped} skipped (graded, sealed, or no card number)` : ''}${j.capped ? ' · run again for the rest' : ''}` : 'None of the selected cards could be priced from the market (graded, sealed, or no card number).');
       } else {
         if (!isFinite(n)) throw new Error('Enter a number.');
         await run(mode === 'set' ? { action: 'set_value', number: n } : { action: 'adjust_value', number: mode === 'up' ? n : -n }, (j) => `Updated ${plural(j.n)}`);

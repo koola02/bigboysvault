@@ -13,11 +13,16 @@
   });
 
   const idsOf = (tile) => (tile.dataset.ids || tile.dataset.id).split(',').filter(Boolean).map(Number);
+  // Sold copies stay as the vault's record. They aren't counted as copies for sale, and − leaves them till last.
+  const soldOf = (tile) => new Set((tile.dataset.sold || '').split(',').filter(Boolean).map(Number));
   function setCount(tile, ids) {
-    tile.dataset.ids = ids.join(','); tile.querySelector('[data-sel]').dataset.ids = tile.dataset.ids;
-    const n = ids.length; tile.querySelector('[data-n]').textContent = n;
+    const sold = soldOf(tile), gone = ids.filter((x) => sold.has(x));
+    tile.dataset.ids = ids.join(','); tile.querySelector('[data-sel]').dataset.ids = tile.dataset.ids; tile.dataset.sold = gone.join(',');
+    const n = ids.length - gone.length; tile.querySelector('[data-n]').textContent = n;
     const badge = tile.querySelector('[data-qty-badge]'); badge.hidden = n < 2; badge.textContent = '×' + n;
+    const soldN = tile.querySelector('[data-sold-n]'); if (soldN) { soldN.hidden = !gone.length; soldN.textContent = `${gone.length} sold`; }
   }
+  const forSaleOf = (tile) => { const sold = soldOf(tile); return idsOf(tile).filter((x) => !sold.has(x)); };
   // − / ＋ take turns on each card, in the order they were tapped. Each turn reads the copies again,
   // so quick taps never work from an old list (two ＋ losing a copy, or two − removing the same one).
   const qtyQueue = new WeakMap();
@@ -30,14 +35,15 @@
   async function changeCopies(tile, plus) {
     if (tile.hidden || !tile.isConnected) return;   // already deleted (waiting on Undo) or swapped out by a search
     const ids = idsOf(tile);
-    if (plus) {
-      try { const j = await A.post('/admin/dup/' + ids[0]); const now = [...idsOf(tile), j.id]; setCount(tile, now); A.toast(`${now.length} copies ✓`, { kind: 'ok' }); }
+    if (plus) {   // one more copy for sale (the server makes it for sale even if the card it copies has sold)
+      const from = forSaleOf(tile)[0] ?? ids[0];
+      try { const j = await A.post('/admin/dup/' + from); const now = [...idsOf(tile), j.id]; setCount(tile, now); const n = forSaleOf(tile).length; A.toast(`${n} cop${n === 1 ? 'y' : 'ies'} for sale ✓`, { kind: 'ok' }); }
       catch (err) { A.toast(err.message, { kind: 'err' }); }
       return;
     }
-    if (ids.length > 1) {   // one copy fewer: remove the newest copy
-      const gone = Math.max(...ids);
-      try { await A.post('/admin/delete/' + gone); const left = idsOf(tile).filter((x) => x !== gone); setCount(tile, left); A.toast(`${left.length} cop${left.length === 1 ? 'y' : 'ies'} left`, { kind: 'ok' }); }
+    if (ids.length > 1) {   // one copy fewer: the newest copy still for sale (sold records only when none are left)
+      const pool = forSaleOf(tile), gone = Math.max(...(pool.length ? pool : ids));
+      try { await A.post('/admin/delete/' + gone); const left = idsOf(tile).filter((x) => x !== gone); setCount(tile, left); const n = forSaleOf(tile).length; A.toast(`${n} cop${n === 1 ? 'y' : 'ies'} for sale`, { kind: 'ok' }); }
       catch (err) { A.toast(err.message, { kind: 'err' }); }
       return;
     }
