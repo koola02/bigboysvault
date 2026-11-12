@@ -1398,6 +1398,9 @@ pub struct QuickEdit {
     notes: Option<String>,
     condition: Option<String>,
     tags: Option<Vec<String>>,
+    /// One card given, and its identical copies should change with it (the editor on a card's own page).
+    #[serde(default)]
+    copies: bool,
 }
 
 /// Price, description or condition, for every copy of a card, without opening the edit form.
@@ -1417,9 +1420,13 @@ pub async fn quick_edit(State(app): State<App>, h: HeaderMap, Json(req): Json<Qu
     let shown = tags.clone();
     // A typed price is the owner's own ('own'); only a tapped suggestion keeps following the market.
     let price_src = req.price.is_some().then(|| price_source(req.price_src.as_deref().unwrap_or("")));
-    let (ids, price) = (req.ids, req.price);
+    let (ids, price, copies) = (req.ids, req.price, req.copies);
     // The tile's grade badge follows the condition, so a card set to PSA 10 shows it straight away.
     let grade = with_db(&app, move |c| {
+        let ids = if copies && ids.len() == 1 { db::sale_copy_ids(c, ids[0])? } else { ids };
+        if ids.is_empty() {
+            return Ok(None);
+        }
         db::quick_edit(c, &ids, price, price_src.as_deref(), notes.as_deref(), condition.as_deref(), tags.as_deref())?;
         Ok(db::product_by_id(c, ids[0])?.and_then(|p| p.grade()))
     })

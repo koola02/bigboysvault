@@ -1142,6 +1142,14 @@ pub fn copies_for_sale(c: &Connection, id: i64) -> rusqlite::Result<i64> {
     )
 }
 
+/// This card and every identical copy of it still for sale (same card, condition, finish and price), so one edit
+/// on the card's page keeps the copies alike.
+pub fn sale_copy_ids(c: &Connection, id: i64) -> rusqlite::Result<Vec<i64>> {
+    let mut st = c.prepare(&format!("SELECT p.id FROM products p WHERE p.id=?1 OR (p.available=1 AND {DUP_KEY} = (SELECT {DUP_KEY} FROM products p WHERE p.id=?1)) ORDER BY p.id=?1 DESC, p.id"))?;
+    let v = st.query_map([id], |r| r.get(0))?.collect::<Result<Vec<i64>, _>>()?;
+    Ok(v)
+}
+
 /// The copy a cart line or an order should take: this one while it's for sale, else another copy of the same card
 /// (same card, condition, finish and price) that still is. None when no copy of it is for sale. A buyer who added a
 /// card that has since sold keeps it in the cart while identical copies remain.
