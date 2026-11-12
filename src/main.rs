@@ -1,6 +1,7 @@
 mod admin;
 mod api;
 mod community;
+mod look;
 mod messages;
 mod ops;
 mod store;
@@ -215,7 +216,12 @@ async fn with_db<T: Send + 'static>(
     f: impl FnOnce(&rusqlite::Connection) -> rusqlite::Result<T> + Send + 'static,
 ) -> Result<T, (StatusCode, String)> {
     let path = app.db_path.clone();
-    tokio::task::spawn_blocking(move || db::open(&path).and_then(|c| f(&c)))
+    // Pages rendered on the database thread need to know the look too (see look.rs).
+    let new_look = look::is_new();
+    tokio::task::spawn_blocking(move || {
+        look::in_thread(new_look);
+        db::open(&path).and_then(|c| f(&c))
+    })
         .await
         .map_err(ise)?
         .map_err(ise)
@@ -240,6 +246,8 @@ where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<String, (StatusCode, String)>>,
 {
+    // The two looks never share a kept page.
+    let key = if look::is_new() { format!("fb|{key}") } else { key };
     if let Some(hit) = app.cache.get(&key) {
         return Ok(page((*hit).clone()));
     }
@@ -1184,6 +1192,7 @@ async fn main() {
         blocks::ensure_blocks(&c).expect("blocks");
         blocks::refresh_hero_art(&c).expect("hero art");
         blocks::community_once(&c).expect("community");
+        look::load(&c).expect("look");
         // Old prices that didn't say where they came from are sorted once in db::migrate (price_src_v).
     }
     if admin_token.is_empty() {
@@ -1365,6 +1374,9 @@ async fn main() {
         .route("/ask", get(community::ask_page))
         .route("/api/ask", post(api::ask_vault))
         .route("/admin/ask/status", get(api::ask_status))
+        .route("/admin/look", get(look::guide))
+        .route("/admin/look/all", post(look::for_all))
+        .route("/me/look", post(look::pick))
         .route("/me/messages", get(messages::page))
         .route("/admin/messages", get(messages::admin_page))
         .route("/admin/dm", get(messages::admin_list))
@@ -1457,6 +1469,7 @@ async fn main() {
         .layer(SetResponseHeaderLayer::if_not_present(header::X_FRAME_OPTIONS, HeaderValue::from_static("SAMEORIGIN")))
         // Browsers that have seen the site once only ever ask for it over https (they ignore this on plain http).
         .layer(SetResponseHeaderLayer::if_not_present(header::STRICT_TRANSPORT_SECURITY, HeaderValue::from_static("max-age=15552000")))
+        .layer(axum::middleware::from_fn(look::layer))
         .layer(axum::middleware::from_fn(robots_header))
         .layer(CompressionLayer::new())
         .layer(axum::middleware::from_fn(www_redirect))

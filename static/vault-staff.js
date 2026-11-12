@@ -54,6 +54,8 @@
     if (trainer && staff && theirs) return { href: `/admin/trainers#trainer-${trainer.dataset.trainer || trainer.dataset.owner}`, text: 'Manage this trainer', mcard: mcard?.dataset.mcard };
     if (scope.querySelector('.bf') && full) return { href: '/admin/binders', text: 'Edit binders' };
     if (document.getElementById('hxHero') && full && !document.querySelector('dialog.float[open]')) return { href: '/admin/page', text: 'Edit the home page' };
+    // The new look has Admin in its menu: only the buttons about what's on screen float there.
+    if (document.documentElement.dataset.look === 'fb') return null;
     if (full) return { href: '/admin', text: 'Admin' };
     if (staff) return { href: '/admin/trainers', text: 'Admin' };
     return null;

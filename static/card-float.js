@@ -474,7 +474,8 @@
     const z = e.target.closest?.('[data-zoom]');
     if (z) { e.preventDefault(); zoom(z); return; }
     const a = e.target.closest?.(SEL);
-    if (!a || a.target === '_blank' || a.hasAttribute('download')) return;
+    // [data-no-float]: links inside it open as ordinary pages (the style guide's samples).
+    if (!a || a.target === '_blank' || a.hasAttribute('download') || a.closest('[data-no-float]')) return;
     e.preventDefault();
     open(a.getAttribute('href'), a);
   });
@@ -482,7 +483,7 @@
   // Get a head start the moment a finger lands or a mouse rests on a card.
   const prepare = (e) => {
     const a = e.target.closest?.(SEL);
-    if (a && !(e.type === 'mouseover' && a.contains(e.relatedTarget))) { load(a.getAttribute('href')).catch(() => {}); loadTools().catch(() => {}); }
+    if (a && !a.closest('[data-no-float]') && !(e.type === 'mouseover' && a.contains(e.relatedTarget))) { load(a.getAttribute('href')).catch(() => {}); loadTools().catch(() => {}); }
   };
   document.addEventListener('pointerdown', prepare, { passive: true });
   if (matchMedia('(hover: hover)').matches) document.addEventListener('mouseover', prepare, { passive: true });

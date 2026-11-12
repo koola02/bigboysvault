@@ -184,6 +184,16 @@ pixels, like every upload), voice notes (WebM/Ogg/MP4/MP3, checked by their firs
 - Media counts toward the photo space cap (`PHOTO_SPACE_MB`) and lives in `uploads/` under unguessable names
   (`dm<thread>-…`), so the nightly backup keeps it.
 
+## 4d. The new look (Facebook-style redesign, in progress)
+
+The plan is in `docs/REDESIGN.md`. While it is built the site has two looks. `src/look.rs` decides per request:
+the new look is on when the visitor chose it (cookie `bbv_look=new`, set from `/admin/look` by staff) or the owner
+switched everyone (`site_look` setting, `POST /admin/look/all`), **and** the page is in `look::READY`. Templates ask
+`crate::look::is_new()`; `base.html` then loads `fb.css` + `fb_top.html`/`fb_bottom.html` + `fb-shell.js` instead of
+`app.css`/`modern.css`/`vault.css` + today's header + `vault-core.js`. `widgets.css` (messages, card camera, the
+admin-buttons switch) is loaded by both. `cached()` keeps the looks apart. To convert a page: restyle it in `fb.css`,
+add its route to `READY`. `/admin/look` is the style guide: every component in the frame, plus the switches.
+
 ## 5. Catalogue importer (later)
 
 Adding stock already pulls names, sets and art from TCGdex on demand, and the nightly warm-up keeps the most
