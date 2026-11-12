@@ -411,6 +411,17 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         c.execute("UPDATE members SET slug=?1 WHERE id=?2", rusqlite::params![s, id])?;
     }
 
+    // /store/vault is the vault's own store now: a trainer who already had that address gets a free one (once; it
+    // costs one indexed look-up per connection, and nobody can take it any more).
+    let taken: Vec<(i64, String)> = c.prepare("SELECT id, name FROM members WHERE slug='vault'")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    for (id, name) in taken {
+        let s = unique_slug(c, &name, id)?;
+        let s = if s == "vault" { format!("vault-{id}") } else { s };
+        c.execute("UPDATE members SET slug=?1 WHERE id=?2", rusqlite::params![s, id])?;
+    }
+
     // This runs on every connection, so it only writes when there's really something to move.
     let waiting: i64 = c.query_row("SELECT COUNT(*) FROM members WHERE vouch<>''", [], |r| r.get(0))?;
     if waiting == 0 {
@@ -558,7 +569,8 @@ impl MemberCard {
     }
     /// What this copy is worth: the trainer's own figure, or the market's adjusted for its condition.
     pub fn worth(&self) -> f64 {
-        if self.value_own > 0.0 { self.value_own } else { self.value * condition_factor(&self.cond) }
+        // A card with a market price is never worth less than a peso, so it never reads as \"no price\".
+        if self.value_own > 0.0 { self.value_own } else if self.value > 0.0 { (self.value * condition_factor(&self.cond)).max(1.0) } else { 0.0 }
     }
     pub fn worth_text(&self) -> String {
         vault_search::peso(self.worth())
@@ -788,10 +800,15 @@ pub fn valid_name(raw: &str) -> Result<String, &'static str> {
     if key.is_empty() {
         return Err("A trainer name needs at least one letter or number.");
     }
-    if ["admin", "administrator", "moderator", "bigboysvault", "bigboys", "vaultowner", "owner", "official", "staff", "support"].iter().any(|bad| key.contains(bad)) {
+    if pretends_to_be_site(&key) {
         return Err("That name is reserved. Please pick another.");
     }
     Ok(name)
+}
+
+/// Whether a name (as name_key gives it) pretends to be the site or its people: trainer names and store names alike.
+pub fn pretends_to_be_site(key: &str) -> bool {
+    ["admin", "administrator", "moderator", "bigboysvault", "bigboys", "vaultowner", "owner", "official", "staff", "support"].iter().any(|bad| key.contains(bad))
 }
 
 pub fn valid_password(p: &str) -> Result<(), &'static str> {

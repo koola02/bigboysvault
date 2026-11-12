@@ -345,16 +345,30 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
   // The history entry this page opened on, marked. A search on the page adds entries of its own (htmx), and from those
   // a step back would only undo the search.
   const mark = `${Date.now()}.${Math.random()}`;
-  try { history.replaceState(Object.assign({}, history.state, { binder: mark }), ''); } catch (_) {}
+  // How many entries this tab had when the page first opened (kept across a reload): with only this page in the tab
+  // (opened in a new tab), there is nothing to step back to, whatever a card window added since.
+  const prev = history.state || {};
+  const firstLen = typeof prev.binderLen === 'number' ? prev.binderLen : history.length;
+  try { history.replaceState(Object.assign({}, prev, { binder: mark, binderLen: firstLen }), ''); } catch (_) {}
+  const canBack = () => (window.navigation && typeof navigation.canGoBack === 'boolean' ? navigation.canGoBack : firstLen > 1);
   // Came here from the store this X points to, and still where the page opened? Then step back to the store, so it opens
   // where it was scrolled to. Otherwise the X is a plain link.
   const fromStore = () => {
     try {
       const r = new URL(document.referrer), s = new URL(bx.href, location.href);
-      return history.length > 1 && r.origin === location.origin && path(r) === path(s) && (history.state || {}).binder === mark;
+      return canBack() && r.origin === location.origin && path(r) === path(s) && (history.state || {}).binder === mark;
     } catch (_) { return false; }
   };
-  const leave = () => { if (fromStore()) history.back(); else location.href = bx.href; };
+  // Step back to the store; if that goes nowhere within a moment, follow the link instead.
+  const leave = () => {
+    if (!fromStore()) { location.href = bx.href; return; }
+    let gone = false;
+    const away = () => { gone = true; };
+    addEventListener('pagehide', away, { once: true });
+    addEventListener('popstate', away, { once: true });
+    history.back();
+    setTimeout(() => { if (!gone) location.href = bx.href; }, 400);
+  };
   bx.addEventListener('click', (e) => {
     if (e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return; // a new tab or window: the link does that
     e.preventDefault(); leave();

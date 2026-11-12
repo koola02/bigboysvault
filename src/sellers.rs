@@ -131,6 +131,8 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
          CREATE INDEX IF NOT EXISTS idx_events_member ON card_events(member_id, created_at);
          CREATE INDEX IF NOT EXISTS idx_mcards_status ON member_cards(member_id, status);",
     )?;
+    add_column(c, "push_subscriptions", "fails", "INTEGER NOT NULL DEFAULT 0")?;
+    message_push_on_once(c)?;
     for (col, def) in [("qty", "INTEGER NOT NULL DEFAULT 1"), ("message", "TEXT NOT NULL DEFAULT ''"), ("price", "REAL NOT NULL DEFAULT 0"), ("paid_via", "TEXT NOT NULL DEFAULT ''"), ("updated_at", "INTEGER NOT NULL DEFAULT 0"), ("offer_id", "INTEGER NOT NULL DEFAULT 0")] {
         add_column(c, "reservations", col, def)?;
     }
@@ -148,6 +150,18 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
     }
     add_column(c, "listing_views", "day", "INTEGER NOT NULL DEFAULT 0")?;
     c.execute_batch("CREATE UNIQUE INDEX IF NOT EXISTS idx_views_once ON listing_views(card_id, viewer_ip_hash, day)")?;
+    Ok(())
+}
+
+/// Once: message alerts are on by default. Before alerts could be sent at all, no saved "push" choice was a real one,
+/// so every saved message preference starts with push on too.
+fn message_push_on_once(c: &Connection) -> rusqlite::Result<()> {
+    c.execute_batch("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)")?;
+    let done: i64 = c.query_row("SELECT COUNT(*) FROM settings WHERE key='message_push_v'", [], |r| r.get(0))?;
+    if done == 0 {
+        c.execute("UPDATE notify_prefs SET push=1 WHERE event='message'", [])?;
+        c.execute("INSERT INTO settings(key, value) VALUES('message_push_v', '1')", [])?;
+    }
     Ok(())
 }
 
@@ -1679,7 +1693,8 @@ pub fn prefs_of(c: &Connection, member: i64) -> rusqlite::Result<Vec<Pref>> {
     let mut out = vec![];
     for (event, label) in EVENTS {
         let saved: Option<(i64, i64, i64)> = c.query_row("SELECT site, email, push FROM notify_prefs WHERE member_id=?1 AND event=?2", rusqlite::params![member, event], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?;
-        let (site, email, push) = saved.unwrap_or((1, 0, 0));
+        // Message alerts are on unless the member turned them off.
+        let (site, email, push) = saved.unwrap_or(if event == "message" { (1, 0, 1) } else { (1, 0, 0) });
         out.push(Pref { event: event.into(), label: label.into(), site: site != 0, email: email != 0, push: push != 0 });
     }
     Ok(out)
@@ -1782,14 +1797,12 @@ pub fn take_push_outbox(c: &Connection, limit: i64) -> rusqlite::Result<Vec<(i64
 }
 
 /// Saves a browser's push subscription for a member. One browser belongs to one person: whoever signed up on it last
-/// (anyone else's sign-up on that browser ends). Turning alerts on also turns on message alerts, unless the member
-/// already chose otherwise for messages.
+/// (anyone else's sign-up on that browser ends). Message alerts are on by default (see prefs_of).
 pub fn push_subscribe(c: &Connection, member: i64, endpoint: &str, p256dh: &str, auth: &str) -> rusqlite::Result<()> {
     if !endpoint.starts_with("https://") || endpoint.len() > 1000 || p256dh.len() > 200 || auth.len() > 100 {
         return Ok(());
     }
     c.execute("DELETE FROM push_subscriptions WHERE endpoint=?1", [endpoint])?;
-    c.execute("INSERT OR IGNORE INTO notify_prefs(member_id, event, site, email, push) VALUES(?1, 'message', 1, 0, 1)", [member])?;
     // Ten devices each at most: a new one pushes out the oldest.
     c.execute(
         "DELETE FROM push_subscriptions WHERE member_id=?1 AND id NOT IN (SELECT id FROM push_subscriptions WHERE member_id=?1 ORDER BY id DESC LIMIT ?2)",
@@ -2970,12 +2983,12 @@ mod tests {
         push_subscribe(&c, 3, "https://fcm.googleapis.com/fcm/send/one", "k", "a").unwrap();
         let owners: Vec<i64> = c.prepare("SELECT member_id FROM push_subscriptions").unwrap().query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
         assert_eq!(owners, vec![3], "the browser moved to the person who signed up on it last");
-        // Turning alerts on turns message alerts on, without overriding a choice already made.
-        let push = |m: i64| c.query_row("SELECT push FROM notify_prefs WHERE member_id=?1 AND event='message'", [m], |r| r.get::<_, i64>(0)).unwrap();
-        assert_eq!(push(3), 1);
+        // Message alerts are on unless the member turned them off; turning alerts on never overrides that choice.
+        let push = |m: i64| prefs_of(&c, m).unwrap().into_iter().find(|p| p.event == "message").unwrap().push;
+        assert!(push(3), "on by default");
         set_pref(&c, 2, "message", true, false, false).unwrap();
         push_subscribe(&c, 2, "https://fcm.googleapis.com/fcm/send/two", "k", "a").unwrap();
-        assert_eq!(push(2), 0, "they had said no to message alerts");
+        assert!(!push(2), "they had said no to message alerts");
         assert_eq!(push_forget(&c, "https://fcm.googleapis.com/fcm/send/two").unwrap(), 1);
         // Notes go to the queue only for the events the member wants pushed, and never for private messages.
         set_pref(&c, 3, "offer", true, false, true).unwrap();

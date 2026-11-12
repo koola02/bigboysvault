@@ -732,6 +732,17 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
             Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "That cover photo couldn't be read. Try a JPEG or PNG.")),
         }
     }
+    // A store can't call itself Big Boys Vault (or the owner's current site name), staff or official: its cards sit
+    // next to the vault's on The Vault page, each saying whose it is.
+    let wanted = members::clean_line(&s.store_name, 40);
+    if !wanted.is_empty() && wanted != m.store_name.trim() {
+        let key = members::name_key(&wanted);
+        let brand = with_db(&app, |c| marcuru_rs::blocks::setting(c, "brand")).await?.unwrap_or_default();
+        let brand_key = members::name_key(&brand);
+        if members::pretends_to_be_site(&key) || (!brand_key.is_empty() && key.contains(&brand_key)) {
+            return Ok(fail(StatusCode::BAD_REQUEST, "That store name is reserved. Please pick another."));
+        }
+    }
     let (id, old_cover) = (m.id, m.cover_photo.clone());
     let cover_now = new_cover.clone();
     with_db(&app, move |c| {

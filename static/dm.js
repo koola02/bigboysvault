@@ -534,6 +534,9 @@
       if (s.type === 'ringing') { if (this.role === 'caller' && this.phase === 'calling' && this.ui) { this.phase = 'ringing'; this.setStatus('Ringing…'); this.ringing(true, false); } }
       else if (s.type === 'answer' && this.pc) {
         this.ringing(false);
+        // Answered: "No answer" no longer applies; connecting gets half a minute of its own.
+        clearTimeout(this.ringTimer);
+        this.ringTimer = setTimeout(() => { if (this.role === 'caller' && !this.started && this.ui) { toast('The call couldn\'t connect.', true); this.hang(); } }, 30000);
         if (this.phase !== 'live') { this.phase = 'connecting'; this.setStatus('Connecting…'); }
         await this.pc.setRemoteDescription(s.data.sdp); for (const c of this.pendingIce.splice(0)) await this.pc.addIceCandidate(c).catch(() => {});
       }
@@ -784,9 +787,15 @@
   /* ---------------- a call's alert was tapped ----------------
      The phone's alert (static/sw.js) opens this page with ?call=…[&answer=1], or tells an open page by message. The
      call shows (and is answered, for "Answer") when its ring arrives; if it never does, the call is already over. */
+  // `answer` only ever comes from this site's own service worker (a message, or a one-time pass it left for this page):
+  // a link someone sends can show a call, never answer it.
   function wantCall(id, answer) {
     if (!id) return;
-    if (call.ui && call.id === id && call.role === 'callee') { if (answer && !call.pc) call.accept(); return; }
+    if (call.ui) {
+      if (call.id === id && call.role === 'callee') { if (answer && !call.pc) call.accept(); }
+      else toast('You\'re already in a call. End it to answer the other one.', true);
+      return;
+    }
     call.want = { call: id, answer: !!answer };
     if (live.running) kick();
     setTimeout(() => { if (call.want && call.want.call === id) { call.want = null; toast('That call has ended.'); } }, 9000);
@@ -794,8 +803,29 @@
   navigator.serviceWorker?.addEventListener('message', (e) => {
     const d = e.data || {};
     if (d.bbv === 'call') wantCall(d.call, d.answer);
-    else if (d.bbv === 'open' && typeof d.url === 'string' && d.url.startsWith('/')) location.href = d.url;
+    else if (d.bbv === 'open' && typeof d.url === 'string' && d.url.startsWith('/') && !d.url.startsWith('//')) {
+      // In a call the page stays: a chat opens beside the call, anything else waits until the call is over.
+      if (call.ui) {
+        const t = Number(new URL(d.url, location.origin).searchParams.get('t'));
+        if (t && /^\/me\/messages/.test(d.url)) win.open(t); else toast('That will be there after your call.');
+        return;
+      }
+      location.href = d.url;
+    }
   });
+
+  // The one-time pass the service worker leaves when Answer is tapped on a call's alert and no page of the site is open.
+  // Only the site itself can leave one, so a link from anywhere else can't answer a call. Used once, good for 90 s.
+  async function answerPass(pass, id) {
+    if (!/^[\w-]{16,80}$/.test(pass) || !window.caches) return false;
+    try {
+      const box = await caches.open('bbv-answer'), key = `/__answer/${pass}`;
+      const hit = await box.match(key); if (!hit) return false;
+      await box.delete(key);
+      const v = await hit.json();
+      return v && v.call === id && v.exp > Date.now();
+    } catch (_) { return false; }
+  }
 
   /* ---------------- start ---------------- */
   async function boot() {
@@ -822,9 +852,10 @@
     // Opened from a call's alert: that call, answered if "Answer" was tapped. The address loses the call's part.
     const q = new URLSearchParams(location.search);
     if (q.get('call')) {
-      wantCall(q.get('call'), q.get('answer') === '1');
+      const id = q.get('call'), pass = q.get('answer') || '';
       q.delete('call'); q.delete('answer');
       history.replaceState(history.state, '', location.pathname + (q.toString() ? `?${q}` : '') + location.hash);
+      wantCall(id, await answerPass(pass, id));
     }
     // A notification link to a chat opens it.
     const t = Number(new URLSearchParams(location.search).get('t'));

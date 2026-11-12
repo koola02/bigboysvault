@@ -469,7 +469,8 @@ async fn after_post(app: &App, t: dm::Thread, side: i64, author: i64, preview: S
         // Who gets it on their phone too: the people it is for who turned message alerts on.
         let mut pushed = vec![];
         for r in &recipients {
-            let on: i64 = c.query_row("SELECT push FROM notify_prefs WHERE member_id=?1 AND event='message'", [r], |x| x.get(0)).optional()?.unwrap_or(0);
+            // On unless they turned message alerts off (no saved choice means on).
+            let on: i64 = c.query_row("SELECT push FROM notify_prefs WHERE member_id=?1 AND event='message'", [r], |x| x.get(0)).optional()?.unwrap_or(1);
             if on != 0 {
                 pushed.push(*r);
             }
@@ -795,7 +796,8 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
                         let to: Vec<i64> = if from_caller { c.callee.map(|x| vec![x]).unwrap_or_else(|| people(t.other(c.caller_side), &admins)) } else { vec![c.caller] };
                         app.dm.signal(&to, with("ice"));
                     }
-                    "decline" if !from_caller => {
+                    // Only while it rings: a phone's Decline must never hang up a call already answered elsewhere.
+                    "decline" if !from_caller && c.callee.is_none() => {
                         app.dm.signal(&[c.caller], with("declined"));
                         elsewhere(side);
                         app.dm.outcomes.insert(c.id.clone(), "declined");
@@ -817,6 +819,7 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
                         };
                         log = Some((c.caller_side, c.caller, text));
                     }
+                    "decline" => return Ok(ok(json!({ "ok": false, "gone": true }))),
                     _ => return Ok(fail(StatusCode::BAD_REQUEST, "That call step doesn't fit.")),
                 }
                 json!({ "ok": true })
@@ -869,11 +872,17 @@ fn ring_phones(app: App, tid: i64, id: String, to: Vec<i64>, from: Value) {
         let url = format!("/me/messages?t={tid}");
         let ring = json!({ "type": "call", "call": id, "thread": tid, "from": from["name"], "avatar": from["avatar"], "url": url });
         let mut next = started;
+        let mut rings: Vec<tokio::task::JoinHandle<usize>> = vec![];
         loop {
             let state = call_state(&app, tid, &id);
             let secs = started.elapsed().as_secs() as i64;
             if state != "ringing" || secs >= RING_SECS {
                 let reason = if state == "ringing" { "missed" } else { state };
+                // Every ring still on its way finishes first (each is sent once, within 10 seconds): a ring must never
+                // reach the push service after the call's last push and take its place there.
+                for r in rings.drain(..) {
+                    let _ = r.await;
+                }
                 if reason != "superseded" {
                     // A missed call stays news for a day; the others matter only while the ringing alert is up.
                     let ttl = if reason == "missed" { 86_400 } else { 120 };
@@ -884,10 +893,9 @@ fn ring_phones(app: App, tid: i64, id: String, to: Vec<i64>, from: Value) {
             }
             if std::time::Instant::now() >= next {
                 let (app2, to2, msg) = (app.clone(), to.clone(), ring.clone());
-                let o = crate::push::Opts::new((RING_SECS - secs).max(10) as u32, "high", topic.clone());
-                tokio::spawn(async move {
-                    crate::push::to_members(&app2, to2, msg, o).await;
-                });
+                let o = crate::push::Opts::new((RING_SECS - secs).max(10) as u32, "high", topic.clone()).once();
+                rings.retain(|r| !r.is_finished());
+                rings.push(tokio::spawn(async move { crate::push::to_members(&app2, to2, msg, o).await }));
                 next += Duration::from_secs(RERING_SECS);
             }
             tokio::time::sleep(Duration::from_millis(400)).await;

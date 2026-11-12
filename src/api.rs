@@ -145,15 +145,19 @@ fn fingerprint(s: &str) -> String {
     format!("\"{h:016x}\"")
 }
 
+/// How the card files are cached: browsers ask again every time (the ETag makes that a cheap 304), the CDN keeps them
+/// half a minute. A 304 must say the same, or a browser keeps an old file for a day.
+const TSV_CACHE: &str = "public, max-age=0, s-maxage=30, stale-while-revalidate=120";
+
 /// The whole catalogue for the card finder. Unchanged since the visitor's last download? They get a tiny "not modified" reply.
 pub async fn cards_file(State(app): State<App>, headers: HeaderMap) -> Res {
     let body = catalogue(&app).await?;
     let tag = fingerprint(&body);
     if headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()) == Some(tag.as_str()) {
-        return Ok((StatusCode::NOT_MODIFIED, [(header::ETAG, tag)]).into_response());
+        return Ok((StatusCode::NOT_MODIFIED, [(header::ETAG, tag), (header::CACHE_CONTROL, TSV_CACHE.to_string())]).into_response());
     }
     // Browsers revalidate every time (the ETag makes that a cheap 304); the CDN keeps it for half a minute.
-    Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8".to_string()), (header::CACHE_CONTROL, "public, max-age=0, s-maxage=30, stale-while-revalidate=120".to_string()), (header::ETAG, tag)], (*body).clone()).into_response())
+    Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8".to_string()), (header::CACHE_CONTROL, TSV_CACHE.to_string()), (header::ETAG, tag)], (*body).clone()).into_response())
 }
 
 /// The Vault page's file for the card finder: the vault's catalogue (`/cards.tsv`, unchanged) and then every seller's card
@@ -175,9 +179,9 @@ pub async fn vault_file(State(app): State<App>, headers: HeaderMap) -> Res {
     };
     let (tag, body) = kept.split_once('\n').unwrap_or(("", &kept));
     if headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()) == Some(tag) {
-        return Ok((StatusCode::NOT_MODIFIED, [(header::ETAG, tag.to_string())]).into_response());
+        return Ok((StatusCode::NOT_MODIFIED, [(header::ETAG, tag.to_string()), (header::CACHE_CONTROL, TSV_CACHE.to_string())]).into_response());
     }
-    Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8".to_string()), (header::CACHE_CONTROL, "public, max-age=0, s-maxage=30, stale-while-revalidate=120".to_string()), (header::ETAG, tag.to_string())], body.to_string()).into_response())
+    Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8".to_string()), (header::CACHE_CONTROL, TSV_CACHE.to_string()), (header::ETAG, tag.to_string())], body.to_string()).into_response())
 }
 
 #[derive(Deserialize)]

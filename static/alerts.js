@@ -85,6 +85,19 @@
       return;
     }
     if (Notification.permission !== 'granted') return;
+    // Made with a key the site no longer uses: no push could reach it. Renew it (permission is already given); if the
+    // browser wants a tap for that, the device honestly shows "off" and the card offers to turn alerts on again.
+    if (w.push_key && !sameKey(sub, w.push_key)) {
+      await post('/api/notifications/push/forget', { endpoint: sub.endpoint }).catch(() => {});
+      await sub.unsubscribe().catch(() => {});
+      try {
+        const r = await navigator.serviceWorker.getRegistration('/');
+        const fresh = await r.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: bytes(w.push_key) });
+        await post('/api/notifications/push', fresh.toJSON());
+        ls.set('bbv:alerts-sync', String(Date.now()));
+      } catch (_) { ls.set('bbv:alerts-owner', null); }
+      return;
+    }
     // Once a day the server hears this device's address again: browsers change it now and then, Safari silently.
     if (Date.now() - Number(ls.get('bbv:alerts-sync') || 0) > 864e5) {
       await post('/api/notifications/push', sub.toJSON()).then(() => ls.set('bbv:alerts-sync', String(Date.now()))).catch(() => {});

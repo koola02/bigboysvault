@@ -71,20 +71,29 @@ pub fn public_key() -> &'static str {
 // ---------- which push services the server will post to ----------
 
 /// The push services of the browsers people use. The server only ever posts to these, never to an address someone
-/// typed in, so a made-up subscription can't make the server call another computer.
-pub fn allowed_endpoint(endpoint: &str) -> bool {
-    let Some(rest) = endpoint.strip_prefix("https://") else { return false };
-    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
-    if host.is_empty() || host.contains('@') || host.contains(':') {
-        return false;
+/// typed in, so a made-up subscription can't make the server call another computer. The address is read the way the
+/// HTTP client reads it (a WHATWG URL), so tricks like a backslash before the real host don't get through, and it must
+/// already be in its plain, canonical form.
+pub fn push_url(endpoint: &str) -> Option<reqwest::Url> {
+    if endpoint.len() > 1000 || endpoint.chars().any(|c| c == '\\' || c.is_whitespace() || c.is_control()) {
+        return None;
     }
-    let host = host.to_ascii_lowercase();
-    // Chrome, Android, Edge on Android, Samsung Internet, Opera, Brave: Google's FCM. Firefox: Mozilla's autopush.
-    // Safari on Mac, iPhone and iPad: Apple. Edge on Windows: Microsoft's WNS.
-    // Chrome Beta, Dev and Canary get addresses at jmt17.google.com.
+    let url = reqwest::Url::parse(endpoint).ok()?;
+    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() || url.port().is_some() {
+        return None;
+    }
+    // domain() is None for an IP address.
+    let host = url.domain()?;
+    // Chrome, Android, Edge on Android, Samsung Internet, Opera, Brave: Google's FCM (Chrome Beta, Dev and Canary at
+    // jmt17.google.com). Firefox: Mozilla's autopush. Safari on Mac, iPhone and iPad: Apple. Edge on Windows: WNS.
     const EXACT: [&str; 4] = ["fcm.googleapis.com", "android.googleapis.com", "jmt17.google.com", "web.push.apple.com"];
     const SUFFIX: [&str; 3] = [".push.services.mozilla.com", ".push.apple.com", ".notify.windows.com"];
-    EXACT.contains(&host.as_str()) || SUFFIX.iter().any(|s| host.ends_with(s) && host.len() > s.len())
+    let known = EXACT.contains(&host) || SUFFIX.iter().any(|s| host.ends_with(s) && host.len() > s.len());
+    (known && url.as_str() == endpoint).then_some(url)
+}
+
+pub fn allowed_endpoint(endpoint: &str) -> bool {
+    push_url(endpoint).is_some()
 }
 
 /// A subscription's keys, checked: the browser's public key (a P-256 point) and its 16-byte secret.
@@ -144,11 +153,9 @@ pub fn encrypt(ua_public: &[u8], auth: &[u8], plain: &[u8]) -> Result<Vec<u8>, &
 
 // ---------- RFC 8292: the site signs each request ----------
 
-/// The push service's own address (scheme, host and port), which the signature is for.
-fn audience(endpoint: &str) -> Option<String> {
-    let rest = endpoint.strip_prefix("https://")?;
-    let host = rest.split(['/', '?', '#']).next()?;
-    (!host.is_empty()).then(|| format!("https://{host}"))
+/// The push service's own address, which the signature is for.
+fn audience(url: &reqwest::Url) -> String {
+    url.origin().ascii_serialization()
 }
 
 /// A signed token for one push service, good until `exp` (at most a day ahead).
@@ -172,14 +179,34 @@ pub struct Opts {
     pub urgency: &'static str,
     /// Pushes with the same topic replace each other while still waiting at the push service, so a phone that was out
     /// of reach gets only the latest (a call's "missed" instead of its rings). Letters and digits, 32 at most.
+    /// What the topic is about (a call or chat). It is never sent as it is: each browser gets its own unreadable
+    /// version of it, so a push service can't tell which pushes belong to the same conversation.
     pub topic: Option<String>,
+    /// One more try when the push service is busy. Off for a call's rings: the ring loop sends the next one itself,
+    /// and a late retry must never land after the call's last word.
+    pub retry: bool,
 }
 
 impl Opts {
     pub fn new(ttl: u32, urgency: &'static str, topic: Option<String>) -> Self {
-        let topic = topic.map(|t| t.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').take(32).collect::<String>()).filter(|t| !t.is_empty());
-        Self { ttl: ttl.max(1), urgency, topic }
+        let topic = topic.map(|t| t.chars().filter(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').take(64).collect::<String>()).filter(|t| !t.is_empty());
+        Self { ttl: ttl.max(1), urgency, topic, retry: true }
     }
+    pub fn once(mut self) -> Self {
+        self.retry = false;
+        self
+    }
+}
+
+/// The Topic a push service sees: 32 characters made from the site's key, the browser's address and what it is about.
+/// The same for one browser and one conversation (so pushes still replace each other), meaningless to anyone else,
+/// and different for the two people in a conversation.
+fn opaque_topic(key: &SecretKey, endpoint: &str, about: &str) -> String {
+    let mut msg = endpoint.as_bytes().to_vec();
+    msg.push(0);
+    msg.extend_from_slice(about.as_bytes());
+    let (mac, _) = Hkdf::<Sha256>::extract(Some(key.to_bytes().as_slice()), &msg);
+    B64.encode(&mac[..24])
 }
 
 /// What became of one push.
@@ -188,6 +215,9 @@ pub enum Sent {
     Ok,
     /// The browser unsubscribed or the address expired: forget it.
     Gone,
+    /// The push service refused it (400, 401, 403): usually a key that no longer matches. A few in a row and the
+    /// subscription is forgotten, so a device that can't be reached stops counting as reachable.
+    Refused(String),
     Failed(String),
 }
 
@@ -214,48 +244,56 @@ fn subject() -> String {
     std::env::var("PUBLIC_URL").ok().filter(|u| u.starts_with("https://")).map(|u| u.trim_end_matches('/').to_string()).unwrap_or_else(|| "https://www.bigboysvault.com".into())
 }
 
+/// The HTTP client for push services: it never follows a redirect (a push service doesn't send one; anything that
+/// does is not one).
+pub fn client() -> &'static reqwest::Client {
+    static C: OnceLock<reqwest::Client> = OnceLock::new();
+    C.get_or_init(|| {
+        reqwest::Client::builder().redirect(reqwest::redirect::Policy::none()).timeout(Duration::from_secs(10)).user_agent("bigboysvault push").build().expect("push client")
+    })
+}
+
 /// Posts one encrypted message to one browser.
-pub async fn send_one(http: &reqwest::Client, endpoint: &str, p256dh: &str, auth: &str, msg: &Value, o: &Opts) -> Sent {
+pub async fn send_one(endpoint: &str, p256dh: &str, auth: &str, msg: &Value, o: &Opts) -> Sent {
     let Some(keys) = KEYS.get() else { return Sent::Failed("no key yet".into()) };
-    if !allowed_endpoint(endpoint) {
-        return Sent::Gone;
-    }
+    let Some(url) = push_url(endpoint) else { return Sent::Gone };
     let (Ok(ua), Ok(secret)) = (B64.decode(p256dh.trim().trim_end_matches('=')), B64.decode(auth.trim().trim_end_matches('='))) else { return Sent::Gone };
     let body = match encrypt(&ua, &secret, msg.to_string().as_bytes()) {
         Ok(b) => b,
         Err("bad browser key") => return Sent::Gone,
         Err(e) => return Sent::Failed(e.into()),
     };
-    let Some(aud) = audience(endpoint) else { return Sent::Gone };
-    let token = token_for(&keys.secret, &aud);
-    // One more try after a short wait when the push service is busy or briefly down; never for a refusal.
-    for attempt in 0..2 {
-        let mut req = http
-            .post(endpoint)
+    let token = token_for(&keys.secret, &audience(&url));
+    let topic = o.topic.as_deref().map(|t| opaque_topic(&keys.secret, endpoint, t));
+    let tries = if o.retry { 2 } else { 1 };
+    for attempt in 0..tries {
+        let mut req = client()
+            .post(url.clone())
             .header("TTL", o.ttl.to_string())
             .header("Urgency", o.urgency)
             .header("Content-Encoding", "aes128gcm")
             .header("Content-Type", "application/octet-stream")
             .header("Authorization", format!("vapid t={token}, k={}", keys.public))
-            .timeout(Duration::from_secs(10))
             .body(body.clone());
-        if let Some(t) = &o.topic {
+        if let Some(t) = &topic {
             req = req.header("Topic", t.as_str());
         }
-        let r = req.send().await;
-        let wait = match r {
+        let last = attempt + 1 == tries;
+        let wait = match req.send().await {
             Ok(r) if r.status().is_success() => return Sent::Ok,
             // 404 and 410: the subscription has ended (the browser unsubscribed, the app was removed, it expired).
             Ok(r) if r.status().as_u16() == 404 || r.status().as_u16() == 410 => return Sent::Gone,
+            Ok(r) if matches!(r.status().as_u16(), 400 | 401 | 403) => {
+                return Sent::Refused(format!("{} {}", r.status(), r.text().await.unwrap_or_default().chars().take(200).collect::<String>()));
+            }
             Ok(r) if r.status().as_u16() == 429 || r.status().is_server_error() => {
-                let after = r.headers().get("retry-after").and_then(|v| v.to_str().ok()).and_then(|v| v.trim().parse::<u64>().ok()).unwrap_or(2).clamp(1, 8);
-                if attempt == 1 {
-                    return Sent::Failed(format!("{} after a retry", r.status()));
+                if last {
+                    return Sent::Failed(format!("{}", r.status()));
                 }
-                after
+                r.headers().get("retry-after").and_then(|v| v.to_str().ok()).and_then(|v| v.trim().parse::<u64>().ok()).unwrap_or(2).clamp(1, 8)
             }
             Ok(r) => return Sent::Failed(format!("{} {}", r.status(), r.text().await.unwrap_or_default().chars().take(200).collect::<String>())),
-            Err(e) if attempt == 1 => return Sent::Failed(e.to_string()),
+            Err(e) if last => return Sent::Failed(e.to_string()),
             Err(_) => 2,
         };
         tokio::time::sleep(Duration::from_secs(wait)).await;
@@ -283,8 +321,11 @@ fn token_for(key: &SecretKey, aud: &str) -> String {
     t
 }
 
+/// How many refusals in a row before a subscription is forgotten.
+const REFUSALS: i64 = 3;
+
 /// Sends a message to every browser these members turned alerts on in, all at once. Ended subscriptions are
-/// forgotten. Returns how many browsers took it.
+/// forgotten, and so are ones refused a few times in a row. Returns how many browsers took it.
 pub async fn to_members(app: &crate::App, members: Vec<i64>, msg: Value, o: Opts) -> usize {
     let Ok(subs) = crate::with_db(app, move |c| subscriptions(c, &members)).await else { return 0 };
     if subs.is_empty() {
@@ -293,30 +334,43 @@ pub async fn to_members(app: &crate::App, members: Vec<i64>, msg: Value, o: Opts
     let msg = std::sync::Arc::new(msg);
     let mut set = tokio::task::JoinSet::new();
     for (id, endpoint, key, auth) in subs {
-        let (http, msg, o) = (app.http.clone(), msg.clone(), o.clone());
+        let (msg, o) = (msg.clone(), o.clone());
         set.spawn(async move {
-            let r = send_one(&http, &endpoint, &key, &auth, &msg, &o).await;
+            let r = send_one(&endpoint, &key, &auth, &msg, &o).await;
             (id, endpoint, r)
         });
     }
-    let (mut took, mut gone) = (0, vec![]);
+    let (mut took, mut fine, mut gone, mut refused) = (0, vec![], vec![], vec![]);
     while let Some(done) = set.join_next().await {
         let Ok((id, endpoint, r)) = done else { continue };
+        let host = endpoint.split('/').nth(2).unwrap_or("?").to_string();
         match r {
-            Sent::Ok => took += 1,
+            Sent::Ok => {
+                took += 1;
+                fine.push(id);
+            }
             Sent::Gone => gone.push(id),
-            Sent::Failed(why) => tracing::warn!("push to {} failed: {why}", endpoint.split('/').nth(2).unwrap_or("?")),
+            Sent::Refused(why) => {
+                tracing::warn!("push to {host} refused: {why}");
+                refused.push(id);
+            }
+            Sent::Failed(why) => tracing::warn!("push to {host} failed: {why}"),
         }
     }
-    if !gone.is_empty() {
-        let _ = crate::with_db(app, move |c| {
-            for id in &gone {
-                c.execute("DELETE FROM push_subscriptions WHERE id=?1", [id])?;
-            }
-            Ok(())
-        })
-        .await;
-    }
+    let _ = crate::with_db(app, move |c| {
+        for id in &fine {
+            c.execute("UPDATE push_subscriptions SET fails=0 WHERE id=?1 AND fails>0", [id])?;
+        }
+        for id in &refused {
+            c.execute("UPDATE push_subscriptions SET fails=fails+1 WHERE id=?1", [id])?;
+            c.execute("DELETE FROM push_subscriptions WHERE id=?1 AND fails>=?2", rusqlite::params![id, REFUSALS])?;
+        }
+        for id in &gone {
+            c.execute("DELETE FROM push_subscriptions WHERE id=?1", [id])?;
+        }
+        Ok(())
+    })
+    .await;
     took
 }
 
@@ -337,6 +391,18 @@ mod tests {
             assert!(allowed_endpoint(ok), "{ok}");
         }
         for bad in [
+            "https://attacker.example\\.push.apple.com/x",
+            "https://attacker.example\\@fcm.googleapis.com/x",
+            "https://fcm.googleapis.com\\@attacker.example/x",
+            "https://FCM.googleapis.com/fcm/send/abc",
+            "https://fcm.googleapis.com./fcm/send/abc",
+            "https://fcm.googleapis.com/fcm/send/a b",
+            "https://fcm.googleapis.com:443/fcm/send/abc",
+            "https://[::1]/x",
+            "https://10.0.0.1/x",
+            "https://%66cm.googleapis.com/x",
+            "https://xn--fcm-googleapis.com/x",
+            "https://fcm.googleapis.com",
             "http://fcm.googleapis.com/fcm/send/abc",
             "https://fcm.googleapis.com.evil.example/x",
             "https://evil.example/fcm.googleapis.com",
@@ -380,11 +446,23 @@ mod tests {
     }
 
     #[test]
+    fn a_push_service_sees_a_topic_it_cannot_read() {
+        let k = SecretKey::random(&mut OsRng);
+        let a = opaque_topic(&k, "https://fcm.googleapis.com/fcm/send/one", "call42");
+        assert_eq!(a.len(), 32);
+        assert!(a.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'));
+        assert_eq!(a, opaque_topic(&k, "https://fcm.googleapis.com/fcm/send/one", "call42"), "the same for one browser and one call");
+        assert_ne!(a, opaque_topic(&k, "https://fcm.googleapis.com/fcm/send/two", "call42"), "the other person's browser gets another");
+        assert_ne!(a, opaque_topic(&k, "https://fcm.googleapis.com/fcm/send/one", "m42"), "a chat and a call differ");
+        assert!(!a.contains("42"));
+    }
+
+    #[test]
     fn a_topic_is_short_and_plain() {
         assert_eq!(Opts::new(0, "high", Some("call42".into())).topic.as_deref(), Some("call42"));
         assert_eq!(Opts::new(0, "high", None).ttl, 1, "never 0");
         assert_eq!(Opts::new(5, "high", Some("a b/c!".into())).topic.as_deref(), Some("abc"));
-        assert_eq!(Opts::new(5, "high", Some("x".repeat(40))).topic.map(|t| t.len()), Some(32));
+        assert!(Opts::new(5, "high", None).retry && !Opts::new(5, "high", None).once().retry);
         assert_eq!(Opts::new(5, "high", Some("  ".into())).topic, None);
     }
 
@@ -414,7 +492,7 @@ mod tests {
         use p256::ecdsa::signature::Verifier;
         let vk = p256::ecdsa::VerifyingKey::from(&SigningKey::from(&k));
         assert!(vk.verify(format!("{}.{}", parts[0], parts[1]).as_bytes(), &Signature::from_slice(&sig).unwrap()).is_ok());
-        assert_eq!(audience("https://fcm.googleapis.com/fcm/send/x?y").as_deref(), Some("https://fcm.googleapis.com"));
+        assert_eq!(audience(&push_url("https://fcm.googleapis.com/fcm/send/x?y").unwrap()), "https://fcm.googleapis.com");
     }
 
     #[test]
