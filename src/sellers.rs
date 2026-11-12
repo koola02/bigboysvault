@@ -633,6 +633,27 @@ pub fn storefront_listings(c: &Connection, member_id: i64) -> rusqlite::Result<V
     Ok(v)
 }
 
+/// The pictures on a binder's tile on the store page, at most `n`: its cover first (the card the seller picked,
+/// or else its first card, as the binder has always shown), then the binder's next cards on sale, in the seller's order.
+/// `listings` is what the store page already shows (`storefront_listings`), so this costs no trip to the database,
+/// and a card that is hidden, sold or ended never peeks out. The same picture is never shown twice.
+pub fn binder_peeks(b: &MemberBinder, listings: &[MemberCard], n: usize) -> Vec<String> {
+    let mut pics: Vec<String> = Vec::new();
+    if b.has_image() {
+        pics.push(b.cover_image.clone());
+    }
+    for k in listings.iter().filter(|k| k.binder_id == Some(b.id) && Some(k.id) != b.cover_card && !k.image.is_empty()) {
+        if pics.len() >= n {
+            break;
+        }
+        if !pics.contains(&k.image) {
+            pics.push(k.image.clone());
+        }
+    }
+    pics.truncate(n);
+    pics
+}
+
 fn short(title: &str) -> String {
     let t = title.split(" - ").next().unwrap_or(title).trim();
     if t.chars().count() > 40 { t.chars().take(39).collect::<String>() + "…" } else { t.to_string() }
@@ -2830,5 +2851,38 @@ mod tests {
         assert_eq!(cleaned, "Shopee | https://shopee.ph/bbv\nhttps://carousell.ph/u/bbv");
         assert_eq!(link_parts("https://carousell.ph/u/bbv"), ("Carousell".into(), "https://carousell.ph/u/bbv".into()));
         assert_eq!(link_parts("Shopee | https://shopee.ph/bbv").0, "Shopee");
+    }
+
+    #[test]
+    fn a_binder_tile_shows_its_cover_then_its_next_cards_on_sale() {
+        let c = db();
+        let s = create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        let mut ids = vec![];
+        for i in 1..=6 {
+            let Added::Yes(id) = add_listing(&c, s, &format!("tcgdex:x-{i}"), &format!("Card {i}"), "1", "Set", &format!("/p/{i}.webp"), "").unwrap() else { panic!() };
+            ids.push(id);
+        }
+        let shelf = members::create_member_binder(&c, s, "Shelf").unwrap();
+        let empty = members::create_member_binder(&c, s, "Empty").unwrap();
+        for (pos, id) in ids.iter().enumerate() {
+            members::move_card_to_binder(&c, s, *id, Some(shelf.id)).unwrap();
+            c.execute("UPDATE member_cards SET position=?2 WHERE id=?1", rusqlite::params![id, pos as i64]).unwrap();
+        }
+        // The second card is hidden and the fifth is a copy of the fourth: neither peeks out.
+        c.execute("UPDATE member_cards SET status='Hidden' WHERE id=?1", [ids[1]]).unwrap();
+        c.execute("UPDATE member_cards SET image='/p/4.webp' WHERE id=?1", [ids[4]]).unwrap();
+        let tile = |c: &Connection, id: i64| {
+            let b = members::binders_of(c, s).unwrap().into_iter().find(|b| b.id == id).unwrap();
+            binder_peeks(&b, &storefront_listings(c, s).unwrap(), 3)
+        };
+        assert_eq!(tile(&c, shelf.id), vec!["/p/1.webp", "/p/3.webp", "/p/4.webp"], "no cover picked: the first card, then the next ones on sale");
+        // The seller picks the sixth card as the cover: it comes first and isn't repeated.
+        members::set_member_binder_cover(&c, s, shelf.id, Some(ids[5])).unwrap();
+        assert_eq!(tile(&c, shelf.id), vec!["/p/6.webp", "/p/1.webp", "/p/3.webp"]);
+        let b = members::binders_of(&c, s).unwrap().into_iter().find(|b| b.id == shelf.id).unwrap();
+        assert_eq!(binder_peeks(&b, &storefront_listings(&c, s).unwrap(), 1), vec!["/p/6.webp"], "never more than asked for");
+        assert!(tile(&c, empty.id).is_empty(), "an empty binder has nothing to show");
     }
 }

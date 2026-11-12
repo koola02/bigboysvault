@@ -918,7 +918,8 @@ struct StorePage {
     stats: StoreStats,
     /// Each card with whether the viewer saved it.
     cards: Vec<(MemberCard, bool)>,
-    binders: Vec<MemberBinder>,
+    /// Each binder with the pictures on its tile (the new look shows up to three; empty on a binder's own page).
+    binders: Vec<(MemberBinder, Vec<String>)>,
     binder: Option<MemberBinder>,
     reviews: Vec<Review>,
     me: Option<Member>,
@@ -975,6 +976,14 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
         None => sellers::storefront_listings(c, id),
     })
     .await?;
+    // The store page lists the binders: each tile shows its cover and the next cards on sale, from the cards above.
+    let binders: Vec<(MemberBinder, Vec<String>)> = binders
+        .into_iter()
+        .map(|b| {
+            let pics = if bid.is_none() { sellers::binder_peeks(&b, &cards, 3) } else { vec![] };
+            (b, pics)
+        })
+        .collect();
     let cards: Vec<(MemberCard, bool)> = cards.into_iter().map(|k| { let s = saved.contains(&k.id); (k, s) }).collect();
     let mut nav = nav;
     // "Hayme's store", so the store page and the trainer page don't share one title. A store with its own name keeps it.
@@ -1525,4 +1534,95 @@ pub fn start_housekeeping(app: App) {
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use marcuru_rs::members::Added;
+
+    fn db() -> rusqlite::Connection {
+        let c = rusqlite::Connection::open_in_memory().unwrap();
+        marcuru_rs::db::register_set_code(&c).unwrap();
+        c.execute_batch(marcuru_rs::db::SCHEMA).unwrap();
+        c.execute_batch(marcuru_rs::blocks::SCHEMA).unwrap();
+        c.execute_batch(members::SCHEMA).unwrap();
+        members::migrate(&c).unwrap();
+        marcuru_rs::db::migrate(&c).unwrap();
+        c
+    }
+
+    /// The store page, or one binder's page, as a visitor sees it in the chosen look (the cards as `store_for` picks them).
+    fn page(c: &rusqlite::Connection, slug: &str, binder: Option<&str>, new: bool) -> String {
+        let m = members::by_slug(c, slug).unwrap().unwrap();
+        let binder = binder.map(|b| members::binder_by_slug(c, m.id, b).unwrap().unwrap());
+        let cards = match &binder {
+            Some(b) => members::cards_of_binder(c, m.id, Some(b.id)).unwrap().into_iter().filter(|k| k.is_sale() && matches!(k.status.as_str(), "Active" | "Reserved" | "Out of stock")).collect(),
+            None => sellers::storefront_listings(c, m.id).unwrap(),
+        };
+        let binders: Vec<(MemberBinder, Vec<String>)> = members::binders_of(c, m.id).unwrap().into_iter().filter(|b| b.visibility == "Public").map(|b| {
+            let pics = if binder.is_none() { sellers::binder_peeks(&b, &cards, 3) } else { vec![] };
+            (b, pics)
+        }).collect();
+        crate::look::in_thread(new);
+        let html = render(StorePage {
+            nav: chrome(c).unwrap(),
+            stats: sellers::store_stats(c, m.id).unwrap(),
+            cards: cards.into_iter().map(|k| (k, false)).collect(),
+            binders,
+            binder,
+            reviews: vec![],
+            me: None,
+            following: false,
+            is_me: false,
+            links: vec![],
+            conditions: members::CONDITIONS,
+            m,
+        });
+        crate::look::in_thread(false);
+        html.unwrap()
+    }
+
+    #[test]
+    fn binders_are_a_grid_and_a_binder_is_its_own_page_in_the_new_look() {
+        let c = db();
+        let s = members::create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        let slug = members::get(&c, s).unwrap().unwrap().slug;
+        let mut binders = vec![];
+        for (i, title) in ["Fire", "Water", "Grass", "Empty"].iter().enumerate() {
+            let b = members::create_member_binder(&c, s, title).unwrap();
+            for j in 0..(3 - i.min(3)) {
+                let Added::Yes(id) = sellers::add_listing(&c, s, &format!("tcgdex:x-{i}-{j}"), &format!("{title} {j}"), "1", "Set", &format!("/p/{i}-{j}.webp"), "").unwrap() else { panic!() };
+                members::move_card_to_binder(&c, s, id, Some(b.id)).unwrap();
+            }
+            binders.push(b);
+        }
+        let secret = members::create_member_binder(&c, s, "Secret").unwrap();
+        c.execute("UPDATE member_binders SET visibility='Private' WHERE id=?1", [secret.id]).unwrap();
+
+        // The store page: every public binder in one grid, each with its pictures; no sideways strip.
+        let store = page(&c, &slug, None, true);
+        assert_eq!(store.matches("class=\"sf-bgrid\"").count(), 1);
+        assert_eq!(store.matches("class=\"sf-btile\"").count(), 4, "the four public binders, not the private one");
+        assert!(!store.contains("sf-binders") && !store.contains(">Secret<"));
+        assert!(store.contains("data-n=\"3\"") && store.contains("data-n=\"2\"") && store.contains("data-n=\"1\"") && store.contains("data-n=\"0\""));
+        assert!(store.contains("class=\"sf-head") && store.contains("id=\"reviews\""), "the store page keeps its header and reviews");
+        // Today's look keeps its strip.
+        let classic = page(&c, &slug, None, false);
+        assert!(classic.contains("class=\"sf-binders\"") && !classic.contains("sf-bgrid"));
+
+        // A binder: a bar with an X back to the store, its name and count; no store header, no way back by crumbs, no reviews.
+        let fire = page(&c, &slug, Some(&binders[0].slug), true);
+        assert!(fire.contains(&format!("<a class=\"sf-bx\" href=\"/store/{slug}\" aria-label=\"Close\"")), "{fire}");
+        assert!(fire.contains("<h1 class=\"sf-bh\">Fire</h1>") && fire.contains("3 cards · by"));
+        assert!(!fire.contains("class=\"sf-head") && !fire.contains("id=\"reviews\"") && !fire.contains("← All of"));
+        assert_eq!(fire.matches("class=\"sf-card\"").count(), 3, "the binder's cards, with their buttons");
+        assert!(fire.contains("id=\"buySheet\"") && fire.contains("storefront.js"));
+        // Today's look: the binder under the store's header, as before.
+        let fire_classic = page(&c, &slug, Some(&binders[0].slug), false);
+        assert!(fire_classic.contains("class=\"sf-head") && fire_classic.contains("← All of") && fire_classic.contains("id=\"reviews\""));
+        assert!(!fire_classic.contains("data-binder-close"));
+    }
 }

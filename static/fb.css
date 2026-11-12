@@ -892,15 +892,7 @@ img.av { object-fit: cover; }
 .sf-row-l { flex: none; min-width: 84px; color: var(--muted); font: 600 .8125rem/1 var(--font); }
 .sf-ext, .sf-note-l { color: var(--muted); }
 .sf-payinfo, .sf-contact { overflow-wrap: anywhere; }
-.sf-crumbs a { font-weight: 600; }
 .sf-desc { margin: 0; color: var(--muted); }
-.sf-binders { display: grid; grid-auto-flow: column; grid-auto-columns: 132px; gap: 10px; padding-bottom: 4px; overflow-x: auto; scrollbar-width: none; }
-.sf-binders::-webkit-scrollbar { display: none; }
-.sf-binder { display: flex; flex-direction: column; gap: 4px; color: var(--text); }
-.sf-binder:hover { text-decoration: none; }
-.sf-binder img, .sf-binder .thumb-empty { display: block; width: 100%; height: auto; aspect-ratio: 63 / 88; border-radius: var(--r); object-fit: cover; background: var(--surface-2); }
-.sf-binder b { font-weight: 600; font-size: .875rem; overflow-wrap: anywhere; }
-.sf-binder small { color: var(--muted); }
 .sf-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
 .sf-filter input[type="search"] { flex: 1 1 220px; }
 .sf-filter select { flex: 0 1 190px; width: auto; }
@@ -1296,3 +1288,43 @@ html.cardwin-open { overflow: hidden; }
   .cardwin .detail ~ .wrap { padding-inline: 12px; }
 }
 .av > svg { width: 55%; height: 55%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+
+/* ---------- 33. Store binders: a grid, and a binder as its own page ---------- */
+/* The store page shows every binder at once: two to a row on a phone, three from 700px, never wider than the feed.
+   A tile is its cover card in front with the next two cards behind it, on a soft panel, then its name and how many cards. */
+.sf-bgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-width: var(--feed); margin: 0; padding: 0; list-style: none; }
+.sf-bgrid > li { min-width: 0; }
+.sf-btile { display: flex; flex-direction: column; height: 100%; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: var(--text); overflow: hidden; }
+.sf-btile:hover { text-decoration: none; box-shadow: 0 0 0 1px var(--gold-edge); }
+.sf-btile:focus-visible { border-radius: var(--r); }
+/* The cards are sized from the tile's width, so the picture keeps its shape at any size. */
+.sf-bcov { --fw: 43%; --sw: 36%; --off: 24%; position: relative; display: block; aspect-ratio: 4 / 3; background: var(--surface-2); overflow: hidden; }
+.sf-bcov img { position: absolute; top: 50%; left: calc(50% - var(--off)); width: var(--sw); max-width: none; height: auto; aspect-ratio: 63 / 88; border-radius: 5px; object-fit: cover; background: var(--surface-3); box-shadow: 0 2px 10px rgba(0,0,0,.5); transform: translate(-50%, -50%); }
+.sf-bcov img:nth-child(3) { left: calc(50% + var(--off)); }
+.sf-bcov img:first-child { z-index: 1; left: 50%; width: var(--fw); }
+.sf-bcov[data-n="2"] img:first-child { left: calc(50% + var(--off) / 2); }
+.sf-bcov[data-n="2"] img:nth-child(2) { left: calc(50% - var(--off) / 2); }
+.sf-bnone { position: absolute; top: 50%; left: 50%; width: 40px; height: 40px; transform: translate(-50%, -50%); fill: none; stroke: var(--faint); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.sf-btxt { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 8px 12px 12px; }
+.sf-bname { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-weight: 600; overflow-wrap: anywhere; }
+.sf-btxt small { color: var(--muted); font-size: .8125rem; }
+@media (min-width: 700px) {
+  .sf-bgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+  .sf-bcov { --fw: 32%; --sw: 27%; --off: 21%; aspect-ratio: 16 / 9; }
+}
+/* A binder opened: a plain page, not a window. A bar stays at the top with an X back to the store, the binder's name
+   and whose it is; then the same search, cards and buttons as the store. */
+.sf-bbar { position: sticky; top: calc(var(--hd-h) + var(--sat)); z-index: 30; display: flex; align-items: center; gap: 12px; padding: 10px 16px 10px 12px; border-radius: 0 0 var(--r) var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line), var(--shadow); }
+.sf-bx { flex: none; display: inline-grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--surface-3); color: var(--text); }
+.sf-bx:hover { background: #30364b; text-decoration: none; }
+.sf-bx:focus-visible { border-radius: 50%; }
+.sf-bx svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.25; stroke-linecap: round; }
+.sf-bt { flex: 1; min-width: 0; }
+.sf-bh { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font: 800 1.25rem/1.25 var(--font); overflow-wrap: anywhere; }
+.sf-bm { margin: 2px 0 0; color: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
+.sf-bm a { color: var(--text); font-weight: 600; }
+.sf-bpage .sf-desc { max-width: 70ch; }
+@media (max-width: 699px) {
+  .storefront > .sf-bbar { margin-inline: 0; padding: 8px 12px; border-radius: 0; }
+  .sf-bh { font-size: 1.0625rem; -webkit-line-clamp: 1; }
+}

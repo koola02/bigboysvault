@@ -1,7 +1,10 @@
 {% extends "base.html" %}
 {% block layout %}wide{% endblock %}
 {% block content %}
-<section class="wrap storefront" id="storefront" data-slug="{{ m.slug }}" data-seller="{{ m.id }}"{% if let Some(u) = me %} data-me="{{ u.id }}"{% endif %}{% if is_me %} data-mine{% endif %}>
+{#- The new look opens a binder as its own plain page: a bar with an X back to the store, then the cards. No store header, no reviews. -#}
+{% let bpage = crate::look::is_new() && binder.is_some() %}
+<section class="wrap storefront{% if bpage %} sf-bpage{% endif %}" id="storefront" data-slug="{{ m.slug }}" data-seller="{{ m.id }}"{% if let Some(u) = me %} data-me="{{ u.id }}"{% endif %}{% if is_me %} data-mine{% endif %}>
+  {% if !bpage %}
   <header class="sf-head{% if m.has_cover() %} has-cover{% endif %}">
     {% if crate::look::is_new() %}<div class="sf-cover pf-cover" id="sfCover">{% if m.has_cover() %}<img src="{{ m.cover_photo }}" alt="" width="1600" height="500" decoding="async">{% endif %}{% if is_me %}<label class="btn ghost sm pf-cover-btn"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>{% if m.has_cover() %}Change cover{% else %}Add a cover photo{% endif %}</span><input type="file" accept="image/*" hidden data-own-cover></label>{% endif %}</div>{% else %}{% if m.has_cover() %}<div class="sf-cover"><img src="{{ m.cover_photo }}" alt="" width="1600" height="500" decoding="async"></div>{% endif %}{% endif %}
     <div class="sf-id">
@@ -33,16 +36,36 @@
       {% if !m.contact_info.is_empty() && (m.contact_public || me.is_some()) %}<div class="sf-row"><span class="sf-row-l">Contact</span><span class="sf-contact">{{ m.contact_info }}</span></div>{% endif %}
     </div>{% endif %}
   </header>
+  {% endif %}
 
   {% if let Some(b) = binder %}
+  {% if bpage %}
+  <div class="sf-bbar">
+    <a class="sf-bx" href="{{ m.store_url() }}" aria-label="Close" title="Back to {{ m.store_title() }}" data-binder-close><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></a>
+    <div class="sf-bt">
+      <h1 class="sf-bh">{{ b.title }}</h1>
+      <p class="sf-bm">{{ cards.len() }} card{% if cards.len() != 1 %}s{% endif %} · by <a href="{{ m.store_url() }}">{{ m.store_title() }}</a>{% if b.visibility != "Public" %} · {{ b.visibility }}{% endif %}</p>
+    </div>
+  </div>
+  {#- Without the store's header, the one thing from it a buyer still needs here: why there are no buy buttons. -#}
+  {% if m.on_vacation() %}<p class="sf-banner vacation">🏝️ {{ m.store_title() }} is on vacation. You can look, but reservations and offers are paused until they're back.</p>
+  {% else if m.is_away() %}<p class="sf-banner away">⏳ {{ m.store_title() }} is away right now. Orders are open, but replies may take longer.</p>{% endif %}
+  {% else %}
   <nav class="sf-crumbs"><a href="{{ m.store_url() }}">← All of {{ m.store_title() }}</a></nav>
   <h2 class="h2">{{ b.title }} <small>{{ cards.len() }} card{% if cards.len() != 1 %}s{% endif %}{% if b.visibility != "Public" %} · {{ b.visibility }}{% endif %}</small></h2>
+  {% endif %}
   {% if !b.description.is_empty() %}<p class="sf-desc">{{ b.description }}</p>{% endif %}
   {% else if !binders.is_empty() %}
   <h2 class="h2">Binders</h2>
+  {% if crate::look::is_new() %}
+  <ul class="sf-bgrid">
+    {% for (b, pics) in binders %}<li><a class="sf-btile" href="{{ m.store_url() }}/binders/{{ b.slug }}"><span class="sf-bcov" data-n="{{ pics.len() }}">{% for p in pics %}<img src="{{ p }}" width="245" height="342" alt="" loading="lazy" decoding="async">{% endfor %}{% if pics.is_empty() %}<svg class="sf-bnone" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 4v10"/></svg>{% endif %}</span><span class="sf-btxt"><b class="sf-bname">{{ b.title }}</b><small>{{ b.count }} card{% if b.count != 1 %}s{% endif %}{% if b.visibility == "Unlisted" %} · unlisted{% endif %}</small></span></a></li>{% endfor %}
+  </ul>
+  {% else %}
   <div class="sf-binders">
-    {% for b in binders %}<a class="sf-binder" href="{{ m.store_url() }}/binders/{{ b.slug }}">{% if b.has_image() %}<img src="{{ b.cover_image }}" width="120" height="168" alt="" loading="lazy">{% else %}<span class="thumb-empty"></span>{% endif %}<b>{{ b.title }}</b><small>{{ b.count }} card{% if b.count != 1 %}s{% endif %}{% if b.visibility == "Unlisted" %} · unlisted{% endif %}</small></a>{% endfor %}
+    {% for (b, _) in binders %}<a class="sf-binder" href="{{ m.store_url() }}/binders/{{ b.slug }}">{% if b.has_image() %}<img src="{{ b.cover_image }}" width="120" height="168" alt="" loading="lazy">{% else %}<span class="thumb-empty"></span>{% endif %}<b>{{ b.title }}</b><small>{{ b.count }} card{% if b.count != 1 %}s{% endif %}{% if b.visibility == "Unlisted" %} · unlisted{% endif %}</small></a>{% endfor %}
   </div>
+  {% endif %}
   <h2 class="h2">Everything on sale</h2>
   {% endif %}
 
@@ -77,6 +100,7 @@
   </ul>
   {% endif %}
 
+  {% if !bpage %}
   <section class="sf-reviews" id="reviews">
     <h2 class="h2">Reviews <small>{% if stats.reviews > 0 %}★ {{ stats.rating }} · {{ stats.reviews }}{% else %}none yet{% endif %}</small></h2>
     {% if reviews.is_empty() %}<p class="me-how">Only buyers of a finished sale can leave a review, so every review here is from a real sale.</p>{% else %}
@@ -90,6 +114,7 @@
       {% endfor %}
     </ul>{% endif %}
   </section>
+  {% endif %}
 </section>
 
 <div class="sheet" id="buySheet" hidden>
