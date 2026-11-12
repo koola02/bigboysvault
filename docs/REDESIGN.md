@@ -32,7 +32,7 @@ One list of colours and sizes ("tokens") drives everything, in a new stylesheet 
 - **Type:** system font for all body text (fast, feels like Facebook). The brand font "Anybody" stays for the wordmark, prices and page titles.
 - **Kept from the brand:** logo, gold, peso prices in the display font, condition colours (as small chips), card-shaped tiles, the holo/inspect effect on a card's own page.
 - **Dropped in the new look:** intro logo gate, starfield/WebGL sky, card-fan hero, heavy glows and squircles. Flat and fast.
-- **Sizes:** header 56px; feed column 680px max; side columns 300px; touch targets 44px; Marketplace filter column 360px.
+- **Sizes:** header 56px; feed column 1088px max (Russell, 12 Nov 2026: every content column 60% wider than first drawn, on every page; phones are unchanged and tablets simply fill their width); side columns 300px; touch targets 44px; Marketplace filter column 360px.
 
 ## 2. The frame on each device
 
