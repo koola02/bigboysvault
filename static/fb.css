@@ -1195,3 +1195,12 @@ a.card:hover .card-pen, .card-pen:focus-visible { opacity: 1; }
 .card-pen:hover { background: var(--gold); color: var(--gold-ink); }
 /* No hover on a phone or tablet: there the pencil simply shows. */
 @media (hover: none), (max-width: 699px) { .card-pen { opacity: .92; } }
+
+/* A visitor who is not signed in has a wider Log in button up there: a smaller start for the name and a neater button
+   (the script in fb-shell.js then fits the name exactly, whatever the site is called). */
+@media (max-width: 699px) {
+  html:not([data-me]) .hd-word { font-size: clamp(.6875rem, 3.9vw, 1.125rem); }
+  #barLogin { min-height: 36px; padding: 0 12px; font-size: .875rem; }
+}
+/* Phones have Menu in the bottom bar, so the header never needs a second menu button there (it only crowded the name). */
+@media (max-width: 699px) { .hd-menu-btn { display: none !important; } }

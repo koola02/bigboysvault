@@ -50,6 +50,22 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     try { if (me || admin) localStorage.setItem('bbv:me', JSON.stringify({ me, admin })); else localStorage.removeItem('bbv:me'); } catch (_) {}
   });
 
+  /* ---------- the site's name in the phone header: it shrinks until it fits beside the buttons, never cut ---------- */
+  const word = document.querySelector('.hd-word');
+  const fitName = () => {
+    if (!word) return;
+    word.style.fontSize = '';
+    if (getComputedStyle(word).display === 'none') return;
+    let px = parseFloat(getComputedStyle(word).fontSize);
+    while (word.scrollWidth > word.clientWidth + 0.5 && px > 10.5) { px -= 0.5; word.style.fontSize = `${px}px`; }
+  };
+  fitName();
+  addEventListener('resize', fitName);
+  // The buttons beside it change when the site learns who is signed in, and the letters when the font arrives.
+  const hdRight = document.querySelector('.hd-r');
+  if (hdRight && window.ResizeObserver) new ResizeObserver(fitName).observe(hdRight);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fitName);
+
   /* ---------- things that open: the menu, the account menu, the phone's search ---------- */
   const menuBtns = () => document.querySelectorAll('[data-menu-toggle]');
   const setMenu = (open) => { root.classList.toggle('menu-open', open); menuBtns().forEach((b) => b.setAttribute('aria-expanded', String(open))); };
