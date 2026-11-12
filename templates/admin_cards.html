@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}My cards · Admin{% endblock %}
+{% block head %}{% include "mgr_head.html" %}{% endblock %}
+{% block layout %}wide{% endblock %}
 {% block content %}
 <section class="wrap admin wide mc" id="cardsRoot" data-sort="{{ sort }}">
   {% include "admin_tabs.html" %}
@@ -38,6 +40,7 @@
       <p class="sub" id="countLine">{{ self.total_text() }} card{% if total != 1 %}s{% endif %}{% if !q.is_empty() %} matching “{{ q }}”{% else if binder.is_empty() %} · {{ copies }} copies{% endif %}</p>
     </div>
     <p class="selnote" id="selNote" hidden></p>
+    {% if crate::look::is_new() %}<div class="mgr-scroll"><div class="mgr-thead" aria-hidden="true"><span></span><span></span><span></span><span>Card</span><span class="num">Price</span><span>Condition</span><span>Copies</span><span>Description</span><span>Tags</span><span></span></div>{% endif %}
     <ul class="rows mc-grid" id="rows">
       {% for (p, sold) in items %}
       <li class="crow ctile" data-id="{{ p.id }}" data-title="{{ p.title }}" data-ids="{{ p.copy_ids }}" data-sold="{{ sold.ids }}" data-c="{{ p.cond_class() }}" data-api-id="{{ p.api_id }}" data-finish="{{ p.finish }}" data-price-src="{{ p.price_src }}" data-market="{{ p.market_php }}">
@@ -69,6 +72,7 @@
       </li>
       {% endfor %}
     </ul>
+    {% if crate::look::is_new() %}</div>{% endif %}
     {% if items.is_empty() %}<div class="mc-empty"><p>No cards here yet.</p><a class="btn" href="/admin/quick">＋ Add cards</a></div>{% endif %}
     {% if let Some(n) = next %}<p class="mc-flow"><a class="mc-more" href="/admin?q={{ q|urlencode }}&amp;binder={{ binder }}&amp;sort={{ sort }}&amp;page={{ n }}"><i aria-hidden="true"></i>Loading more cards…</a></p>{% else %}{% if !items.is_empty() %}<p class="mc-flow mc-end">That's all {{ total }} card{% if total != 1 %}s{% endif %}.</p>{% endif %}{% endif %}
   </div>
@@ -89,5 +93,5 @@
 <script src="/static/tag-editor.js?v=1" defer></script>
 <script src="/static/my-cards.js?v=9" defer></script>
 <script src="/static/admin.js?v=12" defer></script>
-<script src="/static/admin-float.js?v=11" defer></script>
+<script src="/static/admin-float.js?v=12" defer></script>
 {% endblock %}

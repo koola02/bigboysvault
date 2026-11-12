@@ -260,7 +260,15 @@
     wrap.dataset.id = source.dataset.id;
     const h = document.createElement('h1'); h.className = 'h1'; h.textContent = 'Edit card';
     const note = doc.getElementById('toast');
-    wrap.append(h, document.adoptNode(grid));
+    // The new look has no "tap outside" hint, and on a phone the window fills the screen: it gets a close button.
+    let head = h;
+    if (document.documentElement.dataset.look) {
+      head = document.createElement('div'); head.className = 'float-edit-h';
+      const x = document.createElement('button'); x.type = 'button'; x.className = 'ibtn'; x.textContent = '✕'; x.setAttribute('aria-label', 'Close');
+      x.addEventListener('click', leave);
+      head.append(h, x);
+    }
+    wrap.append(head, document.adoptNode(grid));
     if (note) wrap.append(document.adoptNode(note));
     panel.replaceChildren(wrap);
     panel.dataset.href = href;

@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{% if editing %}Edit card{% else %}Add card{% endif %} · Admin{% endblock %}
+{% block head %}{% include "mgr_head.html" %}{% endblock %}
+{% block layout %}wide{% endblock %}
 {% block content %}
 <section class="wrap admin" data-editing="{% if editing %}1{% else %}0{% endif %}" data-id="{{ id }}">
   {% include "admin_tabs.html" %}
@@ -125,6 +127,7 @@
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/pricing.js?v=2" defer></script>
+<script src="/static/admin-ui.js?v=10" defer></script>
 <script src="/static/admin.js?v=12" defer></script>
 <!-- After admin.js: a restored draft fills the tags field first, then the chips are made from it. -->
 <script src="/static/tag-editor.js?v=1" defer></script>

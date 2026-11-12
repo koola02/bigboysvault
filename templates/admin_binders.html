@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Binders · Admin{% endblock %}
+{% block head %}{% include "mgr_head.html" %}{% endblock %}
+{% block layout %}wide{% endblock %}
 {% block content %}
 <section class="wrap admin bd" id="bd" data-binders="{{ data }}">
   {% include "admin_tabs.html" %}

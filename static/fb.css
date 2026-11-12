@@ -249,7 +249,7 @@ a.card { position: relative; display: flex; flex-direction: column; min-width: 0
 .card-m { order: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 4px; color: var(--muted); font-size: .8125rem; }
 .card-set { display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-sym { width: 14px; height: 14px; object-fit: contain; }
-.card-cond { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: var(--pill); background: rgba(var(--tone), .16); color: rgb(var(--tone)); font: 700 .6875rem/1 var(--font); white-space: nowrap; }
+.card-cond { display: inline-block; max-width: 100%; height: 18px; padding: 0 7px; border-radius: var(--pill); background: rgba(var(--tone), .16); color: rgb(var(--tone)); font: 700 .6875rem/18px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
 .card-tags { order: 4; display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
 .tag-hl { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: var(--pill); background: var(--gold-tint); color: var(--gold-hi); font: 700 .6875rem/1 var(--font); }
 .card-note { order: 5; margin-top: 4px; color: var(--muted); font-size: .8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

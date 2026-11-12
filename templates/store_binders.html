@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Binders · My store · {{ nav.brand }}{% endblock %}
+{% block head %}{% include "mgr_head.html" %}{% endblock %}
+{% block layout %}wide{% endblock %}
 {% block content %}
 <section class="wrap admin wide st" id="storeBinders" data-store="{{ p.m.store_url() }}" data-site="{{ nav.site }}">
   {% include "store_tabs.html" %}

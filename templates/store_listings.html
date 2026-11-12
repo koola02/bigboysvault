@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Listings · My store · {{ nav.brand }}{% endblock %}
+{% block head %}{% include "mgr_head.html" %}{% endblock %}
+{% block layout %}wide{% endblock %}
 {% block content %}
 <section class="wrap admin wide st" id="listings" data-max="{{ max }}" data-total="{{ total }}" data-focus="{{ focus }}" data-store="{{ p.m.store_url() }}">
   {% include "store_tabs.html" %}
@@ -68,6 +70,7 @@
   {% if cards.is_empty() %}
   <div class="me-empty st-empty" id="listEmpty">{% if total == 0 %}<b>Your store is empty.</b><span>Tap <b>+ Add cards</b> to list your first card. Prices are suggested from today's market.</span>{% else %}<b>No cards match.</b><span>Try another word, or clear the filters.</span>{% endif %}</div>
   {% endif %}
+  {% if crate::look::is_new() %}<div class="mgr-scroll"><div class="mgr-thead" aria-hidden="true"><span></span><span>On / off</span><span></span><span>Card</span><span>Delivery</span><span class="num">Price</span><span>Stock</span><span>What it is</span><span>Condition</span><span>Binder</span><span>Note for buyers</span></div>{% endif %}
   <ul class="rows mc-grid ls-grid" id="rows">
     {% for c in cards %}
     <li class="crow ctile ls-tile" data-id="{{ c.id }}" data-status="{{ c.status }}" data-market="{{ c.value }}" data-own="{{ c.value_own }}" data-cond="{{ c.cond }}" data-qty="{{ c.qty }}" data-c="{{ c.cond_class() }}"{% if c.own_photo() %} data-own-photo{% endif %}{% if let Some(b) = c.binder_id %} data-binder="{{ b }}"{% endif %}>
@@ -102,6 +105,8 @@
     </li>
     {% endfor %}
   </ul>
+  {% if crate::look::is_new() %}</div>
+  <script>addEventListener("load", function () { if (location.hash === "#add") { var b = document.getElementById("addOpen"); if (b) b.click(); } });</script>{% endif %}
 </section>
 <div class="selbar" id="selbar" hidden role="toolbar" aria-label="Bulk actions">
   <span class="selbar-n" id="selCount">0 selected</span>

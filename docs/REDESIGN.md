@@ -222,13 +222,28 @@ Each phase is deployed with the usual steps: live database backup, `fly deploy`,
 As of 12 November 2026, behind the new-look switch:
 
 - **Live:** the frame and style guide; the feed as home (endless, reactions, comments, automatic posts with admin
-  switches, editing of posts and comments); Marketplace and each card's page; the admin's editor on a card's page;
-  every content column 60% wider than first drawn.
-- **Built:** Trainers and Stores, a trainer's profile, a store, a listing's page, the vouches wall; the seller's
-  editor on their own store (Edit on each card, one-tap Out of stock, cover photo, store name and place); Ask the
-  Vault as a chat window.
-- **Next:** stories viewer and trainers' stories, follow, share to feed, the feed editor; vault chat as a chat
-  window; two-pane messages; log in and join; the account pages; admin pages; then the switch-over.
+  switches, editing of posts and comments, the showcase's cards as the stories row); The Vault (the card section,
+  first called Marketplace) and each card's page, which opens as a floating window with More like this; the admin's
+  editor on a card's page; Trainers and Stores, a trainer's profile, a store, a listing's page, the vouches wall;
+  the seller's editor on their own store; Ask the Vault and the vault chat as chat windows; log in and join;
+  two-pane Messages with New message (anyone can message anyone); Notifications; every content column 60% wider
+  than first drawn.
+- **Live, the Manager:** the admin's Vault Manager and a seller's Store Manager, laid out the way an ads manager is:
+  a tools rail at the left, a title bar, Overview with the numbers first, Cards and Listings as tables you edit in
+  place (a switch on every listing, tools for many rows at once), Add cards, Add by set, Binders, Orders, Trainers,
+  Sellers, Store settings, and the card form both as a page and as a window over the table. A buyer's My orders and a
+  moderator's Trainers page use the same title bar without the rail. The styles are `static/mgr.css`, loaded only
+  on those pages (each template asks for it through `{% block head %}` and `mgr_head.html`).
+- **Next:** stories viewer and trainers' stories, follow, share to feed, the feed editor (until then "Home page" in
+  the Manager opens today's home page editor, in today's look, because that is the page visitors still see);
+  My trainer (`/me`); then the switch-over.
 
 Owner's rules added along the way: editing happens where the thing is shown and must feel natural; Ask the Vault
-opens as a chat, not a page; pages are 60% wider (phones unchanged, tablets fill their width).
+opens as a chat, not a page; pages are 60% wider (phones unchanged, tablets fill their width); the card section is
+called The Vault; the stories row shows only the showcase's cards; a card tapped in The Vault opens in a floating
+window with More like this; everyone can message everyone (30 new conversations a day for trainers who aren't
+staff); the admin's and the seller's dashboards should feel like home, the way an ads manager does.
+
+One thing to remember when a script in today's look meets the new one: a class name can mean something else there.
+`quick.js` marks a tapped card `pop`, which in the new look is the header's drop-down; `mgr.css` takes those styles
+back off (`.qa-card.pop`). Check for such names before bringing another old page across.

@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{% if p.m.seller %}Orders · My store{% else %}My orders{% endif %} · {{ nav.brand }}{% endblock %}
+{% block head %}{% include "mgr_head.html" %}{% endblock %}
+{% block layout %}wide{% endblock %}
 {% block content %}
 <section class="wrap admin wide st" id="storeOrders">
   {% include "store_tabs.html" %}

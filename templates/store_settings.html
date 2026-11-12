@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 {% block title %}Store settings · My store · {{ nav.brand }}{% endblock %}
+{% block head %}{% include "mgr_head.html" %}{% endblock %}
+{% block layout %}wide{% endblock %}
 {% block content %}
 <section class="wrap admin st" id="storeSettings">
   {% include "store_tabs.html" %}

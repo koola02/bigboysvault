@@ -31,7 +31,8 @@ pub const COOKIE: &str = "bbv_look";
 pub const GUIDE: &str = "/admin/look";
 
 /// Pages already converted. "/x" covers "/x" and everything under it; "=/x" covers only "/x" itself.
-const READY: &[&str] = &[GUIDE, "=/", "/feed", "/posts", "/all", "/search", "/collections", "/products", "/trainers", "/stores", "/store", "/vouches", "=/ask", "=/chat", "=/login", "=/join", "=/signin", "=/me/messages", "=/admin/messages", "=/me/notifications"];
+const READY: &[&str] = &[GUIDE, "=/", "/feed", "/posts", "/all", "/search", "/collections", "/products", "/trainers", "/stores", "/store", "/vouches", "=/ask", "=/chat", "=/login", "=/join", "=/signin", "=/me/messages", "=/admin/messages", "=/me/notifications", "=/admin", "=/admin/dashboard", "=/me/store", "=/me/listings",
+    "=/admin/quick", "=/admin/sets", "=/admin/binders", "=/admin/orders", "=/admin/trainers", "=/admin/sellers", "=/admin/new", "/admin/edit", "=/me/binders", "=/me/orders", "=/me/settings"];
 
 /// Is this request (or the page being rendered for it) in the new look?
 pub fn is_new() -> bool {
@@ -150,7 +151,6 @@ mod tests {
     fn only_converted_pages_change() {
         assert!(ready("/admin/look"));
         assert!(!ready("/admin/looks"));
-        assert!(!ready("/admin"));
         assert!(ready("/"), "the feed is home");
         assert!(ready("/posts/12"));
         assert!(ready("/all") && ready("/products/pikachu-1") && ready("/collections/graded-cards"));
@@ -158,7 +158,13 @@ mod tests {
         assert!(ready("/ask") && !ready("/ask/more"));
         assert!(ready("/chat") && !ready("/chat/messages"));
         assert!(ready("/login") && ready("/join") && ready("/signin") && ready("/me/messages") && ready("/me/notifications"));
-        assert!(!ready("/me") && !ready("/storefront") && !ready("/me/store") && !ready("/admin"));
+        assert!(ready("/admin") && ready("/admin/dashboard") && ready("/me/store") && ready("/me/listings"));
+        // The Manager: every tool in the admin's and the seller's rail.
+        assert!(ready("/admin/quick") && ready("/admin/sets") && ready("/admin/binders") && ready("/admin/orders") && ready("/admin/trainers") && ready("/admin/sellers"));
+        assert!(ready("/admin/new") && ready("/admin/edit/12") && ready("/me/binders") && ready("/me/orders") && ready("/me/settings"));
+        // The home page editor is today's home page itself, so it stays in today's look. So does what only answers with data.
+        assert!(!ready("/me") && !ready("/storefront") && !ready("/admin/page") && !ready("/admin/page/list") && !ready("/admin/save"));
+        assert!(!ready("/admin/quick-edit") && !ready("/admin/sets/search") && !ready("/admin/binders/pikachu-set/covers") && !ready("/admin/editor"));
     }
 
     #[test]

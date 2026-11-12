@@ -1,8 +1,10 @@
 {% extends "base.html" %}
 {% block title %}Trainers · Admin{% endblock %}
+{% block head %}{% include "mgr_head.html" %}{% endblock %}
+{% block layout %}wide{% endblock %}
 {% block content %}
 <section class="wrap admin wide at" id="atRoot">
-  {% if full %}{% include "admin_tabs.html" %}{% else %}<div class="adm-top"><span class="role" data-role="mod">Moderator</span><a class="linkbtn" href="/" target="_blank" rel="noopener">View site ↗</a></div>{% endif %}
+  {% if full %}{% include "admin_tabs.html" %}{% else if crate::look::is_new() %}<header class="mgr-bar mgr-bar-solo"><div class="mgr-bar-l"><h1 class="mgr-title">Trainers</h1><span class="role" data-role="mod">Moderator</span></div><div class="mgr-bar-r"><a class="btn ghost sm" href="/" target="_blank" rel="noopener">View site ↗</a></div></header>{% else %}<div class="adm-top"><span class="role" data-role="mod">Moderator</span><a class="linkbtn" href="/" target="_blank" rel="noopener">View site ↗</a></div>{% endif %}
   <h1 class="h1 a-title">Trainers</h1>
   <nav class="seg at-view" aria-label="Show">
     <a href="/admin/trainers"{% if !showing_vouches %} class="on" aria-current="page"{% endif %}>Trainers</a>
