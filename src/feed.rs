@@ -465,9 +465,8 @@ async fn feed_html(app: &App, viewer: i64, only: Option<i64>) -> Result<String, 
             }
         };
         let stories = if single { vec![] } else { stories(c)? };
-        let hero = blocks::blocks(c)?.into_iter().find(|b| b.kind == "hero");
-        // The hero's words can hold "{count}": the number of cards in the vault.
-        let tagline = hero.as_ref().and_then(|b| b.data["subtitle"].as_str()).unwrap_or("").trim().replace("{count}", &db::thousands(admin::in_vault(c)?.0));
+        // The welcome line can hold "{count}": the number of cards in the vault.
+        let tagline = blocks::welcome(c)?.replace("{count}", &db::thousands(admin::in_vault(c)?.0));
         let (top, _) = db::list(c, &db::Query { collection: None, q: String::new(), sort: "price-desc".into(), in_stock: true, page: 0 })?;
         let featured = top.iter().find(|p| p.has_image()).map(product_tile);
         let moves = match c.query_row("SELECT id FROM posts WHERE kind='prices' AND hidden=0 ORDER BY created_at DESC LIMIT 1", [], |r| r.get::<_, i64>(0)) {

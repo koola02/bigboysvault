@@ -1604,6 +1604,10 @@ struct ShowcasePage {
     tab: &'static str,
     cards: Vec<ShowCard>,
     max: usize,
+    /// The welcome line as the owner wrote it ("{count}" and all), and the number that "{count}" stands for.
+    welcome: String,
+    welcome_max: usize,
+    count: String,
 }
 
 /// GET /admin/showcase: pick the showcase's cards, take them out, put them in order.
@@ -1615,8 +1619,24 @@ pub async fn showcase_page(State(app): State<App>, h: HeaderMap) -> Res {
     if !crate::look::is_new() {
         return Ok(Redirect::to("/admin/page").into_response());
     }
-    let (nav, cards) = with_db(&app, |c| Ok((chrome(c)?, show_cards(c, &blocks::showcase_ids(c)?)))).await?;
-    rd(ShowcasePage { nav, tab: "showcase", cards, max: blocks::SHOWCASE_MAX })
+    let (nav, cards, welcome, count) = with_db(&app, |c| Ok((chrome(c)?, show_cards(c, &blocks::showcase_ids(c)?), blocks::welcome(c)?, db::thousands(in_vault(c)?.0)))).await?;
+    rd(ShowcasePage { nav, tab: "showcase", cards, max: blocks::SHOWCASE_MAX, welcome, welcome_max: blocks::WELCOME_MAX, count })
+}
+
+#[derive(Deserialize)]
+pub struct WelcomeReq {
+    text: String,
+}
+
+/// POST /admin/welcome {text}: the line a visitor who isn't logged in reads under the site's name. Answers with the
+/// line as it was kept (one line, no longer than it may be).
+pub async fn welcome_save(State(app): State<App>, h: HeaderMap, Json(req): Json<WelcomeReq>) -> Res {
+    if !authed(&app, &h) {
+        return Ok(deny(&h));
+    }
+    let text = with_db(&app, move |c| blocks::set_welcome(c, &req.text)).await?;
+    app.forget();
+    Ok(ok_json(json!({ "ok": true, "text": text })))
 }
 
 #[derive(Deserialize)]

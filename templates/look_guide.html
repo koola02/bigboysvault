@@ -101,7 +101,7 @@
 {% block right %}
 <section class="rr-sec">
   <h2 class="rr-h">Featured</h2>
-  {% if let Some(p) = items.first() %}<a class="rr-i" href="#"><img class="rr-pic" src="{{ p.img(360) }}" alt=""><span><b>{{ p.short_title() }}</b><small>{{ p.set_text() }}</small><b class="card-p">{{ p.price_text() }}</b></span></a>{% endif %}
+  {% if let Some(p) = items.first() %}<a class="rr-top" href="#"><span class="rr-top-pic"><img src="{{ p.img(360) }}" alt=""></span><span class="rr-top-t"><b>{{ p.short_title() }}</b><small>{{ p.set_text() }}</small><b class="card-p">{{ p.price_text() }}</b></span></a>{% endif %}
 </section>
 <section class="rr-sec">
   <h2 class="rr-h">Price moves</h2>

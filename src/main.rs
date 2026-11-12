@@ -1445,6 +1445,7 @@ async fn main() {
         .route("/admin/sets", get(admin::by_set))
         .route("/admin/binders", get(admin::binders_page).post(admin::binder_create))
         .route("/admin/showcase", get(admin::showcase_page).post(admin::showcase_save))
+        .route("/admin/welcome", post(admin::welcome_save))
         .route("/admin/binders/order", post(admin::binders_order))
         .route("/admin/binders/{handle}", post(admin::binder_update))
         .route("/admin/binders/{handle}/covers", get(admin::binder_covers))

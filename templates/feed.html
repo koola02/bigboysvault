@@ -26,9 +26,10 @@
 </div>
 {% endblock %}
 {% block right %}
+<a class="rr-ask" href="/ask"><span class="rr-ask-t"><img src="/static/img/logo-sm-144.png?v=1" width="44" height="44" alt=""><span><b>Ask the Vault</b><small>Prices, stock, ideas</small></span></span><span class="rr-ask-go"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>Ask a question</span></a>
 {% if let Some(f) = featured %}<section class="rr-sec">
   <h2 class="rr-h">Top of the vault</h2>
-  <a class="rr-i" href="{{ f.url }}"><img class="rr-pic" src="{{ f.img }}" loading="lazy" decoding="async" alt=""><span><b>{{ f.title }}</b><small>{{ f.sub }}</small><b class="card-p">{{ f.price }}</b></span></a>
+  <a class="rr-top" href="{{ f.url }}"><span class="rr-top-pic"><img src="{{ f.img }}" loading="lazy" decoding="async" alt=""></span><span class="rr-top-t"><b>{{ f.title }}</b><small>{{ f.sub }}</small><b class="card-p">{{ f.price }}</b></span></a>
 </section>{% endif %}
 {% if !moves.is_empty() %}<section class="rr-sec">
   <h2 class="rr-h">Price moves</h2>
@@ -42,6 +43,5 @@
   <h2 class="rr-h">Talk</h2>
   <a class="rr-i" href="/me/messages" data-dm-new data-me-only><span class="av"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg></span><span><b>New message</b><small>Anyone on the site</small></span></a>
   <a class="rr-i" href="/chat"><span class="av"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span><span><b>Vault chat</b><small>Everyone's here</small></span></a>
-  <a class="rr-i" href="/ask"><span class="av">✦</span><span><b>Ask the Vault</b><small>Prices, stock, ideas</small></span></a>
 </section>
 {% endblock %}

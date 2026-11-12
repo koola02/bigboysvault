@@ -127,4 +127,32 @@
   // Leaving in the half second before a change is sent would lose it: send it at once.
   addEventListener('pagehide', () => { if (state.textContent === 'Saving…') navigator.sendBeacon?.('/admin/showcase', new Blob([JSON.stringify({ ids })], { type: 'application/json' })); });
   draw(); load('');
+
+  // The welcome line: what a visitor who isn't logged in reads under the site's name. Saved a moment after you stop typing.
+  const box = $('shwWelcome'), see = $('shwWSee'), wState = $('shwWState'), holder = $('shwWelcomeBox');
+  if (box && see && holder) {
+    const said = () => (box.value.replace(/\s+/g, ' ').trim() || box.placeholder).split('{count}').join(holder.dataset.count || '0');
+    const show = () => { see.textContent = said(); };
+    let kept = box.value, wT = 0, wSent = 0;
+    async function saveLine() {
+      const text = box.value; if (text === kept) { wState.textContent = ''; return; }
+      const my = ++wSent;
+      try {
+        const j = await A.postJSON('/admin/welcome', { text });
+        if (my !== wSent) return;
+        kept = text;
+        // What was kept is one line: show it that way once you have left the box, never while you are typing in it.
+        if (document.activeElement !== box && typeof j.text === 'string') { box.value = j.text; kept = j.text; show(); }
+        wState.textContent = 'Saved ✓';
+      } catch (err) {
+        if (my !== wSent) return;
+        wState.textContent = 'Not saved';
+        A.toast(err.message || 'That didn’t save. Check your connection and try again.', { kind: 'err' });
+      }
+    }
+    box.addEventListener('input', () => { show(); wState.textContent = 'Saving…'; clearTimeout(wT); wT = setTimeout(saveLine, 700); });
+    box.addEventListener('blur', () => { clearTimeout(wT); saveLine(); });
+    addEventListener('pagehide', () => { if (box.value !== kept) navigator.sendBeacon?.('/admin/welcome', new Blob([JSON.stringify({ text: box.value })], { type: 'application/json' })); });
+    show();
+  }
 })();

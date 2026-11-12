@@ -244,10 +244,33 @@ As of 12 November 2026, behind the new-look switch:
   column's name drags to change its width (double-click sets it back); widths are kept on the device
   (`localStorage` `bbv:cols:<table id>`) and written into the table's `--cols`. All of it is `static/mgr-table.js`.
   The SRP line under a price wraps instead of being cut.
+- **Live, the welcome line:** the sentence a visitor who isn't logged in reads under the site's name is edited on the
+  Manager's Showcase page (`POST /admin/welcome {text}`, `blocks::set_welcome`: one line, 200 letters at most,
+  `{count}` for the number of cards; kept as the home banner's subtitle so both looks agree). "Home page" left the
+  Manager's sidebar; today's look keeps its tab.
+- **Live, the header's Messages button** drops the inbox down beside it, as Facebook's does: the newest
+  conversations with their unread counts (a row opens the chat window), a pencil for New message, and "Open the full
+  inbox" for `/me/messages`. A phone has no room for it, so there the button opens the page. All in `static/dm.js`.
+- **Live, the menu lists a place only where the screen has no other button for it** (`data-mn` in `fb_top.html`):
+  Messages is gone (the header's button has it); Trainers and Vault chat show only on phones (from 700px they are
+  header tabs); Ask the Vault is a gold line, hidden on phones (the Ask tab at the bottom) and beside the feed from
+  1100px (the right column starts with a gold "Ask the Vault" card). On other pages and on tablets it stays, so it is
+  always one tap away. Binder pictures in the menu stand as tall as a card (44 by 62), and "Top of the vault" in the
+  right column shows its card whole and tall.
+- **Calls, fixed:** every open page of a person now gets every call message. Before, the server handed each one (a
+  ring, an answer, connection details) to whichever page asked first, and a page in a background tab didn't listen
+  at all: with the site open on a phone and a computer only one rang, an answer could land on the wrong page (the
+  caller stayed on "Calling…"), a background tab never rang, and a page that closed mid-call blocked that
+  conversation's next call. Now each page says the number of the last call message it has (`GET /dm/poll?s=`), a
+  page in the background keeps listening (it rings, and its tab's title says who is calling), a page opened while it
+  rings rings too, answering or declining on one page stops the others ("elsewhere"), the caller is told when the
+  other person isn't on the site, and ringing again from a new page ends a call its old page left behind. Calls still
+  need the other person to have the site open: a phone whose browser is closed can't ring until push notifications
+  are sent from the server (subscriptions are already saved; sending needs VAPID keys).
 - **The new look is on for everyone** (the owner switched `site_look` to `new` on 12 November 2026).
-- **Next:** stories viewer and trainers' stories, follow, share to feed, the feed editor (until then "Home page" in
-  the Manager opens today's home page editor, in today's look, because that is the page visitors still see);
-  My trainer (`/me`); then the switch-over.
+- **Next:** stories viewer and trainers' stories, follow, share to feed, the feed editor (today's home page editor,
+  `/admin/page`, is still there in today's look, but no longer in the Manager's sidebar); My trainer (`/me`); push
+  notifications so a call rings a phone whose browser is closed; then the switch-over.
 
 Owner's rules added along the way: editing happens where the thing is shown and must feel natural; Ask the Vault
 opens as a chat, not a page; pages are 60% wider (phones unchanged, tablets fill their width); the card section is

@@ -29,9 +29,16 @@
       <div class="shw-results" id="shwResults"></div>
     </article>
   </div>
+
+  <article class="dash-panel shw-welcome" id="shwWelcomeBox" data-count="{{ count }}">
+    <h2 class="dash-h">Welcome line <small id="shwWState" role="status" aria-live="polite"></small></h2>
+    <p class="dash-sub">The sentence under the site's name at the top of the home page. Only visitors who aren't logged in see it, so you won't see it yourself. Type <b>{count}</b> where the number of cards should go. It saves by itself.</p>
+    <textarea id="shwWelcome" rows="2" maxlength="{{ welcome_max }}" placeholder="Pokémon cards and collectibles in one vault. Browse, ask, message a seller, and trade with trainers you can trust." aria-label="Welcome line">{{ welcome }}</textarea>
+    <p class="shw-wsee">Visitors read: <b id="shwWSee"></b></p>
+  </article>
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/admin-ui.js?v=10" defer></script>
 <script src="/static/dragsort.js?v=5" defer></script>
-<script src="/static/showcase.js?v=1" defer></script>
+<script src="/static/showcase.js?v=2" defer></script>
 {% endblock %}

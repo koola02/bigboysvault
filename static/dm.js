@@ -4,7 +4,8 @@
    - One chat window: docked bottom-right on a computer, full screen on a phone; it comes back after moving to another
      page. Text, photos, voice notes and voice calls (WebRTC; Cloudflare's relay when needed).
    - One long request per page (GET /dm/poll) brings everything live: new messages, "Seen", the unread badge, calls.
-   - /me/messages lists the conversations; /admin/messages lets admins read any of them without marking it seen. */
+   - /me/messages lists the conversations; /admin/messages lets admins read any of them without marking it seen.
+   - In the new look the header's Messages button drops the inbox down beside it (a phone opens the page). */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -73,13 +74,17 @@
   }
 
   /* ---------------- the live connection ---------------- */
-  const live = { v: 0, me: null, unread: 0, running: false, ctrl: null, listeners: new Set() };
+  // This page's own name: someone can have the site open in two tabs, or on a phone and a computer.
+  const PID = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 10)}`;
+  // `s` is the number of the last call message this page has: every open page gets every one.
+  const live = { v: 0, s: 0, me: null, unread: 0, running: false, ctrl: null, listeners: new Set() };
   async function startLive() {
     if (live.running) return; live.running = true;
     for (;;) {
-      if (document.hidden) await new Promise((ok) => document.addEventListener('visibilitychange', ok, { once: true }));
-      const w = win.thread && !win.watch ? win.thread : null;
-      const q = new URLSearchParams({ v: String(live.v) });
+      // A tab in the background keeps listening, so a call still rings there; it only stops reading the open chat
+      // (reading it would say "Seen" for messages nobody has looked at).
+      const w = win.thread && !win.watch && !document.hidden ? win.thread : null;
+      const q = new URLSearchParams({ v: String(live.v), s: String(live.s) });
       if (w) { q.set('t', String(w)); q.set('after', String(win.last || 0)); }
       live.ctrl = new AbortController();
       const stop = setTimeout(() => live.ctrl.abort(), 40000);
@@ -87,7 +92,7 @@
       try { j = await api(`/dm/poll?${q}`, undefined, { signal: live.ctrl.signal }); } catch (e) { if (e.login) { live.running = false; return; } }
       clearTimeout(stop);
       if (!j) { await new Promise((ok) => setTimeout(ok, live.kick ? 0 : 3000)); live.kick = false; continue; }
-      live.v = j.v;
+      live.v = j.v; if (j.s != null) live.s = j.s;
       setUnread(j.unread);
       for (const s of j.signals || []) call.signal(s);
       if (j.open && j.open.id === win.thread) win.take(j.open);
@@ -177,14 +182,14 @@
       n.hidden = false; n.classList.remove('min'); document.documentElement.classList.toggle('dm-full', phone()); this.fitScreen?.();
       $('.dm-head-bubble')?.remove();
       if (opts.card !== undefined) this.setCard(opts.card);
-      if (!this.watch) store.set('bbv:dm', { t: tid, min: false });
+      if (!this.watch) store.set('bbv:dm', { t: tid, min: false, m: live.me });
       try {
         const j = await api(this.watch ? `/admin/dm/${tid}` : `/dm/${tid}`);
         this.me = j.me; this.other = j.other; this.seen = j.seen || 0; this.more = !!j.more;
         this.header(j);
         this.add(j.messages, true);
         if (!this.watch) { this.read(); kick(); }
-      } catch (err) { toast(err.message, true); if (err.login) toLogin(); this.close(); return; }
+      } catch (err) { if (opts.quiet) { store.set('bbv:dm', null); this.close(); return; } toast(err.message, true); if (err.login) toLogin(); this.close(); return; }
       if (!phone() && !this.watch) $('textarea', n).focus({ preventScroll: true });
       if (this.watch) { clearInterval(this.watchTimer); this.watchTimer = setInterval(() => this.refreshWatch(), 8000); }
     },
@@ -301,7 +306,7 @@
     minimise() {
       if (!this.node) return;
       this.node.classList.add('min'); this.node.hidden = true; document.documentElement.classList.remove('dm-full');
-      store.set('bbv:dm', { t: this.thread, min: true });
+      store.set('bbv:dm', { t: this.thread, min: true, m: live.me });
       chatHead(this.other);
     },
     close() {
@@ -408,46 +413,85 @@
   /* ---------------- voice calls ---------------- */
   const call = {
     pc: null, stream: null, id: null, thread: null, other: null, role: null, ui: null, pendingIce: [], earlyIce: [], ringTimer: null, tick: null, tone: null, offer: null,
-    async iceServers() { try { const j = await api('/dm/ice'); return j.iceServers || []; } catch (_) { return [{ urls: 'stun:stun.l.google.com:19302' }]; } },
+    // Goes up each time a call is put away, so the steps of one that was put down while getting ready stop there.
+    gen: 0,
+    // How the two browsers find each other. Asked with a time limit, so a slow answer never holds up a call.
+    async iceServers() {
+      const c = new AbortController(), t = setTimeout(() => c.abort(), 6000);
+      try { const j = await api('/dm/ice', undefined, { signal: c.signal }); return j.iceServers || []; }
+      catch (_) { return [{ urls: ['stun:stun.cloudflare.com:3478', 'stun:stun.l.google.com:19302'] }]; }
+      finally { clearTimeout(t); }
+    },
     async media() { return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); },
     async peer() {
       const pc = new RTCPeerConnection({ iceServers: await this.iceServers() });
-      pc.onicecandidate = (e) => { if (!e.candidate) return; if (this.id) this.send('ice', e.candidate.toJSON()); else this.earlyIce.push(e.candidate.toJSON()); };
-      pc.ontrack = (e) => { const a = this.audio(); a.srcObject = e.streams[0]; a.play().catch(() => {}); };
+      // A connection left over from a call that was put down while it got ready speaks for nobody.
+      pc.onicecandidate = (e) => { if (!e.candidate || pc !== this.pc) return; if (this.id) this.send('ice', e.candidate.toJSON()); else this.earlyIce.push(e.candidate.toJSON()); };
+      pc.ontrack = (e) => { if (pc !== this.pc) return; const a = this.audio(); a.srcObject = e.streams[0]; a.play().catch(() => {}); };
       pc.onconnectionstatechange = () => {
+        if (pc !== this.pc) return;
         if (pc.connectionState === 'connected') this.connected();
         if (pc.connectionState === 'failed') { toast('The call couldn\'t connect.', true); this.hang(); }
       };
       return pc;
     },
     audio() { let a = $('#dmCallAudio'); if (!a) { a = el('audio'); a.id = 'dmCallAudio'; a.autoplay = true; a.playsInline = true; document.body.append(a); } return a; },
-    send(type, data) { return api(`/dm/${this.thread}/call`, { type, call: this.id || '', data: data ?? null }).catch(() => {}); },
+    send(type, data) { return api(`/dm/${this.thread}/call`, { type, call: this.id || '', page: PID, data: data ?? null }).catch(() => {}); },
     async start(thread, other) {
       if (this.pc || this.ui) { toast('You\'re already in a call.', true); return; }
       if (!window.RTCPeerConnection) { toast('This browser can\'t make calls.', true); return; }
       this.thread = thread; this.other = other; this.role = 'caller'; this.id = null; this.earlyIce = []; this.pendingIce = [];
       this.show('Calling…', false);
-      try { this.stream = await this.media(); } catch (_) { toast('Allow the microphone to call.', true); this.clean(); return; }
-      this.pc = await this.peer();
-      this.stream.getTracks().forEach((t) => this.pc.addTrack(t, this.stream));
-      await this.pc.setLocalDescription(await this.pc.createOffer());
-      try { const j = await api(`/dm/${thread}/call`, { type: 'ring', data: { sdp: this.pc.localDescription } }); this.id = j.call; }
-      catch (err) { toast(err.message, true); this.clean(); return; }
+      // Getting the microphone and the connection ready takes a moment, and the call can be put down meanwhile
+      // (End call, or the other side's answer to an earlier one): then whatever was opened is closed again here.
+      const my = this.gen, over = () => my !== this.gen;
+      let stream = null, pc = null;
+      const drop = () => { pc?.close(); stream?.getTracks().forEach((t) => t.stop()); };
+      try { stream = await this.media(); } catch (_) { if (!over()) { toast('Allow the microphone to call.', true); this.clean(); } return; }
+      if (over()) { drop(); return; }
+      this.stream = stream;
+      try {
+        pc = await this.peer();
+        if (over()) { drop(); return; }
+        this.pc = pc;
+        stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+        await pc.setLocalDescription(await pc.createOffer());
+      } catch (_) { if (over()) drop(); else { toast('The call couldn\'t start. Please try again.', true); this.clean(); } return; }
+      if (over()) { drop(); return; }
+      let rung;
+      try { rung = await api(`/dm/${thread}/call`, { type: 'ring', page: PID, data: { sdp: pc.localDescription } }); }
+      catch (err) { if (!over()) { toast(err.message, true); this.clean(); } return; }
+      // Put down while it was ringing out: the other side stops ringing at once.
+      if (over()) { api(`/dm/${thread}/call`, { type: 'end', call: rung.call, page: PID, data: null }).catch(() => {}); return; }
+      this.id = rung.call;
       this.earlyIce.splice(0).forEach((c) => this.send('ice', c));
+      // Someone with the site open hears it ring; someone without it finds a missed call when they come back.
+      this.setStatus(rung.online === false ? 'Not on the site right now. Ringing in case they open it…' : 'Ringing…');
       this.ringing(false);
       this.ringTimer = setTimeout(() => { if (this.role === 'caller' && !this.started) { toast('No answer.'); this.hang(); } }, 45000);
     },
     async accept() {
       this.ringing(true, false);
       this.setStatus('Connecting…'); this.buttons(false);
-      try { this.stream = await this.media(); } catch (_) { toast('Allow the microphone to answer.', true); this.decline(); return; }
-      this.pc = await this.peer();
-      this.stream.getTracks().forEach((t) => this.pc.addTrack(t, this.stream));
-      await this.pc.setRemoteDescription(this.offer);
-      await this.pc.setLocalDescription(await this.pc.createAnswer());
-      this.send('accept', { sdp: this.pc.localDescription });
+      // As when calling: if the call ends while this is getting ready, what was opened is closed again.
+      const my = this.gen, over = () => my !== this.gen;
+      let stream = null, pc = null;
+      const drop = () => { pc?.close(); stream?.getTracks().forEach((t) => t.stop()); };
+      try { stream = await this.media(); } catch (_) { if (!over()) { toast('Allow the microphone to answer.', true); this.decline(); } return; }
+      if (over()) { drop(); return; }
+      this.stream = stream;
+      try {
+        pc = await this.peer();
+        if (over()) { drop(); return; }
+        this.pc = pc;
+        stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+        await pc.setRemoteDescription(this.offer);
+        await pc.setLocalDescription(await pc.createAnswer());
+      } catch (_) { if (over()) drop(); else { toast('The call couldn\'t connect.', true); this.decline(); } return; }
+      if (over()) { drop(); return; }
+      this.send('accept', { sdp: pc.localDescription });
       this.earlyIce.splice(0).forEach((c) => this.send('ice', c));
-      for (const c of this.pendingIce.splice(0)) await this.pc.addIceCandidate(c).catch(() => {});
+      for (const c of this.pendingIce.splice(0)) await pc.addIceCandidate(c).catch(() => {});
     },
     decline() { this.send('decline'); this.clean(); },
     hang() { if (this.id) this.send('end'); this.clean(); },
@@ -460,6 +504,8 @@
         if (this.ui) { return; } // busy: the other side keeps ringing until they give up
         this.thread = s.thread; this.id = s.call; this.other = s.from; this.role = 'callee'; this.offer = s.data && s.data.sdp; this.pendingIce = []; this.earlyIce = [];
         this.show('is calling you…', true); this.ringing(true, true);
+        // The tab says so too, for someone looking at another one.
+        this.title = document.title; document.title = `📞 ${(s.from && s.from.name) || 'Someone'} is calling…`;
         if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 400]);
         this.ringTimer = setTimeout(() => { if (!this.pc) this.clean(); }, 50000);
         return;
@@ -470,6 +516,8 @@
       else if (s.type === 'declined') { toast('The call was declined.'); this.clean(); }
       else if (s.type === 'ended') { if (this.started) toast('Call ended.'); this.clean(); }
       else if (s.type === 'taken') { this.clean(); }
+      // Answered or turned down on another of this person's pages (or by another admin): this one stops ringing.
+      else if (s.type === 'elsewhere') { if (this.role === 'callee' && s.by !== PID) this.clean(); }
     },
     show(status, incoming) {
       const o = el('div', 'dm-call-ui'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', 'Voice call');
@@ -510,7 +558,9 @@
       this.pc?.close(); this.stream?.getTracks().forEach((t) => t.stop());
       const a = $('#dmCallAudio'); if (a) a.srcObject = null;
       this.ui?.remove();
-      Object.assign(this, { pc: null, stream: null, id: null, ui: null, started: 0, offer: null, pendingIce: [], earlyIce: [] });
+      if (this.title != null) document.title = this.title;
+      this.gen++;
+      Object.assign(this, { pc: null, stream: null, id: null, ui: null, started: 0, offer: null, pendingIce: [], earlyIce: [], title: null });
       kick();
     },
   };
@@ -525,7 +575,7 @@
     vv.addEventListener('resize', fitScreen); vv.addEventListener('scroll', fitScreen);
     win.fitScreen = fitScreen;
   }
-  document.addEventListener('visibilitychange', () => { if (!document.hidden && win.thread && win.node && !win.node.hidden && !win.watch) win.read(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) return; if (win.thread && win.node && !win.node.hidden && !win.watch) win.read(); if (live.running) kick(); });
   window.addEventListener('pagehide', () => { if (call.id && (call.pc || call.role === 'caller')) navigator.sendBeacon?.(`/dm/${call.thread}/call`, new Blob([JSON.stringify({ type: 'end', call: call.id })], { type: 'application/json' })); });
 
   /* ---------------- message buttons on cards ---------------- */
@@ -599,6 +649,72 @@
     people();
   });
 
+  /* ---------------- a conversation's line: who, what was said last, how many are unread ---------------- */
+  function threadRow(r, admin, after) {
+    const li = el('li'); const a = el('button', `dm-li${r.unread ? ' unread' : ''}`); a.type = 'button';
+    if (admin) { const pair = el('span', 'dm-pair'); pair.append(avatar(r.a, 40), avatar(r.b, 40)); a.append(pair); }
+    else a.append(avatar(r.other, 52));
+    const t = el('span', 'dm-li-t');
+    const name = admin ? `${r.a.name} ↔ ${r.b.name}` : r.other.name;
+    const top = el('span', 'dm-li-top'); top.append(el('b', '', name));
+    if (r.as_vault || (admin && r.vault)) top.append(el('span', 'dm-tag', 'Vault'));
+    t.append(top, el('span', 'dm-li-last', `${r.last_mine ? 'You: ' : ''}${r.last} · ${ago(r.at)}`));
+    a.append(t);
+    if (r.unread) a.append(el('span', 'dm-dot', String(r.unread)));
+    a.addEventListener('click', () => { win.open(r.id, { watch: admin && !r.vault }); a.classList.remove('unread'); a.querySelector('.dm-dot')?.remove(); if (after) after(); });
+    li.append(a);
+    return li;
+  }
+
+  /* ---------------- the inbox under the header's Messages button (the new look) ----------------
+     Pressing the button drops the inbox down beside it; a conversation opens in the chat window, and "Open the full
+     inbox" goes to the Messages page. A phone has no room for a panel: there the button opens that page. */
+  const drop = { menu: null, btn: null, list: null, open: false, rows: null, seq: 0 };
+  function dropDraw() {
+    const rows = drop.rows || [];
+    drop.list.replaceChildren();
+    if (!rows.length) { drop.list.append(el('p', 'dm-empty', 'No messages yet. Tap “Message” on any card to ask its seller, or start one with the pencil above.')); return; }
+    const ul = el('ul', 'dm-list');
+    rows.slice(0, 40).forEach((r) => ul.append(threadRow(r, false, () => dropSet(false))));
+    drop.list.append(ul);
+  }
+  async function dropLoad() {
+    const my = ++drop.seq;
+    if (!drop.rows) drop.list.replaceChildren(el('p', 'dm-empty', 'Loading…'));
+    try {
+      const j = await api('/dm/inbox'); if (my !== drop.seq) return;
+      drop.rows = j.threads || [];
+      if (drop.open) dropDraw();
+    } catch (err) {
+      if (my !== drop.seq) return;
+      if (err.login) { toLogin(); return; }
+      if (drop.open && !drop.rows) drop.list.replaceChildren(el('p', 'dm-empty', err.message));
+    }
+  }
+  function dropSet(open) {
+    if (!drop.menu || drop.open === open) return;
+    drop.open = open; drop.menu.hidden = !open; drop.btn.setAttribute('aria-expanded', String(open));
+    // What was there last time shows at once, then what is true now.
+    if (open) { if (drop.rows) dropDraw(); dropLoad(); }
+  }
+  function dropSetup() {
+    const menu = $('#dmMenu'), btn = $('#barDm'), list = $('#dmMenuList');
+    if (!menu || !btn || !list) return;
+    Object.assign(drop, { menu, btn, list });
+    if (/^\/me\/messages/.test(location.pathname)) btn.setAttribute('aria-current', 'page');
+    btn.addEventListener('click', (e) => {
+      // The whole inbox instead: on a phone, in a new tab, and on the Messages page (it is already on the screen).
+      if (phone() || e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || $('[data-dm-page]')) return;
+      e.preventDefault(); dropSet(!drop.open);
+    });
+    // Pressing anywhere else puts it away. Heard on the way down, so a button that keeps its click to itself counts too.
+    document.addEventListener('click', (e) => { if (drop.open && !(e.target.closest && e.target.closest('#dmDropdown'))) dropSet(false); }, true);
+    menu.addEventListener('click', (e) => { if (e.target.closest('a, [data-dm-new]')) dropSet(false); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && drop.open) { e.stopPropagation(); dropSet(false); btn.focus(); } }, true);
+    let lastV = -1;
+    live.listeners.add((j) => { if (j.v !== lastV) { lastV = j.v; if (drop.open) dropLoad(); } });
+  }
+
   /* ---------------- the inbox page ---------------- */
   async function inboxPage(root) {
     const box = $('[data-dm-inbox]', root), admin = root.hasAttribute('data-dm-admin');
@@ -609,20 +725,7 @@
       box.replaceChildren();
       if (!rows.length) { box.append(el('p', 'dm-empty', admin ? 'No conversations yet.' : 'No messages yet. Tap “Message” on any card to ask its seller.')); return; }
       const ul = el('ul', 'dm-list');
-      rows.forEach((r) => {
-        const li = el('li'); const a = el('button', `dm-li${r.unread ? ' unread' : ''}`); a.type = 'button';
-        if (admin) { const pair = el('span', 'dm-pair'); pair.append(avatar(r.a, 40), avatar(r.b, 40)); a.append(pair); }
-        else a.append(avatar(r.other, 52));
-        const t = el('span', 'dm-li-t');
-        const name = admin ? `${r.a.name} ↔ ${r.b.name}` : r.other.name;
-        const top = el('span', 'dm-li-top'); top.append(el('b', '', name));
-        if (r.as_vault || (admin && r.vault)) top.append(el('span', 'dm-tag', 'Vault'));
-        t.append(top, el('span', 'dm-li-last', `${r.last_mine ? 'You: ' : ''}${r.last} · ${ago(r.at)}`));
-        a.append(t);
-        if (r.unread) a.append(el('span', 'dm-dot', String(r.unread)));
-        a.addEventListener('click', () => { win.open(r.id, { watch: admin && !r.vault }); a.classList.remove('unread'); a.querySelector('.dm-dot')?.remove(); });
-        li.append(a); ul.append(li);
-      });
+      rows.forEach((r) => ul.append(threadRow(r, admin)));
       box.append(ul);
       return rows;
     };
@@ -638,19 +741,23 @@
   async function boot() {
     const w = await who();
     const me = w && w.member;
-    const icon2 = $('#barDm');
-    if (!me) { if (icon2) icon2.hidden = true; return; }
+    const icon2 = $('#barDm'), holder = $('#dmDropdown');
+    if (!me) { if (icon2) icon2.hidden = true; if (holder) holder.hidden = true; return; }
     live.me = me.id;
     // Nobody messages themselves: a Message button that points at you is put away.
     document.querySelectorAll(`[data-dm-to="${me.id}"]`).forEach((n) => { n.hidden = true; });
     if (icon2) icon2.hidden = false;
+    if (holder) holder.hidden = false;
+    dropSetup();
     startLive();
     const page = $('[data-dm-page]'); if (page) inboxPage(page);
     // The chat that was open on the last page comes back (as a bubble on a phone, or when it was minimised).
-    const saved = store.get('bbv:dm');
+    // Only the chat this person had open: someone else may have used this tab before them.
+    let saved = store.get('bbv:dm');
+    if (saved && saved.m !== me.id) { store.set('bbv:dm', null); saved = null; }
     if (saved && saved.t && !page) {
       if (saved.min || phone()) { win.thread = saved.t; try { const j = await api(`/dm/${saved.t}`); win.other = j.other; chatHead(j.other); win.build().hidden = true; win.node.classList.add('min'); } catch (_) { store.set('bbv:dm', null); } }
-      else win.open(saved.t);
+      else win.open(saved.t, { quiet: true });
     }
     // A notification link to a chat opens it.
     const t = Number(new URLSearchParams(location.search).get('t'));

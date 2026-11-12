@@ -19,6 +19,7 @@ use marcuru_rs::{db, dm, members};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tokio::sync::watch;
@@ -28,6 +29,37 @@ const VAULT_AVATAR: &str = "/static/img/logo-sm-144.png?v=1";
 const VOICE_MAX_BYTES: usize = 3 * 1024 * 1024;
 /// A call that nobody picked up stops ringing after this long.
 const RING_SECS: i64 = 45;
+/// How long a call's messages are kept for a page that hasn't asked for them yet.
+const SIG_KEEP_SECS: i64 = 90;
+/// No call lasts longer than this: one still written down after it was left behind by pages that closed.
+const CALL_MAX_SECS: i64 = 4 * 3600;
+
+/// One message of a call (a ring, an answer, connection details) for a member's open pages. Each has a number, and
+/// a page says the last number it has, so every page gets every message: with a phone and a computer open, both ring.
+#[derive(Clone)]
+struct Sig {
+    n: u64,
+    at: i64,
+    v: Value,
+}
+
+#[derive(Default)]
+struct SigLog {
+    items: Vec<Sig>,
+    /// Where the pages that don't say their place are (pages opened before places existed share this one).
+    legacy: u64,
+}
+
+impl SigLog {
+    /// A ring that is over: too old, or answered, declined or hung up since. A page opened in the middle of a ring
+    /// still rings; one opened after it doesn't.
+    fn rang_out(&self, s: &Sig, now: i64) -> bool {
+        if s.v["type"] != "ring" {
+            return false;
+        }
+        now - s.at > RING_SECS || self.items.iter().any(|x| x.n > s.n && x.v["call"] == s.v["call"] && matches!(x.v["type"].as_str(), Some("ended" | "taken" | "elsewhere")))
+    }
+}
 
 #[derive(Clone, Debug)]
 struct Call {
@@ -40,7 +72,9 @@ struct Call {
 
 pub struct DmHub {
     versions: moka::sync::Cache<i64, Arc<watch::Sender<u64>>>,
-    signals: moka::sync::Cache<i64, Arc<Mutex<Vec<Value>>>>,
+    signals: moka::sync::Cache<i64, Arc<Mutex<SigLog>>>,
+    /// The number of the last call message. It starts at the clock, so it only ever goes up, a restart included.
+    seq: AtomicU64,
     online: moka::sync::Cache<i64, i64>,
     calls: moka::sync::Cache<i64, Arc<Mutex<Option<Call>>>>,
     waiting: tokio::sync::Semaphore,
@@ -51,7 +85,8 @@ impl DmHub {
     pub fn new() -> Self {
         Self {
             versions: moka::sync::Cache::builder().max_capacity(20_000).time_to_idle(Duration::from_secs(3600)).build(),
-            signals: moka::sync::Cache::builder().max_capacity(20_000).time_to_idle(Duration::from_secs(120)).build(),
+            signals: moka::sync::Cache::builder().max_capacity(20_000).time_to_idle(Duration::from_secs(600)).build(),
+            seq: AtomicU64::new(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_micros() as u64).unwrap_or(1)),
             online: moka::sync::Cache::builder().max_capacity(20_000).time_to_live(Duration::from_secs(60)).build(),
             calls: moka::sync::Cache::builder().max_capacity(5_000).time_to_idle(Duration::from_secs(4 * 3600)).build(),
             waiting: tokio::sync::Semaphore::new(150),
@@ -68,21 +103,40 @@ impl DmHub {
         }
     }
     fn signal(&self, members: &[i64], v: Value) {
+        let now = crate::unix_now();
         for m in members {
-            let queue = self.signals.get_with(*m, || Arc::new(Mutex::new(vec![])));
-            let mut q = match queue.lock() {
+            let log = self.signals.get_with(*m, || Arc::new(Mutex::new(SigLog::default())));
+            let mut q = match log.lock() {
                 Ok(q) => q,
                 Err(p) => p.into_inner(),
             };
-            q.push(v.clone());
-            if q.len() > 200 {
-                q.drain(..100);
+            q.items.retain(|s| now - s.at <= SIG_KEEP_SECS);
+            // Numbered while the log is held, so a page reading it never misses a number below the one it is told.
+            let n = self.seq.fetch_add(1, Ordering::SeqCst) + 1;
+            q.items.push(Sig { n, at: now, v: v.clone() });
+            if q.items.len() > 400 {
+                q.items.drain(..200);
             }
         }
         self.bump(members);
     }
-    fn take_signals(&self, member: i64) -> Vec<Value> {
-        self.signals.get(&member).and_then(|q| q.lock().ok().map(|mut q| std::mem::take(&mut *q))).unwrap_or_default()
+    /// The call messages a page hasn't had yet, and the place to ask from next time. `after` is the page's place;
+    /// a page that gives none shares one place with the member's other such pages, and that place moves on.
+    fn signals_for(&self, member: i64, after: Option<u64>) -> (Vec<Value>, u64) {
+        let now = crate::unix_now();
+        let log = self.signals.get_with(member, || Arc::new(Mutex::new(SigLog::default())));
+        let mut q = match log.lock() {
+            Ok(q) => q,
+            Err(p) => p.into_inner(),
+        };
+        q.items.retain(|s| now - s.at <= SIG_KEEP_SECS);
+        let from = after.unwrap_or(q.legacy);
+        let out: Vec<Value> = q.items.iter().filter(|s| s.n > from && !q.rang_out(s, now)).map(|s| s.v.clone()).collect();
+        let place = self.seq.load(Ordering::SeqCst);
+        if after.is_none() {
+            q.legacy = place;
+        }
+        (out, place)
     }
     fn is_online(&self, member: i64) -> bool {
         self.online.contains_key(&member)
@@ -264,6 +318,8 @@ pub async fn thread(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, 
 #[derive(Deserialize)]
 pub struct PollQs {
     v: Option<u64>,
+    /// The number of the last call message this page has (0 on a page's first ask).
+    s: Option<u64>,
     t: Option<i64>,
     after: Option<i64>,
 }
@@ -288,7 +344,7 @@ pub async fn poll(State(app): State<App>, h: HeaderMap, Query(q): Query<PollQs>)
     }
     hub.online.insert(m.id, crate::unix_now());
     let version = *hub.channel(m.id).borrow();
-    let signals = hub.take_signals(m.id);
+    let (signals, place) = hub.signals_for(m.id, q.s);
     let (id, admin) = (m.id, m.role == "admin");
     let hub2 = hub.clone();
     let (unread, open) = with_db(&app, move |c| {
@@ -308,7 +364,7 @@ pub async fn poll(State(app): State<App>, h: HeaderMap, Query(q): Query<PollQs>)
         Ok((unread, open))
     })
     .await?;
-    Ok(ok(json!({ "v": version, "unread": unread, "signals": signals, "open": open, "retry": retry })))
+    Ok(ok(json!({ "v": version, "s": place, "unread": unread, "signals": signals, "open": open, "retry": retry })))
 }
 
 // ---------- writing ----------
@@ -608,6 +664,9 @@ pub struct CallReq {
     kind: String,
     #[serde(default)]
     call: String,
+    /// Which open page is asking, so its owner's other pages can tell "answered here" from "answered elsewhere".
+    #[serde(default)]
+    page: String,
     #[serde(default)]
     data: Value,
 }
@@ -638,9 +697,17 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
     let mut log: Option<(i64, i64, String)> = None;
     let reply = {
         let mut cur = slot.lock().map_err(crate::ise)?;
-        // A call left ringing too long is over.
-        if let Some(c) = cur.as_ref() {
-            if c.callee.is_none() && now - c.answered > RING_SECS && req.kind == "ring" {
+        // A call that can't still be going makes way for a new one: nobody picked it up in time, or the one ringing
+        // now was in it (their page closed or lost its connection without saying so), or it is impossibly long.
+        if let Some(c) = cur.clone() {
+            let mine = c.caller == m.id || c.callee == Some(m.id);
+            if req.kind == "ring" && ((c.callee.is_none() && now - c.answered > RING_SECS) || mine || now - c.answered > CALL_MAX_SECS) {
+                let mut both = people(c.caller_side, &admins);
+                both.extend(people(t.other(c.caller_side), &admins));
+                both.push(c.caller);
+                both.sort_unstable();
+                both.dedup();
+                app.dm.signal(&both, json!({ "type": "ended", "thread": t.id, "call": c.id, "data": Value::Null }));
                 *cur = None;
             }
         }
@@ -652,7 +719,8 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
                 let id = members::temp_password();
                 *cur = Some(Call { id: id.clone(), caller_side: side, caller: m.id, callee: None, answered: now });
                 app.dm.signal(&other_people, json!({ "type": "ring", "thread": t.id, "call": id, "from": who, "data": req.data }));
-                json!({ "ok": true, "call": id })
+                // Whether anyone is there to hear it: the caller is told, instead of left wondering.
+                json!({ "ok": true, "call": id, "online": other_people.iter().any(|x| app.dm.is_online(*x)) })
             }
             kind => {
                 let Some(c) = cur.clone().filter(|c| c.id == req.call) else { return Ok(ok(json!({ "ok": false, "gone": true }))) };
@@ -662,6 +730,12 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
                     let mut v = base.clone();
                     v["type"] = json!(k);
                     v
+                };
+                // For the answering side's other pages (their other tabs and devices, the other admins for the vault):
+                // the call was answered or turned down on one page, so the rest stop ringing. `by` is that page.
+                let elsewhere = |to_side: i64| {
+                    let to: Vec<i64> = people(to_side, &admins).into_iter().filter(|x| *x != c.caller).collect();
+                    app.dm.signal(&to, json!({ "type": "elsewhere", "thread": t.id, "call": c.id, "by": req.page, "data": Value::Null }));
                 };
                 match kind {
                     "accept" if !from_caller && c.callee.is_none() => {
@@ -673,6 +747,7 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
                         // Answered for the vault: the other admins' phones stop ringing.
                         let others: Vec<i64> = people(side, &admins).into_iter().filter(|x| *x != m.id).collect();
                         app.dm.signal(&others, with("taken"));
+                        elsewhere(side);
                     }
                     "ice" => {
                         let to: Vec<i64> = if from_caller { c.callee.map(|x| vec![x]).unwrap_or_else(|| people(t.other(c.caller_side), &admins)) } else { vec![c.caller] };
@@ -680,6 +755,7 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
                     }
                     "decline" if !from_caller => {
                         app.dm.signal(&[c.caller], with("declined"));
+                        elsewhere(side);
                         *cur = None;
                         log = Some((c.caller_side, c.caller, "Missed voice call".into()));
                     }
@@ -802,6 +878,59 @@ pub async fn admin_thread(State(app): State<App>, h: HeaderMap, Path(tid): Path<
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn kinds(list: &[Value]) -> Vec<String> {
+        list.iter().map(|v| format!("{}:{}", v["type"].as_str().unwrap_or(""), v["call"].as_str().unwrap_or(""))).collect()
+    }
+
+    #[test]
+    fn every_open_page_gets_every_call_message() {
+        let hub = DmHub::new();
+        // Two pages of member 7 are open (a phone and a computer): each starts from nothing.
+        let (first, a) = hub.signals_for(7, Some(0));
+        let (_, b) = hub.signals_for(7, Some(0));
+        assert!(first.is_empty());
+        hub.signal(&[7], json!({ "type": "ring", "call": "c1" }));
+        hub.signal(&[7], json!({ "type": "ice", "call": "c1" }));
+        let (got_a, a2) = hub.signals_for(7, Some(a));
+        let (got_b, b2) = hub.signals_for(7, Some(b));
+        assert_eq!(kinds(&got_a), ["ring:c1", "ice:c1"], "the first page to ask gets them");
+        assert_eq!(kinds(&got_b), ["ring:c1", "ice:c1"], "and so does the second: nothing was taken away");
+        assert!(a2 > a && b2 == a2);
+        // Asking again from the new place gives nothing twice.
+        assert!(hub.signals_for(7, Some(a2)).0.is_empty());
+        // A page whose answer never arrived (the request was dropped) asks from its old place and gets them again.
+        assert_eq!(hub.signals_for(7, Some(a)).0.len(), 2);
+        // Somebody else's pages get nothing.
+        assert!(hub.signals_for(8, Some(0)).0.is_empty());
+    }
+
+    #[test]
+    fn a_page_opened_during_a_ring_rings_and_one_opened_after_does_not() {
+        let hub = DmHub::new();
+        hub.signal(&[7], json!({ "type": "ring", "call": "c1" }));
+        assert_eq!(kinds(&hub.signals_for(7, Some(0)).0), ["ring:c1"], "opened while it rings");
+        hub.signal(&[7], json!({ "type": "ended", "call": "c1" }));
+        assert_eq!(kinds(&hub.signals_for(7, Some(0)).0), ["ended:c1"], "opened after the caller gave up: no ring");
+        // Answered on another page: the ring is over for a new page too, but the connection details still pass.
+        hub.signal(&[9], json!({ "type": "ring", "call": "c2" }));
+        hub.signal(&[9], json!({ "type": "ice", "call": "c2" }));
+        hub.signal(&[9], json!({ "type": "elsewhere", "call": "c2", "by": "p1" }));
+        hub.signal(&[9], json!({ "type": "ring", "call": "c3" }));
+        assert_eq!(kinds(&hub.signals_for(9, Some(0)).0), ["ice:c2", "elsewhere:c2", "ring:c3"]);
+    }
+
+    #[test]
+    fn pages_that_give_no_place_share_one_as_before() {
+        let hub = DmHub::new();
+        hub.signal(&[7], json!({ "type": "ring", "call": "c1" }));
+        assert_eq!(kinds(&hub.signals_for(7, None).0), ["ring:c1"]);
+        assert!(hub.signals_for(7, None).0.is_empty(), "taken once");
+        hub.signal(&[7], json!({ "type": "ended", "call": "c1" }));
+        assert_eq!(kinds(&hub.signals_for(7, None).0), ["ended:c1"]);
+        // A page that does give its place is not affected by them.
+        assert_eq!(kinds(&hub.signals_for(7, Some(0)).0), ["ended:c1"]);
+    }
 
     #[test]
     fn recordings_are_known_by_their_first_bytes() {

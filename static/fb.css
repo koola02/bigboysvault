@@ -82,7 +82,7 @@ button { cursor: pointer; }
 .hd-r { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
 .hd-ib { position: relative; flex: none; display: inline-grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: var(--surface-3); color: var(--text); }
 .hd-ib:hover { background: #30364b; text-decoration: none; }
-.hd-ib[aria-expanded="true"] { background: var(--gold-tint); color: var(--gold); }
+.hd-ib[aria-expanded="true"], .hd-ib[aria-current="page"] { background: var(--gold-tint); color: var(--gold); }
 .hd-ib svg { width: 20px; height: 20px; }
 .hd-badge, .notif-badge { position: absolute; top: -4px; right: -4px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px; background: var(--red); color: #fff; font: 700 .6875rem/19px var(--font); text-align: center; pointer-events: none; }
 #cartFab[hidden] { display: inline-grid !important; }
@@ -128,6 +128,16 @@ body[data-layout="plain"] main { max-width: 1568px; }
 .mn-i > svg, .mn-i > img, .mn-i > .av { flex: none; }
 .mn-i > svg { width: 36px; height: 36px; padding: 7px; border-radius: 50%; background: var(--surface-3); color: var(--gold); }
 .mn-i > img { width: 36px; height: 36px; border-radius: var(--r); object-fit: cover; background: var(--surface-2); }
+/* A binder's picture stands as tall as a card. */
+.mn-i > img.mn-pic { width: 44px; height: 62px; border-radius: var(--r-sm); }
+/* The menu lists a place only where the screen has no other button for it. Trainers and Vault chat are tabs in the
+   header from a tablet up; Ask the Vault is in the column beside the feed, and in a phone's tabs at the bottom. */
+@media (min-width: 700px) { .mn-i[data-mn="tab"] { display: none; } }
+@media (max-width: 699px) { .mn-i[data-mn="ask"] { display: none; } }
+@media (min-width: 1100px) { body[data-layout="feed"] .mn-i[data-mn="ask"] { display: none; } }
+.mn-i.mn-ask { margin: 2px 0; background: var(--gold-tint); box-shadow: inset 0 0 0 1px var(--gold-edge); color: var(--gold-hi); }
+.mn-i.mn-ask:hover { background: rgba(239,200,115,.2); }
+.mn-i.mn-ask > svg { background: var(--brass); color: var(--gold-ink); }
 .mn-i span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mn-h { margin: 12px 8px 4px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font: 600 1.0625rem/1.2 var(--font); }
 .mn-foot { margin: 16px 8px 0; color: var(--faint); font-size: .75rem; line-height: 1.5; }
@@ -152,6 +162,23 @@ body:is([data-layout="wide"], [data-layout="plain"]) .hd-menu-btn { display: inl
 .rr-i:hover { background: var(--fill); text-decoration: none; }
 .rr-i img.rr-pic { flex: none; width: 56px; height: 78px; border-radius: var(--r-sm); object-fit: cover; background: var(--surface-2); }
 .rr-i b { display: block; font-weight: 600; } .rr-i small { color: var(--muted); }
+/* The one card at the top of the vault: its picture whole, as tall as the column can spare. */
+.rr-top { display: block; padding: 8px; border-radius: var(--r); color: var(--text); }
+.rr-top:hover { background: var(--fill); text-decoration: none; }
+.rr-top-pic { display: flex; align-items: center; justify-content: center; height: clamp(200px, 26dvh, 260px); padding: 10px; border-radius: var(--r); background: var(--surface-2); }
+.rr-top-pic img { width: auto; height: 100%; max-width: 100%; border-radius: var(--r-sm); object-fit: contain; }
+.rr-top-t { display: block; margin-top: 8px; overflow-wrap: anywhere; }
+.rr-top-t b { display: block; font-weight: 600; } .rr-top-t small { display: block; color: var(--muted); }
+/* Ask the Vault: the one gold thing in the column, first in it. */
+.rr-ask { display: flex; flex-direction: column; gap: 10px; margin: 0 0 16px; padding: 12px; border-radius: var(--r-lg); background: linear-gradient(160deg, rgba(239,200,115,.24), rgba(239,200,115,.06) 70%); box-shadow: inset 0 0 0 1px var(--gold-edge); color: var(--text); }
+.rr-ask:hover { background: linear-gradient(160deg, rgba(239,200,115,.32), rgba(239,200,115,.1) 70%); text-decoration: none; }
+.rr-ask-t { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.rr-ask-t img { flex: none; width: 44px; height: 44px; border-radius: 50%; box-shadow: 0 0 0 2px var(--gold-edge); }
+.rr-ask-t > span { min-width: 0; }
+.rr-ask-t b { display: block; color: var(--gold-hi); font: 800 1.0625rem/1.2 var(--display); }
+.rr-ask-t small { display: block; color: var(--muted); }
+.rr-ask-go { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 36px; padding: 0 12px; border-radius: var(--r-sm); background: var(--brass); color: var(--gold-ink); font: 700 .9375rem/1 var(--font); }
+.rr-ask-go svg { flex: none; width: 18px; height: 18px; fill: currentColor; }
 
 /* ---------- 7. Bottom tabs (phones) ---------- */
 .bt { display: none; }
@@ -386,6 +413,16 @@ html[data-look="fb"] .dm-mini { margin-left: auto; }
 .notif-item.unread .notif-t { color: var(--gold); font-weight: 600; }
 .notif-item.unread::after { content: ""; position: absolute; right: 10px; top: 50%; translate: 0 -50%; width: 10px; height: 10px; border-radius: 50%; background: var(--gold); }
 .notif-empty { padding: 24px 12px; color: var(--muted); text-align: center; }
+/* The inbox under the header's Messages button: who wrote last, and a way to the whole inbox. */
+.dm-menu { display: flex; flex-direction: column; width: min(380px, calc(100vw - 16px)); overflow: hidden; }
+.dm-menu-acts { display: flex; gap: 6px; }
+.dm-menu-acts .hd-ib { width: 34px; height: 34px; }
+.dm-menu-acts .hd-ib svg { width: 17px; height: 17px; }
+.dm-menu-list { flex: 1; min-height: 0; overflow-y: auto; scrollbar-width: thin; }
+.dm-menu-list .dm-empty { max-width: 30ch; margin: 0 auto; padding: 28px 12px; }
+.dm-menu-all { flex: none; display: block; margin: 6px -8px -8px; padding: 12px; border-top: 1px solid var(--line); color: var(--gold); font-weight: 600; text-align: center; }
+.dm-menu-all:hover { background: var(--fill); text-decoration: none; }
+html[data-look="fb"] .dm-dot { background: var(--gold); color: var(--gold-ink); }
 .me-pop { position: fixed; top: calc(var(--hd-h) + var(--sat) + 4px); right: max(12px, var(--sar)); }
 .me-pop form { margin: 0; }
 .me-pop .row { width: 100%; border: 0; background: none; text-align: left; font-weight: 600; }

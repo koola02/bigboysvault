@@ -208,6 +208,31 @@ pub fn delete_block(c: &Connection, id: i64) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// How long the welcome line may be.
+pub const WELCOME_MAX: usize = 200;
+
+/// The welcome line: what a visitor who isn't logged in reads under the site's name on the home page. It is kept as
+/// the home banner's subtitle, so both looks say the same thing. "{count}" in it stands for the number of cards.
+pub fn welcome(c: &Connection) -> rusqlite::Result<String> {
+    Ok(blocks(c)?.iter().find(|b| b.kind == "hero").and_then(|b| b.data["subtitle"].as_str().map(|s| s.trim().to_string())).unwrap_or_default())
+}
+
+/// Sets the welcome line: one line (line breaks and runs of spaces become one space), `WELCOME_MAX` letters at most.
+/// Empty is allowed: the home page then says its usual sentence. A banner is made at the top if there is none.
+pub fn set_welcome(c: &Connection, text: &str) -> rusqlite::Result<String> {
+    let line: String = text.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(WELCOME_MAX).collect();
+    let (id, mut data) = match blocks(c)?.into_iter().find(|b| b.kind == "hero") {
+        Some(b) => (b.id, b.data),
+        None => {
+            let d = default_data("hero");
+            (add_block_at(c, "hero", &d, Some(-1))?, d)
+        }
+    };
+    data["subtitle"] = json!(line);
+    save_block(c, id, &data)?;
+    Ok(line)
+}
+
 /// How many cards the showcase holds.
 pub const SHOWCASE_MAX: usize = 24;
 
@@ -306,6 +331,30 @@ mod tests {
         // Emptying it is allowed: the row at the top simply goes away.
         assert!(set_showcase(&c, &[]).unwrap().is_empty());
         assert!(showcase_ids(&c).unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_welcome_line_is_one_line_and_keeps_the_rest_of_the_banner() {
+        let c = fresh();
+        assert_eq!(welcome(&c).unwrap(), "", "no banner yet: no line");
+        // Setting it with no banner makes one, at the top.
+        assert_eq!(set_welcome(&c, "  Hello   there,\n trainers  ").unwrap(), "Hello there, trainers");
+        assert_eq!(welcome(&c).unwrap(), "Hello there, trainers");
+        let hero = blocks(&c).unwrap().into_iter().find(|b| b.kind == "hero").unwrap();
+        assert_eq!(blocks(&c).unwrap()[0].id, hero.id);
+        // The banner's other words stay as they were.
+        let mut d = hero.data.clone();
+        d["title"] = json!("Big Boys Vault");
+        save_block(&c, hero.id, &d).unwrap();
+        set_welcome(&c, "{count} cards and counting").unwrap();
+        let again = blocks(&c).unwrap().into_iter().find(|b| b.kind == "hero").unwrap();
+        assert_eq!(again.id, hero.id, "the same banner, not a second one");
+        assert_eq!(again.data["title"], "Big Boys Vault");
+        assert_eq!(welcome(&c).unwrap(), "{count} cards and counting");
+        // No longer than it may be, and it can be emptied.
+        assert_eq!(set_welcome(&c, &"x".repeat(500)).unwrap().chars().count(), WELCOME_MAX);
+        assert_eq!(set_welcome(&c, "   ").unwrap(), "");
+        assert_eq!(welcome(&c).unwrap(), "");
     }
 
     #[test]
