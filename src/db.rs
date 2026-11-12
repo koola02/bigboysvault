@@ -290,6 +290,39 @@ impl Collection {
     pub fn has_image(&self) -> bool {
         !self.image.is_empty()
     }
+    /// The owner uploaded this binder's cover (a photo of their own, not a card), so it isn't card-shaped:
+    /// a binder tile shows it alone, filling the tile.
+    pub fn photo_cover(&self) -> bool {
+        self.custom_cover && uploaded_cover(&self.image)
+    }
+    /// The pictures on this binder's tile on the vault's store page, at most `n`, ready to show: the cover the owner picked
+    /// first (an uploaded photo stands alone), then `peeks`, its cards for sale (from `binder_peeks`), never the same twice.
+    /// An automatic cover isn't used: it may be a card that has sold, and the dearest card for sale comes first anyway.
+    pub fn tile_pics(&self, peeks: &[String], n: usize) -> Vec<String> {
+        let mut pics: Vec<String> = vec![];
+        if self.custom_cover && !self.image.is_empty() {
+            pics.push(cdn(&self.image, 360));
+            if self.photo_cover() {
+                return pics;
+            }
+        }
+        for p in peeks {
+            if pics.len() >= n {
+                break;
+            }
+            let u = cdn(p, 360);
+            if !pics.contains(&u) {
+                pics.push(u);
+            }
+        }
+        pics.truncate(n);
+        pics
+    }
+}
+
+/// A binder cover the site stored from the owner's own upload (Manager › Binders), as opposed to a card's photo.
+pub fn uploaded_cover(path: &str) -> bool {
+    path.starts_with("/uploads/b-")
 }
 
 pub fn cdn(src: &str, w: u32) -> String {
@@ -831,6 +864,29 @@ pub fn collections(c: &Connection) -> rusqlite::Result<Vec<Collection>> {
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(v)
+}
+
+/// For the vault's store page, in one trip: each binder that has cards for sale, with how many copies are for sale and
+/// the photos of up to `n` of them, dearest first, each photo once (copies often share one). Sold copies, which stay in
+/// the table as the vault's record, never show. A binder with nothing for sale isn't in the map.
+pub fn binder_peeks(c: &Connection, n: usize) -> rusqlite::Result<std::collections::HashMap<String, (i64, Vec<String>)>> {
+    let mut st = c.prepare_cached(
+        "WITH s AS (SELECT cp.collection AS col, p.image, p.price, p.id FROM collection_products cp JOIN products p ON p.id=cp.product_id WHERE p.available=1),
+              k AS (SELECT col, COUNT(*) AS n FROM s GROUP BY col),
+              x AS (SELECT col, image, MAX(price) AS price, MIN(id) AS id FROM s WHERE image<>'' GROUP BY col, image),
+              r AS (SELECT col, image, ROW_NUMBER() OVER (PARTITION BY col ORDER BY price DESC, id) AS rn FROM x)
+         SELECT k.col, k.n, r.image FROM k LEFT JOIN r ON r.col=k.col AND r.rn<=?1 ORDER BY k.col, r.rn",
+    )?;
+    let mut out: std::collections::HashMap<String, (i64, Vec<String>)> = std::collections::HashMap::new();
+    let rows = st.query_map([n as i64], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, Option<String>>(2)?)))?;
+    for row in rows {
+        let (col, k, img) = row?;
+        let e = out.entry(col).or_insert_with(|| (k, vec![]));
+        if let Some(i) = img {
+            e.1.push(i);
+        }
+    }
+    Ok(out)
 }
 
 pub fn total(c: &Connection) -> rusqlite::Result<i64> {
@@ -1750,4 +1806,70 @@ pub fn reorder_groups(c: &Connection, groups: &[Vec<i64>]) -> rusqlite::Result<(
         }
     }
     tx.commit()
+}
+
+#[cfg(test)]
+mod vault_store_tests {
+    use super::*;
+
+    fn db() -> Connection {
+        let c = Connection::open_in_memory().unwrap();
+        register_set_code(&c).unwrap();
+        c.execute_batch(SCHEMA).unwrap();
+        migrate(&c).unwrap();
+        c
+    }
+
+    /// A card in a binder: (id, price, photo, for sale?).
+    fn card(c: &Connection, binder: &str, id: i64, price: f64, image: &str, available: bool) {
+        c.execute(
+            "INSERT INTO products(id,handle,title,price,image,available,created_at) VALUES(?1,?2,?2,?3,?4,?5,'2026-01-01T00:00:00')",
+            rusqlite::params![id, format!("c{id}"), price, image, available],
+        )
+        .unwrap();
+        c.execute("INSERT INTO collection_products(collection,product_id) VALUES(?1,?2)", rusqlite::params![binder, id]).unwrap();
+    }
+
+    #[test]
+    fn a_binder_tile_shows_only_cards_for_sale_dearest_first() {
+        let c = db();
+        for (i, (h, t)) in [("pikachu-set", "Pikachu Set"), ("trainers", "Trainers"), ("sold-out", "Sold Out"), ("empty", "Empty")].iter().enumerate() {
+            c.execute("INSERT INTO collections(handle,title,position) VALUES(?1,?2,?3)", rusqlite::params![h, t, i as i64]).unwrap();
+        }
+        card(&c, "pikachu-set", 1, 50.0, "/uploads/c0-1_l.jpg", true);
+        card(&c, "pikachu-set", 2, 900.0, "/uploads/c0-2_l.jpg", false); // the dearest has sold: it never peeks out
+        card(&c, "pikachu-set", 3, 300.0, "/uploads/c0-3_l.jpg", true);
+        card(&c, "pikachu-set", 4, 300.0, "/uploads/c0-3_l.jpg", true); // a second copy sharing the photo: shown once
+        card(&c, "pikachu-set", 5, 200.0, "", true); // no photo: counted, not shown
+        card(&c, "pikachu-set", 6, 100.0, "https://cdn.example/p6.png", true);
+        card(&c, "trainers", 7, 10.0, "/uploads/c0-7_l.jpg", true);
+        card(&c, "sold-out", 8, 10.0, "/uploads/c0-8_l.jpg", false);
+
+        let peeks = binder_peeks(&c, 3).unwrap();
+        let (n, pics) = &peeks["pikachu-set"];
+        assert_eq!(*n, 5, "every copy for sale counts, photo or not; the sold one doesn't");
+        assert_eq!(pics, &vec!["/uploads/c0-3_l.jpg".to_string(), "https://cdn.example/p6.png".into(), "/uploads/c0-1_l.jpg".into()]);
+        assert_eq!(peeks["trainers"], (1, vec!["/uploads/c0-7_l.jpg".to_string()]));
+        assert!(!peeks.contains_key("sold-out") && !peeks.contains_key("empty"), "nothing for sale: no tile");
+        assert_eq!(binder_peeks(&c, 1).unwrap()["pikachu-set"].1.len(), 1, "never more than asked for");
+
+        // The tile: an automatic cover (it may be a sold card) is never used; the cards for sale are, at tile size.
+        let all = collections(&c).unwrap();
+        let pika = all.iter().find(|b| b.handle == "pikachu-set").unwrap();
+        assert_eq!(pika.image, "/uploads/c0-2_l.jpg", "the automatic cover is the dearest card, even sold");
+        assert!(!pika.custom_cover && !pika.photo_cover());
+        assert_eq!(pika.tile_pics(pics, 3), vec!["/uploads/c0-3_s.jpg", "https://cdn.example/p6.png?width=360", "/uploads/c0-1_s.jpg"]);
+        // The owner picks a card as the cover: it comes first and isn't repeated.
+        set_binder_cover(&c, "pikachu-set", "https://cdn.example/p6.png").unwrap();
+        let pika = collections(&c).unwrap().into_iter().find(|b| b.handle == "pikachu-set").unwrap();
+        assert!(pika.custom_cover && !pika.photo_cover());
+        assert_eq!(pika.tile_pics(pics, 3), vec!["https://cdn.example/p6.png?width=360", "/uploads/c0-3_s.jpg", "/uploads/c0-1_s.jpg"]);
+        // An uploaded photo isn't card-shaped: it stands alone.
+        set_binder_cover(&c, "pikachu-set", "/uploads/b-pika_l.jpg").unwrap();
+        let pika = collections(&c).unwrap().into_iter().find(|b| b.handle == "pikachu-set").unwrap();
+        assert!(pika.photo_cover());
+        assert_eq!(pika.tile_pics(pics, 3), vec!["/uploads/b-pika_s.jpg"]);
+        // The number on a tile is the binder's own count, the same one its page shows.
+        assert_eq!(pika.count, cards_in(&c, Some("pikachu-set")).unwrap());
+    }
 }

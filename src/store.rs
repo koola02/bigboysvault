@@ -9,8 +9,10 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
     Json,
 };
+use marcuru_rs::db::{self, Collection, Product};
 use marcuru_rs::members::{self, Member, MemberBinder, MemberCard, Notification};
 use marcuru_rs::sellers::{self, Dashboard, ListFilter, Order, Orders, Patch, Pref, Review, Sale, StoreStats};
+use std::collections::HashMap;
 use serde::Deserialize;
 use rusqlite::OptionalExtension;
 use serde_json::json;
@@ -918,8 +920,10 @@ struct StorePage {
     stats: StoreStats,
     /// Each card with whether the viewer saved it.
     cards: Vec<(MemberCard, bool)>,
-    /// Each binder with the pictures on its tile (the new look shows up to three; empty on a binder's own page).
-    binders: Vec<(MemberBinder, Vec<String>)>,
+    /// The binders the viewer may see (today's look shows them as a strip).
+    binders: Vec<MemberBinder>,
+    /// The new look's binder tiles (`seller_tiles`); empty on a binder's own page and in today's look.
+    tiles: Vec<BinderTile>,
     binder: Option<MemberBinder>,
     reviews: Vec<Review>,
     me: Option<Member>,
@@ -976,14 +980,8 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
         None => sellers::storefront_listings(c, id),
     })
     .await?;
-    // The store page lists the binders: each tile shows its cover and the next cards on sale, from the cards above.
-    let binders: Vec<(MemberBinder, Vec<String>)> = binders
-        .into_iter()
-        .map(|b| {
-            let pics = if bid.is_none() { sellers::binder_peeks(&b, &cards, 3) } else { vec![] };
-            (b, pics)
-        })
-        .collect();
+    // The store page (new look) lists the binders as tiles, worked out from the cards above.
+    let tiles = if bid.is_none() && crate::look::is_new() { seller_tiles(&m, &binders, &cards, is_me || staff) } else { vec![] };
     let cards: Vec<(MemberCard, bool)> = cards.into_iter().map(|k| { let s = saved.contains(&k.id); (k, s) }).collect();
     let mut nav = nav;
     // "Hayme's store", so the store page and the trainer page don't share one title. A store with its own name keeps it.
@@ -1013,7 +1011,176 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
         nav.seo.path.clear();
     }
     let links = m.social_links();
-    Ok(html(render(StorePage { nav, m, stats, cards, binders, binder, reviews, me, following, is_me, links, conditions: members::CONDITIONS })?))
+    Ok(html(render(StorePage { nav, m, stats, cards, binders, tiles, binder, reviews, me, following, is_me, links, conditions: members::CONDITIONS })?))
+}
+
+/// One binder on a store page in the new look: two or three to a row, each with its pictures, its name and how many
+/// cards its own page shows. Sellers' binders and the vault's own (`/store/vault`) share it, and `binder_tile.html`.
+pub(crate) struct BinderTile {
+    pub href: String,
+    pub title: String,
+    /// Up to three card pictures, the cover first. Or one photo the owner uploaded (`photo`), which fills the tile.
+    pub pics: Vec<String>,
+    pub photo: bool,
+    /// "12 cards", and for the store's owner what visitors don't see ("· private").
+    pub words: String,
+    /// Visitors don't see this tile on the store page; its owner (and staff) do, faded.
+    pub off: bool,
+}
+
+/// "1 card", "1,117 cards".
+fn cards_word(n: i64) -> String {
+    format!("{} card{}", db::thousands(n), if n == 1 { "" } else { "s" })
+}
+
+/// A seller's binders as tiles. A tile counts the binder's cards for sale (`listings`, the store's cards on sale,
+/// reserved or out of stock), which are exactly the cards its own page lists, and shows them peeking out.
+/// A binder with nothing for sale has nothing to open to, so visitors don't see it; `owner_view` (the seller, or staff)
+/// still does, marked, along with the binders visitors can't see at all.
+fn seller_tiles(m: &Member, binders: &[MemberBinder], listings: &[MemberCard], owner_view: bool) -> Vec<BinderTile> {
+    binders
+        .iter()
+        .filter_map(|b| {
+            let n = listings.iter().filter(|k| k.binder_id == Some(b.id)).count() as i64;
+            if n == 0 && !owner_view {
+                return None;
+            }
+            let mut words = if n == 0 { "No cards for sale".to_string() } else { cards_word(n) };
+            match b.visibility.as_str() {
+                "Unlisted" => words.push_str(" · unlisted"),
+                "Private" => words.push_str(" · private"),
+                _ if n == 0 => words.push_str(" · hidden from visitors"),
+                _ => {}
+            }
+            Some(BinderTile {
+                href: format!("{}/binders/{}", m.store_url(), b.slug),
+                title: b.title.clone(),
+                pics: sellers::binder_peeks(b, listings, 3),
+                photo: false,
+                words,
+                off: n == 0 || b.visibility != "Public",
+            })
+        })
+        .collect()
+}
+
+/// The vault's own binders as tiles: every binder with cards for sale, in the owner's order (Manager › Binders), whether
+/// or not it is on today's home page or was ever in the menu. `peeks` is `db::binder_peeks`.
+/// A tile says the binder's own count, the same number its page shows.
+fn vault_tiles(links: &[Collection], peeks: &HashMap<String, (i64, Vec<String>)>) -> Vec<BinderTile> {
+    links
+        .iter()
+        .filter_map(|b| {
+            let (_, pics) = peeks.get(&b.handle)?;
+            Some(BinderTile { href: format!("/collections/{}", b.handle), title: b.title.clone(), pics: b.tile_pics(pics, 3), photo: b.photo_cover(), words: cards_word(b.count), off: false })
+        })
+        .collect()
+}
+
+/// Copies of the vault's cards for sale, binders with cards for sale, and vouches: the numbers the vault's store shows.
+/// Never what the cards are worth: the owner keeps that off the public pages.
+struct VaultNumbers {
+    for_sale: i64,
+    binders: usize,
+    vouches: i64,
+}
+
+impl VaultNumbers {
+    fn for_sale_text(&self) -> String {
+        db::thousands(self.for_sale)
+    }
+}
+
+fn vault_numbers(c: &rusqlite::Connection, tiles: &[BinderTile]) -> rusqlite::Result<VaultNumbers> {
+    let (for_sale, _, _) = admin::in_vault(c)?;
+    Ok(VaultNumbers { for_sale, binders: tiles.len(), vouches: members::public_vouch_count(c)? })
+}
+
+#[derive(Template)]
+#[template(path = "store_vault.html")]
+struct VaultStorePage {
+    nav: Chrome,
+    tiles: Vec<BinderTile>,
+    n: VaultNumbers,
+    /// "Everything in the vault": its cards for sale, as `grid.html` draws them.
+    base: String,
+    q: String,
+    sort: String,
+    in_stock: bool,
+    items: Vec<Product>,
+    next: Option<usize>,
+}
+
+/// GET /store/vault: Big Boys Vault's own store, listed first on /stores (new look). Its header, its binders as tiles
+/// (each opens its page at /collections/{handle}, the address everything else links to), then every card for sale.
+/// Every visitor gets the same page (the staff's "Manage binders" shows in the browser), so it is kept like the binders.
+/// Today's look has no such page: the vault's home page is its store there.
+pub async fn vault_store(State(app): State<App>, h: HeaderMap, Query(p): Query<crate::Params>) -> Res {
+    if !crate::look::is_new() {
+        return Ok(Redirect::to("/").into_response());
+    }
+    let q = db::Query { collection: None, q: p.q.clone().unwrap_or_default().trim().chars().take(80).collect(), sort: p.sort.clone().unwrap_or_default(), in_stock: true, page: p.page_no().min(500) };
+    // Scrolling down only needs the next cards.
+    let more = crate::is_htmx(&h) && q.page > 0;
+    let key = format!("store/vault|{more}|{q:?}");
+    let a = app.clone();
+    crate::cached(&app, key, || async move {
+        if more {
+            let q2 = q.clone();
+            let (items, found) = with_db(&a, move |c| db::list(c, &q2)).await?;
+            let next = next_page(&q, found);
+            return render(crate::Grid { base: VAULT_STORE.into(), q: q.q, sort: q.sort, in_stock: true, items, next });
+        }
+        render(with_db(&a, move |c| vault_page(c, q)).await?)
+    })
+    .await
+}
+
+const VAULT_STORE: &str = "/store/vault";
+
+fn next_page(q: &db::Query, found: i64) -> Option<usize> {
+    ((q.page + 1) * db::PAGE_SIZE < found as usize).then_some(q.page + 1)
+}
+
+/// The vault's store page for a search of its cards for sale (`q.in_stock` is always on), with what search engines read.
+fn vault_page(c: &rusqlite::Connection, q: db::Query) -> rusqlite::Result<VaultStorePage> {
+    let mut nav = chrome(c)?;
+    let (items, found) = db::list(c, &q)?;
+    let tiles = vault_tiles(&nav.links, &db::binder_peeks(c, 3)?);
+    let n = vault_numbers(c, &tiles)?;
+    let next = next_page(&q, found);
+    let site = nav.site.clone();
+    let url = format!("{site}{VAULT_STORE}");
+    let title = format!("{} · Official store", nav.brand);
+    let names = tiles.iter().take(4).map(|t| t.title.as_str()).collect::<Vec<_>>().join(", ");
+    let binders = if tiles.is_empty() { String::new() } else { format!(" in {} binder{} ({names})", tiles.len(), if tiles.len() == 1 { "" } else { "s" }) };
+    let list: Vec<serde_json::Value> = tiles.iter().enumerate().map(|(i, t)| json!({ "@type": "ListItem", "position": i + 1, "url": format!("{site}{}", t.href), "name": t.title })).collect();
+    nav.seo = crate::Seo {
+        desc: crate::clip(&format!("{}'s own store: {} Pokémon cards for sale{binders}. Real photos, condition and prices in pesos.", nav.brand, db::thousands(n.for_sale)), 165),
+        // A typed search here isn't a page of its own.
+        path: if q.q.is_empty() { VAULT_STORE.into() } else { String::new() },
+        kind: "website",
+        ld: crate::ld(json!({ "@context": "https://schema.org", "@graph": [
+            { "@type": "OnlineStore", "@id": format!("{site}/#org"), "name": nav.brand, "url": format!("{site}/"), "logo": format!("{site}/static/img/icon-512.png") },
+            { "@type": "CollectionPage", "@id": url, "url": url, "name": title, "isPartOf": { "@id": format!("{site}/#site") }, "about": { "@id": format!("{site}/#org") },
+              "mainEntity": { "@type": "ItemList", "name": "Binders", "numberOfItems": tiles.len(), "itemListElement": list } },
+            { "@type": "BreadcrumbList", "itemListElement": [
+                { "@type": "ListItem", "position": 1, "name": nav.brand, "item": format!("{site}/") },
+                { "@type": "ListItem", "position": 2, "name": "Stores", "item": format!("{site}/stores") },
+                { "@type": "ListItem", "position": 3, "name": "Official store", "item": url } ] }
+        ] })),
+        title,
+        ..Default::default()
+    };
+    Ok(VaultStorePage { nav, tiles, n, base: VAULT_STORE.into(), q: q.q, sort: q.sort, in_stock: true, items, next })
+}
+
+/// GET /store/vault/binders/{handle}: a vault binder's address, should anyone write it like a seller's. Its page is /collections/{handle}.
+pub async fn vault_binder(State(app): State<App>, Path(handle): Path<String>) -> Res {
+    if handle.is_empty() || !handle.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return not_found(&app).await;
+    }
+    Ok(Redirect::permanent(&format!("/collections/{handle}")).into_response())
 }
 
 /// The store's name for titles: what the seller called it, or "Hayme's store".
@@ -1076,19 +1243,39 @@ struct StoresPage {
     nav: Chrome,
     stores: Vec<(Member, StoreStats, Vec<MemberCard>)>,
     me: Option<Member>,
+    /// The vault's own store, always first (new look only; today's look lists the trainers' stores alone).
+    vault: Option<VaultCard>,
+}
+
+/// The vault's card at the top of /stores: its numbers and its first cards for sale.
+struct VaultCard {
+    n: VaultNumbers,
+    cards: Vec<Product>,
+}
+
+/// The vault is not a seller: it stays out of sellers::directory (the feed and the admin's Sellers use that) and comes first here.
+fn vault_card(c: &rusqlite::Connection) -> rusqlite::Result<VaultCard> {
+    let tiles = vault_tiles(&db::collections(c)?, &db::binder_peeks(c, 0)?);
+    let (cards, _) = db::list(c, &db::Query { in_stock: true, ..Default::default() })?;
+    Ok(VaultCard { n: vault_numbers(c, &tiles)?, cards: cards.into_iter().take(6).collect() })
 }
 
 pub async fn directory(State(app): State<App>, h: HeaderMap) -> Res {
     let me = crate::community::current(&app, &h).await?;
-    let (mut nav, stores) = with_db(&app, |c| Ok((chrome(c)?, sellers::directory(c)?))).await?;
+    let new = crate::look::is_new();
+    let (mut nav, stores, vault) = with_db(&app, move |c| Ok((chrome(c)?, sellers::directory(c)?, if new { Some(vault_card(c)?) } else { None }))).await?;
     nav.seo = crate::Seo {
         title: format!("Stores · {}", nav.brand),
-        desc: format!("Pokémon card stores run by the trainers of {}: browse what's on sale, reserve a card and pay the seller directly.", nav.brand),
+        desc: if new {
+            format!("{}'s official store and the Pokémon card stores of its trainers: browse their binders and cards for sale, then reserve a card or add it to your cart.", nav.brand)
+        } else {
+            format!("Pokémon card stores run by the trainers of {}: browse what's on sale, reserve a card and pay the seller directly.", nav.brand)
+        },
         path: "/stores".into(),
         kind: "website",
         ..Default::default()
     };
-    Ok(html(render(StoresPage { nav, stores, me })?))
+    Ok(html(render(StoresPage { nav, stores, me, vault })?))
 }
 
 async fn seller_by_slug(app: &App, slug: String) -> Result<Option<Member>, (StatusCode, String)> {
@@ -1554,27 +1741,31 @@ mod tests {
 
     /// The store page, or one binder's page, as a visitor sees it in the chosen look (the cards as `store_for` picks them).
     fn page(c: &rusqlite::Connection, slug: &str, binder: Option<&str>, new: bool) -> String {
+        page_as(c, slug, binder, new, false)
+    }
+
+    /// The same, as a visitor or as the store's `owner` (who sees every binder, as staff do).
+    fn page_as(c: &rusqlite::Connection, slug: &str, binder: Option<&str>, new: bool, owner: bool) -> String {
         let m = members::by_slug(c, slug).unwrap().unwrap();
         let binder = binder.map(|b| members::binder_by_slug(c, m.id, b).unwrap().unwrap());
-        let cards = match &binder {
+        let cards: Vec<MemberCard> = match &binder {
             Some(b) => members::cards_of_binder(c, m.id, Some(b.id)).unwrap().into_iter().filter(|k| k.is_sale() && matches!(k.status.as_str(), "Active" | "Reserved" | "Out of stock")).collect(),
             None => sellers::storefront_listings(c, m.id).unwrap(),
         };
-        let binders: Vec<(MemberBinder, Vec<String>)> = members::binders_of(c, m.id).unwrap().into_iter().filter(|b| b.visibility == "Public").map(|b| {
-            let pics = if binder.is_none() { sellers::binder_peeks(&b, &cards, 3) } else { vec![] };
-            (b, pics)
-        }).collect();
+        let binders: Vec<MemberBinder> = members::binders_of(c, m.id).unwrap().into_iter().filter(|b| b.visibility == "Public" || owner).collect();
+        let tiles = if binder.is_none() && new { seller_tiles(&m, &binders, &cards, owner) } else { vec![] };
         crate::look::in_thread(new);
         let html = render(StorePage {
             nav: chrome(c).unwrap(),
             stats: sellers::store_stats(c, m.id).unwrap(),
             cards: cards.into_iter().map(|k| (k, false)).collect(),
             binders,
+            tiles,
             binder,
             reviews: vec![],
             me: None,
             following: false,
-            is_me: false,
+            is_me: owner,
             links: vec![],
             conditions: members::CONDITIONS,
             m,
@@ -1601,14 +1792,27 @@ mod tests {
         }
         let secret = members::create_member_binder(&c, s, "Secret").unwrap();
         c.execute("UPDATE member_binders SET visibility='Private' WHERE id=?1", [secret.id]).unwrap();
+        // Fire also holds a card its seller hid: not for sale, so its page doesn't list it and its tile doesn't count it.
+        let Added::Yes(hidden) = sellers::add_listing(&c, s, "tcgdex:x-hidden", "Fire hidden", "1", "Set", "/p/hidden.webp", "").unwrap() else { panic!() };
+        members::move_card_to_binder(&c, s, hidden, Some(binders[0].id)).unwrap();
+        c.execute("UPDATE member_cards SET status='Hidden' WHERE id=?1", [hidden]).unwrap();
 
-        // The store page: every public binder in one grid, each with its pictures; no sideways strip.
+        // The store page: the public binders with cards for sale in one grid, each with its pictures; no sideways strip.
         let store = page(&c, &slug, None, true);
         assert_eq!(store.matches("class=\"sf-bgrid\"").count(), 1);
-        assert_eq!(store.matches("class=\"sf-btile\"").count(), 4, "the four public binders, not the private one");
-        assert!(!store.contains("sf-binders") && !store.contains(">Secret<"));
-        assert!(store.contains("data-n=\"3\"") && store.contains("data-n=\"2\"") && store.contains("data-n=\"1\"") && store.contains("data-n=\"0\""));
+        assert_eq!(store.matches("class=\"sf-btile\"").count(), 3, "the three public binders with cards for sale: not the empty one, not the private one");
+        assert!(!store.contains("sf-binders") && !store.contains(">Secret<") && !store.contains(">Empty<"));
+        assert!(store.contains("data-n=\"3\"") && store.contains("data-n=\"2\"") && store.contains("data-n=\"1\"") && !store.contains("data-n=\"0\""));
+        assert!(store.contains("<b class=\"sf-bname\">Fire</b><small>3 cards</small>"), "the cards its page shows, not the hidden one");
+        assert!(store.contains("<b class=\"sf-bname\">Grass</b><small>1 card</small>"));
+        assert!(!store.contains(" data-off>"), "a visitor sees nothing marked for the owner");
         assert!(store.contains("class=\"sf-head") && store.contains("id=\"reviews\""), "the store page keeps its header and reviews");
+        // The owner sees every binder; the ones visitors don't see are marked and faded.
+        let own = page_as(&c, &slug, None, true, true);
+        assert_eq!(own.matches("class=\"sf-btile\"").count(), 5);
+        assert!(own.contains("<b class=\"sf-bname\">Empty</b><small>No cards for sale · hidden from visitors</small>"), "{own}");
+        assert!(own.contains("<b class=\"sf-bname\">Secret</b><small>No cards for sale · private</small>"));
+        assert_eq!(own.matches(" data-off>").count(), 2);
         // Today's look keeps its strip.
         let classic = page(&c, &slug, None, false);
         assert!(classic.contains("class=\"sf-binders\"") && !classic.contains("sf-bgrid"));
@@ -1624,5 +1828,115 @@ mod tests {
         let fire_classic = page(&c, &slug, Some(&binders[0].slug), false);
         assert!(fire_classic.contains("class=\"sf-head") && fire_classic.contains("← All of") && fire_classic.contains("id=\"reviews\""));
         assert!(!fire_classic.contains("data-binder-close"));
+    }
+
+    /// The vault's own binders and cards: Pikachu Set with two copies for sale and one sold; Graded Cards, never in the
+    /// menu and hidden from today's home page; Trainers sold out; Legendary Collections empty.
+    fn vault(c: &rusqlite::Connection) {
+        for (i, (h, t, shown)) in [("pikachu-set", "Pikachu Set", true), ("graded-cards", "Graded Cards", false), ("trainers", "Trainers", true), ("legendary-collections", "Legendary Collections", true)].iter().enumerate() {
+            c.execute("INSERT INTO collections(handle,title,position,on_home,in_menu) VALUES(?1,?2,?3,?4,?4)", rusqlite::params![h, t, i as i64, shown]).unwrap();
+        }
+        for (id, title, price, image, sale, binder) in [
+            (1, "Pikachu V", 500.0, "/uploads/c0-1_l.jpg", true, "pikachu-set"),
+            (2, "Pikachu ex", 900.0, "/uploads/c0-2_l.jpg", true, "pikachu-set"),
+            (3, "Raichu", 50.0, "/uploads/c0-3_l.jpg", false, "pikachu-set"),
+            (4, "Iono", 300.0, "/uploads/c0-4_l.jpg", false, "trainers"),
+            (5, "Charizard PSA 10", 9000.0, "/uploads/c0-5_l.jpg", true, "graded-cards"),
+        ] {
+            c.execute(
+                "INSERT INTO products(id,handle,title,price,image,available,created_at) VALUES(?1,?2,?3,?4,?5,?6,'2026-01-01T00:00:00')",
+                rusqlite::params![id, format!("c{id}"), title, price, image, sale],
+            )
+            .unwrap();
+            c.execute("INSERT INTO collection_products(collection,product_id) VALUES(?1,?2)", rusqlite::params![binder, id]).unwrap();
+        }
+        db::set_binder_cover(c, "graded-cards", "/uploads/b-slabs_l.jpg").unwrap();
+    }
+
+    fn vault_html(c: &rusqlite::Connection, q: &str) -> String {
+        crate::look::in_thread(true);
+        let html = render(vault_page(c, db::Query { q: q.into(), in_stock: true, ..Default::default() }).unwrap());
+        crate::look::in_thread(false);
+        html.unwrap()
+    }
+
+    #[test]
+    fn the_vault_has_its_own_store_with_its_binders() {
+        let c = db();
+        vault(&c);
+        assert_eq!(VAULT_STORE, format!("/store/{}", sellers::VAULT_SLUG));
+        let html = vault_html(&c, "");
+        assert!(html.contains("<title>Big Boys Vault · Official store</title>"), "{html}");
+        assert!(html.contains("<link rel=\"canonical\" href=\"https://www.bigboysvault.com/store/vault\">"));
+        assert!(html.contains("<h1 class=\"h1\">Big Boys Vault</h1>") && html.contains("Official store</span>"));
+        assert!(html.contains("<a class=\"btn\" href=\"/ask\">") && html.contains("href=\"/chat\">"));
+        // The staff's link is in every visitor's page, hidden unless a full admin is signed in: the page can be kept.
+        assert!(html.contains("<a class=\"btn ghost\" href=\"/admin/binders\" data-staff-only data-full-only>"));
+        // Every binder with cards for sale, in the owner's order, menu or not, home page or not; no other.
+        let grid = &html[html.find("<ul class=\"sf-bgrid\">").unwrap()..];
+        let grid = &grid[..grid.find("</ul>").unwrap()];
+        assert_eq!(grid.matches("class=\"sf-btile\"").count(), 2);
+        let pika = grid.find("href=\"/collections/pikachu-set\"").expect("Pikachu Set's tile");
+        let graded = grid.find("href=\"/collections/graded-cards\"").expect("Graded Cards' tile, though it was never in the menu");
+        assert!(pika < graded, "the owner's order");
+        assert!(!grid.contains("/collections/trainers") && !grid.contains("/collections/legendary-collections"), "sold out or empty: no tile");
+        // A tile: the cards for sale, dearest first, never the sold one; the binder's own count, as its page says it.
+        assert!(html.contains("<span class=\"sf-bcov\" data-n=\"2\"><img src=\"/uploads/c0-2_s.jpg\""));
+        assert!(html.contains("<img src=\"/uploads/c0-1_s.jpg\"") && !html.contains("c0-3_s.jpg") && !html.contains("c0-3_l.jpg"));
+        assert!(html.contains("<b class=\"sf-bname\">Pikachu Set</b><small>3 cards</small>"));
+        assert_eq!(db::cards_in(&c, Some("pikachu-set")).unwrap(), 3, "the number the binder's page shows");
+        // An uploaded cover fills its tile alone.
+        assert!(html.contains("<span class=\"sf-bcov sf-bphoto\" data-n=\"1\"><img src=\"/uploads/b-slabs_s.jpg\""));
+        // Its numbers: copies for sale and binders, never what they are worth.
+        assert!(html.contains("<li><b>3</b><span>cards for sale</span></li>") && html.contains("<li><b>2</b><span>binders</span></li>"));
+        assert!(!html.contains("10,400"), "the vault's total value stays off the public page");
+        // Everything in the vault: its cards for sale, as everywhere else.
+        assert!(html.contains("Everything in the vault"));
+        for id in [1, 2, 5] {
+            assert!(html.contains(&format!("<a class=\"card\" href=\"/products/c{id}\"")), "card {id}");
+        }
+        assert!(!html.contains("href=\"/products/c3\"") && !html.contains("href=\"/products/c4\""), "sold cards aren't for sale");
+        // What search engines read: the store, and its binders as a list.
+        assert!(html.contains("\"@type\":\"OnlineStore\"") && html.contains("https://www.bigboysvault.com/collections/pikachu-set"));
+        // A search of the store isn't a page of its own.
+        let found = vault_html(&c, "charizard");
+        assert!(found.contains("<meta name=\"robots\" content=\"noindex, follow\">"));
+        assert_eq!(found.matches("<a class=\"card\" href=").count(), 1);
+    }
+
+    fn stores_html(c: &rusqlite::Connection, new: bool) -> String {
+        crate::look::in_thread(new);
+        let html = render(StoresPage { nav: chrome(c).unwrap(), stores: sellers::directory(c).unwrap(), me: None, vault: if new { Some(vault_card(c).unwrap()) } else { None } });
+        crate::look::in_thread(false);
+        html.unwrap()
+    }
+
+    #[test]
+    fn stores_list_the_vault_first_in_the_new_look() {
+        let c = db();
+        vault(&c);
+        // No trainer has a store yet: the vault is still there.
+        let html = stores_html(&c, true);
+        assert!(html.contains("<article class=\"seller-card vault-card\">") && html.contains("href=\"/store/vault\""));
+        assert!(html.contains("3 cards for sale · 2 binders · 0 vouches"), "{html}");
+        assert_eq!(html.matches("<a class=\"card\" href=\"/products/").count(), 3, "a few of its cards for sale");
+        assert!(html.contains("No trainer has a store with cards on sale yet."));
+        // A trainer opens one: after the vault.
+        let s = members::create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        let Added::Yes(_) = sellers::add_listing(&c, s, "tcgdex:x-1", "Mew", "1", "Set", "/p/mew.webp", "").unwrap() else { panic!() };
+        let html = stores_html(&c, true);
+        let shop = members::get(&c, s).unwrap().unwrap();
+        let (v, t) = (html.find("vault-card").unwrap(), html.find(&format!("href=\"{}\"", shop.store_url())).unwrap());
+        assert!(v < t, "the vault first");
+        assert!(!html.contains("No trainer has a store"));
+        // Today's look: the trainers' stores alone, worded as before.
+        let classic = stores_html(&c, false);
+        assert!(!classic.contains("vault-card") && !classic.contains("/store/vault"));
+        assert!(classic.contains("Trainers' stores") && classic.contains("Cards for sale by the trainers of Big Boys Vault."));
+        assert!(classic.contains(&format!("href=\"{}\"", shop.store_url())));
+        // The vault is never one of the sellers (the feed and the admin's Sellers list those).
+        assert!(sellers::directory(&c).unwrap().iter().all(|(m, _, _)| m.id == s));
     }
 }
