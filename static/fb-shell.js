@@ -113,8 +113,9 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
   const post = (url, body) => fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json().then((j) => (r.ok ? j : Promise.reject(new Error(j.error || 'That didn’t work.')))));
   const toast = (msg, bad) => { let t = document.querySelector('.cart-toast'); if (!t) { t = document.createElement('div'); t.className = 'cart-toast'; t.setAttribute('role', 'status'); document.body.append(t); } t.textContent = msg; t.classList.toggle('bad', !!bad); t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), 3200); };
   document.addEventListener('click', async (e) => {
-    const mine = e.target.closest('[data-look-set]'), all = e.target.closest('[data-look-all]');
+    const mine = e.target.closest('[data-look-set]'), all = e.target.closest('[data-look-all]'), auto = e.target.closest('[data-auto]');
     try {
+      if (auto) { await post('/admin/feed/auto', { kind: auto.dataset.auto, on: auto.dataset.on === '1' }); location.reload(); }
       if (mine) { await post('/me/look', { look: mine.dataset.lookSet }); location.reload(); }
       if (all) {
         const on = all.dataset.lookAll === 'on';

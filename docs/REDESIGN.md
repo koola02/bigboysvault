@@ -100,7 +100,11 @@ Cart, card camera, private messages, wishlist alerts, price history, Ask with Ge
 
 ## 4. The feed (home)
 
-Order: welcome banner (signed-out only: logo, one line, Join / Log in) → **Stories row** → composer → items, 10 at a time, more on scroll.
+Order: welcome banner (signed-out only: logo, one line, Join / Log in) → **Stories row** → composer → items, 8 at a time.
+
+**Endless scrolling.** More items load by themselves as you scroll, and the feed never ends: when the posts run out it carries on with sets of cards "From the vault", binder after binder, round and round.
+
+**Automatic posts have switches.** Full admins can turn each kind on or off (new cards, sellers' listings, vouches, price moves, new trainers, the vault sets) at `/admin/look`, or from a post's ⋯ menu. Off: those posts leave the feed, with their likes and comments kept for when they're switched back on.
 
 **What appears in the feed**
 

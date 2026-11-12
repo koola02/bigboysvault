@@ -32,7 +32,7 @@
       <tbody>
         {% for pr in prefs %}
         {# Someone who doesn't sell only sees the switches that can reach them. #}
-        {% if p.m.seller || pr.event == "my_order" || pr.event == "message" || pr.event == "wish" || pr.event == "announcement" || (pr.event == "order" && p.m.role == "admin") %}
+        {% if p.m.seller || pr.event == "my_order" || pr.event == "message" || pr.event == "social" || pr.event == "wish" || pr.event == "announcement" || (pr.event == "order" && p.m.role == "admin") %}
         <tr data-event="{{ pr.event }}">
           <td>{{ pr.label }}</td>
           <td><label class="chk"><input type="checkbox" class="sr" data-ch="site"{% if pr.site %} checked{% endif %} aria-label="On the site: {{ pr.label }}"><span class="chk-box"></span></label></td>

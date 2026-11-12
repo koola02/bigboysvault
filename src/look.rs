@@ -31,7 +31,7 @@ pub const COOKIE: &str = "bbv_look";
 pub const GUIDE: &str = "/admin/look";
 
 /// Pages already converted. "/x" covers "/x" and everything under it; "=/x" covers only "/x" itself.
-const READY: &[&str] = &[GUIDE];
+const READY: &[&str] = &[GUIDE, "=/", "/feed", "/posts"];
 
 /// Is this request (or the page being rendered for it) in the new look?
 pub fn is_new() -> bool {
@@ -82,6 +82,8 @@ struct Guide {
     mine: bool,
     all: bool,
     full: bool,
+    /// Each kind of automatic post: (kind, what it is, on?).
+    autos: Vec<(String, String, bool)>,
 }
 
 /// GET /admin/look: every piece of the new look on one page, for sign-off, with the switches.
@@ -90,15 +92,17 @@ pub async fn guide(State(app): State<App>, h: HeaderMap) -> Res {
     if power == admin::Power::Nothing {
         return Ok((StatusCode::NOT_FOUND, "Not found").into_response());
     }
-    let (mut nav, items) = with_db(&app, |c| {
+    let (mut nav, items, autos) = with_db(&app, |c| {
         let nav = crate::chrome(c)?;
-        let q = db::Query { collection: None, q: String::new(), sort: String::new(), in_stock: true, page: 1 };
+        let q = db::Query { collection: None, q: String::new(), sort: String::new(), in_stock: true, page: 0 };
         let (items, _) = db::list(c, &q)?;
-        Ok((nav, items.into_iter().take(8).collect::<Vec<_>>()))
+        let off = marcuru_rs::social::auto_off(c)?;
+        let autos = marcuru_rs::social::AUTO.iter().map(|(k, label)| (k.to_string(), label.to_string(), !off.iter().any(|o| o == k))).collect::<Vec<_>>();
+        Ok((nav, items.into_iter().take(8).collect::<Vec<_>>(), autos))
     })
     .await?;
     nav.seo.title = format!("The new look · {}", nav.brand);
-    let t = Guide { nav, items, mine: chosen(&h) == Some(true), all: FOR_ALL.load(Ordering::Relaxed), full: matches!(power, admin::Power::Admin(_)) };
+    let t = Guide { nav, items, mine: chosen(&h) == Some(true), all: FOR_ALL.load(Ordering::Relaxed), full: matches!(power, admin::Power::Admin(_)), autos };
     Ok(crate::community::html(crate::community::render(t)?))
 }
 
@@ -147,7 +151,9 @@ mod tests {
         assert!(ready("/admin/look"));
         assert!(!ready("/admin/looks"));
         assert!(!ready("/admin"));
-        assert!(!ready("/"));
+        assert!(ready("/"), "the feed is home");
+        assert!(ready("/posts/12"));
+        assert!(!ready("/all"));
     }
 
     #[test]

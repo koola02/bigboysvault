@@ -1,6 +1,7 @@
 mod admin;
 mod api;
 mod community;
+mod feed;
 mod look;
 mod messages;
 mod ops;
@@ -585,7 +586,11 @@ fn is_htmx(h: &HeaderMap) -> bool {
     h.get("hx-request").is_some() && h.get("hx-boosted").is_none()
 }
 
-async fn home(State(app): State<App>) -> Res {
+async fn home(State(app): State<App>, h: HeaderMap) -> Res {
+    // The new look's home is the feed (feed.rs).
+    if look::is_new() {
+        return feed::home(app, h).await;
+    }
     let a = app.clone();
     cached(&app, "home".into(), || async move {
         let t = with_db(&a, |c| {
@@ -1374,6 +1379,15 @@ async fn main() {
         .route("/ask", get(community::ask_page))
         .route("/api/ask", post(api::ask_vault))
         .route("/admin/ask/status", get(api::ask_status))
+        .route("/feed", get(feed::more))
+        .route("/posts", post(feed::create).layer(axum::extract::DefaultBodyLimit::max(40 * 1024 * 1024)))
+        .route("/posts/{id}", get(feed::one))
+        .route("/posts/{id}/react", post(feed::react))
+        .route("/posts/{id}/comments", get(feed::comments).post(feed::comment))
+        .route("/posts/{id}/delete", post(feed::remove))
+        .route("/posts/{id}/pin", post(feed::pin))
+        .route("/comments/{id}/delete", post(feed::comment_remove))
+        .route("/admin/feed/auto", post(feed::auto))
         .route("/admin/look", get(look::guide))
         .route("/admin/look/all", post(look::for_all))
         .route("/me/look", post(look::pick))

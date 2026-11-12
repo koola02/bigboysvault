@@ -1,0 +1,42 @@
+{% for it in items %}{% if let Some(p) = it.post %}
+<article class="box post{% if p.small %} post-sm{% endif %}" id="post-{{ p.id }}" data-post="{{ p.id }}"{% if p.own %} data-own{% endif %} data-kind="{{ p.kind }}">
+  <header class="post-h">
+    <a class="av" href="{{ p.who.url }}" aria-hidden="true" tabindex="-1">{% if p.who.avatar.is_empty() %}{{ p.who.initial }}{% else %}<img src="{{ p.who.avatar }}" alt="" loading="lazy" decoding="async">{% endif %}</a>
+    <div class="post-who"><b><a href="{{ p.who.url }}">{{ p.who.name }}</a></b>{% if !p.headline.is_empty() %} {{ p.headline }}{% endif %}<small><a href="/posts/{{ p.id }}">{{ p.when }}</a>{% if p.pinned %} · Pinned{% endif %}</small></div>
+    {% if !p.small %}<button type="button" class="ibtn" data-post-menu aria-label="More about this post" aria-haspopup="true">⋯</button>{% endif %}
+  </header>
+  {% if !p.text.is_empty() %}<p class="post-text">{{ p.text }}</p>{% endif %}
+  {% if let Some(a) = p.attach %}<a class="attach" href="{{ a.url }}">{% if !a.img.is_empty() %}<img src="{{ a.img }}" loading="lazy" decoding="async" alt="">{% endif %}<span><b>{{ a.title }}</b><small>{{ a.sub }}{% if !a.cond.is_empty() %} · {{ a.cond }}{% endif %}</small>{% if !a.price.is_empty() %}<span class="price">{{ a.price }}</span>{% endif %}</span></a>{% endif %}
+  {% if !p.photos.is_empty() %}<div class="post-media n{{ p.photos.len() }}">{% for (full, small) in p.photos %}<a href="{{ full }}" data-photo><img src="{% if p.photos.len() == 1 %}{{ full }}{% else %}{{ small }}{% endif %}" loading="lazy" decoding="async" alt="Photo"></a>{% endfor %}</div>{% endif %}
+  {% if p.tiles.len() == 1 %}{% for t in p.tiles %}<a class="attach" href="{{ t.url }}">{% if !t.img.is_empty() %}<img src="{{ t.img }}" loading="lazy" decoding="async" alt="">{% endif %}<span><b>{{ t.title }}</b><small>{{ t.sub }}{% if !t.cond.is_empty() %} · {{ t.cond }}{% endif %}</small>{% if !t.price.is_empty() %}<span class="price">{{ t.price }}</span>{% endif %}</span></a>{% endfor %}
+  {% else if !p.tiles.is_empty() %}<div class="post-cards g{{ p.grid() }}">{% for t in p.tiles %}<a href="{{ t.url }}" title="{{ t.title }}"><img src="{{ t.img }}" loading="lazy" decoding="async" alt="{{ t.title }}">{% if !t.price.is_empty() %}<span class="price">{{ t.price }}</span>{% endif %}{% if loop.last && p.more > 0 %}<span class="more">+{{ p.more }}</span>{% endif %}</a>{% endfor %}</div>{% endif %}
+  {% if !p.moves.is_empty() %}<div class="post-moves">{% for m in p.moves %}<a class="row" href="{{ m.url }}"><img class="mv-pic" src="{{ m.img }}" loading="lazy" decoding="async" alt=""><span class="row-t"><b>{{ m.title }}</b><small>{{ m.price }}</small></span><span class="mv {% if m.up %}up{% else %}down{% endif %}">{{ m.pct }}</span></a>{% endfor %}</div>{% endif %}
+  {% if !p.people.is_empty() %}<div class="post-people">{% for w in p.people %}<a class="chip" href="{{ w.url }}"><span class="av sm">{% if w.avatar.is_empty() %}{{ w.initial }}{% else %}<img src="{{ w.avatar }}" alt="" loading="lazy" decoding="async">{% endif %}</span>{{ w.name }}</a>{% endfor %}</div>{% endif %}
+  {% if !p.link.is_empty() %}<a class="post-link" href="{{ p.link }}">{{ p.link_text }} ›</a>{% endif %}
+  {% if !p.small %}<div class="post-stats"{% if p.like_n == 0 && p.comment_n == 0 %} hidden{% endif %}><span class="reacts" data-reacts{% if p.like_n == 0 %} hidden{% endif %}>{% for e in p.tops %}<i>{{ e }}</i>{% endfor %}<span data-like-n>{{ p.like_n }}</span></span><button type="button" class="linkbtn post-cn" data-comments-open{% if p.comment_n == 0 %} hidden{% endif %}>{{ p.comments_text() }}</button></div>
+  <div class="post-acts">
+    <button type="button" data-like aria-pressed="{% if p.mine.is_empty() %}false{% else %}true{% endif %}" data-mine="{{ p.mine }}"><span class="like-ico" data-like-ico>{% if p.mine.is_empty() %}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v11H3V10zM7 10l4-8a2.5 2.5 0 0 1 2.5 3L13 9h6a2 2 0 0 1 2 2.3l-1.3 8A2 2 0 0 1 17.7 21H7"/></svg>{% else %}{{ p.mine_emoji() }}{% endif %}</span><span data-like-word>{{ p.mine_word() }}</span></button>
+    <button type="button" data-comments-open><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg>Comment</button>
+    <button type="button" data-share><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v13"/></svg>Share</button>
+  </div>
+  <div class="post-comments" data-comments hidden></div>{% endif %}
+</article>
+{% endif %}{% if !it.stores.is_empty() %}
+<section class="box" aria-label="Trainers' stores">
+  <div class="caro-h"><h2 class="h2">Trainers' stores</h2><a href="/stores">See all</a></div>
+  <div class="caro">
+    {% for s in it.stores %}<div class="caro-i"><a class="caro-pic" href="{{ s.url }}">{% if !s.pic.is_empty() %}<img src="{{ s.pic }}" loading="lazy" decoding="async" alt="">{% endif %}<span class="av">{% if s.avatar.is_empty() %}{{ s.initial }}{% else %}<img src="{{ s.avatar }}" alt="" loading="lazy" decoding="async">{% endif %}</span>{% if !s.price.is_empty() %}<span class="price">{{ s.price }}</span>{% endif %}</a><div class="caro-t"><b>{{ s.name }}</b><small>{{ s.sub }}</small></div><div class="caro-acts"><button type="button" class="btn soft" data-dm-to="{{ s.id }}">Message</button><a class="btn ghost" href="{{ s.url }}">Visit</a></div></div>{% endfor %}
+  </div>
+</section>
+{% endif %}{% if let Some(v) = it.vault %}
+<section class="box vault-unit" aria-label="{{ v.title }}">
+  <div class="caro-h"><h2 class="h2">{{ v.title }}</h2><a href="{{ v.url }}">See all{% if v.total > 0 %} {{ v.total }}{% endif %}</a></div>
+  <div class="vu-grid">{% for t in v.tiles %}<a class="vu" href="{{ t.url }}" data-c="{{ t.c }}"><span class="vu-img"><img src="{{ t.img }}" loading="lazy" decoding="async" alt=""></span><b class="vu-p">{{ t.price }}</b><span class="vu-t">{{ t.title }}</span></a>{% endfor %}</div>
+</section>
+{% endif %}{% endfor %}{% if end %}
+<p class="box empty feed-end">You're all caught up.</p>
+{% endif %}{% if !next.is_empty() %}
+<div class="feed-more" hx-get="/feed?c={{ next }}" hx-trigger="revealed" hx-swap="outerHTML" aria-label="Loading more">
+  <div class="box post skel"><div class="post-h"><span class="av"></span><div class="post-who"><i></i><i></i></div></div><div class="skel-body"></div></div>
+</div>
+{% endif %}

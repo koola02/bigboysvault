@@ -10,6 +10,7 @@ pub mod members;
 pub mod pricing;
 pub mod sellers;
 pub mod similar;
+pub mod social;
 pub mod stamp;
 pub mod suggest;
 pub mod translate;

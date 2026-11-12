@@ -129,7 +129,7 @@ fn msg_json(m: &dm::Message, my_side: i64) -> Value {
 }
 
 /// A copy of a card for a message, taken now, so the message keeps showing it as it was.
-fn card_copy(c: &rusqlite::Connection, r: &CardRef) -> rusqlite::Result<Option<(i64, Value)>> {
+pub(crate) fn card_copy(c: &rusqlite::Connection, r: &CardRef) -> rusqlite::Result<Option<(i64, Value)>> {
     if let Some(id) = r.vault {
         let Some(p) = db::product_by_id(c, id)? else { return Ok(None) };
         return Ok(Some((
@@ -151,8 +151,8 @@ fn card_copy(c: &rusqlite::Connection, r: &CardRef) -> rusqlite::Result<Option<(
 
 #[derive(Deserialize, Default, Clone)]
 pub struct CardRef {
-    vault: Option<i64>,
-    card: Option<i64>,
+    pub(crate) vault: Option<i64>,
+    pub(crate) card: Option<i64>,
 }
 
 fn signed_out() -> Response {

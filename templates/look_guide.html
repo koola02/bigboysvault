@@ -15,6 +15,12 @@
     </div>{% endif %}
   </section>
 
+  <section class="box box-p stack" id="auto">
+    <h2 class="h2">Automatic posts in the feed</h2>
+    <p class="lg-note">The site writes these posts by itself. Switch a kind off and its posts leave the feed (their likes and comments are kept); switch it on and they come back.{% if !full %} Only a full admin can change these.{% endif %}</p>
+    {% for (kind, label, on) in autos %}<div class="row"><span class="row-t"><b>{{ label }}</b><small>{% if on %}On{% else %}Off{% endif %}</small></span>{% if full %}<button type="button" class="btn sm {% if on %}ghost{% else %}soft{% endif %}" data-auto="{{ kind }}" data-on="{% if on %}0{% else %}1{% endif %}">{% if on %}Turn off{% else %}Turn on{% endif %}</button>{% else %}<span class="tag{% if on %} gold{% endif %}">{% if on %}On{% else %}Off{% endif %}</span>{% endif %}</div>{% endfor %}
+  </section>
+
   <section class="stories" aria-label="Stories">
     <button type="button" class="story add">{% if let Some(p) = items.first() %}<img src="{{ p.img(360) }}" alt="">{% endif %}<span class="plus">+</span><b>Add story</b></button>
     {% for p in items.iter().take(6) %}<button type="button" class="story{% if loop.index > 4 %} seen{% endif %}"><img src="{{ p.img(360) }}" loading="lazy" alt=""><span class="av sm"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span><b>{% if loop.first %}Showcase{% else if loop.index == 2 %}New arrivals{% else if loop.index == 3 %}Graded{% else %}{{ p.short_title() }}{% endif %}</b></button>{% endfor %}
