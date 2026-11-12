@@ -1161,14 +1161,14 @@ body:has(.detail) .v-fab { display: none; }
   .story .av { top: 6px; left: 6px; width: 28px; height: 28px; box-shadow: 0 0 0 2px var(--gold); }
 }
 @media (max-width: 389px) { .hd-word { font-stretch: 100%; letter-spacing: 0; } .hd-l, .hd-r { gap: 6px; } }
-/* The smallest phones: a member has four round buttons up there (search, cart, messages, the bell), so they and the
-   logo are a little smaller and closer together. Only the header's own buttons: those inside the messages panel keep
-   their size. */
-@media (max-width: 359px) {
+/* Phones: a member has four round buttons up there (search, cart, messages, the bell), so they and the logo are a
+   little smaller (36px, still easy to tap), leaving the site's name its room; on the smallest phones they sit closer
+   too. Only the header's own buttons: those inside the messages panel keep their size. */
+@media (max-width: 411px) {
   .hd-logo img { width: 36px; height: 36px; }
   .hd-r > .hd-ib, .hd-r > .hd-pop > .hd-ib { width: 36px; height: 36px; }
-  .hd-l, .hd-r { gap: 4px; }
 }
+@media (max-width: 359px) { .hd-l, .hd-r { gap: 4px; } }
 
 /* ---------- 28. Log in and join: the vault on one side, the form on the other ---------- */
 .join { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: center; justify-items: center; max-width: 1080px; min-height: calc(100dvh - var(--hd-h) - var(--sat) - 140px); margin: 0 auto; padding: 16px 0; }
