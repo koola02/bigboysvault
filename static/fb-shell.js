@@ -109,6 +109,32 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
   });
   window.bbvWho().then((j) => { if (j && j.member) load(); else if (holder) holder.hidden = true; });
 
+  /* ---------- a card's picture, up close (today's look does this inside its floating window) ---------- */
+  document.addEventListener('click', (e) => {
+    const z = e.target.closest('[data-zoom]'); if (!z) return;
+    e.preventDefault();
+    const o = document.createElement('div'); o.className = 'dm-lightbox zoomable'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', 'The card, up close');
+    const img = document.createElement('img'); img.src = z.dataset.zoom; img.alt = ''; o.append(img);
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'dm-ib dm-lb-x'; x.textContent = '✕'; x.setAttribute('aria-label', 'Close'); o.append(x);
+    const close = () => { o.remove(); document.removeEventListener('keydown', esc); };
+    const esc = (ev) => { if (ev.key === 'Escape') close(); };
+    // A tap on the picture brings it closer, where the tap was; another tap steps back.
+    img.addEventListener('click', (ev) => { const r = img.getBoundingClientRect(), fx = (ev.clientX - r.left) / r.width, fy = (ev.clientY - r.top) / r.height; const big = o.classList.toggle('in'); if (big) requestAnimationFrame(() => { o.scrollLeft = img.offsetWidth * fx - o.clientWidth / 2; o.scrollTop = img.offsetHeight * fy - o.clientHeight / 2; }); });
+    o.addEventListener('click', (ev) => { if (ev.target === o || ev.target === x) close(); });
+    document.addEventListener('keydown', esc);
+    document.body.append(o); x.focus();
+  });
+
+  /* ---------- Marketplace: more cards arrive as you scroll, and the filters stay open on a wide screen ---------- */
+  let more = 0;
+  addEventListener('scroll', () => {
+    if (more) return;
+    more = setTimeout(() => { more = 0; const b = document.querySelector('.fd-more button'); if (b && b.getBoundingClientRect().top < innerHeight + 900) b.click(); }, 120);
+  }, { passive: true });
+  const openFilters = () => { const d = document.querySelector('.fd-filters'); if (d && matchMedia('(min-width: 900px)').matches) d.open = true; };
+  new MutationObserver(openFilters).observe(root, { attributes: true, attributeFilter: ['data-finder'] });
+  openFilters();
+
   /* ---------- the look itself: this device, and (full admins) everyone ---------- */
   const post = (url, body) => fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json().then((j) => (r.ok ? j : Promise.reject(new Error(j.error || 'That didn’t work.')))));
   const toast = (msg, bad) => { let t = document.querySelector('.cart-toast'); if (!t) { t = document.createElement('div'); t.className = 'cart-toast'; t.setAttribute('role', 'status'); document.body.append(t); } t.textContent = msg; t.classList.toggle('bad', !!bad); t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), 3200); };

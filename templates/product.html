@@ -1,5 +1,7 @@
 {% extends "base.html" %}
+{% block layout %}wide{% endblock %}
 {% block content %}
+{% if crate::look::is_new() %}<p class="mk-top"><a class="btn ghost sm" href="/all">‹ Marketplace</a><a class="btn ghost sm" data-staff-only href="/admin/edit/{{ p.id }}">Edit this card</a></p>{% endif %}
 {% include "product_body.html" %}
 <script>
 // Count a view when the page is really seen, not when the browser prepared it in advance.

@@ -31,7 +31,7 @@ pub const COOKIE: &str = "bbv_look";
 pub const GUIDE: &str = "/admin/look";
 
 /// Pages already converted. "/x" covers "/x" and everything under it; "=/x" covers only "/x" itself.
-const READY: &[&str] = &[GUIDE, "=/", "/feed", "/posts"];
+const READY: &[&str] = &[GUIDE, "=/", "/feed", "/posts", "/all", "/search", "/collections", "/products"];
 
 /// Is this request (or the page being rendered for it) in the new look?
 pub fn is_new() -> bool {
@@ -153,7 +153,8 @@ mod tests {
         assert!(!ready("/admin"));
         assert!(ready("/"), "the feed is home");
         assert!(ready("/posts/12"));
-        assert!(!ready("/all"));
+        assert!(ready("/all") && ready("/products/pikachu-1") && ready("/collections/graded-cards"));
+        assert!(!ready("/trainers"));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block layout %}feed{% endblock %}
 {% block content %}
-<div class="stack feed" id="feed" data-no-float{% if single %} data-single{% endif %}>
+<div class="stack feed" id="feed"{% if single %} data-single{% endif %}>
   {% if !single %}
   <section class="box welcome" data-guest-only>
     <img src="/static/img/logo-sm-144.png?v=1" width="72" height="72" alt="">

@@ -1,7 +1,8 @@
 {% extends "base.html" %}
 {% block title %}{% if nav.seo.title.is_empty() %}{{ title }} · {{ nav.brand }}{% else %}{{ nav.seo.title }}{% endif %}{% endblock %}
+{% block layout %}wide{% endblock %}
 {% block content %}
-<section class="wrap">
+<section class="wrap mk">
   <h1 class="h1">{{ title }}</h1>
   <p class="sub">{{ total }} item{% if total != 1 %}s{% endif %}</p>
   {% if base == "/search" %}<div id="finder" class="fd"></div>{% endif %}
