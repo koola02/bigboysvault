@@ -1956,3 +1956,7 @@ body:not(:has(.hero-x)) > main { flex: 1 0 auto; }
 .trend[data-dir="down"] svg { color: #ff9a8a; }
 .photo-orig { display: inline; margin: 0; }
 .photo-orig button { font-size: .875rem; white-space: nowrap; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+/* The Vault page's tiles say whose card it is (crates/finder): small, muted, one line with the little picture. */
+.card-by { display: flex; align-items: center; gap: 6px; min-width: 0; margin: 6px 2px 0; color: var(--muted); font: 600 .75rem/1.2 var(--font); text-align: left; }
+.card-by-av { flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: rgba(255,255,255,.1); color: var(--text); font: 700 .5625rem/1 var(--font); object-fit: cover; }
+.card-by-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

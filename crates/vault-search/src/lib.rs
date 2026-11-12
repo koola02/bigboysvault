@@ -437,12 +437,35 @@ pub fn search<C: Borrow<Card>>(cards: &[C], f: &Filter, sort: Sort) -> Found {
     // Either way round, cards with no price yet come last.
     let unpriced = |i: usize| card(i).price <= 0.0;
     match f.sort.unwrap_or(sort) {
-        Sort::Newest => hits.sort_by_key(|&i| card(i).order),
+        Sort::Newest => {
+            hits.sort_by_key(|&i| card(i).order);
+            hits = mix_in_stores(&hits, |i| card(i).store > 0);
+        }
         Sort::PriceAsc => hits.sort_by(|&a, &b| unpriced(a).cmp(&unpriced(b)).then(card(a).price.total_cmp(&card(b).price)).then(card(a).order.cmp(&card(b).order))),
         Sort::PriceDesc => hits.sort_by(|&a, &b| unpriced(a).cmp(&unpriced(b)).then(card(b).price.total_cmp(&card(a).price)).then(card(a).order.cmp(&card(b).order))),
         Sort::Name => hits.sort_by_cached_key(|&i| (card(i).title.to_lowercase(), card(i).order)),
     }
     Found { hits, typo }
+}
+
+/// How many of the vault's cards come before each store card in the default order.
+pub const VAULT_RUN: usize = 3;
+
+/// The default order with the stores' cards in it: the vault's own order, with one store card (newest first) after
+/// every `VAULT_RUN` of the vault's, until the store cards run out; the rest of the vault follows. Should there be more
+/// store cards than that, the rest of them come last. `hits` is already in catalogue order; nothing else is reordered.
+fn mix_in_stores(hits: &[usize], from_store: impl Fn(usize) -> bool) -> Vec<usize> {
+    let (vault, stores): (Vec<usize>, Vec<usize>) = hits.iter().partition(|&&i| !from_store(i));
+    let mut stores = stores.into_iter();
+    let mut out = Vec::with_capacity(hits.len());
+    for (n, v) in vault.into_iter().enumerate() {
+        out.push(v);
+        if (n + 1) % VAULT_RUN == 0 {
+            out.extend(stores.next());
+        }
+    }
+    out.extend(stores);
+    out
 }
 
 /// How well each hit matches the typed words: a BM25-style score.
@@ -686,8 +709,9 @@ pub fn parse(data: &str) -> (Vec<Binder>, Vec<Card>) {
 }
 
 /// Read The Vault page's file (`/vault.tsv`): the vault's binders and cards as `parse` reads them, then the stores
-/// (`S` lines) and every card they have for sale (`M` lines). The stores' cards come after the vault's, in the file's
-/// order, and each is found by its store's name too.
+/// (`S` lines) and every card they have for sale (`M` lines). The stores' cards come after the vault's in the list, in
+/// the file's order (newest first), and each is found by its store's name too. The default order mixes them in among
+/// the vault's (see `mix_in_stores`).
 pub fn parse_market(data: &str) -> (Vec<Binder>, Vec<Store>, Vec<Card>) {
     let (binders, mut cards) = parse(data);
     let mut stores: Vec<Store> = vec![];
@@ -957,6 +981,31 @@ mod tests {
         assert_eq!((s3.len(), c3.len(), c3[0].lid, c3[0].store, c3[1].store), (2, 3, 501, 1, 2));
         // A card from a store the file never named is left out.
         assert_eq!(parse_market("M\t9\t1\th\tT\t\t\t\t1\t\t\t1\t\t\t\t\t\t\n").2.len(), 0);
+    }
+
+    #[test]
+    fn the_default_order_puts_a_store_card_after_every_three_of_the_vaults() {
+        let mut data = String::new();
+        for i in 0..7 {
+            data += &card_line(&Card { handle: format!("v-{i}"), title: format!("v{i}"), price: 10.0 + f64::from(i), qty: 1, ..Default::default() });
+        }
+        data += &store_line(1, &Store { id: 9, slug: "shop".into(), title: "Shop".into(), ..Default::default() });
+        for i in 0..3 {
+            data += &market_line(&Card { store: 1, lid: 100 + i64::from(i), title: format!("s{i}"), price: 500.0 - 100.0 * f64::from(i), qty: 1, ..Default::default() });
+        }
+        let (_, _, cards) = parse_market(&data);
+        let run = |f: &Filter, sort: Sort| search(&cards, f, sort).hits.iter().map(|&i| cards[i].title.clone()).collect::<Vec<_>>().join(" ");
+        assert_eq!(run(&Filter::default(), Sort::Newest), "v0 v1 v2 s0 v3 v4 v5 s1 v6 s2", "the vault's order, a store card (newest first) after every three");
+        assert_eq!(run(&Filter { min_price: Some(13.0), ..Default::default() }, Sort::Newest), "v3 v4 v5 s0 v6 s1 s2", "the same rhythm in what a filter leaves; store cards left over come last");
+        assert_eq!(run(&Filter { store: Some(1), ..Default::default() }, Sort::Newest), "s0 s1 s2");
+        assert_eq!(run(&Filter { store: Some(0), ..Default::default() }, Sort::Newest), "v0 v1 v2 v3 v4 v5 v6", "the vault alone keeps its own order");
+        // Only the default order mixes: the other orders and a typed search are as they were.
+        assert_eq!(run(&Filter::default(), Sort::PriceAsc), "v0 v1 v2 v3 v4 v5 v6 s2 s1 s0");
+        assert_eq!(run(&Filter::default(), Sort::PriceDesc), "s0 s1 s2 v6 v5 v4 v3 v2 v1 v0");
+        assert_eq!(run(&Filter::default(), Sort::Name), "s0 s1 s2 v0 v1 v2 v3 v4 v5 v6");
+        assert_eq!(run(&read_words("shop"), Sort::Newest), "s0 s1 s2", "a store's name finds its cards, by relevance");
+        // The catalogue alone (/api/search, Ask the Vault) has no store cards, so its order is unchanged.
+        assert_eq!(parse(&data).1.iter().map(|c| c.title.as_str()).collect::<Vec<_>>().join(" "), "v0 v1 v2 v3 v4 v5 v6");
     }
 
     #[test]
