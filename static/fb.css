@@ -1047,3 +1047,56 @@ body:has(.dm-win:not([hidden])) .ask-win { right: 452px; }
 }
 /* The Vouch button belongs where vouches are, not on a card's own page. */
 body:has(.detail) .v-fab { display: none; }
+
+/* ---------- 26. The vault chat: everyone in one room, in a window or on its own page ---------- */
+.chat { position: relative; display: flex; flex-direction: column; flex: 1; min-height: 0; height: 100%; }
+.chat .chat-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.chat .chat-head .h1 { font: 800 1.25rem/1.2 var(--display); }
+.chat-live { display: inline-flex; align-items: center; gap: 6px; margin: 0; color: var(--muted); font-size: .8125rem; }
+.chat-live i { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.chat .chat-log { flex: 1; min-height: 0; padding: 12px; overflow-y: auto; overscroll-behavior: contain; outline: none; }
+.chat-older { display: block; margin: 0 auto 8px; }
+.msg { position: relative; display: flex; align-items: flex-end; gap: 8px; margin-top: 10px; }
+.msg.cont { margin-top: 2px; }
+.msg-face { flex: none; }
+.msg-face .av { width: 28px; height: 28px; font-size: .75rem; }
+.msg.cont .msg-face { visibility: hidden; }
+.msg-body { position: relative; max-width: min(78%, 560px); min-width: 0; }
+.msg-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0 0 3px 12px; color: var(--muted); font-size: .75rem; }
+.msg.cont .msg-head { display: none; }
+.msg-name { color: var(--muted); font-weight: 600; }
+.msg-time { color: var(--faint); }
+.msg-head .role, .msg-head .stars, .msg-head .worth, .msg-head .mtag { height: 16px; padding: 0 6px; font-size: .625rem; }
+.msg-text { margin: 0; padding: 8px 12px; border-radius: 18px; background: var(--surface-3); white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.mine { flex-direction: row-reverse; }
+.msg.mine .msg-face, .msg.mine .msg-head > :not(.msg-time) { display: none; }
+.msg.mine .msg-head { justify-content: flex-end; margin: 0 12px 3px 0; }
+.msg.mine .msg-text { background: var(--brass); color: var(--gold-ink); font-weight: 600; }
+.msg-x { position: absolute; top: 50%; right: -28px; translate: 0 -50%; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); font-size: .75rem; opacity: 0; }
+.msg.mine .msg-x { right: auto; left: -28px; }
+.msg:hover .msg-x, .msg-x:focus-visible { opacity: 1; }
+@media (hover: none) { .msg-x { opacity: .6; } }
+.chat-empty { margin: 24px 0; color: var(--muted); text-align: center; }
+.chat-new { position: absolute; left: 50%; bottom: 72px; z-index: 2; translate: -50% 0; min-height: 32px; padding: 0 14px; border: 0; border-radius: var(--pill); background: var(--brass); color: var(--gold-ink); font: 700 .8125rem/1 var(--font); box-shadow: var(--shadow-pop); }
+.chat .chat-form { display: flex; align-items: flex-end; gap: 8px; padding: 8px 12px 10px; border-top: 1px solid var(--line); }
+.chat .chat-form textarea { flex: 1; min-width: 0; min-height: 40px; max-height: 132px; padding: 9px 14px; border-radius: 20px; resize: none; line-height: 1.35; }
+.chat .chat-send { flex: none; width: 40px; min-height: 40px; padding: 0; border-radius: 50%; }
+.chat .chat-send span { display: none; }
+.chat .chat-send svg { width: 18px; height: 18px; fill: currentColor; stroke: none; }
+.chat-note { margin: 0; padding: 6px 12px; color: #ff9d94; font-size: .8125rem; }
+.chat-join { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px; border-top: 1px solid var(--line); }
+.chat-join p { flex: 1 1 100%; margin: 0; color: var(--muted); font-size: .875rem; }
+.talk-page:has(.chat) { display: flex; flex-direction: column; max-width: 1216px; height: calc(100dvh - var(--hd-h) - var(--sat) - 48px); margin: 0 auto; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); overflow: hidden; }
+.ask-win .chat .chat-head { padding: 6px 12px; border: 0; }
+.ask-win .chat .chat-head .h1 { display: none; }
+@media (max-width: 699px) {
+  .ask-win .chat .chat-form { padding-bottom: calc(10px + var(--sab)); }
+  .talk-page:has(.chat) { height: calc(100dvh - var(--hd-h) - var(--sat) - var(--bt-h) - var(--sab) - 24px); border-radius: 0; }
+}
+
+/* ---------- 27. Small phones: the site's name always fits beside the buttons (it scales, it is never cut) ---------- */
+@media (max-width: 699px) {
+  .hd-word { font-size: clamp(.75rem, 4.3vw, 1.125rem); }
+  .story .av { top: 6px; left: 6px; width: 28px; height: 28px; box-shadow: 0 0 0 2px var(--gold); }
+}
+@media (max-width: 389px) { .hd-word { font-stretch: 100%; letter-spacing: 0; } .hd-l, .hd-r { gap: 6px; } }

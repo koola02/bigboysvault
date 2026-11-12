@@ -510,6 +510,33 @@ fn clean_note(note: &str) -> String {
     flat.split_whitespace().collect::<Vec<_>>().join(" ").chars().take(300).collect()
 }
 
+/// "Nov 12, 6:15 AM" in Manila time (UTC+8, no daylight saving), for notes people read.
+fn manila_stamp(t: i64) -> String {
+    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    let local = t + 8 * 3600;
+    let (days, secs) = (local.div_euclid(86_400), local.rem_euclid(86_400));
+    // Days since 1970 to a calendar date (the usual civil-date arithmetic).
+    let z = days + 719_468;
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = doy - (153 * mp + 2) / 5 + 1;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 };
+    let (h, m) = (secs / 3600, (secs % 3600) / 60);
+    format!("{} {}, {}:{:02} {}", MONTHS[(month - 1) as usize], day, if h % 12 == 0 { 12 } else { h % 12 }, m, if h < 12 { "AM" } else { "PM" })
+}
+
+/// A job that had failed is working again: its warnings in the admins' bell say so, instead of reading as if
+/// something were still broken. Only warnings not marked yet are touched. Returns how many notes changed.
+fn mark_fixed(c: &rusqlite::Connection, job: &str, good_at: i64) -> rusqlite::Result<usize> {
+    let lead = format!("Fixed, working again (last good run {}). ", manila_stamp(good_at));
+    c.execute(
+        "UPDATE notifications SET message = ?1 || message WHERE kind='announcement' AND (message LIKE ?2 OR message LIKE ?3)",
+        rusqlite::params![lead, format!("VM: {job} failed:%"), format!("VM: the {job} job %")],
+    )
+}
+
 /// Saves a job's report. A failure tells the admins, at most once per job every 6 hours. Returns true when they were told.
 pub fn record_report(c: &rusqlite::Connection, job: &str, ok: bool, note: &str, now: i64) -> rusqlite::Result<bool> {
     let note = clean_note(note);
@@ -519,6 +546,10 @@ pub fn record_report(c: &rusqlite::Connection, job: &str, ok: bool, note: &str, 
     let saved = json!({ "at": now, "ok": ok, "note": note, "last_ok": last_ok, "since": since });
     blocks::set_setting(c, &format!("ops_job_{job}"), &saved.to_string())?;
     if ok {
+        // A good run after a bad one: the warnings about it stop looking like something is still broken.
+        if before.as_ref().is_some_and(|b| !b.ok) {
+            mark_fixed(c, job, now)?;
+        }
         return Ok(false);
     }
     let key = format!("ops_alert_{job}");
@@ -547,6 +578,14 @@ pub fn ops_status(c: &rusqlite::Connection) -> rusqlite::Result<Vec<(String, i64
 /// are told, once a day. A job that has never reported is skipped: the VM isn't set up yet.
 /// This also catches a VM that stopped, because then nothing reports at all. Returns how many jobs are late.
 pub fn ops_watchdog(c: &rusqlite::Connection, now: i64) -> rusqlite::Result<usize> {
+    // Warnings about jobs that are fine now are marked fixed (this also tidies warnings from before a job was mended).
+    for (job, hours) in OPS_JOBS {
+        if let Some(s) = read_job(c, job)? {
+            if s.ok && s.last_ok > 0 && (hours == 0 || now - s.last_ok <= hours * 3600) {
+                mark_fixed(c, job, s.last_ok)?;
+            }
+        }
+    }
     let mut late = 0;
     for job in ["backup", "images", "checks", "drill", "similar"] {
         let Some(s) = read_job(c, job)? else { continue };
@@ -736,6 +775,54 @@ mod tests {
     }
     fn told(c: &rusqlite::Connection) -> i64 {
         c.query_row("SELECT COUNT(*) FROM notifications", [], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn a_good_run_after_a_bad_one_marks_the_warning_fixed() {
+        let c = db();
+        let msg = |c: &rusqlite::Connection| -> String { c.query_row("SELECT message FROM notifications ORDER BY id LIMIT 1", [], |r| r.get(0)).unwrap() };
+        // 22:10 UTC on 11 Nov 2026 is 6:10 in the morning of the 12th in Manila.
+        assert!(record_report(&c, "uptime", false, "the site is DOWN", 1_794_435_037).unwrap());
+        assert_eq!(msg(&c), "VM: uptime failed: the site is DOWN");
+        assert!(!record_report(&c, "uptime", true, "Back up", 1_794_435_303).unwrap());
+        assert_eq!(msg(&c), "Fixed, working again (last good run Nov 12, 6:15 AM). VM: uptime failed: the site is DOWN");
+        // Another good run leaves it as it is, and a warning about another job is not touched.
+        assert!(record_report(&c, "drill", false, "missing tables", 1_794_435_400).unwrap());
+        assert!(!record_report(&c, "uptime", true, "fine", 1_794_435_600).unwrap());
+        assert_eq!(msg(&c), "Fixed, working again (last good run Nov 12, 6:15 AM). VM: uptime failed: the site is DOWN");
+        let drill: String = c.query_row("SELECT message FROM notifications ORDER BY id DESC LIMIT 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(drill, "VM: drill failed: missing tables");
+        assert_eq!(told(&c), 2, "marking a warning fixed never adds a note");
+    }
+
+    #[test]
+    fn the_hourly_look_tidies_old_warnings_only_for_jobs_that_are_fine_now() {
+        let c = db();
+        let all = |c: &rusqlite::Connection| -> Vec<String> { c.prepare("SELECT message FROM notifications ORDER BY id").unwrap().query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect() };
+        // Warnings left from before: the jobs were mended since, but nothing marked the notes.
+        for m in ["VM: checks failed: exit 141", "VM: backup failed: disk full", "VM: the images job hasn't worked for 60 hours. Please check the VM."] {
+            c.execute("INSERT INTO notifications(member_id, kind, message, link, created_at) VALUES(1, 'announcement', ?1, '/admin', 1)", [m]).unwrap();
+        }
+        let now = 1_794_465_906; // 6:45 AM on 12 Nov in Manila, plus a few hours
+        c.execute("INSERT INTO settings(key, value) VALUES('ops_job_checks', ?1)", [json!({ "at": now - 60, "ok": true, "note": "8 of 8 pages fine", "last_ok": now - 60, "since": 1 }).to_string()]).unwrap();
+        c.execute("INSERT INTO settings(key, value) VALUES('ops_job_backup', ?1)", [json!({ "at": now - 60, "ok": false, "note": "disk full", "last_ok": now - 90_000, "since": 1 }).to_string()]).unwrap();
+        // The pictures job said "fine" three days ago and nothing since: it is late, so its warning stays.
+        c.execute("INSERT INTO settings(key, value) VALUES('ops_job_images', ?1)", [json!({ "at": now - 3 * 86_400, "ok": true, "note": "ok", "last_ok": now - 3 * 86_400, "since": 1 }).to_string()]).unwrap();
+        ops_watchdog(&c, now).unwrap();
+        let notes = all(&c);
+        assert!(notes[0].starts_with("Fixed, working again (last good run Nov 12, ") && notes[0].ends_with("VM: checks failed: exit 141"), "{}", notes[0]);
+        assert_eq!(notes[1], "VM: backup failed: disk full", "still failing: left alone");
+        assert_eq!(notes[2], "VM: the images job hasn't worked for 60 hours. Please check the VM.", "still late: left alone");
+        ops_watchdog(&c, now + 3600).unwrap();
+        assert_eq!(all(&c)[0], notes[0], "never marked twice");
+    }
+
+    #[test]
+    fn manila_time_reads_like_a_clock_on_the_wall() {
+        assert_eq!(manila_stamp(1_794_435_303), "Nov 12, 6:15 AM");
+        assert_eq!(manila_stamp(0), "Jan 1, 8:00 AM");
+        assert_eq!(manila_stamp(1_794_435_303 + 6 * 3600), "Nov 12, 12:15 PM");
+        assert_eq!(manila_stamp(1_709_222_400 - 8 * 3600), "Feb 29, 4:00 PM"); // a leap day
     }
 
     #[test]
