@@ -415,6 +415,8 @@
     pc: null, stream: null, id: null, thread: null, other: null, role: null, ui: null, pendingIce: [], earlyIce: [], ringTimer: null, tick: null, tone: null, offer: null,
     // Goes up each time a call is put away, so the steps of one that was put down while getting ready stop there.
     gen: 0,
+    // Where the call is (calling, ringing, connecting, live), whether the line dropped, whether the microphone is off.
+    phase: 'calling', weak: false, muted: false,
     // How the two browsers find each other. Asked with a time limit, so a slow answer never holds up a call.
     async iceServers() {
       const c = new AbortController(), t = setTimeout(() => c.abort(), 6000);
@@ -430,8 +432,17 @@
       pc.ontrack = (e) => { if (pc !== this.pc) return; const a = this.audio(); a.srcObject = e.streams[0]; a.play().catch(() => {}); };
       pc.onconnectionstatechange = () => {
         if (pc !== this.pc) return;
-        if (pc.connectionState === 'connected') this.connected();
+        if (pc.connectionState === 'connected') { this.weak = false; this.connected(); }
+        if (pc.connectionState === 'disconnected') this.weak = true;
         if (pc.connectionState === 'failed') { toast('The call couldn\'t connect.', true); this.hang(); }
+      };
+      // Some phone browsers only report the lower-level state: it counts too.
+      pc.oniceconnectionstatechange = () => {
+        if (pc !== this.pc) return;
+        const st = pc.iceConnectionState;
+        if (st === 'connected' || st === 'completed') { this.weak = false; this.connected(); }
+        if (st === 'disconnected') this.weak = true;
+        if (st === 'failed' && !('connectionState' in pc)) { toast('The call couldn\'t connect.', true); this.hang(); }
       };
       return pc;
     },
@@ -450,6 +461,7 @@
       try { stream = await this.media(); } catch (_) { if (!over()) { toast('Allow the microphone to call.', true); this.clean(); } return; }
       if (over()) { drop(); return; }
       this.stream = stream;
+      stream.getAudioTracks().forEach((t) => { t.enabled = !this.muted; });
       try {
         pc = await this.peer();
         if (over()) { drop(); return; }
@@ -465,14 +477,13 @@
       if (over()) { api(`/dm/${thread}/call`, { type: 'end', call: rung.call, page: PID, data: null }).catch(() => {}); return; }
       this.id = rung.call;
       this.earlyIce.splice(0).forEach((c) => this.send('ice', c));
-      // Someone with the site open hears it ring; someone without it finds a missed call when they come back.
-      this.setStatus(rung.online === false ? 'Not on the site right now. Ringing in case they open it…' : 'Ringing…');
-      this.ringing(false);
+      // "Calling…" stays until their page (or phone) says it is ringing. Nobody on the site: they'll find a missed call.
+      if (rung.online === false && this.phase === 'calling') this.setStatus('Not on the site right now. Ringing in case they open it…');
       this.ringTimer = setTimeout(() => { if (this.role === 'caller' && !this.started) { toast('No answer.'); this.hang(); } }, 45000);
     },
     async accept() {
-      this.ringing(true, false);
-      this.setStatus('Connecting…'); this.buttons(false);
+      this.ringing(false);
+      this.phase = 'connecting'; this.setStatus('Connecting…'); this.buttons(false);
       // As when calling: if the call ends while this is getting ready, what was opened is closed again.
       const my = this.gen, over = () => my !== this.gen;
       let stream = null, pc = null;
@@ -480,6 +491,7 @@
       try { stream = await this.media(); } catch (_) { if (!over()) { toast('Allow the microphone to answer.', true); this.decline(); } return; }
       if (over()) { drop(); return; }
       this.stream = stream;
+      stream.getAudioTracks().forEach((t) => { t.enabled = !this.muted; });
       try {
         pc = await this.peer();
         if (over()) { drop(); return; }
@@ -496,14 +508,17 @@
     decline() { this.send('decline'); this.clean(); },
     hang() { if (this.id) this.send('end'); this.clean(); },
     connected() {
-      if (this.started) return; this.started = Date.now(); clearTimeout(this.ringTimer); this.ringing(false, false);
-      this.tick = setInterval(() => this.setStatus(clock((Date.now() - this.started) / 1000)), 500);
+      if (this.started) return; this.started = Date.now(); this.phase = 'live'; clearTimeout(this.ringTimer); this.ringing(false, false);
+      const show = () => this.setStatus(this.weak ? 'Reconnecting…' : clock((Date.now() - this.started) / 1000));
+      show(); this.tick = setInterval(show, 500);
     },
     async signal(s) {
       if (s.type === 'ring') {
         if (this.ui) { return; } // busy: the other side keeps ringing until they give up
         this.thread = s.thread; this.id = s.call; this.other = s.from; this.role = 'callee'; this.offer = s.data && s.data.sdp; this.pendingIce = []; this.earlyIce = [];
         this.show('is calling you…', true); this.ringing(true, true);
+        // The caller's screen moves from "Calling…" to "Ringing…" now that it really rings somewhere.
+        this.send('ringing');
         // The tab says so too, for someone looking at another one.
         this.title = document.title; document.title = `📞 ${(s.from && s.from.name) || 'Someone'} is calling…`;
         if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 400]);
@@ -511,7 +526,12 @@
         return;
       }
       if (s.call !== this.id || s.thread !== this.thread) return;
-      if (s.type === 'answer' && this.pc) { await this.pc.setRemoteDescription(s.data.sdp); for (const c of this.pendingIce.splice(0)) await this.pc.addIceCandidate(c).catch(() => {}); this.setStatus('Connecting…'); }
+      if (s.type === 'ringing') { if (this.role === 'caller' && this.phase === 'calling' && this.ui) { this.phase = 'ringing'; this.setStatus('Ringing…'); this.ringing(true, false); } }
+      else if (s.type === 'answer' && this.pc) {
+        this.ringing(false);
+        if (this.phase !== 'live') { this.phase = 'connecting'; this.setStatus('Connecting…'); }
+        await this.pc.setRemoteDescription(s.data.sdp); for (const c of this.pendingIce.splice(0)) await this.pc.addIceCandidate(c).catch(() => {});
+      }
       else if (s.type === 'ice') { if (this.pc && this.pc.remoteDescription) await this.pc.addIceCandidate(s.data).catch(() => {}); else this.pendingIce.push(s.data); }
       else if (s.type === 'declined') { toast('The call was declined.'); this.clean(); }
       else if (s.type === 'ended') { if (this.started) toast('Call ended.'); this.clean(); }
@@ -521,11 +541,12 @@
     },
     show(status, incoming) {
       const o = el('div', 'dm-call-ui'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', 'Voice call');
-      o.append(avatar(this.other, 96));
+      // Their face without the green dot: whether they are there is what the words under it say, as it happens.
+      o.append(avatar({ ...(this.other || {}), online: false }, 96));
       o.append(el('b', 'dm-call-name', (this.other && this.other.name) || 'Call'));
       o.append(el('p', 'dm-call-st', status));
       o.append(el('div', 'dm-call-btns'));
-      document.body.append(o); this.ui = o; this.buttons(incoming);
+      document.body.append(o); this.ui = o; this.phase = incoming ? 'ringing' : 'calling'; this.buttons(incoming);
     },
     buttons(incoming) {
       const box = $('.dm-call-btns', this.ui); box.replaceChildren();
@@ -534,11 +555,22 @@
         btn('no', 'Decline', I.phone, () => this.decline());
         btn('yes', 'Answer', I.phone, () => this.accept()).focus();
       } else {
-        const m = btn('mute', 'Mute', I.mute, () => { const on = m.classList.toggle('on'); this.stream?.getAudioTracks().forEach((t) => { t.enabled = !on; }); });
+        const m = btn('mute', 'Mute', I.mic, () => this.mute(!this.muted));
+        m.setAttribute('aria-pressed', 'false');
+        this.mute(this.muted);
         btn('no', 'End call', I.phone, () => this.hang());
       }
     },
     setStatus(t) { const s = this.ui && $('.dm-call-st', this.ui); if (s) s.textContent = t; },
+    // On: a plain microphone, in colour (you can be heard). Off: the microphone crossed out, dark.
+    mute(off) {
+      this.muted = off;
+      this.stream?.getAudioTracks().forEach((t) => { t.enabled = !off; });
+      const b = this.ui && $('.dm-cb.mute', this.ui); if (!b) return;
+      b.classList.toggle('on', off); b.innerHTML = icon(off ? I.mute : I.mic);
+      const label = off ? 'Unmute' : 'Mute';
+      b.setAttribute('aria-label', label); b.title = label; b.setAttribute('aria-pressed', String(off));
+    },
     ringing(on, incoming) {
       if (this.tone) { clearInterval(this.tone.timer); this.tone.ctx.close().catch(() => {}); this.tone = null; }
       if (!on) return;
@@ -560,7 +592,7 @@
       this.ui?.remove();
       if (this.title != null) document.title = this.title;
       this.gen++;
-      Object.assign(this, { pc: null, stream: null, id: null, ui: null, started: 0, offer: null, pendingIce: [], earlyIce: [], title: null });
+      Object.assign(this, { pc: null, stream: null, id: null, ui: null, started: 0, offer: null, pendingIce: [], earlyIce: [], title: null, phase: 'calling', weak: false, muted: false });
       kick();
     },
   };

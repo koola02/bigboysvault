@@ -671,7 +671,8 @@ pub struct CallReq {
     data: Value,
 }
 
-/// POST /dm/{thread}/call: ring, accept, decline, end, and the browsers' connection details (ice), passed along.
+/// POST /dm/{thread}/call: ring, "ringing" (the callee's page is ringing), accept, decline, end, and the browsers'
+/// connection details (ice), passed along.
 pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Json(req): Json<CallReq>) -> Res {
     let m = match acting(&app, &h).await? {
         Ok(m) => m,
@@ -748,6 +749,10 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
                         let others: Vec<i64> = people(side, &admins).into_iter().filter(|x| *x != m.id).collect();
                         app.dm.signal(&others, with("taken"));
                         elsewhere(side);
+                    }
+                    // The callee's page (or phone) is ringing: the caller's screen says "Ringing…".
+                    "ringing" if !from_caller && c.callee.is_none() => {
+                        app.dm.signal(&[c.caller], with("ringing"));
                     }
                     "ice" => {
                         let to: Vec<i64> = if from_caller { c.callee.map(|x| vec![x]).unwrap_or_else(|| people(t.other(c.caller_side), &admins)) } else { vec![c.caller] };

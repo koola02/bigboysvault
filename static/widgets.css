@@ -111,8 +111,9 @@ html:not([data-look="fb"]) .fb-right { display: none; }
 .dm-cb.yes { background: #22c55e; }
 .dm-cb.no { background: #ef4444; }
 .dm-cb.no svg { rotate: 135deg; }
-.dm-cb.mute { background: rgba(255,255,255,.14); }
-.dm-cb.mute.on { background: #fff; color: #111; }
+/* The microphone: in colour while you can be heard, dark and crossed out when muted. */
+.dm-cb.mute { background: #fff; color: #111; }
+.dm-cb.mute.on { background: rgba(255,255,255,.14); color: #fff; }
 .dm-page { max-width: 760px; }
 .dm-page-h { margin: 18px 0 14px; }
 .dm-page-sub { color: var(--muted); font: 500 .875rem/1.4 var(--font); }
@@ -229,8 +230,8 @@ html.cc-on, html.cc-on body { overflow: hidden; }
 .dm-call-name { color: var(--gold-hi); }
 .dm-cb.yes { background: var(--brass) 0 0 / 220% 100%; color: var(--gold-ink); box-shadow: 0 0 30px rgba(239,200,115,.5), inset 0 1px 0 rgba(255,255,255,.7); }
 .dm-cb.no { background: linear-gradient(160deg, #ff8a7a, #d9443a); box-shadow: 0 0 26px rgba(255,120,100,.38); }
-.dm-cb.mute { background: rgba(255,255,255,.07); color: var(--gold-hi); box-shadow: inset 0 0 0 1px rgba(239,200,115,.45); }
-.dm-cb.mute.on { background: var(--gold-hi); color: var(--gold-ink); }
+.dm-cb.mute { background: var(--gold-hi); color: var(--gold-ink); box-shadow: 0 0 22px rgba(239,200,115,.35); }
+.dm-cb.mute.on { background: rgba(255,255,255,.07); color: var(--gold-hi); box-shadow: inset 0 0 0 1px rgba(239,200,115,.45); }
 .dm-lightbox { background: rgba(3,4,10,.95); }
 /* A phone, or any short screen (a phone held sideways): the chat takes the whole screen, sized to what's above the keyboard. */
 @media (max-width: 699px), (max-height: 520px) {
