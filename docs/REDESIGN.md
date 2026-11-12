@@ -238,6 +238,12 @@ As of 12 November 2026, behind the new-look switch:
   puts them in order (drag or arrows), saving by itself (`POST /admin/showcase {ids}`, `blocks::set_showcase`). The
   page shows the strip as the home page draws it. Admins also get an "Edit showcase" tile at the end of the row on the
   home page. The stories row reads one section only: `blocks::showcase` (the shown one, else the first).
+- **Live, the tables:** in Cards and Listings a column's name sorts by it, and the column tapped before settles the
+  ties (two columns at most). The server sorts, so it holds across pages: the address carries it as
+  `sort=price:desc,card:asc` (`db::column_sort`, with the columns each table allows). The line at the right of a
+  column's name drags to change its width (double-click sets it back); widths are kept on the device
+  (`localStorage` `bbv:cols:<table id>`) and written into the table's `--cols`. All of it is `static/mgr-table.js`.
+  The SRP line under a price wraps instead of being cut.
 - **The new look is on for everyone** (the owner switched `site_look` to `new` on 12 November 2026).
 - **Next:** stories viewer and trainers' stories, follow, share to feed, the feed editor (until then "Home page" in
   the Manager opens today's home page editor, in today's look, because that is the page visitors still see);

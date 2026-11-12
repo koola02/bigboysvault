@@ -99,18 +99,26 @@ pub async fn dash(State(app): State<App>, h: HeaderMap) -> Res {
     Ok(html(render(DashPage { nav, p, d })?))
 }
 
+/// A number in the address that may be left empty. The filters are a form, and a form sends "binder=" when no binder
+/// is chosen: that means none, not a mistake. (It used to be refused, so every filter failed until a binder was picked.)
+fn empty_or_number<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<i64>, D::Error> {
+    Ok(Option::<String>::deserialize(d)?.and_then(|s| s.trim().parse().ok()))
+}
+
 #[derive(Deserialize)]
 pub struct ListQs {
     #[serde(default)]
     q: String,
     #[serde(default)]
     status: String,
+    #[serde(default, deserialize_with = "empty_or_number")]
     binder: Option<i64>,
     #[serde(default)]
     sort: String,
     #[serde(default)]
     kind: String,
     /// Open this listing's editor straight away (links from notifications).
+    #[serde(default, deserialize_with = "empty_or_number")]
     id: Option<i64>,
 }
 
@@ -135,7 +143,10 @@ pub async fn listings(State(app): State<App>, h: HeaderMap, Query(q): Query<List
         Err(r) => return Ok(r),
     };
     let id = m.id;
-    let f = ListFilter { q: q.q.chars().take(60).collect(), status: q.status, binder: q.binder, sort: q.sort, kind: q.kind };
+    // The table's own columns ("price:desc,card:asc") go back into the page cleaned; a named order goes through as it is.
+    let by_column = marcuru_rs::db::clean_column_sort(&q.sort, &sellers::LISTING_SORT_COLUMNS);
+    let sort = if by_column.is_empty() { q.sort.chars().take(24).collect() } else { by_column };
+    let f = ListFilter { q: q.q.chars().take(60).collect(), status: q.status, binder: q.binder, sort, kind: q.kind };
     let f2 = f.clone();
     let (nav, p, cards, binders, max, total) = with_db(&app, move |c| {
         sellers::expire_due(c)?;

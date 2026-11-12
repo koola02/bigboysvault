@@ -17,6 +17,7 @@
     <input id="aq" type="search" name="q" value="{{ q }}" placeholder="Find a card by name, number or tag" aria-label="Search your cards" autocomplete="off">
     <select id="as" name="sort" aria-label="Order">
       <option value="" {% if sort.is_empty() %}selected{% endif %}>Your order (drag to arrange)</option>
+      {% if sort.contains(":") %}<option value="{{ sort }}" selected data-columns>By column</option>{% endif %}
       <option value="newest" {% if sort == "newest" %}selected{% endif %}>Newest first</option>
       <option value="price-desc" {% if sort == "price-desc" %}selected{% endif %}>Most valuable first</option>
       <option value="price-asc" {% if sort == "price-asc" %}selected{% endif %}>Cheapest first</option>
@@ -40,7 +41,7 @@
       <p class="sub" id="countLine">{{ self.total_text() }} card{% if total != 1 %}s{% endif %}{% if !q.is_empty() %} matching “{{ q }}”{% else if binder.is_empty() %} · {{ copies }} copies{% endif %}</p>
     </div>
     <p class="selnote" id="selNote" hidden></p>
-    {% if crate::look::is_new() %}<div class="mgr-scroll"><div class="mgr-thead" aria-hidden="true"><span></span><span></span><span></span><span>Card</span><span class="num">Price</span><span>Condition</span><span>Copies</span><span>Description</span><span>Tags</span><span></span></div>{% endif %}
+    {% if crate::look::is_new() %}<div class="mgr-scroll"><div class="mgr-thead" data-sort="{{ sort }}"><span></span><span></span><span></span><span data-col="card" data-min="170" data-up="A to Z" data-down="Z to A">Card</span><span class="num" data-col="price" data-min="120" data-first="desc" data-up="lowest first" data-down="highest first">Price</span><span data-col="cond" data-name="Condition" data-min="124" data-up="best first" data-down="worst first">Condition</span><span data-col="copies" data-min="108" data-first="desc" data-up="fewest first" data-down="most first">Copies</span><span data-col="desc" data-min="130" data-up="A to Z" data-down="Z to A">Description</span><span data-col="tags" data-min="120" data-up="A to Z" data-down="Z to A">Tags</span><span></span></div>{% endif %}
     <ul class="rows mc-grid" id="rows">
       {% for (p, sold) in items %}
       <li class="crow ctile" data-id="{{ p.id }}" data-title="{{ p.title }}" data-ids="{{ p.copy_ids }}" data-sold="{{ sold.ids }}" data-c="{{ p.cond_class() }}" data-api-id="{{ p.api_id }}" data-finish="{{ p.finish }}" data-price-src="{{ p.price_src }}" data-market="{{ p.market_php }}">
@@ -92,6 +93,7 @@
 <script src="/static/dragsort.js?v=5" defer></script>
 <script src="/static/tag-editor.js?v=1" defer></script>
 <script src="/static/my-cards.js?v=9" defer></script>
+<script src="/static/mgr-table.js?v=1" defer></script>
 <script src="/static/admin.js?v=12" defer></script>
 <script src="/static/admin-float.js?v=12" defer></script>
 {% endblock %}

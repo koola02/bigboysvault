@@ -562,11 +562,15 @@ pub struct ListFilter {
     pub q: String,
     pub status: String,
     pub binder: Option<i64>,
-    /// "newest", "price-desc", "price-asc", "title", "views", "stock", or the seller's own order.
+    /// "newest", "price-desc", "price-asc", "title", "views", "stock", the table's own columns ("price:desc,card:asc"),
+    /// or the seller's own order.
     pub sort: String,
     /// "own", "sale", "wish", or "" for all.
     pub kind: String,
 }
+
+/// The names of the columns a seller's listings table can be sorted by.
+pub const LISTING_SORT_COLUMNS: [&str; 8] = ["card", "status", "price", "stock", "kind", "cond", "binder", "note"];
 
 /// A seller's listings, filtered and sorted.
 pub fn listings(c: &Connection, member_id: i64, f: &ListFilter) -> rusqlite::Result<Vec<MemberCard>> {
@@ -587,6 +591,24 @@ pub fn listings(c: &Connection, member_id: i64, f: &ListFilter) -> rusqlite::Res
     if KINDS.contains(&f.kind.as_str()) {
         sql += &format!(" AND c.kind=?{}", args.len() + 1);
         args.push(f.kind.clone().into());
+    }
+    // The table's own columns ("price:desc,card:asc") come before the named orders below.
+    let cond = crate::db::COND_RANK.replace("{col}", "c.cond");
+    let columns: [(&str, &str); 8] = [
+        ("card", "c.title COLLATE NOCASE {dir}"),
+        ("status", "CASE c.status WHEN 'Active' THEN 1 WHEN 'Reserved' THEN 2 WHEN 'Out of stock' THEN 3 WHEN 'Hidden' THEN 4 WHEN 'Sold' THEN 5 ELSE 6 END {dir}"),
+        ("price", "CASE WHEN c.value_own>0 THEN c.value_own ELSE c.value END {dir}"),
+        ("stock", "c.qty {dir}"),
+        ("kind", "CASE c.kind WHEN 'sale' THEN 1 WHEN 'own' THEN 2 ELSE 3 END {dir}"),
+        ("cond", &cond),
+        ("binder", "(c.binder_id IS NULL) ASC, (SELECT b.title FROM member_binders b WHERE b.id=c.binder_id) COLLATE NOCASE {dir}"),
+        ("note", "(c.notes='') ASC, c.notes COLLATE NOCASE {dir}"),
+    ];
+    if let Some(order) = crate::db::column_sort(&f.sort, &columns) {
+        sql += &format!(" ORDER BY {order}, c.id");
+        let mut st = c.prepare(&sql)?;
+        let v = st.query_map(rusqlite::params_from_iter(args.iter()), |r| members::map_card(r, 0))?.collect::<Result<Vec<_>, _>>()?;
+        return Ok(v);
     }
     sql += match f.sort.as_str() {
         "newest" => " ORDER BY c.id DESC",
@@ -2228,6 +2250,29 @@ mod tests {
         set_kind(c, s, card, "sale").unwrap().unwrap();
         update_listing(c, s, card, &Patch { qty: Some(2), ..Default::default() }).unwrap();
         (s, b, card)
+    }
+
+    #[test]
+    fn listings_sort_by_one_or_two_columns() {
+        let c = db();
+        let s = create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        // title, condition, the seller's price, stock, what it is
+        let cards = [("Eevee", "Near Mint", 50.0, 3, "sale"), ("Abra", "Lightly Played", 50.0, 1, "sale"), ("Zubat", "Damaged", 5.0, 9, "own"), ("Mew", "Near Mint", 900.0, 1, "sale")];
+        for (i, (title, cond, price, qty, kind)) in cards.iter().enumerate() {
+            let Added::Yes(id) = add_listing(&c, s, &format!("tcgdex:x-{i}"), title, "1/1", "Set", "", "").unwrap() else { panic!() };
+            c.execute("UPDATE member_cards SET cond=?2, value_own=?3, qty=?4, kind=?5 WHERE id=?1", rusqlite::params![id, cond, price, qty, kind]).unwrap();
+        }
+        let by = |sort: &str| listings(&c, s, &ListFilter { sort: sort.into(), ..Default::default() }).unwrap().iter().map(|x| x.title.chars().next().unwrap()).collect::<String>();
+        assert_eq!(by("price:desc,card:asc"), "MAEZ", "dearest first; the two at 50 by name");
+        assert_eq!(by("price:asc,stock:desc"), "ZEAM", "cheapest first; of the two at 50, the one with more stock");
+        assert_eq!(by("cond:asc,price:desc"), "MEAZ", "best condition first, the Near Mints by price");
+        assert_eq!(by("stock:desc"), "ZEAM");
+        assert_eq!(by("kind:asc,card:asc"), "AEMZ", "for sale first, then what is only shown off");
+        assert_eq!(by("card:desc"), "ZMEA");
+        assert_eq!(by("nonsense:desc"), by(""), "an unknown column leaves the seller's own order");
+        assert!(by("price-desc").starts_with('M') && by("price-desc").ends_with('Z'), "the named orders still work");
     }
 
     #[test]

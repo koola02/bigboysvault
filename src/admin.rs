@@ -332,7 +332,20 @@ pub async fn cards(State(app): State<App>, h: HeaderMap, Qs(qs): Qs<ListQs>) -> 
     let q = qs.q.unwrap_or_default().trim().chars().take(80).collect::<String>();
     let binder = qs.binder.filter(|b| db::handle_ok(b)).unwrap_or_default();
     let page = qs.page.unwrap_or(0).min(500);
-    let sort = qs.sort.filter(|s| ["price-desc", "price-asc", "title", "newest", "set-old", "set-new"].contains(&s.as_str())).unwrap_or_default();
+    // One of the named orders, or the table's own columns ("price:desc,card:asc"); anything else is the owner's order.
+    let sort = qs
+        .sort
+        .map(|s| {
+            let by_column = db::clean_column_sort(&s, &db::CARD_SORT_COLUMNS);
+            if !by_column.is_empty() {
+                by_column
+            } else if ["price-desc", "price-asc", "title", "newest", "set-old", "set-new"].contains(&s.as_str()) {
+                s
+            } else {
+                String::new()
+            }
+        })
+        .unwrap_or_default();
     let query = Query { collection: (!binder.is_empty()).then(|| binder.clone()), q: q.clone(), sort: sort.clone(), page: 0, ..Default::default() };
     let (nav, items, total, copies, distinct, value) = with_db(&app, move |c| {
         // Pages accumulate so "Show more" simply extends the list.

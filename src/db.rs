@@ -620,6 +620,68 @@ pub struct Query {
     pub page: usize,
 }
 
+/// Conditions from best to worst, as SQL over the column named `{col}`. Grades, sealed and anything else come after,
+/// by name. Sorting conditions by the alphabet would put Damaged before Near Mint.
+pub const COND_RANK: &str = "CASE {col} WHEN 'Near Mint' THEN 1 WHEN 'LP-NM' THEN 2 WHEN 'Lightly Played' THEN 3 WHEN 'MP-LP' THEN 4 WHEN 'Moderately Played' THEN 5 WHEN 'HP-MP' THEN 6 WHEN 'Heavily Played' THEN 7 WHEN 'Damaged-HP' THEN 8 WHEN 'Damaged' THEN 9 ELSE 10 END {dir}, {col} COLLATE NOCASE {dir}";
+
+/// A table sorted by its own columns, written in the address as "price:desc,card:asc": the first column, then a second
+/// to settle ties. `cols` names each column the table can be sorted by and the SQL for it, where `{dir}` stands for
+/// ASC or DESC. Only those columns are taken (and each once, two at most), so the words can come straight from the
+/// address. None when nothing in `spec` names a column: the caller keeps its usual order.
+pub fn column_sort(spec: &str, cols: &[(&str, &str)]) -> Option<String> {
+    let mut seen: Vec<&str> = vec![];
+    let mut parts: Vec<String> = vec![];
+    for step in spec.split(',') {
+        let Some((key, dir)) = step.split_once(':') else { continue };
+        let key = key.trim();
+        let Some((name, sql)) = cols.iter().find(|(k, _)| *k == key) else { continue };
+        if seen.contains(name) {
+            continue;
+        }
+        seen.push(name);
+        parts.push(sql.replace("{dir}", if dir.trim().eq_ignore_ascii_case("desc") { "DESC" } else { "ASC" }));
+        if parts.len() == 2 {
+            break;
+        }
+    }
+    (!parts.is_empty()).then(|| parts.join(", "))
+}
+
+/// A column sort as it goes back into the page and its links: the columns of `spec` that the table has, two at most,
+/// each once, as "price:desc,card:asc". Empty when it names none of them.
+pub fn clean_column_sort(spec: &str, known: &[&str]) -> String {
+    let mut out: Vec<String> = vec![];
+    let mut seen: Vec<&str> = vec![];
+    for step in spec.split(',') {
+        let Some((key, dir)) = step.split_once(':') else { continue };
+        let Some(name) = known.iter().find(|k| **k == key.trim()) else { continue };
+        if seen.contains(name) {
+            continue;
+        }
+        seen.push(name);
+        out.push(format!("{name}:{}", if dir.trim().eq_ignore_ascii_case("desc") { "desc" } else { "asc" }));
+        if out.len() == 2 {
+            break;
+        }
+    }
+    out.join(",")
+}
+
+/// The names of the columns the admin's cards table can be sorted by.
+pub const CARD_SORT_COLUMNS: [&str; 6] = ["card", "price", "cond", "copies", "desc", "tags"];
+
+/// The columns the admin's cards table can be sorted by. A card with nothing in a text column goes last either way.
+fn card_columns() -> Vec<(&'static str, String)> {
+    vec![
+        ("card", "title COLLATE NOCASE {dir}".to_string()),
+        ("price", "price {dir}".to_string()),
+        ("cond", COND_RANK.replace("{col}", "variant")),
+        ("copies", "qty {dir}".to_string()),
+        ("desc", "(body='') ASC, body COLLATE NOCASE {dir}".to_string()),
+        ("tags", "(tags='') ASC, tags COLLATE NOCASE {dir}".to_string()),
+    ]
+}
+
 pub fn list(c: &Connection, q: &Query) -> rusqlite::Result<(Vec<Product>, i64)> {
     let mut wh: Vec<String> = vec!["1=1".into()];
     let mut args: Vec<Value> = vec![];
@@ -652,11 +714,14 @@ pub fn list(c: &Connection, q: &Query) -> rusqlite::Result<(Vec<Product>, i64)> 
         // The owner's order. Copies of a card sit where the first of them does.
         _ => "gpos ASC, p.created_at DESC, p.id DESC",
     };
+    // The table's own columns ("price:desc,card:asc") come before the named orders above.
+    let cols = card_columns();
+    let by_column = column_sort(&q.sort, &cols.iter().map(|(k, v)| (*k, v.as_str())).collect::<Vec<_>>()).map(|o| format!("{o}, id"));
     let whs = wh.join(" AND ");
     // Copies of the same card are one entry with a count ("×2"), everywhere a list is shown.
     let matched = format!("SELECT DISTINCT {COLS}, {DUP_KEY} AS gk, p.created_at AS created, p.position AS pos, {SET_DATE} AS rel FROM products p{join} WHERE {whs}");
     let total: i64 = c.query_row(&format!("SELECT COUNT(DISTINCT gk) FROM ({matched})"), params_from_iter(args.iter()), |r| r.get(0))?;
-    let order = order.replace("p.created_at", "created").replace("p.", "");
+    let order = by_column.unwrap_or_else(|| order.replace("p.created_at", "created").replace("p.", ""));
     let mut a2 = args.clone();
     a2.push(Value::Integer(PAGE_SIZE as i64));
     a2.push(Value::Integer((q.page * PAGE_SIZE) as i64));
@@ -1439,6 +1504,52 @@ mod dashboard_tests {
         groups_to_top(&c, &[vec![3], vec![1]]).unwrap();
         assert_eq!(order(&c), "CAEBD", "a home row arranged from another sort puts its cards first, in the dragged order");
         assert_eq!(clean_tags(&["Grail".into(), "grail".into(), "  for, trade ".into(), "binder-x".into(), "".into()]), vec!["Grail".to_string(), "for trade".to_string()]);
+    }
+
+    #[test]
+    fn a_table_sorts_by_one_or_two_of_its_columns() {
+        // Reading the address: only columns the table names, each once, two at most.
+        let cols = [("price", "price {dir}"), ("card", "title COLLATE NOCASE {dir}"), ("copies", "qty {dir}")];
+        assert_eq!(column_sort("price:desc", &cols).as_deref(), Some("price DESC"));
+        assert_eq!(column_sort("price:desc,card:asc", &cols).as_deref(), Some("price DESC, title COLLATE NOCASE ASC"));
+        assert_eq!(column_sort("card:asc,price:desc,copies:asc", &cols).as_deref(), Some("title COLLATE NOCASE ASC, price DESC"), "two at most");
+        assert_eq!(column_sort("price:desc,price:asc", &cols).as_deref(), Some("price DESC"), "a column once");
+        assert_eq!(column_sort("price:sideways", &cols).as_deref(), Some("price ASC"), "anything but desc is upwards");
+        assert_eq!(column_sort("id; DROP TABLE products:desc,card:desc", &cols).as_deref(), Some("title COLLATE NOCASE DESC"), "unknown columns are skipped");
+        assert!(column_sort("", &cols).is_none() && column_sort("price-desc", &cols).is_none() && column_sort("newest", &cols).is_none());
+        assert_eq!(clean_column_sort(" price:DESC , card:up, tags:desc", &CARD_SORT_COLUMNS), "price:desc,card:asc");
+        assert_eq!(clean_column_sort("price:desc,price:asc", &CARD_SORT_COLUMNS), "price:desc");
+        assert_eq!(clean_column_sort("\"><script>:desc,newest", &CARD_SORT_COLUMNS), "", "nothing but the table's own columns comes back");
+        // Every name the page may send has its SQL.
+        for k in CARD_SORT_COLUMNS {
+            assert!(column_sort(&format!("{k}:asc"), &card_columns().iter().map(|(k, v)| (*k, v.as_str())).collect::<Vec<_>>()).is_some(), "{k}");
+        }
+
+        // And on the cards themselves.
+        let c = Connection::open_in_memory().unwrap();
+        register_set_code(&c).unwrap();
+        c.execute_batch(SCHEMA).unwrap();
+        migrate(&c).unwrap();
+        let rows = [(1, "Eevee", "Near Mint", 50.0, "", ""), (2, "Abra", "Lightly Played", 50.0, "from a booster", "psychic"), (3, "Zubat", "Damaged", 5.0, "", "bat"), (4, "Mew", "Near Mint", 900.0, "the grail", "")];
+        for (id, title, variant, price, body, tags) in rows {
+            c.execute(
+                "INSERT INTO products(id,handle,title,variant,price,body,tags,created_at) VALUES(?1,?2,?2,?3,?4,?5,?6,'2026-01-01T00:00:00')",
+                rusqlite::params![id, title, variant, price, body, tags],
+            )
+            .unwrap();
+        }
+        duplicate(&c, 3).unwrap().unwrap(); // two copies of Zubat
+        let by = |sort: &str| list(&c, &Query { sort: sort.into(), ..Default::default() }).unwrap().0.iter().map(|p| p.title.chars().next().unwrap()).collect::<String>();
+        assert_eq!(by("price:desc,card:asc"), "MAEZ", "dearest first; the two at 50 by name");
+        assert_eq!(by("price:asc,card:desc"), "ZEAM");
+        assert_eq!(by("cond:asc,price:desc"), "MEAZ", "best condition first, not by the alphabet; the Near Mints by price");
+        assert_eq!(by("cond:desc"), "ZAEM");
+        assert_eq!(by("copies:desc,card:asc"), "ZAEM", "the card with two copies first");
+        assert_eq!(by("desc:asc"), "AMEZ", "cards with no description go last");
+        assert_eq!(by("desc:desc"), "MAEZ", "either way");
+        assert_eq!(by("tags:asc,card:asc"), "ZAEM");
+        assert_eq!(by("nonsense:asc"), by(""), "an unknown column leaves the owner's order");
+        assert_eq!(list(&c, &Query { sort: "price:desc".into(), ..Default::default() }).unwrap().1, 4, "sorting never changes how many cards there are");
     }
 
     /// Different cards that share a rarity must never count as copies of each other.

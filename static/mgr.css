@@ -207,6 +207,22 @@ a.kpi:hover { background: var(--surface-2); text-decoration: none; }
 .mgr-thead { position: sticky; top: 0; z-index: 3; align-items: center; min-height: 40px; border-bottom: 1px solid var(--mgr-line); background: var(--mgr-head); color: var(--muted); font: 600 .75rem/1.2 var(--font); }
 .mgr-thead span { padding: 0 8px; white-space: nowrap; }
 .mgr-thead .num { text-align: right; }
+/* A column's name sorts by it, and the line at its right edge drags to change its width (mgr-table.js). */
+.mgr-thead [data-col] { position: relative; display: flex; align-items: center; gap: 4px; align-self: stretch; min-width: 0; cursor: pointer; -webkit-user-select: none; user-select: none; }
+.mgr-thead [data-col].num { justify-content: flex-end; }
+.mgr-thead [data-col]:hover, .mgr-thead [data-col]:focus-visible { color: var(--text); }
+.mgr-thead [data-col]:focus-visible { outline: 2px solid var(--gold); outline-offset: -2px; }
+.mgr-thead [data-col][data-dir] { color: var(--gold-hi); }
+.mgr-thead [data-col][data-dir]::after { content: "\25B2"; order: 2; font-size: .5625rem; }
+.mgr-thead [data-col][data-dir="desc"]::after { content: "\25BC"; }
+.mgr-ord { order: 3; display: inline-grid; place-items: center; width: 15px; height: 15px; border-radius: 50%; background: var(--gold); color: var(--gold-ink); font: 800 .625rem/1 var(--font); font-style: normal; }
+.mgr-rz { position: absolute; z-index: 4; top: 0; bottom: 0; right: -6px; width: 12px; cursor: col-resize; touch-action: none; }
+.mgr-rz::after { content: ""; position: absolute; left: 5px; top: 28%; bottom: 28%; width: 2px; border-radius: 1px; background: var(--line-2); }
+.mgr-rz:hover::after, .mgr-rz.on::after { top: 0; bottom: 0; background: var(--gold); }
+.mgr-resizing, .mgr-resizing * { cursor: col-resize !important; -webkit-user-select: none; user-select: none; }
+.mgr-sortline { margin: 0; color: var(--muted); font-size: .8125rem; }
+.mgr-sortline b { color: var(--text); }
+.mgr-sortline .linkbtn { font-size: .8125rem; }
 .rows.mc-grid { margin: 0; padding: 0; list-style: none; }
 .rows.mc-grid > li { --bg: var(--mgr-row); position: relative; align-items: center; grid-template-rows: auto auto; min-height: 68px; padding: 6px 0; border-top: 1px solid var(--mgr-line); background: var(--bg); }
 .rows.mc-grid > li:first-child { border-top: 0; }
@@ -232,7 +248,7 @@ a.kpi:hover { background: var(--surface-2); text-decoration: none; }
 .ct-pricebox span { position: absolute; left: 9px; top: 50%; translate: 0 -50%; color: var(--muted); font-weight: 700; pointer-events: none; }
 .ct-pricebox { justify-self: stretch; }
 .ct-pricebox input { width: 100%; min-height: 36px; padding: 4px 8px 4px 24px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
-.ct-srp, .st-sug { grid-row: 2 !important; align-self: start; margin-top: 2px !important; color: var(--muted); font-size: .6875rem; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ct-srp, .st-sug { grid-row: 2 !important; align-self: start; margin-top: 2px !important; color: var(--muted); font-size: .6875rem; line-height: 1.3; overflow-wrap: anywhere; }
 .ct-srp:empty, .st-sug:empty { display: none; }
 .ct-srp button, .st-sug button, .use-chip, .mc-use-chip { padding: 0; border: 0; background: none; color: var(--gold); font: inherit; font-weight: 700; }
 .rows.mc-grid select, .rows.mc-grid textarea { width: auto; justify-self: stretch; min-height: 36px; padding: 4px 8px; font-size: .8125rem; }
@@ -267,7 +283,7 @@ li:hover > .ct-photo, .ct-photo:focus-within { opacity: 1; }
 .mc-empty { display: grid; justify-items: center; gap: 12px; padding: 40px 16px; color: var(--muted); }
 /* the admin's cards */
 .mc > #rows-wrap, #rows-wrap { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
-#cardsRoot { --cols: 36px 44px 56px minmax(230px, 1.5fr) 132px 176px 112px minmax(220px, 1.2fr) minmax(180px, 1fr) 88px; --minw: 1340px; }
+#cardsRoot { --cols: 36px 44px 56px minmax(230px, 1.5fr) 172px 176px 112px minmax(220px, 1.2fr) minmax(180px, 1fr) 88px; --minw: 1380px; }
 #cardsRoot .ct-grip { grid-column: 1; left: 0; }
 #cardsRoot .ct-chk { grid-column: 2; left: 36px; }
 #cardsRoot .ct-img, #cardsRoot .ct-photo { grid-column: 3; left: 80px; }
@@ -279,7 +295,7 @@ li:hover > .ct-photo, .ct-photo:focus-within { opacity: 1; }
 #cardsRoot .ct-tags { grid-column: 9; }
 #cardsRoot .ct-edit { grid-column: 10; }
 /* a seller's listings */
-#listings { --cols: 44px 64px 56px minmax(230px, 1.5fr) 124px 128px 128px 236px 170px 156px minmax(200px, 1fr); --minw: 1620px; }
+#listings { --cols: 44px 64px 56px minmax(230px, 1.5fr) 124px 188px 128px 236px 170px 156px minmax(200px, 1fr); --minw: 1680px; }
 #listings .ct-chk { grid-column: 1; left: 0; }
 #listings .ls-stock { grid-column: 2; left: 44px; align-self: stretch; margin: -6px 0 !important; }
 #listings .ct-img { grid-column: 3; left: 108px; }
@@ -364,7 +380,7 @@ body:has(.selbar:not([hidden])) .toast { bottom: calc(84px + var(--sab)); }
 @media (max-width: 699px) {
   /* A phone has no room for a table: each row folds into a card with the same pieces, in the same order. */
   .mgr-scroll { overflow: visible; background: none; box-shadow: none; }
-  .mgr-thead { display: none; }
+  .mgr-thead, .mgr-sortline { display: none; }
   .rows.mc-grid { display: flex; flex-direction: column; gap: 8px; }
   .rows.mc-grid > li, .rows.mc-grid > li:first-child { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; min-height: 0; padding: 12px; border: 0; border-radius: var(--r); box-shadow: inset 0 0 0 1px var(--mgr-line); }
   .rows.mc-grid > li.sel, .rows.mc-grid > li:has(.ct-chk input:checked) { box-shadow: inset 0 0 0 2px var(--gold); }
