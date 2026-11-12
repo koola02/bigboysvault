@@ -38,7 +38,7 @@
 {% endif %}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@50..150,100..900&display=swap">
-{% if crate::look::is_new() %}<link rel="stylesheet" href="/static/fb.css?v=14">
+{% if crate::look::is_new() %}<link rel="stylesheet" href="/static/fb.css?v=15">
 {% else %}<link rel="stylesheet" href="/static/app.css?v=53">
 <link rel="stylesheet" href="/static/modern.css?v=27">
 <link rel="stylesheet" href="/static/vault.css?v=64">
@@ -87,12 +87,12 @@
 <script src="/static/vault-talk.js?v=9" defer></script>
 <script src="/static/dm.js?v=5" defer></script>
 <script src="/static/card-cam.js?v=3" defer></script>
-<script src="/static/vault-staff.js?v=5" defer></script>
+<script src="/static/vault-staff.js?v=6" defer></script>
 {% if !crate::look::is_new() %}<script type="module" src="/static/vault-gl.js?v=4"></script>{% endif %}
 </head>
 <body data-layout="{% block layout %}page{% endblock %}">
 <a class="skip" href="#main">Skip to content</a>
-<script>try { if (localStorage.getItem('bbv:staff-hide')) document.documentElement.setAttribute('data-staff-hide', ''); } catch (_) {}</script>
+{% if !crate::look::is_new() %}<script>try { if (localStorage.getItem('bbv:staff-hide')) document.documentElement.setAttribute('data-staff-hide', ''); } catch (_) {}</script>{% endif %}
 <script>(function () { try { // Signed in last time? Say so before the top bar paints, so "Log in" never flashes. Saved by vault-core.js as { me, admin }.
   var s = JSON.parse(localStorage.getItem('bbv:me') || 'null'); if (!s) return;
   var me = s.me || (s.name ? s : null), d = document.documentElement.dataset;

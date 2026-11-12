@@ -8,9 +8,11 @@
     <div><h1 class="h1">{{ nav.brand }}</h1><p>{% if tagline.is_empty() %}Pokémon cards and collectibles in one vault. Browse, ask, message a seller, and trade with trainers you can trust.{% else %}{{ tagline }}{% endif %}</p>
     <div class="lg-row"><a class="btn" href="/join">Join free</a><a class="btn ghost" href="/login">Log in</a><a class="btn ghost" href="/all">Browse the vault</a></div></div>
   </section>
-  {% if !stories.is_empty() %}<section class="stories" aria-label="The showcase">
+  {# The showcase: the admin's hand-picked cards. With no cards the row is there for admins only, to pick some. #}
+  <section class="stories" aria-label="The showcase"{% if stories.is_empty() %} data-full-only{% endif %}>
     {% for s in stories %}<a class="story" href="{{ s.url }}"><img src="{{ s.img }}" {% if loop.index > 5 %}loading="lazy" {% endif %}decoding="async" alt=""><span class="av sm"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span><b>{{ s.title }}</b></a>{% endfor %}
-  </section>{% endif %}
+    <a class="story add edit" href="/admin/showcase" data-full-only><span class="plus" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/></svg></span><b>{% if stories.is_empty() %}Pick showcase cards{% else %}Edit showcase{% endif %}</b></a>
+  </section>
   <section class="box composer" data-me-only>
     <div class="composer-top"><span class="av" data-my-face></span><button type="button" class="composer-ask" data-compose>What did you pull today?</button></div>
     <div class="composer-acts">

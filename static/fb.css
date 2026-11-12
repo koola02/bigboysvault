@@ -295,6 +295,9 @@ html[data-look="fb"] .dm-mini { margin-left: auto; }
 .story.add::after { display: none; }
 .story.add .plus { position: absolute; z-index: 1; left: 50%; top: 68%; translate: -50% -50%; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--brass); color: var(--gold-ink); font: 700 1.5rem/1 var(--font); box-shadow: 0 0 0 4px var(--surface); }
 .story.add b { text-align: center; color: var(--text); }
+/* The admin's own tile at the end of the showcase: it opens the Showcase tool. */
+.story.edit .plus { top: 42%; }
+.story.edit .plus svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 @media (max-width: 699px) { .stories { padding-inline: 12px; } .story { flex-basis: 104px; } }
 .composer { display: flex; flex-direction: column; }
 .composer-top { display: flex; align-items: center; gap: 8px; padding: 12px 16px; }

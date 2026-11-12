@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Showcase · Admin{% endblock %}
+{% block head %}{% include "mgr_head.html" %}{% endblock %}
+{% block layout %}wide{% endblock %}
+{% block content %}
+<section class="wrap admin shw" id="shw" data-max="{{ max }}">
+  {% include "admin_tabs.html" %}
+  <p class="mc-how">The showcase is the row of cards at the very top of the home page. Pick up to {{ max }} cards and put them in the order you want. It saves by itself.</p>
+
+  <article class="dash-panel shw-prev">
+    <h2 class="dash-h">On the home page <small id="shwState" role="status" aria-live="polite"></small></h2>
+    <div class="stories" id="shwPrev" aria-label="How the showcase looks on the home page"></div>
+    <p class="dash-sub" id="shwPrevNone" hidden>Nothing to show yet. Pick a card below and it appears here, and at the top of the home page.</p>
+  </article>
+
+  <div class="shw-grid">
+    <article class="dash-panel">
+      <h2 class="dash-h">In the showcase <span class="bd-n" id="shwN">{{ cards.len() }}</span></h2>
+      <p class="dash-sub">The first card comes first. <b>Drag</b> a card to move it, or use the arrows under it. <b>×</b> takes it out.</p>
+      <ul class="shw-list" id="shwList">
+        {% for c in cards %}<li class="shw-c" data-id="{{ c.id }}" data-title="{{ c.title }}" data-image="{{ c.img }}" data-price="{{ c.price }}" data-off="{{ c.off }}"></li>{% endfor %}
+      </ul>
+      <p class="shw-none" id="shwNone"{% if !cards.is_empty() %} hidden{% endif %}>No cards in the showcase yet. Tap a card under “Add cards” to put it here.</p>
+    </article>
+    <article class="dash-panel">
+      <h2 class="dash-h">Add cards</h2>
+      <input type="search" id="shwQ" placeholder="Search your cards by name or number" aria-label="Search your cards" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
+      <p class="dash-sub" id="shwFound" role="status" aria-live="polite">Your most valuable cards first. Type a name or number to find any card.</p>
+      <div class="shw-results" id="shwResults"></div>
+    </article>
+  </div>
+</section>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="/static/admin-ui.js?v=10" defer></script>
+<script src="/static/dragsort.js?v=5" defer></script>
+<script src="/static/showcase.js?v=1" defer></script>
+{% endblock %}

@@ -208,6 +208,42 @@ pub fn delete_block(c: &Connection, id: i64) -> rusqlite::Result<()> {
     Ok(())
 }
 
+/// How many cards the showcase holds.
+pub const SHOWCASE_MAX: usize = 24;
+
+/// The showcase: the hand-picked cards at the top of the home page. The one that is shown, else the first there is.
+pub fn showcase(c: &Connection) -> rusqlite::Result<Option<Block>> {
+    let all = blocks(c)?;
+    Ok(all.iter().find(|b| b.kind == "showcase" && b.visible).or_else(|| all.iter().find(|b| b.kind == "showcase")).cloned())
+}
+
+/// The showcase's cards, in the owner's order.
+pub fn showcase_ids(c: &Connection) -> rusqlite::Result<Vec<i64>> {
+    Ok(showcase(c)?.map(|b| b.data["ids"].as_array().cloned().unwrap_or_default().iter().filter_map(Value::as_i64).collect()).unwrap_or_default())
+}
+
+/// Sets the showcase's cards, in this order: no card twice, at most `SHOWCASE_MAX`. The section is made if there is
+/// none and switched on if it was hidden, so what the owner just picked is what visitors see. Its title stays.
+pub fn set_showcase(c: &Connection, ids: &[i64]) -> rusqlite::Result<Vec<i64>> {
+    let mut keep: Vec<i64> = vec![];
+    for id in ids {
+        if keep.len() < SHOWCASE_MAX && !keep.contains(id) {
+            keep.push(*id);
+        }
+    }
+    let (id, mut data) = match showcase(c)? {
+        Some(b) => (b.id, b.data),
+        None => {
+            let d = default_data("showcase");
+            (add_block_at(c, "showcase", &d, None)?, d)
+        }
+    };
+    data["ids"] = json!(keep);
+    save_block(c, id, &data)?;
+    set_visible(c, id, true)?;
+    Ok(keep)
+}
+
 pub fn setting(c: &Connection, key: &str) -> rusqlite::Result<Option<String>> {
     c.query_row("SELECT value FROM settings WHERE key=?1", [key], |r| r.get(0)).optional()
 }
@@ -223,4 +259,62 @@ pub fn set_setting(c: &Connection, key: &str, value: &str) -> rusqlite::Result<(
 pub fn set_product_image(c: &Connection, id: i64, image: Option<&str>) -> rusqlite::Result<()> {
     c.execute("UPDATE products SET image=?2 WHERE id=?1", rusqlite::params![id, image.unwrap_or("")])?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn fresh() -> Connection {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch(SCHEMA).unwrap();
+        c
+    }
+
+    #[test]
+    fn the_showcase_keeps_the_owners_order_and_is_made_when_missing() {
+        let c = fresh();
+        assert!(showcase(&c).unwrap().is_none());
+        assert!(showcase_ids(&c).unwrap().is_empty());
+        // No section yet: picking cards makes one, shown.
+        assert_eq!(set_showcase(&c, &[7, 3, 7, 9]).unwrap(), vec![7, 3, 9], "a card is in the showcase once");
+        let b = showcase(&c).unwrap().unwrap();
+        assert!(b.visible);
+        assert_eq!(showcase_ids(&c).unwrap(), vec![7, 3, 9]);
+        // The same section is used again, and its title is left alone.
+        let mut d = b.data.clone();
+        d["title"] = json!("Best of the vault");
+        save_block(&c, b.id, &d).unwrap();
+        set_showcase(&c, &[9, 7]).unwrap();
+        let again = showcase(&c).unwrap().unwrap();
+        assert_eq!(again.id, b.id);
+        assert_eq!(again.data["title"], "Best of the vault");
+        assert_eq!(showcase_ids(&c).unwrap(), vec![9, 7]);
+        assert_eq!(blocks(&c).unwrap().iter().filter(|x| x.kind == "showcase").count(), 1);
+    }
+
+    #[test]
+    fn a_hidden_showcase_comes_back_when_cards_are_picked_and_holds_no_more_than_its_limit() {
+        let c = fresh();
+        set_showcase(&c, &[1]).unwrap();
+        let id = showcase(&c).unwrap().unwrap().id;
+        set_visible(&c, id, false).unwrap();
+        assert!(!showcase(&c).unwrap().unwrap().visible, "a hidden showcase is still the showcase");
+        let many: Vec<i64> = (1..=40).collect();
+        assert_eq!(set_showcase(&c, &many).unwrap().len(), SHOWCASE_MAX);
+        assert!(showcase(&c).unwrap().unwrap().visible);
+        // Emptying it is allowed: the row at the top simply goes away.
+        assert!(set_showcase(&c, &[]).unwrap().is_empty());
+        assert!(showcase_ids(&c).unwrap().is_empty());
+    }
+
+    #[test]
+    fn the_shown_showcase_wins_over_a_hidden_one() {
+        let c = fresh();
+        let hidden = add_block_at(&c, "showcase", &json!({ "title": "Old", "ids": [1] }), None).unwrap();
+        set_visible(&c, hidden, false).unwrap();
+        let shown = add_block_at(&c, "showcase", &json!({ "title": "New", "ids": [2, 3] }), None).unwrap();
+        assert_eq!(showcase(&c).unwrap().unwrap().id, shown);
+        assert_eq!(showcase_ids(&c).unwrap(), vec![2, 3]);
+    }
 }

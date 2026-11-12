@@ -63,7 +63,8 @@
   function paint() {
     if (!who) return;
     const c = context();
-    btn.hidden = !c; hide.hidden = !c;
+    // The new look has no switch to hide the admin buttons, so it has no eye to hide them with either.
+    btn.hidden = !c; hide.hidden = !c || document.documentElement.dataset.look === 'fb';
     if (!c) { off.hidden = true; return; }
     btn.href = c.href; word.textContent = c.text;
     off.hidden = !c.mcard; off.dataset.id = c.mcard || '';

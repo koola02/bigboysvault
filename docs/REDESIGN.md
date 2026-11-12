@@ -231,9 +231,14 @@ As of 12 November 2026, behind the new-look switch:
 - **Live, the Manager:** the admin's Vault Manager and a seller's Store Manager, laid out the way an ads manager is:
   a tools rail at the left, a title bar, Overview with the numbers first, Cards and Listings as tables you edit in
   place (a switch on every listing, tools for many rows at once), Add cards, Add by set, Binders, Orders, Trainers,
-  Sellers, Store settings, and the card form both as a page and as a window over the table. A buyer's My orders and a
+  Showcase, Sellers, Store settings, and the card form both as a page and as a window over the table. A buyer's My orders and a
   moderator's Trainers page use the same title bar without the rail. The styles are `static/mgr.css`, loaded only
   on those pages (each template asks for it through `{% block head %}` and `mgr_head.html`).
+- **Live, the showcase tool:** `/admin/showcase` in the Manager's rail picks the showcase's cards, takes them out and
+  puts them in order (drag or arrows), saving by itself (`POST /admin/showcase {ids}`, `blocks::set_showcase`). The
+  page shows the strip as the home page draws it. Admins also get an "Edit showcase" tile at the end of the row on the
+  home page. The stories row reads one section only: `blocks::showcase` (the shown one, else the first).
+- **The new look is on for everyone** (the owner switched `site_look` to `new` on 12 November 2026).
 - **Next:** stories viewer and trainers' stories, follow, share to feed, the feed editor (until then "Home page" in
   the Manager opens today's home page editor, in today's look, because that is the page visitors still see);
   My trainer (`/me`); then the switch-over.
@@ -245,7 +250,9 @@ window with More like this; everyone can message everyone (30 new conversations 
 staff); the admin's and the seller's dashboards should feel like home, the way an ads manager does; the header's
 five places carry their words and are as wide as the feed (on a three-column screen they sit exactly over the feed's
 column; on smaller screens they fill what is left between the search and the buttons, with the word under the icon
-below 1280px; phones keep the worded tabs at the bottom).
+below 1280px; phones keep the worded tabs at the bottom); the showcase is edited from the Manager's sidebar; the
+new look has no "Show admin buttons" switch (admin buttons are simply there for admins, and a device that hid them in
+today's look shows them in the new one).
 
 The search suggestions (suggest.js) open in the browser's top layer where they can, so no page box places them:
 `fb.css` attaches the list to its search box with anchor positioning, as `modern.css` does for today's look. Without

@@ -405,16 +405,18 @@ fn build(c: &rusqlite::Connection, nav: &Chrome, viewer: i64, at: Cursor) -> rus
 /// owner's order. (Binders and the home page's other rows have their own places; they are not stories.)
 fn stories(c: &rusqlite::Connection) -> rusqlite::Result<Vec<Story>> {
     let mut out: Vec<Story> = vec![];
-    for b in blocks::blocks(c)?.iter().filter(|b| b.visible && b.kind == "showcase") {
-        for id in b.data["ids"].as_array().cloned().unwrap_or_default().iter().filter_map(Value::as_i64) {
-            let Some(p) = db::product_by_id(c, id)?.filter(|p| p.available && p.has_image()) else { continue };
-            let url = format!("/products/{}", p.handle);
-            if !out.iter().any(|s| s.url == url) {
-                out.push(Story { title: p.short_title(), img: p.img(360), url });
-            }
+    // One section is the showcase (the admin's Showcase tool edits the same one), and only while it is switched on.
+    if !blocks::showcase(c)?.is_some_and(|b| b.visible) {
+        return Ok(out);
+    }
+    for id in blocks::showcase_ids(c)? {
+        let Some(p) = db::product_by_id(c, id)?.filter(|p| p.available && p.has_image()) else { continue };
+        let url = format!("/products/{}", p.handle);
+        if !out.iter().any(|s| s.url == url) {
+            out.push(Story { title: p.short_title(), img: p.img(360), url });
         }
     }
-    out.truncate(24);
+    out.truncate(blocks::SHOWCASE_MAX);
     Ok(out)
 }
 

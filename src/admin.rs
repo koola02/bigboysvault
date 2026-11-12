@@ -1558,6 +1558,76 @@ pub async fn bulk(State(app): State<App>, h: HeaderMap, Json(req): Json<BulkReq>
     Ok(ok_json(json!({ "ok": true, "n": n, "skipped": skipped, "undo": undo })))
 }
 
+// ---------- the showcase: the hand-picked cards at the top of the home page ----------
+/// A card on the Showcase page.
+struct ShowCard {
+    id: i64,
+    title: String,
+    img: String,
+    price: String,
+    /// Why visitors don't see it for now, or empty when they do.
+    off: &'static str,
+}
+
+fn show_card(p: &Product) -> ShowCard {
+    let off = if !p.has_image() {
+        "No photo yet, so it isn't shown"
+    } else if !p.available {
+        "Out of stock, so it isn't shown"
+    } else {
+        ""
+    };
+    ShowCard { id: p.id, title: p.short_title(), img: p.img(360), price: p.price_text(), off }
+}
+
+fn show_cards(c: &rusqlite::Connection, ids: &[i64]) -> Vec<ShowCard> {
+    ids.iter().filter_map(|id| db::product_by_id(c, *id).ok().flatten()).map(|p| show_card(&p)).collect()
+}
+
+#[derive(Template)]
+#[template(path = "admin_showcase.html")]
+struct ShowcasePage {
+    nav: Chrome,
+    tab: &'static str,
+    cards: Vec<ShowCard>,
+    max: usize,
+}
+
+/// GET /admin/showcase: pick the showcase's cards, take them out, put them in order.
+pub async fn showcase_page(State(app): State<App>, h: HeaderMap) -> Res {
+    if !authed(&app, &h) {
+        return login_page(&app, false).await;
+    }
+    // Today's look changes the showcase on the home page itself.
+    if !crate::look::is_new() {
+        return Ok(Redirect::to("/admin/page").into_response());
+    }
+    let (nav, cards) = with_db(&app, |c| Ok((chrome(c)?, show_cards(c, &blocks::showcase_ids(c)?)))).await?;
+    rd(ShowcasePage { nav, tab: "showcase", cards, max: blocks::SHOWCASE_MAX })
+}
+
+#[derive(Deserialize)]
+pub struct ShowcaseReq {
+    ids: Vec<i64>,
+}
+
+/// POST /admin/showcase {ids}: the showcase's cards, in this order. Answers with the cards as they now stand.
+pub async fn showcase_save(State(app): State<App>, h: HeaderMap, Json(req): Json<ShowcaseReq>) -> Res {
+    if !authed(&app, &h) {
+        return Ok(deny(&h));
+    }
+    let cards = with_db(&app, move |c| {
+        // Only cards that are in the vault can be shown off.
+        let ids: Vec<i64> = req.ids.iter().copied().filter(|id| matches!(db::product_by_id(c, *id), Ok(Some(_)))).collect();
+        let kept = blocks::set_showcase(c, &ids)?;
+        Ok(show_cards(c, &kept))
+    })
+    .await?;
+    app.forget();
+    let cards: Vec<Value> = cards.iter().map(|c| json!({ "id": c.id, "title": c.title, "image": c.img, "price": c.price, "off": c.off })).collect();
+    Ok(ok_json(json!({ "ok": true, "cards": cards })))
+}
+
 // ---------- binders: name, cover, home page ----------
 #[derive(Template)]
 #[template(path = "admin_binders.html")]
