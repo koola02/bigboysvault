@@ -642,6 +642,76 @@ pub fn storefront_listings(c: &Connection, member_id: i64) -> rusqlite::Result<V
     Ok(v)
 }
 
+/// Every seller's card that can be bought right now, for The Vault page's card finder (`/vault.tsv`, after the vault's
+/// own catalogue): one `S` line per store, the stores with the most cards first, then one `M` line per listing, newest
+/// first. A card is in when it is for sale and Active, has a copy left that no open reservation holds, and hasn't passed
+/// its end date, in a store that is approved, not blocked, selling and not on vacation (the same checks as `can_sell`).
+pub fn market_lines(c: &Connection) -> rusqlite::Result<String> {
+    use std::collections::HashMap;
+    let mut st = c.prepare(&format!(
+        "SELECT {}, m.slug, m.store_name, m.name, m.avatar,
+           c.qty - COALESCE((SELECT SUM(r.qty) FROM reservations r WHERE r.card_id=c.id AND r.status IN ('Pending','Confirmed')),0)
+         FROM member_cards c JOIN members m ON m.id=c.member_id
+         WHERE c.kind='sale' AND c.status='Active' AND c.qty>0 AND (c.expires_at<=0 OR c.expires_at>=?1)
+           AND m.seller=1 AND m.profile_ok=1 AND m.blocked=0 AND m.status<>'Vacation'
+         ORDER BY c.id DESC",
+        members::CARD_COLS
+    ))?;
+    let n = members::CARD_N;
+    let rows = st.query_map([now()], |r| {
+        let (slug, store_name, name, avatar): (String, String, String, String) = (r.get(n)?, r.get(n + 1)?, r.get(n + 2)?, r.get(n + 3)?);
+        let title = if store_name.trim().is_empty() { name } else { store_name };
+        Ok((members::map_card(r, 0)?, vault_search::Store { id: 0, slug, title, img: avatar, count: 0 }, r.get::<_, i64>(n + 4)?))
+    })?;
+    let (mut cards, mut stores): (Vec<(MemberCard, i64)>, HashMap<i64, vault_search::Store>) = (vec![], HashMap::new());
+    for row in rows {
+        let (k, mut s, left) = row?;
+        if left <= 0 {
+            continue;
+        }
+        s.id = k.member_id;
+        stores.entry(k.member_id).or_insert(s).count += 1;
+        cards.push((k, left));
+    }
+    let mut order: Vec<vault_search::Store> = stores.into_values().collect();
+    order.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase())).then(a.id.cmp(&b.id)));
+    let at: HashMap<i64, u16> = order.iter().enumerate().map(|(i, s)| (s.id, i as u16 + 1)).collect();
+    let mut out: String = order.iter().enumerate().map(|(i, s)| vault_search::store_line(i as u16 + 1, s)).collect();
+    for (k, left) in cards {
+        let key = catalogue_key(&k.card_id);
+        let label = if k.finish.trim().is_empty() { String::new() } else { crate::market::label(k.finish.trim()) };
+        let finish = vault_search::finish_group(&label, "");
+        let variant = if label.is_empty() || finish == "Normal" { k.cond.clone() } else { format!("{} · {label}", k.cond) };
+        let one_line = k.notes.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" · ");
+        let mut notes: String = one_line.chars().take(160).collect();
+        if one_line.chars().count() > 160 {
+            notes.push('…');
+        }
+        out += &vault_search::market_line(&vault_search::Card {
+            handle: String::new(),
+            title: k.title.clone(),
+            variant,
+            set: k.card_set.clone(),
+            no: k.number.clone(),
+            price: k.worth().round(),
+            img: k.image.clone(),
+            grade: if vault_search::cond_class(&k.cond) == "gr" { k.cond.clone() } else { String::new() },
+            qty: u32::try_from(left).unwrap_or(u32::MAX),
+            binders: vec![],
+            tags: String::new(),
+            sym: k.symbol(),
+            finish: finish.to_string(),
+            lang: crate::translate::language_of(&k.title, key, "").to_string(),
+            notes,
+            text: String::new(),
+            order: 0,
+            store: at.get(&k.member_id).copied().unwrap_or(0),
+            lid: k.id,
+        });
+    }
+    Ok(out)
+}
+
 /// The pictures on a binder's tile on the store page, at most `n`: its cover first (the card the seller picked,
 /// or else its first card, as the binder has always shown), then the binder's next cards on sale, in the seller's order.
 /// `listings` is what the store page already shows (`storefront_listings`), so this costs no trip to the database,
@@ -2336,6 +2406,63 @@ mod tests {
         assert_eq!(by("card:desc"), "ZMEA");
         assert_eq!(by("nonsense:desc"), by(""), "an unknown column leaves the seller's own order");
         assert!(by("price-desc").starts_with('M') && by("price-desc").ends_with('Z'), "the named orders still work");
+    }
+
+    #[test]
+    fn the_vault_page_shows_only_store_cards_that_can_be_bought_now() {
+        let c = db();
+        let (s, b, card) = seller_with_card(&c);
+        let read = || vault_search::parse_market(&market_lines(&c).unwrap());
+        let lids = || read().2.iter().map(|k| k.lid).collect::<Vec<_>>();
+        // More cards in the same store: each `set` is one way of being, or not being, for sale right now.
+        let list = |n: &str, set: &str| -> i64 {
+            let Added::Yes(id) = add_listing(&c, s, &format!("tcgdex:x-{n}"), &format!("Card {n}"), "1", "Set", "", "").unwrap() else { panic!() };
+            c.execute(&format!("UPDATE member_cards SET kind='sale', status='Active', qty=1, {set} WHERE id=?1"), [id]).unwrap();
+            id
+        };
+        let later = list("later", &format!("expires_at={}", now() + 86_400));
+        let _ended = list("ended", &format!("expires_at={}", now() - 60));
+        let _own = list("own", "kind='own'");
+        let _wish = list("wish", "kind='wish'");
+        let _out = list("out", "status='Out of stock'");
+        let _hidden = list("hidden", "status='Hidden'");
+        let _none = list("none", "qty=0");
+        let photo = list("photo", "card_id='own:photo-1', value_own=250");
+        let unpriced = list("unpriced", "value=0, value_own=0, finish='reverseHolofoil', cond='PSA 10'");
+        assert_eq!(lids(), vec![unpriced, photo, later, card], "newest first; ended, not for sale, out of stock, hidden and sold out are left out");
+        let (_, stores, cards) = read();
+        assert_eq!(stores.iter().map(|x| (x.id, x.title.as_str(), x.slug.as_str(), x.count)).collect::<Vec<_>>(), vec![(s, "Shop", "shop", 4)], "a store goes by its address");
+        assert!(cards.iter().all(|k| k.store == 1));
+        let k = |id: i64| cards.iter().find(|x| x.lid == id).unwrap().clone();
+        assert_eq!((k(card).qty, k(card).price > 0.0, k(card).title.as_str()), (2, true, "Pikachu - 058/102 - Base Set"));
+        assert_eq!(k(photo).price, 250.0, "an own photo for sale is in, at the seller's price");
+        let u = k(unpriced);
+        assert_eq!((u.price, u.grade.as_str(), u.finish.as_str(), u.variant.as_str()), (0.0, "PSA 10", "Reverse Holo", "PSA 10 · Reverse Holo"), "no price yet: the finder asks for one");
+        // Copies held by open reservations aren't for sale; with every copy held the card is Reserved and leaves the page.
+        reserve(&c, b, s, card, 1, "").unwrap().unwrap();
+        assert_eq!(k(card).qty, 2, "the earlier read");
+        assert_eq!(read().2.iter().find(|x| x.lid == card).unwrap().qty, 1, "one copy left after the reservation");
+        let b2 = create(&c, "Buyer Two", "h").unwrap().unwrap();
+        reserve(&c, b2, s, card, 1, "").unwrap().unwrap();
+        assert!(!lids().contains(&card), "every copy is spoken for");
+        // A second store, then each way a store isn't open for business.
+        let m = create(&c, "Misty", "h").unwrap().unwrap();
+        members::set_seller(&c, m, true).unwrap();
+        members::set_profile_ok(&c, m, true).unwrap();
+        c.execute("UPDATE members SET store_name='Cerulean Gym', slug='cerulean' WHERE id=?1", [m]).unwrap();
+        let Added::Yes(gym) = add_listing(&c, m, "tcgdex:x-gym", "Staryu", "1", "Set", "", "").unwrap() else { panic!() };
+        let (_, stores, _) = read();
+        assert_eq!(stores.iter().map(|x| x.title.as_str()).collect::<Vec<_>>(), vec!["Shop", "Cerulean Gym"], "the store with the most cards first");
+        for (shut, open) in [("status='Vacation'", "status='Active'"), ("blocked=1", "blocked=0"), ("profile_ok=0", "profile_ok=1"), ("seller=0", "seller=1")] {
+            c.execute(&format!("UPDATE members SET {shut} WHERE id=?1"), [s]).unwrap();
+            let (_, stores, cards) = read();
+            assert_eq!(stores.iter().map(|x| x.id).collect::<Vec<_>>(), vec![m], "{shut}: the store is left out");
+            assert_eq!(cards.iter().map(|x| x.lid).collect::<Vec<_>>(), vec![gym], "{shut}: and so are its cards");
+            c.execute(&format!("UPDATE members SET {open} WHERE id=?1"), [s]).unwrap();
+        }
+        assert_eq!(lids(), vec![gym, unpriced, photo, later]);
+        // The vault's own catalogue reader never sees any of it.
+        assert!(vault_search::parse(&market_lines(&c).unwrap()).1.is_empty());
     }
 
     #[test]

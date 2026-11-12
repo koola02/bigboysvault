@@ -1,4 +1,4 @@
-//! Read-only data for the card finder (`/cards.tsv`) and for AI assistants using the site through WebMCP (`/api/*`).
+//! Read-only data for the card finder (`/cards.tsv`, and `/vault.tsv` with the stores' cards) and for AI assistants using the site through WebMCP (`/api/*`).
 //! Everything here is public information that the pages already show. Nothing here can change anything.
 use crate::{admin, unix_now, with_db, App, Res};
 use axum::{
@@ -154,6 +154,30 @@ pub async fn cards_file(State(app): State<App>, headers: HeaderMap) -> Res {
     }
     // Browsers revalidate every time (the ETag makes that a cheap 304); the CDN keeps it for half a minute.
     Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8".to_string()), (header::CACHE_CONTROL, "public, max-age=0, s-maxage=30, stale-while-revalidate=120".to_string()), (header::ETAG, tag)], (*body).clone()).into_response())
+}
+
+/// The Vault page's file for the card finder: the vault's catalogue (`/cards.tsv`, unchanged) and then every seller's card
+/// that can be bought now (`sellers::market_lines`). Kept with its ETag on the first line, so a visitor's revalidation
+/// is answered without reading the whole file again. Any change empties the cache, the sellers' changes included.
+pub async fn vault_file(State(app): State<App>, headers: HeaderMap) -> Res {
+    const KEY: &str = "vault.tsv";
+    let kept = match app.cache.get(KEY) {
+        Some(hit) => hit,
+        None => {
+            let since = app.change_count();
+            let vault = catalogue(&app).await?;
+            let stores = with_db(&app, marcuru_rs::sellers::market_lines).await?;
+            let body = format!("{vault}{stores}");
+            let kept = Arc::new(format!("{}\n{body}", fingerprint(&body)));
+            app.keep(KEY.to_string(), kept.clone(), since);
+            kept
+        }
+    };
+    let (tag, body) = kept.split_once('\n').unwrap_or(("", &kept));
+    if headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()) == Some(tag) {
+        return Ok((StatusCode::NOT_MODIFIED, [(header::ETAG, tag.to_string())]).into_response());
+    }
+    Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8".to_string()), (header::CACHE_CONTROL, "public, max-age=0, s-maxage=30, stale-while-revalidate=120".to_string()), (header::ETAG, tag.to_string())], body.to_string()).into_response())
 }
 
 #[derive(Deserialize)]

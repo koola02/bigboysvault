@@ -8,7 +8,8 @@ async function run() {
   try {
     const finder = await import(`/static/wasm/finder.js?v=${FV}`);
     await finder.default({ module_or_path: `/static/wasm/finder_bg.wasm?v=${FV}` });
-    await finder.start('finder', '/cards.tsv');
+    // The vault's cards and every store's card for sale now (/cards.tsv is the vault's alone, for the AI tools and binders).
+    await finder.start('finder', '/vault.tsv');
     // The Search tab means "I want to type": put the cursor in the box.
     if (location.pathname === '/search' && !location.search) document.querySelector('form.search input')?.focus({ preventScroll: true });
   } catch (e) {

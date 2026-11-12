@@ -213,7 +213,8 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
   /* ---------- a card opens in a window over the page, with "More like this" under it ----------
      (Its own page stays for shared links, search engines and the admin's editor.) */
   let cw = null, cwStop = null, cwBase = null, cwTools = null, cwSeq = 0, cwTalk = null;
-  const cardPath = (a) => (a && a.origin === location.origin && /^\/products\/[^/]+$/.test(a.pathname) && !a.hash && !a.target ? a.pathname : '');
+  // A vault card, or a card a store has for sale (its ?part=1 is the same .detail).
+  const cardPath = (a) => (a && a.origin === location.origin && /^\/(products\/[^/]+|trainers\/\d+\/cards\/\d+)$/.test(a.pathname) && !a.hash && !a.target ? a.pathname : '');
   const cwDepth = () => (history.state && history.state.cw ? history.state.depth || 1 : 0);
   const cwClose = () => { if (cwDepth()) history.go(-cwDepth()); else cwHide(); };
   function cwBuild() {
@@ -249,7 +250,8 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     cw.setAttribute('aria-label', name); cw.querySelector('.cardwin-t').textContent = name;
     document.title = `${name} · ${cwBase.title.split(' · ').pop()}`;
     cw.querySelector('[data-cw-page]').href = href; cw.querySelector('[data-cw-page]').setAttribute('data-full-page', '');
-    cw.querySelector('[data-cw-edit]').href = `${href}#edit`;
+    // Only a vault card has an editor behind #edit: a store's card is the seller's to change.
+    const edit = cw.querySelector('[data-cw-edit]'); edit.href = `${href}#edit`; edit.hidden = !href.startsWith('/products/');
     if (detail && detail.dataset.hit && navigator.sendBeacon) navigator.sendBeacon(`/hit/${detail.dataset.hit}`);
     document.dispatchEvent(new CustomEvent('float:filled', { detail: body }));
     box.focus({ preventScroll: true });
