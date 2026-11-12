@@ -2,6 +2,7 @@
   {% if is_me && !t.profile_ok %}<p class="tr-wait">Your picture, description and binder wait for the vault owner's approval. Your vouches are already up.</p>{% endif %}
   {% if t.blocked %}<p class="tr-wait">Blocked. Only you can see this page.</p>{% endif %}
   <header class="tp-head" data-role="{{ t.role }}">
+    {% if crate::look::is_new() %}<div class="pf-cover">{% if t.has_cover() %}<img src="{{ t.cover_photo }}" alt="" decoding="async">{% endif %}</div>{% endif %}
     {% if t.has_avatar() %}<button type="button" class="tp-pic" data-zoom="{{ t.avatar }}" data-zoom-back="Back to {{ t.name }}" aria-label="See {{ t.name }}'s picture bigger"><img class="av av-xl" src="{{ t.avatar }}" width="160" height="160" alt=""></button>{% else %}<span class="av av-xl">{{ t.initial() }}</span>{% endif %}
     <div class="tp-who">
       <p class="eyebrow">Trainer</p>
@@ -16,10 +17,12 @@
         {% for lk in t.link_list() %}<a class="seller-social vouch-ext" href="{{ lk }}" target="_blank" rel="noopener">Vouch link</a>{% endfor %}
       </div>
       {% endif %}
-      {% if full && t.seller && t.cards > 0 && !t.slug.is_empty() %}<a class="btn ghost tp-store" href="{{ t.store_url() }}">Visit the store →</a>{% endif %}
-      {% if is_me %}<a class="linkbtn tp-edit" href="/me">Edit my trainer</a>{% endif %}
+      {% if crate::look::is_new() %}<div class="pf-acts">{% if !is_me %}<button type="button" class="btn dm-add" data-dm-to="{{ t.id }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg><span>Message</span></button>{% endif %}{% if full && t.seller && t.cards > 0 && !t.slug.is_empty() %}<a class="btn ghost" href="{{ t.store_url() }}">Visit the store</a>{% endif %}{% if is_me %}<a class="btn ghost" href="/me"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Edit profile</a>{% endif %}</div>
+      {% else %}{% if full && t.seller && t.cards > 0 && !t.slug.is_empty() %}<a class="btn ghost tp-store" href="{{ t.store_url() }}">Visit the store →</a>{% endif %}
+      {% if is_me %}<a class="linkbtn tp-edit" href="/me">Edit my trainer</a>{% endif %}{% endif %}
     </div>
   </header>
+  {% if crate::look::is_new() %}<nav class="fb-tabs pf-tabs" aria-label="On this page">{% if !vouches.is_empty() || is_me %}<a href="#vouches">Vouches</a>{% endif %}{% if full && !selling.is_empty() && t.seller %}<a href="#for-sale">For sale</a>{% endif %}{% if full %}<a href="#highlights">Highlights</a>{% endif %}{% if full && !wishes.is_empty() %}<a href="#wishlist">Wishlist</a>{% endif %}</nav>{% endif %}
   {% if !awards.is_empty() %}
   <ul class="tp-awards">
     {% for a in awards %}<li><span class="stars">★ +{{ a.points }}</span><span>{{ a.reason }}</span><time data-at="{{ a.created_at }}">{{ a.when() }}</time></li>{% endfor %}
@@ -37,14 +40,14 @@
   </div>
   {% endif %}
   {% if !vouches.is_empty() || is_me %}
-  <h2 class="h2 tp-binder-h">Vouches</h2>
+  <h2 class="h2 tp-binder-h" id="vouches">Vouches</h2>
   <div class="vouch-grid" data-trainer="{{ t.id }}">
     {% for v in vouches %}{% include "vouch_card.html" %}{% endfor %}
   </div>
   {% endif %}
   {% if full %}
   {% if !selling.is_empty() && t.seller %}
-  <h2 class="h2 tp-binder-h">For sale <small>{{ selling.len() }} in <a href="{{ t.store_url() }}">the store</a></small></h2>
+  <h2 class="h2 tp-binder-h" id="for-sale">For sale <small>{{ selling.len() }} in <a href="{{ t.store_url() }}">the store</a></small></h2>
   <div class="grid tp-grid">
     {% for c in selling %}
     <a class="card" href="/trainers/{{ t.id }}/cards/{{ c.id }}" data-float data-c="{{ c.cond_class() }}">
@@ -56,7 +59,7 @@
     {% endfor %}
   </div>
   {% endif %}
-  <h2 class="h2 tp-binder-h">{{ t.name }}'s highlights <small>{{ cards.len() }}</small></h2>
+  <h2 class="h2 tp-binder-h" id="highlights">{{ t.name }}'s highlights <small>{{ cards.len() }}</small></h2>
   {% if cards.is_empty() %}<p class="empty">No highlights yet.</p>{% else %}
   <div class="grid tp-grid">
     {% for c in cards %}
@@ -70,7 +73,7 @@
   </div>
   {% endif %}
   {% if !wishes.is_empty() %}
-  <h2 class="h2 tp-binder-h">Wishlist <small>{{ wishes.len() }} card{% if wishes.len() != 1 %}s{% endif %} {{ t.name }} is after</small></h2>
+  <h2 class="h2 tp-binder-h" id="wishlist">Wishlist <small>{{ wishes.len() }} card{% if wishes.len() != 1 %}s{% endif %} {{ t.name }} is after</small></h2>
   <div class="grid tp-grid tp-wish">
     {% for c in wishes %}
     <a class="card" href="/trainers/{{ t.id }}/cards/{{ c.id }}" data-float data-c="{{ c.cond_class() }}">

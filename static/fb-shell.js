@@ -44,6 +44,8 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     const me = j.member || null, admin = !!j.full;
     paint(me, admin || (!!j.admin && !me));
     root.toggleAttribute('data-full', admin);
+    // Things only their owner should see (an Edit button on your own listing, say).
+    document.querySelectorAll('[data-owner-only]').forEach((n) => { n.hidden = !(me && String(me.id) === n.dataset.ownerOnly); });
     try { if (me || admin) localStorage.setItem('bbv:me', JSON.stringify({ me, admin })); else localStorage.removeItem('bbv:me'); } catch (_) {}
   });
 
@@ -110,6 +112,36 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     try { await fetch('/api/notifications/read', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' }); count(0); list.querySelectorAll('.unread').forEach((n) => n.classList.remove('unread')); } catch (_) {}
   });
   window.bbvWho().then((j) => { if (j && j.member) load(); else if (holder) holder.hidden = true; });
+
+  /* ---------- Ask the Vault: a chat window, like a message, not a page of its own ---------- */
+  let askWin = null, askReady = null;
+  const askBox = () => (askWin || document).querySelector('[data-ask] [data-text]');
+  function askSay(q) { const box = askBox(); if (!box || !q) return; box.value = q; box.closest('form').requestSubmit(); }
+  function openAsk(q) {
+    // On Ask's own page the chat is already there.
+    if (!askWin && document.querySelector('.talk-page [data-ask]')) { askBox()?.focus(); askSay(q); return; }
+    if (!askWin) {
+      askWin = document.createElement('section'); askWin.className = 'ask-win'; askWin.setAttribute('role', 'dialog'); askWin.setAttribute('aria-label', 'Ask the Vault');
+      askWin.innerHTML = '<header class="ask-win-h"><img src="/static/img/logo-sm-144.png?v=1" width="36" height="36" alt=""><span><b>Ask the Vault</b><small>Prices, stock and ideas</small></span><button type="button" class="ibtn" data-ask-x aria-label="Close Ask the Vault">✕</button></header><div class="ask-win-b"><p class="ask-win-wait">Opening…</p></div>';
+      document.body.append(askWin);
+      askWin.querySelector('[data-ask-x]').addEventListener('click', closeAsk);
+      // The same chat the page has (the server sends just that part), started by the chat's own script.
+      askReady = fetch('/ask?part=1', { credentials: 'same-origin', headers: { Accept: 'text/html' } }).then((r) => { if (!r.ok) throw new Error(); return r.text(); })
+        .then((html) => { askWin.querySelector('.ask-win-b').innerHTML = html; document.dispatchEvent(new Event('float:filled')); })
+        .catch(() => { location.href = '/ask'; });
+    }
+    askWin.hidden = false; root.classList.add('ask-open');
+    askReady.then(() => { if (matchMedia('(pointer: fine)').matches || q) askBox()?.focus({ preventScroll: true }); askSay(q); });
+  }
+  function closeAsk() { if (!askWin) return; askWin.hidden = true; root.classList.remove('ask-open'); }
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a[href="/ask"], a[href^="/ask?"]');
+    if (!a || e.defaultPrevented || e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    e.preventDefault(); setMenu(false);
+    let q = ''; try { q = new URL(a.href, location.href).searchParams.get('q') || ''; } catch (_) {}
+    openAsk(q);
+  });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && askWin && !askWin.hidden && askWin.contains(document.activeElement)) closeAsk(); });
 
   /* ---------- a card's picture, up close (today's look does this inside its floating window) ---------- */
   document.addEventListener('click', (e) => {
