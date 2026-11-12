@@ -26,6 +26,12 @@ vault-search = { path = "crates/vault-search" }
 argon2 = "0.5"
 password-hash = { version = "0.5", features = ["getrandom"] }
 sha2 = "0.10"
+# Web Push (calls and messages that reach a phone with the site closed): RFC 8291 encryption, RFC 8292 VAPID.
+p256 = { version = "0.13", features = ["ecdh", "ecdsa"] }
+hkdf = "0.12"
+aes-gcm = "0.10"
+base64 = "0.22"
+rand_core = { version = "0.6", features = ["getrandom"] }
 
 [profile.release]
 lto = "thin"

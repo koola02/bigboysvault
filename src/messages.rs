@@ -18,6 +18,7 @@ use axum::{
 use marcuru_rs::{db, dm, members};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use rusqlite::OptionalExtension;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -77,6 +78,8 @@ pub struct DmHub {
     seq: AtomicU64,
     online: moka::sync::Cache<i64, i64>,
     calls: moka::sync::Cache<i64, Arc<Mutex<Option<Call>>>>,
+    /// How each recent call ended (answered, declined, missed, ended, superseded), for the phones it rang.
+    outcomes: moka::sync::Cache<String, &'static str>,
     waiting: tokio::sync::Semaphore,
     ice: Mutex<Option<(i64, Value)>>,
 }
@@ -89,6 +92,7 @@ impl DmHub {
             seq: AtomicU64::new(std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_micros() as u64).unwrap_or(1)),
             online: moka::sync::Cache::builder().max_capacity(20_000).time_to_live(Duration::from_secs(60)).build(),
             calls: moka::sync::Cache::builder().max_capacity(5_000).time_to_idle(Duration::from_secs(4 * 3600)).build(),
+            outcomes: moka::sync::Cache::builder().max_capacity(5_000).time_to_live(Duration::from_secs(600)).build(),
             waiting: tokio::sync::Semaphore::new(150),
             ice: Mutex::new(None),
         }
@@ -430,13 +434,16 @@ pub async fn open(State(app): State<App>, h: HeaderMap, Json(req): Json<OpenReq>
 
 /// Who to wake and tell about a new message, and the admins who watch. `quiet`: wake pages, tell nobody (a call
 /// that was answered is only written in the chat).
-async fn after_post(app: &App, t: dm::Thread, side: i64, author: i64, preview: String, quiet: bool) {
+async fn after_post(app: &App, t: dm::Thread, side: i64, author: i64, preview: String, quiet: bool, push: bool) {
     let hub = app.dm.clone();
     let now = crate::unix_now();
+    let tid = t.id;
+    let text = preview.clone();
     let r = with_db(app, move |c| {
         let admins = dm::admins(c)?;
         let other = t.other(side);
-        let sender = person(c, side, &hub, &admins)?["name"].as_str().unwrap_or("Someone").to_string();
+        let me = person(c, side, &hub, &admins)?;
+        let sender = me["name"].as_str().unwrap_or("Someone").to_string();
         let receiver = person(c, other, &hub, &admins)?["name"].as_str().unwrap_or("someone").to_string();
         let words = format!("“{preview}”");
         let link = format!("/me/messages?t={}", t.id);
@@ -459,11 +466,27 @@ async fn after_post(app: &App, t: dm::Thread, side: i64, author: i64, preview: S
         wake.extend(admins.iter().copied());
         wake.sort_unstable();
         wake.dedup();
-        Ok(wake)
+        // Who gets it on their phone too: the people it is for who turned message alerts on.
+        let mut pushed = vec![];
+        for r in &recipients {
+            let on: i64 = c.query_row("SELECT push FROM notify_prefs WHERE member_id=?1 AND event='message'", [r], |x| x.get(0)).optional()?.unwrap_or(0);
+            if on != 0 {
+                pushed.push(*r);
+            }
+        }
+        Ok((wake, pushed, sender, me["avatar"].as_str().unwrap_or("").to_string()))
     })
     .await;
-    if let Ok(wake) = r {
+    if let Ok((wake, pushed, sender, avatar)) = r {
         app.dm.bump(&wake);
+        if push && !pushed.is_empty() {
+            let short: String = text.chars().take(140).collect();
+            let msg = json!({ "type": "message", "thread": tid, "from": sender, "avatar": avatar, "text": short, "url": format!("/me/messages?t={tid}") });
+            let app = app.clone();
+            tokio::spawn(async move {
+                crate::push::to_members(&app, pushed, msg, crate::push::Opts::new(86_400, "high", Some(format!("m{tid}")))).await;
+            });
+        }
     }
 }
 
@@ -529,7 +552,7 @@ pub async fn send(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
         Ok(x) => x,
         Err(e) => return Ok(fail(StatusCode::BAD_REQUEST, e)),
     };
-    after_post(&app, t, side, m.id, preview, false).await;
+    after_post(&app, t, side, m.id, preview, false, true).await;
     Ok(ok(json!({ "ok": true, "message": list.first().map(|x| msg_json(x, side)) })))
 }
 
@@ -566,7 +589,7 @@ pub async fn photo(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, m
     })
     .await?;
     let _ = id;
-    after_post(&app, t, side, m.id, "📷 Photo".into(), false).await;
+    after_post(&app, t, side, m.id, "📷 Photo".into(), false, true).await;
     Ok(ok(json!({ "ok": true, "message": list.first().map(|x| msg_json(x, side)) })))
 }
 
@@ -617,7 +640,7 @@ pub async fn voice(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Q
         dm::messages(c, t2.id, Some(id - 1), None, 1)
     })
     .await?;
-    after_post(&app, t, side, m.id, "🎤 Voice message".into(), false).await;
+    after_post(&app, t, side, m.id, "🎤 Voice message".into(), false, true).await;
     Ok(ok(json!({ "ok": true, "message": list.first().map(|x| msg_json(x, side)) })))
 }
 
@@ -693,6 +716,14 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
     .await?;
     let Some((t, side, admins, who)) = info else { return Ok(fail(StatusCode::NOT_FOUND, "That conversation isn't yours.")) };
     let other_people: Vec<i64> = people(t.other(side), &admins).into_iter().filter(|x| *x != m.id).collect();
+    // Whether the other side has a phone or computer with alerts on, so a ring reaches it with the site closed.
+    let reach = if req.kind == "ring" {
+        let to = other_people.clone();
+        with_db(&app, move |c| crate::push::reachable(c, &to)).await.unwrap_or(false)
+    } else {
+        false
+    };
+    let mut rang: Option<String> = None;
     let now = crate::unix_now();
     let slot = app.dm.call(t.id);
     let mut log: Option<(i64, i64, String)> = None;
@@ -709,6 +740,8 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
                 both.sort_unstable();
                 both.dedup();
                 app.dm.signal(&both, json!({ "type": "ended", "thread": t.id, "call": c.id, "data": Value::Null }));
+                // A new call in the same chat takes over its phones' notification: the old one sends nothing more.
+                app.dm.outcomes.insert(c.id.clone(), "superseded");
                 *cur = None;
             }
         }
@@ -720,8 +753,11 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
                 let id = members::temp_password();
                 *cur = Some(Call { id: id.clone(), caller_side: side, caller: m.id, callee: None, answered: now });
                 app.dm.signal(&other_people, json!({ "type": "ring", "thread": t.id, "call": id, "from": who, "data": req.data }));
-                // Whether anyone is there to hear it: the caller is told, instead of left wondering.
-                json!({ "ok": true, "call": id, "online": other_people.iter().any(|x| app.dm.is_online(*x)) })
+                if reach {
+                    rang = Some(id.clone());
+                }
+                // Whether anyone is there to hear it: a page open now, or a phone with alerts on.
+                json!({ "ok": true, "call": id, "online": other_people.iter().any(|x| app.dm.is_online(*x)), "push": reach })
             }
             kind => {
                 let Some(c) = cur.clone().filter(|c| c.id == req.call) else { return Ok(ok(json!({ "ok": false, "gone": true }))) };
@@ -749,6 +785,7 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
                         let others: Vec<i64> = people(side, &admins).into_iter().filter(|x| *x != m.id).collect();
                         app.dm.signal(&others, with("taken"));
                         elsewhere(side);
+                        app.dm.outcomes.insert(c.id.clone(), "answered");
                     }
                     // The callee's page (or phone) is ringing: the caller's screen says "Ringing…".
                     "ringing" if !from_caller && c.callee.is_none() => {
@@ -761,6 +798,7 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
                     "decline" if !from_caller => {
                         app.dm.signal(&[c.caller], with("declined"));
                         elsewhere(side);
+                        app.dm.outcomes.insert(c.id.clone(), "declined");
                         *cur = None;
                         log = Some((c.caller_side, c.caller, "Missed voice call".into()));
                     }
@@ -768,6 +806,7 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
                         let mut to: Vec<i64> = if from_caller { c.callee.map(|x| vec![x]).unwrap_or_else(|| people(t.other(c.caller_side), &admins)) } else { vec![c.caller] };
                         to.retain(|x| *x != m.id);
                         app.dm.signal(&to, with("ended"));
+                        app.dm.outcomes.insert(c.id.clone(), if c.callee.is_some() { "ended" } else { "missed" });
                         *cur = None;
                         let text = match c.callee {
                             Some(_) => {
@@ -793,9 +832,84 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
         })
         .await?;
         let answered = !text.starts_with("Missed");
-        after_post(&app, t, caller_side, caller, text, answered).await;
+        // The call's own alerts (below) tell the phones about it: no second alert for its line in the chat.
+        after_post(&app, t.clone(), caller_side, caller, text, answered, false).await;
+    }
+    if let Some(id) = rang {
+        ring_phones(app.clone(), t.id, id, other_people, who);
     }
     Ok(ok(reply))
+}
+
+/// Where a call is now, for the phones it rang: ringing, answered, or how it ended.
+fn call_state(app: &App, tid: i64, id: &str) -> &'static str {
+    let slot = app.dm.call(tid);
+    let cur = match slot.lock() {
+        Ok(c) => c,
+        Err(p) => p.into_inner(),
+    };
+    match cur.as_ref() {
+        Some(c) if c.id == id && c.callee.is_some() => "answered",
+        Some(c) if c.id == id && crate::unix_now() - c.answered <= RING_SECS => "ringing",
+        Some(c) if c.id == id => "missed",
+        _ => app.dm.outcomes.get(id).unwrap_or("missed"),
+    }
+}
+
+/// How often a phone's ringing alert is shown again while the call rings (Android plays its sound each time).
+const RERING_SECS: u64 = 7;
+
+/// Rings the other side's phones and computers that have alerts on, even with the site closed: an alert now, again
+/// every few seconds while it rings, then one last one saying how it ended (missed, answered, declined), which
+/// takes the ringing alert's place.
+fn ring_phones(app: App, tid: i64, id: String, to: Vec<i64>, from: Value) {
+    tokio::spawn(async move {
+        let started = std::time::Instant::now();
+        let topic = Some(format!("call{tid}"));
+        let url = format!("/me/messages?t={tid}");
+        let ring = json!({ "type": "call", "call": id, "thread": tid, "from": from["name"], "avatar": from["avatar"], "url": url });
+        let mut next = started;
+        loop {
+            let state = call_state(&app, tid, &id);
+            let secs = started.elapsed().as_secs() as i64;
+            if state != "ringing" || secs >= RING_SECS {
+                let reason = if state == "ringing" { "missed" } else { state };
+                if reason != "superseded" {
+                    // A missed call stays news for a day; the others matter only while the ringing alert is up.
+                    let ttl = if reason == "missed" { 86_400 } else { 120 };
+                    let end = json!({ "type": "call-end", "reason": reason, "call": id, "thread": tid, "from": from["name"], "avatar": from["avatar"], "url": url });
+                    crate::push::to_members(&app, to.clone(), end, crate::push::Opts::new(ttl, "high", topic.clone())).await;
+                }
+                break;
+            }
+            if std::time::Instant::now() >= next {
+                let (app2, to2, msg) = (app.clone(), to.clone(), ring.clone());
+                let o = crate::push::Opts::new((RING_SECS - secs).max(10) as u32, "high", topic.clone());
+                tokio::spawn(async move {
+                    crate::push::to_members(&app2, to2, msg, o).await;
+                });
+                next += Duration::from_secs(RERING_SECS);
+            }
+            tokio::time::sleep(Duration::from_millis(400)).await;
+        }
+    });
+}
+
+#[derive(Deserialize)]
+pub struct CallStateQs {
+    #[serde(default)]
+    call: String,
+}
+
+/// GET /dm/{thread}/call-state?call=: whether a call still rings, asked by a phone's service worker before it rings,
+/// so an alert that arrives late never rings for a call that is over.
+pub async fn call_state_page(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Query(q): Query<CallStateQs>) -> Res {
+    let Some(m) = current(&app, &h).await? else { return Ok(signed_out()) };
+    let mine = with_db(&app, move |c| Ok(dm::thread(c, tid)?.is_some_and(|t| side_of(&t, &m).is_some()))).await?;
+    if !mine {
+        return Ok(fail(StatusCode::NOT_FOUND, "That conversation isn't yours."));
+    }
+    Ok(ok(json!({ "state": call_state(&app, tid, &q.call) })))
 }
 
 /// GET /dm/ice: how the browsers reach each other for a call. With CF_TURN_KEY_ID and CF_TURN_API_TOKEN set,

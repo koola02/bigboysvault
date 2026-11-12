@@ -924,6 +924,8 @@ pub async fn who(State(app): State<App>, h: HeaderMap) -> Res {
         "admin": p != admin::Power::Nothing,
         "full": matches!(p, admin::Power::Admin(_)),
         "member": m.map(|m| json!({ "id": m.id, "name": m.name, "locked": m.locked(), "lock_left": m.lock_left(), "avatar": m.avatar, "initial": m.initial(), "seller": m.seller, "role": m.role })),
+        // The key a browser turns alerts on with (static/alerts.js).
+        "push_key": crate::push::public_key(),
     })))
 }
 

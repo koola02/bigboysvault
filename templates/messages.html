@@ -7,6 +7,7 @@
     {% if !admin %}<button type="button" class="btn dm-new-btn" data-dm-new>New message</button>{% endif %}
     {% if admin %}<p class="dm-page-sub">Every conversation on the site. Reading here never shows as “Seen”.</p>{% endif %}
   </header>
+  {% if !admin %}<div class="alerts-card" data-alerts="page" hidden></div>{% endif %}
   <div class="dm-inbox" data-dm-inbox aria-live="polite"><p class="dm-empty">Loading…</p></div>
 </section>
 {% endblock %}

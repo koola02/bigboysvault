@@ -43,7 +43,7 @@
         {% endfor %}
       </tbody>
     </table>
-    {% if push_key.is_empty() %}<p class="me-how">Push notifications to your phone aren't switched on for this site yet.</p>{% else %}<p class="me-how"><button type="button" class="btn ghost" id="pushOn">Allow push notifications on this device</button></p>{% endif %}
+    {% if push_key.is_empty() %}<p class="me-how">Push notifications to your phone aren't switched on for this site yet.</p>{% else %}<p class="me-how">The Push column works on the phones and computers where you turn alerts on:</p><div class="alerts-card" data-alerts="settings" hidden></div>{% endif %}
   </section>
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

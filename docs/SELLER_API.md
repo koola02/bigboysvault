@@ -159,9 +159,26 @@ Settings the owner can add in the admin settings table: `seller_max_cards` (how 
 - **Email** needs `RESEND_API_KEY` and `MAIL_FROM` (like `Big Boys Vault <no-reply@bigboysvault.com>`, a domain
   verified at resend.com). Without a key, mail is logged once and dropped. Only events the trainer switched on, and
   only to a trainer who typed an email address in Store settings.
-- **Push** is behind a flag. `VAPID_PUBLIC_KEY` shows the "Allow push notifications" button and saves subscriptions
-  to `push_subscriptions`; sending them needs `VAPID_PRIVATE_KEY`, `PUSH_ENABLED=1` and a Web Push library (not yet
-  wired: TODO in `store::push_subscribe`). `static/push-sw.js` is the service worker that shows them.
+- **Push** (call and message alerts on phones and computers, even with the site closed) is `src/push.rs`: RFC 8291
+  encryption and RFC 8292 (VAPID) signing, posted straight to the browser makers' push services (an allow-list:
+  Google FCM, Mozilla, Apple, Microsoft WNS; nothing else is ever called). The site's key pair is made on the first
+  start and kept in `settings` (`vapid_private`); `VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` override it. A device turns
+  alerts on from a tap (`static/alerts.js`: the cards marked `data-alerts` on the Messages page, the inbox drop-down
+  and notification settings), which registers the service worker at `/sw.js` (scope `/`, no fetch handler) and saves
+  the subscription (`POST /api/notifications/push`; one browser belongs to one member, the last to sign up on it;
+  turning alerts on also turns on the "message" push preference unless it was set before). Signing out, or another
+  person signing in on that browser, forgets it (`POST /api/notifications/push/forget {endpoint}`, no sign-in needed:
+  only the browser knows its address). What gets pushed: a call rings the callee's devices every 7 seconds while it
+  rings, then one last push says how it ended (missed, answered, declined), with the Topic `call<thread>` so a phone
+  that was out of reach gets only the last; private messages for members with message alerts on; and every other
+  notification event whose Push box is ticked, through the `push_outbox` queue (sent every 3 seconds). The service
+  worker always shows an alert (Safari takes alerts away from a site that skips one; Chrome allows skipping only while
+  a page of the site is on screen), asks `GET /dm/{thread}/call-state?call=` before ringing so a late push never rings
+  for a call that is over, tells the caller "it's ringing here" (`type: "ringing"`), and opens or brings forward the
+  chat for Answer (`?call=…&answer=1`, or a message to an open page). 404 and 410 from a push service delete the
+  subscription. Limits worth knowing: iPhone and iPad need the site added to the Home Screen first; Android may hold
+  alerts while the phone sleeps unless Chrome's battery use is set to Unrestricted; a ring is the phone's normal
+  notification sound, repeated, not a ringtone.
 - **Scan a card** uses the browser's on-device model (`LanguageModel` with image input, Chrome desktop) to read the
   name and number off a photo, then searches the catalogue and lets the seller pick. Browsers without it ask the
   seller to type the name under the photo. Nothing is ever added without a tap.

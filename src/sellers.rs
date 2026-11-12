@@ -99,6 +99,8 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
            email INTEGER NOT NULL DEFAULT 0, push INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(member_id, event));
          CREATE TABLE IF NOT EXISTS push_subscriptions(
            id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, endpoint TEXT NOT NULL, p256dh TEXT NOT NULL, auth TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS push_outbox(
+           id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, link TEXT NOT NULL, created_at INTEGER NOT NULL);
          CREATE TABLE IF NOT EXISTS card_events(
            id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, card_id INTEGER NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL);
          CREATE UNIQUE INDEX IF NOT EXISTS idx_sf_pair ON store_follows(follower_id, seller_id);
@@ -1594,12 +1596,19 @@ pub fn set_pref(c: &Connection, member: i64, event: &str, site: bool, email: boo
     Ok(true)
 }
 
-/// Tells a member something, if they want to hear it on the site. Email and push are queued for the mailer (see `outbox`).
+/// Tells a member something, the ways they chose: on the site, by email (queued for the mailer, see `outbox`), and
+/// by push to their phone or computer (queued in `push_outbox`; private messages send their own, see messages.rs).
 pub fn notify(c: &Connection, member: i64, kind: &str, message: &str, link: &str) -> rusqlite::Result<()> {
-    let (site, email): (i64, i64) = c
-        .query_row("SELECT site, email FROM notify_prefs WHERE member_id=?1 AND event=?2", rusqlite::params![member, kind], |r| Ok((r.get(0)?, r.get(1)?)))
+    let (site, email, push): (i64, i64, i64) = c
+        .query_row("SELECT site, email, push FROM notify_prefs WHERE member_id=?1 AND event=?2", rusqlite::params![member, kind], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()?
-        .unwrap_or((1, 0));
+        .unwrap_or((1, 0, 0));
+    if push != 0 && kind != "message" {
+        c.execute(
+            "INSERT INTO push_outbox(member_id, kind, message, link, created_at) VALUES(?1,?2,?3,?4,?5)",
+            rusqlite::params![member, kind, members::clean_line(message, 300), link, now()],
+        )?;
+    }
     if site == 0 && email == 0 {
         return Ok(());
     }
@@ -1658,11 +1667,29 @@ pub fn announce(c: &Connection, message: &str, link: &str) -> rusqlite::Result<u
     Ok(ids.len())
 }
 
+/// Pushes waiting to go out (oldest first), taken off the queue: (member, kind, message, link). Anything older than a
+/// day is dropped instead: news that late is no longer news.
+pub fn take_push_outbox(c: &Connection, limit: i64) -> rusqlite::Result<Vec<(i64, String, String, String)>> {
+    c.execute("DELETE FROM push_outbox WHERE created_at < ?1", [now() - 86_400])?;
+    let rows: Vec<(i64, i64, String, String, String)> = c
+        .prepare("SELECT id, member_id, kind, message, link FROM push_outbox ORDER BY id LIMIT ?1")?
+        .query_map([limit], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
+        .collect::<Result<_, _>>()?;
+    for (id, ..) in &rows {
+        c.execute("DELETE FROM push_outbox WHERE id=?1", [id])?;
+    }
+    Ok(rows.into_iter().map(|(_, m, k, msg, l)| (m, k, msg, l)).collect())
+}
+
+/// Saves a browser's push subscription for a member. One browser belongs to one person: whoever signed up on it last
+/// (anyone else's sign-up on that browser ends). Turning alerts on also turns on message alerts, unless the member
+/// already chose otherwise for messages.
 pub fn push_subscribe(c: &Connection, member: i64, endpoint: &str, p256dh: &str, auth: &str) -> rusqlite::Result<()> {
     if !endpoint.starts_with("https://") || endpoint.len() > 1000 || p256dh.len() > 200 || auth.len() > 100 {
         return Ok(());
     }
-    c.execute("DELETE FROM push_subscriptions WHERE member_id=?1 AND endpoint=?2", rusqlite::params![member, endpoint])?;
+    c.execute("DELETE FROM push_subscriptions WHERE endpoint=?1", [endpoint])?;
+    c.execute("INSERT OR IGNORE INTO notify_prefs(member_id, event, site, email, push) VALUES(?1, 'message', 1, 0, 1)", [member])?;
     // Ten devices each at most: a new one pushes out the oldest.
     c.execute(
         "DELETE FROM push_subscriptions WHERE member_id=?1 AND id NOT IN (SELECT id FROM push_subscriptions WHERE member_id=?1 ORDER BY id DESC LIMIT ?2)",
@@ -1685,6 +1712,12 @@ pub fn set_email(c: &Connection, member: i64, email: &str) -> rusqlite::Result<S
 pub fn push_unsubscribe(c: &Connection, member: i64, endpoint: &str) -> rusqlite::Result<()> {
     c.execute("DELETE FROM push_subscriptions WHERE member_id=?1 AND endpoint=?2", rusqlite::params![member, endpoint])?;
     Ok(())
+}
+
+/// Forgets a browser's subscription, whoever it belonged to. Only that browser knows its address, so having it is
+/// proof enough (used when someone signs out, or a different person signs in on the same browser).
+pub fn push_forget(c: &Connection, endpoint: &str) -> rusqlite::Result<usize> {
+    c.execute("DELETE FROM push_subscriptions WHERE endpoint=?1", [endpoint])
 }
 
 // ---------- the dashboard ----------
@@ -2765,6 +2798,30 @@ mod tests {
         assert_eq!(n, MAX_PUSH_DEVICES);
         assert_eq!(set_email(&c, b, " not an email ").unwrap(), "");
         assert_eq!(set_email(&c, b, "ash@example.com").unwrap(), "ash@example.com");
+    }
+
+    #[test]
+    fn a_browser_belongs_to_whoever_signed_up_on_it_last_and_pushes_wait_in_a_queue() {
+        let c = db();
+        push_subscribe(&c, 2, "https://fcm.googleapis.com/fcm/send/one", "k", "a").unwrap();
+        push_subscribe(&c, 3, "https://fcm.googleapis.com/fcm/send/one", "k", "a").unwrap();
+        let owners: Vec<i64> = c.prepare("SELECT member_id FROM push_subscriptions").unwrap().query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+        assert_eq!(owners, vec![3], "the browser moved to the person who signed up on it last");
+        // Turning alerts on turns message alerts on, without overriding a choice already made.
+        let push = |m: i64| c.query_row("SELECT push FROM notify_prefs WHERE member_id=?1 AND event='message'", [m], |r| r.get::<_, i64>(0)).unwrap();
+        assert_eq!(push(3), 1);
+        set_pref(&c, 2, "message", true, false, false).unwrap();
+        push_subscribe(&c, 2, "https://fcm.googleapis.com/fcm/send/two", "k", "a").unwrap();
+        assert_eq!(push(2), 0, "they had said no to message alerts");
+        assert_eq!(push_forget(&c, "https://fcm.googleapis.com/fcm/send/two").unwrap(), 1);
+        // Notes go to the queue only for the events the member wants pushed, and never for private messages.
+        set_pref(&c, 3, "offer", true, false, true).unwrap();
+        notify(&c, 3, "offer", "Juan offers ₱500", "/me/offers").unwrap();
+        notify(&c, 3, "follow", "Someone follows your store", "/me/store").unwrap();
+        notify(&c, 3, "message", "Juan: “hi”", "/me/messages?t=1").unwrap();
+        let q = take_push_outbox(&c, 10).unwrap();
+        assert_eq!(q, vec![(3, "offer".to_string(), "Juan offers ₱500".to_string(), "/me/offers".to_string())]);
+        assert!(take_push_outbox(&c, 10).unwrap().is_empty(), "taken off the queue");
     }
 
     #[test]

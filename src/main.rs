@@ -5,6 +5,7 @@ mod feed;
 mod look;
 mod messages;
 mod ops;
+mod push;
 mod store;
 mod vault_ai;
 
@@ -972,6 +973,14 @@ async fn robots_header(req: axum::extract::Request, next: axum::middleware::Next
     res
 }
 
+/// GET /sw.js: the service worker. Never kept by the browser's cache, so a change reaches every phone at once.
+async fn service_worker() -> Response {
+    match tokio::fs::read_to_string("static/sw.js").await {
+        Ok(js) => ([(header::CONTENT_TYPE, "text/javascript; charset=utf-8"), (header::CACHE_CONTROL, "no-cache")], js).into_response(),
+        Err(_) => StatusCode::NOT_FOUND.into_response(),
+    }
+}
+
 async fn manifest(State(app): State<App>) -> impl IntoResponse {
     let brand = with_db(&app, |c| blocks::setting(c, "brand")).await.ok().flatten().filter(|b| !b.trim().is_empty()).unwrap_or_else(|| "Big Boys Vault".into());
     let m = serde_json::json!({
@@ -1198,6 +1207,8 @@ async fn main() {
         blocks::refresh_hero_art(&c).expect("hero art");
         blocks::community_once(&c).expect("community");
         look::load(&c).expect("look");
+        // The site's own Web Push key pair: made on the first start, kept in the settings table.
+        push::init(&c).expect("push keys");
         // Old prices that didn't say where they came from are sorted once in db::migrate (price_src_v).
     }
     if admin_token.is_empty() {
@@ -1242,6 +1253,21 @@ async fn main() {
             loop {
                 community::refresh_values(&app).await;
                 tokio::time::sleep(Duration::from_secs(6 * 3600)).await;
+            }
+        });
+    }
+
+    // Alerts for phones and computers (Web Push): what notify() queued goes out within seconds.
+    {
+        let app = app.clone();
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(3)).await;
+                let Ok(batch) = with_db(&app, |c| marcuru_rs::sellers::take_push_outbox(c, 50)).await else { continue };
+                for (member, kind, message, link) in batch {
+                    let msg = serde_json::json!({ "type": "note", "kind": kind, "text": message, "url": link });
+                    push::to_members(&app, vec![member], msg, push::Opts::new(86_400, "normal", None)).await;
+                }
             }
         });
     }
@@ -1296,6 +1322,8 @@ async fn main() {
         .route("/hit/{id}", post(hit))
         .route("/products/{handle}", get(product))
         .route("/manifest.webmanifest", get(manifest))
+        // The service worker sits at the top of the site, so it can look after every page (static/sw.js).
+        .route("/sw.js", get(service_worker))
         .route("/robots.txt", get(robots))
         .route("/favicon.ico", get(favicon))
         .route("/healthz", get(ops::healthz))
@@ -1358,6 +1386,7 @@ async fn main() {
         .route("/me/notifications", get(store::notifications))
         .route("/me/notifications/prefs", post(store::save_pref))
         .route("/api/notifications/push", post(store::push_subscribe))
+        .route("/api/notifications/push/forget", post(store::push_forget))
         .route("/api/cards/{id}/save", post(store::save_card))
         // the cart
         .route("/cart/lines", get(store::cart_lines))
@@ -1406,6 +1435,7 @@ async fn main() {
         .route("/dm/{id}/send", post(messages::send))
         .route("/dm/{id}/read", post(messages::read))
         .route("/dm/{id}/call", post(messages::call).layer(axum::extract::DefaultBodyLimit::max(96 * 1024)))
+        .route("/dm/{id}/call-state", get(messages::call_state_page))
         .route("/dm/{id}/photo", post(messages::photo).layer(axum::extract::DefaultBodyLimit::max(12 * 1024 * 1024)))
         .route("/dm/{id}/voice", post(messages::voice).layer(axum::extract::DefaultBodyLimit::max(3 * 1024 * 1024 + 4096)))
         .route("/me/photos", post(community::upload_photo).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)))

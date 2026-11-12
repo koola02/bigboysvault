@@ -42,7 +42,7 @@
 {% else %}<link rel="stylesheet" href="/static/app.css?v=53">
 <link rel="stylesheet" href="/static/modern.css?v=27">
 <link rel="stylesheet" href="/static/vault.css?v=64">
-{% endif %}<link rel="stylesheet" href="/static/widgets.css?v=3">
+{% endif %}<link rel="stylesheet" href="/static/widgets.css?v=4">
 {% block head %}{% endblock %}
 {% for t in nav.trials %}<meta http-equiv="origin-trial" content="{{ t }}">
 {% endfor %}<script type="speculationrules">
@@ -85,7 +85,8 @@
 {% if crate::look::is_new() %}<script src="/static/fb-shell.js?v=9" defer></script><script src="/static/feed.js?v=3" defer></script>{% else %}<script src="/static/vault-core.js?v=12" defer></script>{% endif %}
 <script src="/static/cart.js?v=2" defer></script>
 <script src="/static/vault-talk.js?v=9" defer></script>
-<script src="/static/dm.js?v=7" defer></script>
+<script src="/static/dm.js?v=8" defer></script>
+<script src="/static/alerts.js?v=1" defer></script>
 <script src="/static/card-cam.js?v=3" defer></script>
 <script src="/static/vault-staff.js?v=6" defer></script>
 {% if !crate::look::is_new() %}<script type="module" src="/static/vault-gl.js?v=4"></script>{% endif %}

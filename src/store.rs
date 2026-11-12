@@ -811,7 +811,7 @@ pub async fn notifications(State(app): State<App>, h: HeaderMap, Query(q): Query
     })
     .await?;
     let pages = (total + PER - 1) / PER;
-    Ok(html(render(NotificationsPage { nav, p, notes, page, pages, prefs, push_key: std::env::var("VAPID_PUBLIC_KEY").unwrap_or_default(), has_email })?))
+    Ok(html(render(NotificationsPage { nav, p, notes, page, pages, prefs, push_key: crate::push::public_key().to_string(), has_email })?))
 }
 
 #[derive(Deserialize)]
@@ -868,7 +868,7 @@ pub struct PushKeys {
     auth: String,
 }
 
-/// Saves a browser's push subscription. Sending needs VAPID keys and a push library: see docs/SELLER_API.md.
+/// Saves a browser's push subscription (or forgets it, with `remove`). Sending is push.rs.
 pub async fn push_subscribe(State(app): State<App>, h: HeaderMap, Json(req): Json<PushReq>) -> Res {
     let m = match acting(&app, &h).await? {
         Ok(m) => m,
@@ -878,8 +878,34 @@ pub async fn push_subscribe(State(app): State<App>, h: HeaderMap, Json(req): Jso
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "Too many tries. Please wait a few minutes."));
     }
     let id = m.id;
-    with_db(&app, move |c| if req.remove { sellers::push_unsubscribe(c, id, &req.endpoint) } else { sellers::push_subscribe(c, id, &req.endpoint, &req.keys.p256dh, &req.keys.auth) }).await?;
-    Ok(ok(json!({ "ok": true, "enabled": std::env::var("PUSH_ENABLED").is_ok_and(|v| v == "1") })))
+    if req.remove {
+        with_db(&app, move |c| sellers::push_forget(c, &req.endpoint).map(|_| ())).await?;
+        return Ok(ok(json!({ "ok": true })));
+    }
+    // Only the browsers' own push services, and keys that are really keys: anything else is turned away.
+    if !crate::push::allowed_endpoint(&req.endpoint) || !crate::push::valid_keys(&req.keys.p256dh, &req.keys.auth) {
+        return Ok(fail(StatusCode::BAD_REQUEST, "This browser's alert address isn't one we can use."));
+    }
+    with_db(&app, move |c| sellers::push_subscribe(c, id, &req.endpoint, &req.keys.p256dh, &req.keys.auth)).await?;
+    Ok(ok(json!({ "ok": true, "enabled": true })))
+}
+
+#[derive(Deserialize)]
+pub struct ForgetReq {
+    endpoint: String,
+}
+
+/// POST /api/notifications/push/forget {endpoint}: this browser stops getting alerts, whoever turned them on (no
+/// sign-in needed: only the browser itself knows its address). Used on signing out, and when someone else signs in.
+pub async fn push_forget(State(app): State<App>, h: HeaderMap, Json(req): Json<ForgetReq>) -> Res {
+    if !crate::community::same_site(&h) {
+        return Ok(fail(StatusCode::FORBIDDEN, "Not from this site."));
+    }
+    if req.endpoint.len() > 1000 {
+        return Ok(fail(StatusCode::BAD_REQUEST, "Too long."));
+    }
+    let n = with_db(&app, move |c| sellers::push_forget(c, &req.endpoint)).await?;
+    Ok(ok(json!({ "ok": true, "forgotten": n })))
 }
 
 // ---------- the public storefront ----------

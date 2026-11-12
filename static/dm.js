@@ -5,7 +5,9 @@
      page. Text, photos, voice notes and voice calls (WebRTC; Cloudflare's relay when needed).
    - One long request per page (GET /dm/poll) brings everything live: new messages, "Seen", the unread badge, calls.
    - /me/messages lists the conversations; /admin/messages lets admins read any of them without marking it seen.
-   - In the new look the header's Messages button drops the inbox down beside it (a phone opens the page). */
+   - In the new look the header's Messages button drops the inbox down beside it (a phone opens the page).
+   - With alerts on (static/alerts.js, static/sw.js), a call rings the phone even with the site closed; its alert
+     opens this page on the call, answered at once for "Answer". */
 (() => {
   const $ = (s, r = document) => r.querySelector(s);
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -417,6 +419,8 @@
     gen: 0,
     // Where the call is (calling, ringing, connecting, live), whether the line dropped, whether the microphone is off.
     phase: 'calling', weak: false, muted: false,
+    // The call an alert was tapped for ({ call, answer }): it shows (and is answered) as soon as its ring arrives.
+    want: null,
     // How the two browsers find each other. Asked with a time limit, so a slow answer never holds up a call.
     async iceServers() {
       const c = new AbortController(), t = setTimeout(() => c.abort(), 6000);
@@ -429,7 +433,7 @@
       const pc = new RTCPeerConnection({ iceServers: await this.iceServers() });
       // A connection left over from a call that was put down while it got ready speaks for nobody.
       pc.onicecandidate = (e) => { if (!e.candidate || pc !== this.pc) return; if (this.id) this.send('ice', e.candidate.toJSON()); else this.earlyIce.push(e.candidate.toJSON()); };
-      pc.ontrack = (e) => { if (pc !== this.pc) return; const a = this.audio(); a.srcObject = e.streams[0]; a.play().catch(() => {}); };
+      pc.ontrack = (e) => { if (pc !== this.pc) return; const a = this.audio(); a.srcObject = e.streams[0]; a.play().catch(() => this.needTap(a)); };
       pc.onconnectionstatechange = () => {
         if (pc !== this.pc) return;
         if (pc.connectionState === 'connected') { this.weak = false; this.connected(); }
@@ -478,7 +482,7 @@
       this.id = rung.call;
       this.earlyIce.splice(0).forEach((c) => this.send('ice', c));
       // "Calling…" stays until their page (or phone) says it is ringing. Nobody on the site: they'll find a missed call.
-      if (rung.online === false && this.phase === 'calling') this.setStatus('Not on the site right now. Ringing in case they open it…');
+      if (rung.online === false && !rung.push && this.phase === 'calling') this.setStatus('Not on the site right now. Ringing in case they open it…');
       this.ringTimer = setTimeout(() => { if (this.role === 'caller' && !this.started) { toast('No answer.'); this.hang(); } }, 45000);
     },
     async accept() {
@@ -519,6 +523,7 @@
         this.show('is calling you…', true); this.ringing(true, true);
         // The caller's screen moves from "Calling…" to "Ringing…" now that it really rings somewhere.
         this.send('ringing');
+        if (this.want && this.want.call === s.call) { const answer = this.want.answer; this.want = null; if (answer) this.accept(); }
         // The tab says so too, for someone looking at another one.
         this.title = document.title; document.title = `📞 ${(s.from && s.from.name) || 'Someone'} is calling…`;
         if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 400]);
@@ -562,6 +567,13 @@
       }
     },
     setStatus(t) { const s = this.ui && $('.dm-call-st', this.ui); if (s) s.textContent = t; },
+    // A browser that won't play the other side's voice until a tap (a call answered from an alert, say): one button.
+    needTap(a) {
+      if (!this.ui || $('.dm-tap', this.ui)) return;
+      const b = el('button', 'btn dm-tap', `Tap to hear ${(this.other && this.other.name) || 'them'}`); b.type = 'button';
+      b.addEventListener('click', () => { a.play().then(() => b.remove()).catch(() => {}); });
+      $('.dm-call-btns', this.ui).before(b);
+    },
     // On: a plain microphone, in colour (you can be heard). Off: the microphone crossed out, dark.
     mute(off) {
       this.muted = off;
@@ -769,6 +781,22 @@
     else setInterval(draw, 15000);
   }
 
+  /* ---------------- a call's alert was tapped ----------------
+     The phone's alert (static/sw.js) opens this page with ?call=…[&answer=1], or tells an open page by message. The
+     call shows (and is answered, for "Answer") when its ring arrives; if it never does, the call is already over. */
+  function wantCall(id, answer) {
+    if (!id) return;
+    if (call.ui && call.id === id && call.role === 'callee') { if (answer && !call.pc) call.accept(); return; }
+    call.want = { call: id, answer: !!answer };
+    if (live.running) kick();
+    setTimeout(() => { if (call.want && call.want.call === id) { call.want = null; toast('That call has ended.'); } }, 9000);
+  }
+  navigator.serviceWorker?.addEventListener('message', (e) => {
+    const d = e.data || {};
+    if (d.bbv === 'call') wantCall(d.call, d.answer);
+    else if (d.bbv === 'open' && typeof d.url === 'string' && d.url.startsWith('/')) location.href = d.url;
+  });
+
   /* ---------------- start ---------------- */
   async function boot() {
     const w = await who();
@@ -790,6 +818,13 @@
     if (saved && saved.t && !page) {
       if (saved.min || phone()) { win.thread = saved.t; try { const j = await api(`/dm/${saved.t}`); win.other = j.other; chatHead(j.other); win.build().hidden = true; win.node.classList.add('min'); } catch (_) { store.set('bbv:dm', null); } }
       else win.open(saved.t, { quiet: true });
+    }
+    // Opened from a call's alert: that call, answered if "Answer" was tapped. The address loses the call's part.
+    const q = new URLSearchParams(location.search);
+    if (q.get('call')) {
+      wantCall(q.get('call'), q.get('answer') === '1');
+      q.delete('call'); q.delete('answer');
+      history.replaceState(history.state, '', location.pathname + (q.toString() ? `?${q}` : '') + location.hash);
     }
     // A notification link to a chat opens it.
     const t = Number(new URLSearchParams(location.search).get('t'));
