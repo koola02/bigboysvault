@@ -1385,6 +1385,8 @@ async fn main() {
         .route("/posts/{id}/react", post(feed::react))
         .route("/posts/{id}/comments", get(feed::comments).post(feed::comment))
         .route("/posts/{id}/delete", post(feed::remove))
+        .route("/posts/{id}/edit", post(feed::edit).layer(axum::extract::DefaultBodyLimit::max(40 * 1024 * 1024)))
+        .route("/comments/{id}/edit", post(feed::comment_edit))
         .route("/posts/{id}/pin", post(feed::pin))
         .route("/comments/{id}/delete", post(feed::comment_remove))
         .route("/admin/feed/auto", post(feed::auto))

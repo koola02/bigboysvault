@@ -128,6 +128,13 @@ Order: welcome banner (signed-out only: logo, one line, Join / Log in) → **Sto
 
 **Moderation:** only approved trainers can post; hourly limits; admins and moderators can hide or delete any post, comment or story (these buttons obey the "hide admin buttons" switch); a Report link on every post notifies admins.
 
+**Editing, like Facebook.** Whatever is yours has its Edit control right where it appears, in the ⋯ menu or beside it, and opens in place:
+
+- Your own post: edit the words, take photos off, add photos; delete. Your own comment: edit, delete. Both show "Edited".
+- Full admins post as **Big Boys Vault** (the logo and the shop's name), and any full admin can edit, pin or delete what the vault posted.
+- The posts the site writes can carry your own words: a seller on the post about their listings, a full admin on the vault's posts. The site's refresh never touches those words.
+- As pages are converted, the same rule applies there: a seller's listing, store header and binders, a trainer's profile, and (for admins) any card in the vault get their Edit control on the page itself.
+
 **Right column (desktop):** featured card (owner's pick), price movers, contacts online (opens a chat), vault chat preview.
 
 ## 5. Stories row (the showcase)

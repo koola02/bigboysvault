@@ -62,7 +62,10 @@ pub struct PostView {
     pub more: i64,
     pub link: String,
     pub link_text: String,
-    pub photos: Vec<(String, String)>,
+    /// (photo id, full size, small). The id is 0 for a vouch's photos, which are edited on the vouch itself.
+    pub photos: Vec<(i64, String, String)>,
+    pub member: i64,
+    pub edited: bool,
     pub attach: Option<Tile>,
     pub moves: Vec<Move>,
     /// The trainers a welcome post is about.
@@ -173,12 +176,15 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
         who: author,
         headline: String::new(),
         when: members::ago(p.created_at),
-        text: p.text.clone(),
+        // An automatic post shows the words its seller or an admin added, if any.
+        text: if p.written() || p.kind == "vouch" { p.text.clone() } else { p.note.clone() },
         tiles: vec![],
         more: 0,
         link: String::new(),
         link_text: String::new(),
         photos: vec![],
+        member: p.member_id,
+        edited: p.edited_at > 0,
         attach: None,
         moves: vec![],
         people: vec![],
@@ -227,7 +233,7 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
         "vouch" => {
             v.headline = format!("vouched for {brand}");
             if let Some(vid) = p.payload["vouch"].as_i64() {
-                v.photos = c.prepare_cached("SELECT path, thumb FROM vouch_images WHERE vouch_id=?1 ORDER BY id LIMIT 4")?.query_map([vid], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
+                v.photos = c.prepare_cached("SELECT path, thumb FROM vouch_images WHERE vouch_id=?1 ORDER BY id LIMIT 4")?.query_map([vid], |r| Ok((0, r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
             }
         }
         "prices" => {
@@ -255,7 +261,7 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
             v.small = true;
         }
         _ => {
-            v.photos = social::photos(c, p.id)?;
+            v.photos = social::photos_ids(c, p.id)?;
             let card = &p.payload["card"];
             if let Some(title) = card["title"].as_str() {
                 let s = |k: &str| card[k].as_str().unwrap_or("").to_string();
@@ -562,7 +568,7 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
     if recent >= social::POSTS_PER_HOUR {
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of posts for one hour. Please take a short break."));
     }
-    let (mut text, mut files, mut card) = (String::new(), Vec::<Vec<u8>>::new(), messages::CardRef::default());
+    let (mut text, mut files, mut card, mut as_vault) = (String::new(), Vec::<Vec<u8>>::new(), messages::CardRef::default(), false);
     let bad = |_| (StatusCode::BAD_REQUEST, "That didn't upload. Please try again.".to_string());
     while let Some(f) = mp.next_field().await.map_err(bad)? {
         match f.name().unwrap_or("") {
@@ -573,6 +579,7 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
                     files.push(b.to_vec());
                 }
             }
+            "as" => as_vault = f.text().await.map_err(bad)?.trim() == "vault",
             "vault" => card.vault = f.text().await.map_err(bad)?.trim().parse().ok(),
             "card" => card.card = f.text().await.map_err(bad)?.trim().parse().ok(),
             _ => {}
@@ -595,6 +602,11 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
             Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "One photo couldn't be read. Try a JPEG or PNG.")),
         }
     }
+    // A full admin may post as the vault itself (the logo and the shop's name), like a Page on Facebook.
+    if as_vault && m.role != "admin" {
+        return Ok(fail(StatusCode::FORBIDDEN, "Only a full admin can post as the vault."));
+    }
+    let author = if as_vault { 0 } else { id };
     let brand_viewer = id;
     let out = with_db(&app, move |c| {
         let mut payload = json!({});
@@ -608,7 +620,7 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
                 None => return Ok(Err("That card isn't here any more.")),
             }
         }
-        let pid = social::post_add(c, id, kind, &text, &photos, &payload, now)?;
+        let pid = social::post_add(c, author, kind, &text, &photos, &payload, now)?;
         let nav = crate::chrome(c)?;
         let p = social::post(c, brand_viewer, pid)?;
         Ok(Ok(match p {
@@ -623,6 +635,112 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
         Ok(None) => Ok(fail(StatusCode::INTERNAL_SERVER_ERROR, "That post didn't save. Please try again.")),
         Err(e) => Ok(fail(StatusCode::BAD_REQUEST, e)),
     }
+}
+
+/// May this person change this post's words? The author of a written post; a seller on the post about their own
+/// listings; a full admin on anything the vault posted.
+fn may_edit(p: &social::Post, me: i64, full: bool) -> bool {
+    (p.member_id != 0 && me == p.member_id && (p.written() || p.kind == "listing")) || (full && p.member_id == 0)
+}
+
+/// POST /posts/{id}/edit (a form: text, keep = ids of the photos that stay, photo × new ones). Answers with the
+/// post, drawn again.
+pub async fn edit(State(app): State<App>, h: HeaderMap, Path(pid): Path<i64>, mut mp: Multipart) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let (me, full, now) = (m.id, m.role == "admin", crate::unix_now());
+    let Some(p) = with_db(&app, move |c| social::post(c, me, pid)).await?.filter(|p| may_edit(p, me, full)) else {
+        return Ok(fail(StatusCode::FORBIDDEN, "That post isn't yours to edit."));
+    };
+    let (mut text, mut keep, mut files) = (String::new(), Vec::<i64>::new(), Vec::<Vec<u8>>::new());
+    let bad = |_| (StatusCode::BAD_REQUEST, "That didn't upload. Please try again.".to_string());
+    while let Some(f) = mp.next_field().await.map_err(bad)? {
+        match f.name().unwrap_or("") {
+            "text" => text = f.text().await.map_err(bad)?,
+            "keep" => keep = f.text().await.map_err(bad)?.split(',').filter_map(|x| x.trim().parse().ok()).collect(),
+            "photo" => {
+                let b = f.bytes().await.map_err(bad)?;
+                if !b.is_empty() && files.len() < social::PHOTOS_MAX {
+                    files.push(b.to_vec());
+                }
+            }
+            _ => {}
+        }
+    }
+    let text = members::clean_text(&text, social::TEXT_MAX);
+    let written = p.written();
+    let mut photos: Vec<social::Photo> = vec![];
+    if written {
+        let has_card = p.payload["card"]["title"].is_string();
+        files.truncate(social::PHOTOS_MAX.saturating_sub(keep.len()));
+        if text.is_empty() && keep.is_empty() && files.is_empty() && !has_card {
+            return Ok(fail(StatusCode::BAD_REQUEST, "A post needs words or a photo. Delete it instead?"));
+        }
+        for bytes in files {
+            let dir = PathBuf::from(&*app.uploads);
+            let stem = format!("p{}-{}{}", p.member_id, members::temp_password(), members::temp_password());
+            match gated(move || store_photo(bytes, dir, stem)).await? {
+                Ok((l, s, w, hh, size)) => photos.push((l, s, w, hh, size)),
+                Err(e) if e == TOO_BIG => return Ok(fail(StatusCode::BAD_REQUEST, "One photo is too big. Please use a smaller one.")),
+                Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "One photo couldn't be read. Try a JPEG or PNG.")),
+            }
+        }
+    }
+    let (gone, view) = with_db(&app, move |c| {
+        let gone = if written {
+            social::post_edit(c, pid, &text, &keep, &photos, now)?
+        } else {
+            social::post_note(c, pid, &text, now)?;
+            vec![]
+        };
+        let nav = crate::chrome(c)?;
+        let view = match social::post(c, me, pid)? {
+            Some(p) => post_view(c, &p, &nav.brand, me)?,
+            None => None,
+        };
+        Ok((gone, view))
+    })
+    .await?;
+    for f in gone {
+        admin::remove_upload(&app.uploads, &f);
+    }
+    app.forget();
+    match view {
+        Some(v) => Ok(html(part(vec![Item { post: Some(v), stores: vec![], vault: None }])?)),
+        None => Ok(fail(StatusCode::INTERNAL_SERVER_ERROR, "That didn't save. Please try again.")),
+    }
+}
+
+#[derive(Deserialize)]
+pub struct CommentEdit {
+    #[serde(default)]
+    text: String,
+}
+
+/// POST /comments/{id}/edit {text}: your own comment.
+pub async fn comment_edit(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Json(req): Json<CommentEdit>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let text = members::clean_text(&req.text, social::COMMENT_MAX);
+    if text.is_empty() {
+        return Ok(fail(StatusCode::BAD_REQUEST, "Write something first."));
+    }
+    let (me, now) = (m.id, crate::unix_now());
+    let staff = admin::power(&app, &h) != admin::Power::Nothing;
+    let out = with_db(&app, move |c| {
+        let Some(k) = social::comment(c, id)?.filter(|k| k.member_id == me) else { return Ok(None) };
+        social::comment_edit(c, k.id, &text, now)?;
+        social::comment(c, id)
+    })
+    .await?;
+    Ok(match out {
+        Some(k) => ok(json!({ "ok": true, "comment": comment_json(&k, me, staff) })),
+        None => fail(StatusCode::FORBIDDEN, "That comment isn't yours."),
+    })
 }
 
 #[derive(Deserialize)]
@@ -669,7 +787,7 @@ pub async fn react(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Js
 }
 
 fn comment_json(k: &social::Comment, viewer: i64, staff: bool) -> Value {
-    json!({ "id": k.id, "parent": k.parent_id, "member": k.member_id, "name": k.name, "avatar": k.avatar, "initial": members::initial(&k.name), "role": k.role, "text": k.text, "at": k.created_at, "when": members::ago(k.created_at), "own": viewer == k.member_id, "can_remove": viewer == k.member_id || staff })
+    json!({ "edited": k.edited_at > 0, "id": k.id, "parent": k.parent_id, "member": k.member_id, "name": k.name, "avatar": k.avatar, "initial": members::initial(&k.name), "role": k.role, "text": k.text, "at": k.created_at, "when": members::ago(k.created_at), "own": viewer == k.member_id, "can_remove": viewer == k.member_id || staff })
 }
 
 /// GET /posts/{id}/comments
@@ -767,6 +885,7 @@ pub async fn remove(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -
         let Some(p) = social::post(c, 0, id)? else { return Ok(Some(vec![])) };
         let written = p.kind == "post" || p.kind == "share";
         if written && (staff || (me != 0 && me == p.member_id)) {
+            // (Staff includes the full admins, who own what the vault itself posted.)
             return Ok(Some(social::post_remove(c, id)?));
         }
         if staff {

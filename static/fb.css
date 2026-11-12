@@ -500,3 +500,10 @@ html.sheet-open { overflow: hidden; }
 .post-people .chip { padding: 0 12px 0 4px; }
 .lbl-narrow { display: none; }
 @media (max-width: 699px) { .lbl-wide { display: none; } .lbl-narrow { display: inline; } }
+
+/* Editing: the post sheet's "post as", and a comment being edited. */
+.sheet select { width: auto; min-height: 32px; padding: 4px 8px; font-size: .8125rem; }
+.sheet .row { padding-inline: 0; }
+.cm-edit { display: block; width: min(420px, 60vw); min-height: 32px; margin-top: 2px; padding: 4px 10px; border-radius: var(--pill); }
+
+.sheet textarea:focus, .sheet textarea:focus-visible { outline: none; border-color: transparent; }

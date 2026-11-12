@@ -89,7 +89,16 @@ CREATE INDEX IF NOT EXISTS comments_member ON comments(member_id, created_at);
 ";
 
 pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
-    c.execute_batch(SCHEMA)
+    c.execute_batch(SCHEMA)?;
+    // Added after the first release of the feed: the words someone adds to an automatic post, and when a post or
+    // comment was last edited.
+    for (table, col, kind) in [("posts", "note", "TEXT NOT NULL DEFAULT ''"), ("posts", "edited_at", "INTEGER NOT NULL DEFAULT 0"), ("comments", "edited_at", "INTEGER NOT NULL DEFAULT 0")] {
+        let there: i64 = c.query_row(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name=?1"), [col], |r| r.get(0))?;
+        if there == 0 {
+            c.execute(&format!("ALTER TABLE {table} ADD COLUMN {col} {kind}"), [])?;
+        }
+    }
+    Ok(())
 }
 
 pub fn reaction_ok(kind: &str) -> bool {
@@ -113,11 +122,21 @@ pub struct Post {
     pub pinned: bool,
     pub hidden: bool,
     pub created_at: i64,
+    /// Words added by the seller (their listing post) or an admin (the vault's posts) to an automatic post.
+    pub note: String,
+    pub edited_at: i64,
     /// The viewer's own reaction ("" when none).
     pub mine: String,
 }
 
-const POST_COLS: &str = "p.id, p.member_id, p.kind, p.text, p.payload, p.like_n, p.comment_n, p.share_n, p.pinned, p.hidden, p.created_at";
+impl Post {
+    /// Written by a person (not made by the site).
+    pub fn written(&self) -> bool {
+        self.kind == "post" || self.kind == "share"
+    }
+}
+
+const POST_COLS: &str = "p.id, p.member_id, p.kind, p.text, p.payload, p.like_n, p.comment_n, p.share_n, p.pinned, p.hidden, p.created_at, p.note, p.edited_at";
 
 fn map_post(r: &Row) -> rusqlite::Result<Post> {
     let payload: String = r.get(4)?;
@@ -133,7 +152,9 @@ fn map_post(r: &Row) -> rusqlite::Result<Post> {
         pinned: r.get::<_, i64>(8)? != 0,
         hidden: r.get::<_, i64>(9)? != 0,
         created_at: r.get(10)?,
-        mine: r.get(11)?,
+        note: r.get(11)?,
+        edited_at: r.get(12)?,
+        mine: r.get(13)?,
     })
 }
 
@@ -201,13 +222,14 @@ pub struct Comment {
     pub role: String,
     pub text: String,
     pub created_at: i64,
+    pub edited_at: i64,
 }
 
 fn map_comment(r: &Row) -> rusqlite::Result<Comment> {
-    Ok(Comment { id: r.get(0)?, post_id: r.get(1)?, member_id: r.get(2)?, parent_id: r.get(3)?, name: r.get(4)?, avatar: r.get(5)?, role: r.get(6)?, text: r.get(7)?, created_at: r.get(8)? })
+    Ok(Comment { id: r.get(0)?, post_id: r.get(1)?, member_id: r.get(2)?, parent_id: r.get(3)?, name: r.get(4)?, avatar: r.get(5)?, role: r.get(6)?, text: r.get(7)?, created_at: r.get(8)?, edited_at: r.get(9)? })
 }
 
-const COMMENT_COLS: &str = "k.id, k.post_id, k.member_id, k.parent_id, m.name, m.avatar, m.role, k.text, k.created_at";
+const COMMENT_COLS: &str = "k.id, k.post_id, k.member_id, k.parent_id, m.name, m.avatar, m.role, k.text, k.created_at, k.edited_at";
 
 /// A post's comments, oldest first (replies come after the comment they answer, by time).
 pub fn comments(c: &Connection, post: i64, limit: i64) -> rusqlite::Result<Vec<Comment>> {
@@ -270,7 +292,39 @@ pub fn post_add(c: &Connection, member: i64, kind: &str, text: &str, photos: &[P
 
 /// (full size, small) of each photo on a post.
 pub fn photos(c: &Connection, post: i64) -> rusqlite::Result<Vec<(String, String)>> {
-    c.prepare_cached("SELECT path, thumb FROM post_images WHERE post_id=?1 ORDER BY id")?.query_map([post], |r| Ok((r.get(0)?, r.get(1)?)))?.collect()
+    Ok(photos_ids(c, post)?.into_iter().map(|(_, full, small)| (full, small)).collect())
+}
+
+/// (id, full size, small) of each photo on a post.
+pub fn photos_ids(c: &Connection, post: i64) -> rusqlite::Result<Vec<(i64, String, String)>> {
+    c.prepare_cached("SELECT id, path, thumb FROM post_images WHERE post_id=?1 ORDER BY id")?.query_map([post], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect()
+}
+
+/// Editing a written post: its words, which of its photos stay, and new ones. Returns the files of the photos
+/// taken off, for the caller to remove from disk.
+pub fn post_edit(c: &Connection, id: i64, text: &str, keep: &[i64], add: &[Photo], now: i64) -> rusqlite::Result<Vec<String>> {
+    let mut files = vec![];
+    for (pid, path, thumb) in photos_ids(c, id)? {
+        if !keep.contains(&pid) {
+            c.execute("DELETE FROM post_images WHERE id=?1", [pid])?;
+            files.push(path);
+            files.push(thumb);
+        }
+    }
+    for (path, thumb, w, h, bytes) in add {
+        c.execute("INSERT INTO post_images(post_id, path, thumb, w, h, bytes) VALUES(?1,?2,?3,?4,?5,?6)", params![id, path, thumb, w, h, bytes])?;
+    }
+    c.execute("UPDATE posts SET text=?2, edited_at=?3 WHERE id=?1", params![id, text, now])?;
+    Ok(files)
+}
+
+/// The words a seller or an admin puts on an automatic post. The site's refresh never touches them.
+pub fn post_note(c: &Connection, id: i64, note: &str, now: i64) -> rusqlite::Result<()> {
+    c.execute("UPDATE posts SET note=?2, edited_at=?3 WHERE id=?1", params![id, note, now]).map(|_| ())
+}
+
+pub fn comment_edit(c: &Connection, id: i64, text: &str, now: i64) -> rusqlite::Result<bool> {
+    Ok(c.execute("UPDATE comments SET text=?2, edited_at=?3 WHERE id=?1", params![id, text, now])? == 1)
 }
 
 pub fn photo_bytes(c: &Connection) -> rusqlite::Result<i64> {
@@ -553,7 +607,20 @@ mod tests {
         assert_eq!(comment_remove(&c, a).unwrap(), Some(p));
         assert_eq!(post(&c, 0, p).unwrap().unwrap().comment_n, 0, "its replies go with it");
         assert_eq!(photo_bytes(&c).unwrap(), 500);
-        assert_eq!(post_remove(&c, p).unwrap(), vec!["a_l.jpg".to_string(), "a_s.jpg".to_string()]);
+        // Editing: new words, the old photo comes off, a new one goes on; the site's refresh leaves a note alone.
+        assert_eq!(post_edit(&c, p, "hello again", &[], &[("b_l.jpg".into(), "b_s.jpg".into(), 5, 5, 200)], 50).unwrap(), vec!["a_l.jpg".to_string(), "a_s.jpg".to_string()]);
+        assert_eq!(photos(&c, p).unwrap(), vec![("b_l.jpg".to_string(), "b_s.jpg".to_string())]);
+        let kept = photos_ids(&c, p).unwrap()[0].0;
+        assert!(post_edit(&c, p, "hello again", &[kept], &[], 50).unwrap().is_empty(), "a photo that is kept stays");
+        let now = post(&c, 0, p).unwrap().unwrap();
+        assert_eq!((now.text.as_str(), now.edited_at, photo_bytes(&c).unwrap()), ("hello again", 50, 200));
+        let k = comment_add(&c, p, 1, None, "frst", 60).unwrap().unwrap();
+        assert!(comment_edit(&c, k, "first", 61).unwrap());
+        assert_eq!(comment(&c, k).unwrap().unwrap().text, "first");
+        comment_remove(&c, k).unwrap();
+        post_note(&c, p, "a note", 70).unwrap();
+        assert_eq!(post(&c, 0, p).unwrap().unwrap().note, "a note");
+        assert_eq!(post_remove(&c, p).unwrap(), vec!["b_l.jpg".to_string(), "b_s.jpg".to_string()]);
         assert_eq!(photo_bytes(&c).unwrap(), 0);
     }
 }

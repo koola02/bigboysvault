@@ -71,8 +71,9 @@
     const body = el('div', 'cm-body');
     const bub = el('div', 'cm-bub'); const name = el('a', 'cm-name', k.name); name.href = `/trainers/${k.member}`;
     bub.append(name, el('p', '', k.text));
-    const meta = el('div', 'cm-meta'); meta.append(el('span', '', k.when));
+    const meta = el('div', 'cm-meta'); meta.append(el('span', '', k.edited ? `${k.when} · Edited` : k.when));
     const rep = el('button', 'linkbtn', 'Reply'); rep.type = 'button'; rep.dataset.reply = k.parent || k.id; rep.dataset.name = k.name; meta.append(rep);
+    if (k.own) { const ed = el('button', 'linkbtn', 'Edit'); ed.type = 'button'; ed.dataset.cmEdit = k.id; meta.append(ed); }
     if (k.can_remove) { const d = el('button', `linkbtn${k.own ? '' : ' staff-only'}`, 'Delete'); d.type = 'button'; d.dataset.cmDel = k.id; meta.append(d); }
     body.append(bub, meta); li.append(av, body);
     return li;
@@ -121,6 +122,12 @@
     const post = postOf(btn), id = post.dataset.post;
     menu = el('div', 'pop post-pop'); menu.setAttribute('role', 'menu');
     const item = (label, fn, cls) => { const b = el('button', `row${cls ? ' ' + cls : ''}`); b.type = 'button'; b.append(el('span', 'row-t', label)); b.addEventListener('click', () => { closeMenu(); fn(); }); menu.append(b); };
+    const kind = post.dataset.kind, written = kind === 'post' || kind === 'share', by = Number(post.dataset.member);
+    const mine = !!me && by === me.id, vaults = full && by === 0;
+    // Yours to edit: what you wrote, the post about your own listings, and (full admins) anything the vault posted.
+    if ((mine && (written || kind === 'listing')) || vaults) item(written ? 'Edit post' : post.querySelector('.post-text') ? 'Edit the words on this post' : 'Add words to this post', () => compose('edit', post), mine ? '' : 'staff-only');
+    if (mine && kind === 'listing') item('Manage my listings', () => { location.href = '/me/listings'; });
+    if (full) item(post.hasAttribute('data-pinned') ? 'Unpin from the top' : 'Pin to the top of the feed', async () => { try { await api(`/posts/${id}/pin`, { on: !post.hasAttribute('data-pinned') }); location.reload(); } catch (e) { toast(e.message, true); } }, 'staff-only');
     item('Copy link', () => share(post, true));
     if (post.hasAttribute('data-own')) item('Delete post', () => remove(post, 'Delete this post for good?'));
     else if (staff) item(post.dataset.kind === 'post' || post.dataset.kind === 'share' ? 'Delete post (staff)' : 'Hide from the feed (staff)', () => remove(post, 'Take this post out of the feed?'), 'staff-only');
@@ -158,6 +165,22 @@
     if (mb) { e.stopPropagation(); menu ? closeMenu() : openMenu(mb); return; }
     const rep = t.closest('[data-reply]');
     if (rep) { const f = postOf(rep).querySelector('.cm-form'), input = f.querySelector('input'); f.dataset.parent = rep.dataset.reply; input.placeholder = `Reply to ${rep.dataset.name}…`; input.focus(); return; }
+    const ced = t.closest('[data-cm-edit]');
+    if (ced) {
+      const node = ced.closest('.cm'), par = node.querySelector('.cm-bub p'), id = ced.dataset.cmEdit;
+      if (node.querySelector('.cm-edit')) return;
+      const input = el('input', 'cm-edit'); input.type = 'text'; input.maxLength = 600; input.value = par.textContent; input.setAttribute('aria-label', 'Edit your comment');
+      par.hidden = true; par.after(input); input.focus();
+      const done = () => { input.remove(); par.hidden = false; };
+      input.addEventListener('keydown', async (ev) => {
+        if (ev.key === 'Escape') { ev.stopPropagation(); done(); return; }
+        if (ev.key !== 'Enter') return;
+        ev.preventDefault();
+        const text = input.value.trim(); if (!text) return;
+        try { const j = await api(`/comments/${id}/edit`, { text }); const fresh = commentNode(j.comment); node.replaceWith(fresh); } catch (err) { toast(err.message, true); }
+      });
+      return;
+    }
     const del = t.closest('[data-cm-del]');
     if (del) {
       if (!confirm('Delete this comment?')) return;
@@ -173,53 +196,90 @@
   document.addEventListener('click', (e) => { if (menu && !e.target.closest('.post-pop')) closeMenu(); if (pick && !e.target.closest('.react-pick, [data-like]')) closePick(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeMenu(); closePick(); } });
 
-  /* ---------- writing a post ---------- */
-  let sheet = null, files = [];
-  function compose(start) {
+  /* ---------- the post sheet: writing a new post, or editing one ---------- */
+  let sheet = null, files = [], kept = [], editing = null;
+  function compose(start, post) {
     if (!me) { toLogin(); return; }
     if (!sheet) {
       // Not a <dialog>: the camera opens above it, and a modal dialog would cover the camera.
-      sheet = el('div', 'sheet'); sheet.hidden = true; sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true'); sheet.setAttribute('aria-label', 'Create post');
+      sheet = el('div', 'sheet'); sheet.hidden = true; sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true');
       sheet.innerHTML = `<form class="sheet-in">
-        <header class="sheet-h"><b>Create post</b><button type="button" class="ibtn" data-x aria-label="Close">✕</button></header>
-        <div class="row"><span class="av" data-my-face></span><span class="row-t"><b data-my-name></b><small>Everyone on the site can see this</small></span></div>
+        <header class="sheet-h"><b data-title>Create post</b><button type="button" class="ibtn" data-x aria-label="Close">✕</button></header>
+        <div class="row"><span class="av" data-face></span><span class="row-t"><b data-name></b><small data-sub>Everyone on the site can see this</small></span>
+          <select data-as aria-label="Post as" hidden><option value="me">Post as me</option><option value="vault">Post as Big Boys Vault</option></select></div>
         <textarea maxlength="2000" placeholder="What did you pull today?" aria-label="Your post"></textarea>
         <div class="sheet-pics" data-pics></div>
         <div class="sheet-acts">
-          <label class="btn ghost">Photos<input type="file" accept="image/*" multiple hidden data-add></label>
-          <label class="btn ghost">Camera<input type="file" accept="image/*" capture="environment" data-card-cam="free" hidden data-add></label>
+          <label class="btn ghost" data-pic-btn>Photos<input type="file" accept="image/*" multiple hidden data-add></label>
+          <label class="btn ghost" data-pic-btn>Camera<input type="file" accept="image/*" capture="environment" data-card-cam="free" hidden data-add></label>
           <button type="submit" class="btn" data-go>Post</button>
         </div></form>`;
       document.body.append(sheet);
-      face(sheet.querySelector('[data-my-face]'), me); sheet.querySelector('[data-my-name]').textContent = me.name;
-      const pics = sheet.querySelector('[data-pics]');
-      const paint = () => { pics.replaceChildren(...files.map((f, i) => { const d = el('div', 'sheet-pic'); const img = el('img'); img.src = URL.createObjectURL(f); img.alt = ''; const x = el('button', 'ibtn', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Remove this photo'); x.addEventListener('click', () => { files.splice(i, 1); paint(); }); d.append(img, x); return d; })); };
+      const pics = sheet.querySelector('[data-pics]'), as = sheet.querySelector('[data-as]');
+      const pic = (src, off) => { const d = el('div', 'sheet-pic'); const img = el('img'); img.src = src; img.alt = ''; const x = el('button', 'ibtn', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Remove this photo'); x.addEventListener('click', off); d.append(img, x); return d; };
+      const paint = () => pics.replaceChildren(
+        ...kept.map((k, i) => pic(k.src, () => { kept.splice(i, 1); paint(); })),
+        ...files.map((f, i) => pic(URL.createObjectURL(f), () => { files.splice(i, 1); paint(); })));
       sheet.paint = paint;
-      sheet.querySelectorAll('[data-add]').forEach((inp) => inp.addEventListener('change', () => { for (const f of inp.files) { if (files.length < 4) files.push(f); else toast('Four photos at most.'); } inp.value = ''; paint(); }));
+      // Who the post is from: you, or (full admins) the vault itself, with its logo.
+      sheet.who = () => {
+        const vault = as.value === 'vault' && !as.hidden || (editing && editing.by === 0);
+        const f = sheet.querySelector('[data-face]');
+        if (vault) { const i = el('img'); i.src = '/static/img/logo-sm-144.png?v=1'; i.alt = ''; f.replaceChildren(i); } else face(f, me);
+        sheet.querySelector('[data-name]').textContent = vault ? 'Big Boys Vault' : me.name;
+      };
+      as.addEventListener('change', sheet.who);
+      sheet.querySelectorAll('[data-add]').forEach((inp) => inp.addEventListener('change', () => { for (const f of inp.files) { if (kept.length + files.length < 4) files.push(f); else toast('Four photos at most.'); } inp.value = ''; paint(); }));
       sheet.close = () => { sheet.hidden = true; document.documentElement.classList.remove('sheet-open'); };
       sheet.querySelector('[data-x]').addEventListener('click', () => sheet.close());
       sheet.addEventListener('click', (e) => { if (e.target === sheet) sheet.close(); });
       document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !sheet.hidden && !document.querySelector('.cc')) sheet.close(); });
       sheet.querySelector('form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const ta = sheet.querySelector('textarea'), go = sheet.querySelector('[data-go]');
-        if (!ta.value.trim() && !files.length) { ta.focus(); return; }
+        const ta = sheet.querySelector('textarea'), go = sheet.querySelector('[data-go]'), was = go.textContent;
+        if (!editing && !ta.value.trim() && !files.length) { ta.focus(); return; }
         const fd = new FormData(); fd.append('text', ta.value); files.forEach((f) => fd.append('photo', f, f.name || 'photo.jpg'));
-        go.disabled = true; go.textContent = 'Posting…';
+        if (editing) fd.append('keep', kept.map((k) => k.id).join(',')); else if (!as.hidden && as.value === 'vault') fd.append('as', 'vault');
+        go.disabled = true; go.textContent = editing ? 'Saving…' : 'Posting…';
         try {
-          const j = await api('/posts', fd);
+          const j = await api(editing ? `/posts/${editing.id}/edit` : '/posts', fd);
           const holder = el('div'); holder.innerHTML = j.html;
-          const anchor = feed.querySelector('.composer');
-          [...holder.children].reverse().forEach((n) => anchor.after(n));
-          ta.value = ''; files = []; paint(); sheet.close(); toast('Posted.');
+          const fresh = holder.querySelector('[data-post]');
+          if (editing) { const old = feed.querySelector(`[data-post="${editing.id}"]`); if (old && fresh) old.replaceWith(fresh); toast('Saved.'); }
+          else { const anchor = feed.querySelector('.composer'); if (fresh) anchor.after(fresh); toast('Posted.'); }
+          ta.value = ''; files = []; kept = []; paint(); sheet.close();
         } catch (err) { toast(err.message, true); }
-        go.disabled = false; go.textContent = 'Post';
+        go.disabled = false; go.textContent = was;
       });
     }
+    const ta = sheet.querySelector('textarea'), as = sheet.querySelector('[data-as]');
+    files = []; kept = [];
+    if (start === 'edit' && post) {
+      const kind = post.dataset.kind, written = kind === 'post' || kind === 'share';
+      editing = { id: post.dataset.post, by: Number(post.dataset.member), written };
+      ta.value = post.querySelector('.post-text')?.textContent || '';
+      if (written) kept = [...post.querySelectorAll('[data-img]')].filter((a) => a.dataset.img !== '0').map((a) => ({ id: a.dataset.img, src: a.dataset.thumb || a.getAttribute('href') }));
+      sheet.querySelector('[data-title]').textContent = written ? 'Edit post' : 'Words on this post';
+      sheet.querySelector('[data-go]').textContent = 'Save';
+      sheet.querySelector('[data-sub]').textContent = written ? 'Everyone on the site can see this' : 'The cards on this post stay as they are; you are adding your own words';
+      ta.placeholder = written ? 'What did you pull today?' : 'Say something about these cards';
+      sheet.querySelectorAll('[data-pic-btn]').forEach((b) => { b.hidden = !written; });
+      as.hidden = true;
+    } else {
+      editing = null; ta.value = '';
+      sheet.querySelector('[data-title]').textContent = 'Create post';
+      sheet.querySelector('[data-go]').textContent = 'Post';
+      sheet.querySelector('[data-sub]').textContent = 'Everyone on the site can see this';
+      ta.placeholder = 'What did you pull today?';
+      sheet.querySelectorAll('[data-pic-btn]').forEach((b) => { b.hidden = false; });
+      as.hidden = !(full && me.role === 'admin'); as.value = 'me';
+    }
+    sheet.setAttribute('aria-label', sheet.querySelector('[data-title]').textContent);
+    sheet.who(); sheet.paint();
     sheet.hidden = false; document.documentElement.classList.add('sheet-open');
     if (start === 'photo') sheet.querySelector('input[multiple]').click();
     else if (start === 'camera') sheet.querySelector('input[data-card-cam]').click();
-    else sheet.querySelector('textarea').focus();
+    else ta.focus();
   }
 
   // A shared link opens one post with its comments showing.
