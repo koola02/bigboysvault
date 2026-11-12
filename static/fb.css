@@ -126,12 +126,13 @@ body[data-layout="plain"] main { max-width: 1568px; }
 .mn-i:hover { background: var(--fill); text-decoration: none; }
 .mn-i[aria-current="page"] { background: var(--gold-tint); color: var(--gold-hi); }
 .mn-i > svg, .mn-i > img, .mn-i > .av { flex: none; }
+.mn .mn-i > .av { width: 36px; height: 36px; } /* your face lines up with the icons under it */
 .mn-i > svg { width: 36px; height: 36px; padding: 7px; border-radius: 50%; background: var(--surface-3); color: var(--gold); }
 .mn-i > img { width: 36px; height: 36px; border-radius: var(--r); object-fit: cover; background: var(--surface-2); }
-/* A binder's picture stands as tall as a card. */
-.mn-i > img.mn-pic { width: 44px; height: 62px; border-radius: var(--r-sm); }
-/* The menu lists a place only where the screen has no other button for it. Trainers and Vault chat are tabs in the
-   header from a tablet up; Ask the Vault is in the column beside the feed, and in a phone's tabs at the bottom. */
+/* The menu lists a place only where the screen has no other button for it. The Vault and Stores never need it: they
+   are tabs in the header from a tablet up and in a phone's tabs at the bottom (the vault's binders are on its store
+   page). Trainers and Vault chat are header tabs from a tablet up; Ask the Vault is in the column beside the feed,
+   and in a phone's tabs at the bottom. */
 @media (min-width: 700px) { .mn-i[data-mn="tab"] { display: none; } }
 @media (max-width: 699px) { .mn-i[data-mn="ask"] { display: none; } }
 @media (min-width: 1100px) { body[data-layout="feed"] .mn-i[data-mn="ask"] { display: none; } }
@@ -139,8 +140,8 @@ body[data-layout="plain"] main { max-width: 1568px; }
 .mn-i.mn-ask:hover { background: rgba(239,200,115,.2); }
 .mn-i.mn-ask > svg { background: var(--brass); color: var(--gold-ink); }
 .mn-i span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.mn-h { margin: 12px 8px 4px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); font: 600 1.0625rem/1.2 var(--font); }
-.mn-foot { margin: 16px 8px 0; color: var(--faint); font-size: .75rem; line-height: 1.5; }
+/* A short list of places, then a line, then the small print. */
+.mn-foot { margin: 12px 8px 0; padding-top: 12px; border-top: 1px solid var(--line); color: var(--faint); font-size: .75rem; line-height: 1.5; }
 html:not([data-me]) [data-me-only], html:not([data-full]) [data-full-only], html:not([data-me="admin"]) [data-staff-only], html:not([data-seller]) [data-seller-only] { display: none !important; }
 html[data-me] [data-guest-only] { display: none !important; }
 @media (max-width: 1535px) {
@@ -206,7 +207,8 @@ body:is([data-layout="wide"], [data-layout="plain"]) .hd-menu-btn { display: inl
 @media (max-width: 699px) {
   body { padding-bottom: calc(var(--bt-h) + var(--sab)); }
   .hd { grid-template-columns: minmax(0, 1fr) auto; }
-  .hd-tabs, .hd-me, #notifDropdown { display: none !important; }
+  /* The bell stays, beside Messages (members only; on a phone it opens the Notifications page). */
+  .hd-tabs, .hd-me { display: none !important; }
   .hd-word { display: block; }
   .bt { display: grid; grid-template-columns: repeat(5, 1fr); position: fixed; inset: auto 0 0 0; z-index: 900; height: calc(var(--bt-h) + var(--sab)); padding: 0 max(4px, var(--sar)) var(--sab) max(4px, var(--sal)); background: var(--surface); box-shadow: 0 -1px 0 var(--line); }
   .bt > * { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 0; padding: 0; border: 0; background: none; color: var(--muted); font: 600 .6875rem/1 var(--font); }
@@ -214,7 +216,6 @@ body:is([data-layout="wide"], [data-layout="plain"]) .hd-menu-btn { display: inl
   .bt > [aria-current="page"], html.menu-open #btMenu { color: var(--gold); }
   .bt > [aria-current="page"]::before, html.menu-open #btMenu::before { content: ""; position: absolute; top: 0; left: 18%; right: 18%; height: 3px; border-radius: 0 0 3px 3px; background: var(--gold); }
   .bt-ask img { width: 38px; height: 38px; margin-top: -10px; border-radius: 50%; box-shadow: 0 0 0 3px var(--surface), 0 0 0 4px var(--gold-edge); }
-  .bt .hd-badge { top: 6px; right: calc(50% - 22px); }
   html.menu-open .fb-left { top: calc(var(--hd-h) + var(--sat)); bottom: calc(var(--bt-h) + var(--sab)); width: 100%; box-shadow: none; }
   html.menu-open::after { display: none; }
   .mn-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 10px; }
@@ -1160,6 +1161,14 @@ body:has(.detail) .v-fab { display: none; }
   .story .av { top: 6px; left: 6px; width: 28px; height: 28px; box-shadow: 0 0 0 2px var(--gold); }
 }
 @media (max-width: 389px) { .hd-word { font-stretch: 100%; letter-spacing: 0; } .hd-l, .hd-r { gap: 6px; } }
+/* The smallest phones: a member has four round buttons up there (search, cart, messages, the bell), so they and the
+   logo are a little smaller and closer together. Only the header's own buttons: those inside the messages panel keep
+   their size. */
+@media (max-width: 359px) {
+  .hd-logo img { width: 36px; height: 36px; }
+  .hd-r > .hd-ib, .hd-r > .hd-pop > .hd-ib { width: 36px; height: 36px; }
+  .hd-l, .hd-r { gap: 4px; }
+}
 
 /* ---------- 28. Log in and join: the vault on one side, the form on the other ---------- */
 .join { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; align-items: center; justify-items: center; max-width: 1080px; min-height: calc(100dvh - var(--hd-h) - var(--sat) - 140px); margin: 0 auto; padding: 16px 0; }

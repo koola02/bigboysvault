@@ -12,8 +12,11 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
 
   /* ---------- where you are ---------- */
   const here = location.pathname;
-  const match = (h) => h === here || (h !== '/' && here.startsWith(h + '/')) || (h === '/stores' && here.startsWith('/store/'))
-    || (h === '/all' && /^\/(search|collections|products)(\/|$)/.test(here));
+  // Stores is lit on every store and on the vault's binders (they belong to the vault's own store); The Vault on
+  // searches and on a card's page.
+  const match = (h) => h === here || (h !== '/' && here.startsWith(h + '/'))
+    || (h === '/stores' && /^\/(store|collections)\//.test(here))
+    || (h === '/all' && /^\/(search|products)(\/|$)/.test(here));
   document.querySelectorAll('.hd-tabs a, .bt a, .fb-left .mn-i').forEach((a) => { if (match(a.getAttribute('href'))) a.setAttribute('aria-current', 'page'); });
 
   /* ---------- who is signed in ---------- */
@@ -93,15 +96,20 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     }
   });
 
-  /* ---------- notifications ---------- */
-  const btn = $('notifBtn'), menu = $('notifMenu'), badge = $('notifBadge'), list = $('notifList'), holder = $('notifDropdown'), tabBadge = $('btBellN');
+  /* ---------- notifications: the bell in the header (members only) ----------
+     From 700px it drops the latest down beside it. A phone has no room for a panel: there the bell opens the
+     Notifications page, as Messages does (dm.js). */
+  const btn = $('notifBtn'), menu = $('notifMenu'), badge = $('notifBadge'), list = $('notifList'), holder = $('notifDropdown');
+  const bellPhone = () => matchMedia('(max-width: 699px), (max-height: 520px)').matches;
+  const onNotifs = /^\/me\/notifications(\/|$)/.test(here);
+  if (btn && onNotifs) btn.setAttribute('aria-current', 'page');
   const ago = (t) => {
     const s = Math.max(0, Math.floor(Date.now() / 1000 - (Number(t) || 0)));
     if (s < 60) return 'Just now'; if (s < 3600) return `${Math.floor(s / 60)} min ago`; if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
     if (s < 7 * 86400) return `${Math.floor(s / 86400)} d ago`;
     return new Date(Number(t) * 1000).toLocaleDateString('en-PH', { day: 'numeric', month: 'short' });
   };
-  const count = (n) => [badge, tabBadge].forEach((b) => { if (!b) return; b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n); });
+  const count = (n) => { if (!badge) return; badge.hidden = !n; badge.textContent = n > 99 ? '99+' : String(n); };
   async function load() {
     try {
       const r = await fetch('/api/notifications', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
@@ -122,13 +130,20 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
       });
     } catch (_) {}
   }
-  btn?.addEventListener('click', (e) => { e.stopPropagation(); const open = menu.hidden; menu.hidden = !open; btn.setAttribute('aria-expanded', String(open)); if (open) load(); });
-  document.addEventListener('click', (e) => { if (menu && !menu.hidden && !holder.contains(e.target)) { menu.hidden = true; btn.setAttribute('aria-expanded', 'false'); } });
+  const setNotif = (open) => { if (!menu) return; menu.hidden = !open; btn.setAttribute('aria-expanded', String(open)); if (open) load(); };
+  btn?.addEventListener('click', (e) => {
+    // The whole page instead: on a phone, in a new tab, and on the Notifications page (it is already on the screen).
+    if (!menu || bellPhone() || e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || onNotifs) return;
+    e.preventDefault(); setNotif(menu.hidden);
+  });
+  document.addEventListener('click', (e) => { if (menu && !menu.hidden && !holder.contains(e.target)) setNotif(false); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && menu && !menu.hidden) { setNotif(false); btn.focus(); } });
   $('notifRead')?.addEventListener('click', async (e) => {
     e.stopPropagation();
     try { await fetch('/api/notifications/read', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' }); count(0); list.querySelectorAll('.unread').forEach((n) => n.classList.remove('unread')); } catch (_) {}
   });
-  window.bbvWho().then((j) => { if (j && j.member) load(); else if (holder) holder.hidden = true; });
+  // The bell shows as soon as a member is known (with Messages, so the site's name is fitted once), then its count.
+  window.bbvWho().then((j) => { if (holder) holder.hidden = !(j && j.member); if (j && j.member) load(); });
 
   /* ---------- full admins: a pencil on every vault card, straight to that card's editor ---------- */
   let penWatch = null, penSoon = 0;
