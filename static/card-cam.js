@@ -2,6 +2,8 @@
    cut to exactly that frame, so every card picture comes out centred, upright and the same shape. A photo from the
    gallery opens in the same frame, centred and filling it, and can be dragged or zoomed to sit right. There is no
    card detection: only neat framing.
+   data-card-cam="free" is a plain camera instead (the chat's "take a photo"): no frame and no cutting, on phones and
+   computers alike; the photo is sent as taken.
    Any <input type="file" data-card-cam> uses it. The finished photo goes back into that input (with a "change"
    event), so the page's own preview and upload work exactly as before. */
 (() => {
@@ -22,16 +24,16 @@
     const inp = e.target.closest && e.target.closest('input[type=file][data-card-cam]');
     if (!inp || inp.dataset.camPass) return;
     e.preventDefault(); e.stopPropagation();
-    open(inp);
+    open(inp, inp.dataset.cardCam === 'free');
   }, true);
 
-  function open(target) {
+  function open(target, free) {
     close();
-    const o = el('div', 'cc'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', 'Card photo');
+    const o = el('div', free ? 'cc free' : 'cc'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', free ? 'Take a photo' : 'Card photo');
     o.innerHTML = `
       <header class="cc-top">
         <button type="button" class="cc-ib" data-x aria-label="Close">${svg(ICON.x)}</button>
-        <b class="cc-title">Card photo</b>
+        <b class="cc-title">${free ? 'Take a photo' : 'Card photo'}</b>
         <button type="button" class="cc-ib" data-flip aria-label="Switch camera" hidden>${svg(ICON.flip)}</button>
       </header>
       <div class="cc-stage">
@@ -45,12 +47,12 @@
         <button type="button" class="cc-side" data-pick>${svg(ICON.pics)}<span>Photos</span></button>
         <button type="button" class="cc-shut" data-shoot aria-label="Take the photo"><span></span></button>
         <button type="button" class="cc-side" data-cam hidden>${svg(ICON.cam)}<span>Camera</span></button>
-        <button type="button" class="btn cc-use" data-use hidden>Use photo</button>
+        <button type="button" class="btn cc-use" data-use hidden>${free ? 'Send photo' : 'Use photo'}</button>
       </footer>`;
     document.body.append(o);
     document.documentElement.classList.add('cc-on');
     const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*'; pick.hidden = true; o.append(pick);
-    ui = { o, target, pick, stream: null, facing: 'environment', img: null, x: 0, y: 0, s: 1, base: 1 };
+    ui = { o, target, pick, free: !!free, file: null, stream: null, facing: 'environment', img: null, x: 0, y: 0, s: 1, base: 1 };
     o.querySelector('[data-x]').addEventListener('click', close);
     o.querySelector('[data-pick]').addEventListener('click', () => pick.click());
     o.querySelector('[data-cam]').addEventListener('click', () => camera());
@@ -65,7 +67,8 @@
     o.querySelector('.cc-zoom').addEventListener('input', (e) => { zoomTo(Number(e.target.value)); });
     layout();
     // A phone opens the camera straight away; a computer opens the photo picker (a webcam is rarely what's wanted).
-    if (coarse() && navigator.mediaDevices?.getUserMedia) camera(); else { mode('pick'); pick.click(); }
+    // "Take a photo" opens the camera everywhere: that is what was asked for.
+    if ((free || coarse()) && navigator.mediaDevices?.getUserMedia) camera(); else { mode('pick'); pick.click(); }
     o.querySelector('[data-x]').focus({ preventScroll: true });
   }
 
@@ -91,7 +94,7 @@
     if (!ui) return;
     const f = frameRect(), fr = ui.o.querySelector('.cc-frame');
     Object.assign(fr.style, { left: `${f.x}px`, top: `${f.y}px`, width: `${f.w}px`, height: `${f.h}px` });
-    if (ui.img) { fit(false); paint(); }
+    if (ui.img && !ui.free) { fit(false); paint(); }
   }
 
   function mode(m) {
@@ -100,8 +103,10 @@
     q('.cc-video').hidden = !live; q('.cc-pic').hidden = !editing;
     q('[data-shoot]').hidden = !live; q('[data-use]').hidden = !editing;
     q('[data-pick]').hidden = false; q('[data-cam]').hidden = live || !navigator.mediaDevices?.getUserMedia;
-    q('.cc-zoom').hidden = !editing;
-    q('.cc-hint').textContent = live ? 'Fit the card inside the frame' : editing ? 'Drag or zoom so the card fills the frame' : 'Choose a photo of the card';
+    q('.cc-zoom').hidden = !editing || ui.free;
+    q('.cc-hint').textContent = ui.free
+      ? (live ? 'Tap the button to take the photo' : editing ? 'Send this photo, or take another' : 'Choose a photo')
+      : (live ? 'Fit the card inside the frame' : editing ? 'Drag or zoom so the card fills the frame' : 'Choose a photo of the card');
   }
 
   async function camera() {
@@ -123,6 +128,15 @@
   function shoot() {
     const v = ui.o.querySelector('.cc-video');
     if (!v.videoWidth) return;
+    if (ui.free) {
+      // The whole picture, as shown (the video is shown whole in this mode), at most 1600 on its long side.
+      const k = Math.min(1, 1600 / Math.max(v.videoWidth, v.videoHeight));
+      const fc = document.createElement('canvas'); fc.width = Math.round(v.videoWidth * k); fc.height = Math.round(v.videoHeight * k);
+      fc.getContext('2d').drawImage(v, 0, 0, fc.width, fc.height);
+      ui.o.querySelector('.cc-stage').classList.add('flash'); setTimeout(() => ui?.o.querySelector('.cc-stage').classList.remove('flash'), 180);
+      fc.toBlob((b) => { if (!b) return; stop(); edit(new File([b], `photo-${Date.now()}.jpg`, { type: 'image/jpeg' }), true); }, 'image/jpeg', 0.9);
+      return;
+    }
     const f = frameRect();
     const scale = Math.max(f.sw / v.videoWidth, f.sh / v.videoHeight);
     const ox = (f.sw - v.videoWidth * scale) / 2, oy = (f.sh - v.videoHeight * scale) / 2;
@@ -139,8 +153,9 @@
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
-      ui.img = img; ui.fromCamera = !!fromCamera;
+      ui.img = img; ui.fromCamera = !!fromCamera; ui.file = file;
       const p = ui.o.querySelector('.cc-pic'); p.src = url;
+      if (ui.free) { p.removeAttribute('style'); mode('edit'); return; }
       mode('edit'); layout(); fit(true); paint();
       ui.o.querySelector('.cc-zoom').value = '1';
     };
@@ -165,12 +180,12 @@
     const w = ui.img.naturalWidth * sc, h = ui.img.naturalHeight * sc;
     Object.assign(p.style, { width: `${w}px`, height: `${h}px`, left: `${f.x + f.w / 2 - w / 2 + ui.x}px`, top: `${f.y + f.h / 2 - h / 2 + ui.y}px` });
   }
-  function zoomTo(s) { if (!ui?.img) return; ui.s = Math.min(4, Math.max(1, s)); clamp(); paint(); ui.o.querySelector('.cc-zoom').value = String(ui.s); }
+  function zoomTo(s) { if (!ui?.img || ui.free) return; ui.s = Math.min(4, Math.max(1, s)); clamp(); paint(); ui.o.querySelector('.cc-zoom').value = String(ui.s); }
   function gestures(stage) {
     const pts = new Map(); let last = null;
-    stage.addEventListener('pointerdown', (e) => { if (!ui?.img) return; stage.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); last = null; });
+    stage.addEventListener('pointerdown', (e) => { if (!ui?.img || ui.free) return; stage.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY }); last = null; });
     stage.addEventListener('pointermove', (e) => {
-      if (!ui?.img || !pts.has(e.pointerId)) return;
+      if (!ui?.img || ui.free || !pts.has(e.pointerId)) return;
       const prev = pts.get(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pts.size === 1) { ui.x += e.clientX - prev.x; ui.y += e.clientY - prev.y; clamp(); paint(); return; }
       const [a, b] = [...pts.values()]; const d = Math.hypot(a.x - b.x, a.y - b.y);
@@ -183,7 +198,19 @@
   }
 
   // Cut what the frame shows into a card-shaped JPEG and hand it to the page.
+  function give(target, file) {
+    try {
+      const dt = new DataTransfer(); dt.items.add(file); target.files = dt.files;
+      target.dispatchEvent(new Event('input', { bubbles: true }));
+      target.dispatchEvent(new Event('change', { bubbles: true }));
+    } catch (_) {
+      // A very old browser: let it use its own picker instead.
+      target.dataset.camPass = '1'; target.click(); delete target.dataset.camPass;
+    }
+    close();
+  }
   function use() {
+    if (ui.free) { if (ui.file) give(ui.target, ui.file); return; }
     const f = frameRect(), sc = ui.base * ui.s;
     const w = ui.img.naturalWidth * sc, h = ui.img.naturalHeight * sc;
     const left = f.x + f.w / 2 - w / 2 + ui.x, top = f.y + f.h / 2 - h / 2 + ui.y;
@@ -193,16 +220,7 @@
     const target = ui.target;
     c.toBlob((b) => {
       if (!b) return;
-      const file = new File([b], `card-${Date.now()}.jpg`, { type: 'image/jpeg' });
-      try {
-        const dt = new DataTransfer(); dt.items.add(file); target.files = dt.files;
-        target.dispatchEvent(new Event('input', { bubbles: true }));
-        target.dispatchEvent(new Event('change', { bubbles: true }));
-      } catch (_) {
-        // A very old browser: let it use its own picker instead.
-        target.dataset.camPass = '1'; target.click(); delete target.dataset.camPass;
-      }
-      close();
+      give(target, new File([b], `card-${Date.now()}.jpg`, { type: 'image/jpeg' }));
     }, 'image/jpeg', 0.92);
   }
 })();

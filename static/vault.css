@@ -2209,3 +2209,8 @@ html.cc-on, html.cc-on body { overflow: hidden; }
 @media (min-width: 700px) and (max-width: 899px) and (min-height: 521px) {
   .dm-win { bottom: calc(96px + var(--sab, 0px)); height: min(600px, calc(100dvh - 190px)); }
 }
+
+/* "Take a photo" in a chat: a plain camera (card-cam.js, free mode), and room for the button on a phone. */
+.cc.free .cc-frame { display: none; }
+.cc.free .cc-video, .cc.free .cc-pic { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+@media (max-width: 699px) { .dm-form.has-text .dm-pic, .dm-form.has-text .dm-cam { display: none; } }

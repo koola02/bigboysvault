@@ -17,6 +17,7 @@
     back: '<path d="M15 18l-6-6 6-6"/>',
     photo: '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>',
     mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5"/>',
+    cam: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>',
     send: '<path d="M4 12l16-8-6 16-3-7z"/>',
     play: '<path d="M7 4l13 8-13 8z" fill="currentColor"/>',
     pause: '<path d="M7 4h4v16H7zM13 4h4v16h-4z" fill="currentColor"/>',
@@ -120,7 +121,8 @@
         <div class="dm-log" role="log" aria-live="polite" tabindex="0"></div>
         <div class="dm-attach" hidden></div>
         <form class="dm-form">
-          <label class="dm-ib dm-pic" title="Send a photo" aria-label="Send a photo">${icon(I.photo)}<input type="file" accept="image/*" hidden></label>
+          <label class="dm-ib dm-cam" title="Take a photo" aria-label="Take a photo">${icon(I.cam)}<input type="file" accept="image/*" capture="environment" data-card-cam="free" hidden></label>
+          <label class="dm-ib dm-pic" title="Send a photo from your gallery" aria-label="Send a photo from your gallery">${icon(I.photo)}<input type="file" accept="image/*" hidden></label>
           <button type="button" class="dm-ib dm-rec" title="Voice message" aria-label="Record a voice message">${icon(I.mic)}</button>
           <textarea rows="1" maxlength="1000" placeholder="Aa" aria-label="Message" enterkeyhint="send"></textarea>
           <button type="submit" class="dm-ib dm-send" aria-label="Send">${icon(I.send)}</button>
@@ -152,13 +154,13 @@
         try { const j = await api(`/dm/${this.thread}/send`, body); temp.remove(); if (j.message) this.add([j.message]); kick(); }
         catch (err) { temp.remove(); box.value = text; grow(); if (card) this.setCard(card); toast(err.message, true); }
       });
-      $('.dm-pic input', n).addEventListener('change', async (e) => {
+      n.querySelectorAll('.dm-pic input, .dm-cam input').forEach((inp) => inp.addEventListener('change', async (e) => {
         const f = e.target.files[0]; e.target.value = ''; if (!f) return;
         const fd = new FormData(); fd.append('photo', f);
         const temp = this.pending('Sending photo…');
         try { const j = await api(`/dm/${this.thread}/photo`, fd); temp.remove(); if (j.message) this.add([j.message]); kick(); }
         catch (err) { temp.remove(); toast(err.message, true); }
-      });
+      }));
       $('.dm-rec', n).addEventListener('click', () => rec.start());
       $('.dm-rec-x', n).addEventListener('click', () => rec.stop(false));
       $('.dm-rec-go', n).addEventListener('click', () => rec.stop(true));
