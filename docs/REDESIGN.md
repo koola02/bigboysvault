@@ -242,7 +242,14 @@ Owner's rules added along the way: editing happens where the thing is shown and 
 opens as a chat, not a page; pages are 60% wider (phones unchanged, tablets fill their width); the card section is
 called The Vault; the stories row shows only the showcase's cards; a card tapped in The Vault opens in a floating
 window with More like this; everyone can message everyone (30 new conversations a day for trainers who aren't
-staff); the admin's and the seller's dashboards should feel like home, the way an ads manager does.
+staff); the admin's and the seller's dashboards should feel like home, the way an ads manager does; the header's
+five places carry their words and are as wide as the feed (on a three-column screen they sit exactly over the feed's
+column; on smaller screens they fill what is left between the search and the buttons, with the word under the icon
+below 1280px; phones keep the worded tabs at the bottom).
+
+The search suggestions (suggest.js) open in the browser's top layer where they can, so no page box places them:
+`fb.css` attaches the list to its search box with anchor positioning, as `modern.css` does for today's look. Without
+those rules the list falls to the bottom of the screen.
 
 One thing to remember when a script in today's look meets the new one: a class name can mean something else there.
 `quick.js` marks a tapped card `pop`, which in the new look is the header's drop-down; `mgr.css` takes those styles
