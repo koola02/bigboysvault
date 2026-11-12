@@ -546,6 +546,59 @@
     e.preventDefault(); b.click();
   });
 
+  /* ---------------- New message: anyone on the site, about anything ---------------- */
+  let picker = null;
+  function people() {
+    if (picker) picker.remove();
+    const o = el('div', 'dm-people'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', 'New message');
+    const box = el('div', 'dm-people-in');
+    const head = el('header', 'dm-people-h'); head.append(el('b', '', 'New message'));
+    const x = el('button', 'dm-ib', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Close'); head.append(x);
+    const q = el('input'); q.type = 'search'; q.placeholder = 'Search trainers by name'; q.setAttribute('aria-label', 'Search trainers by name'); q.autocomplete = 'off';
+    const list = el('ul', 'dm-list dm-people-list');
+    box.append(head, q, list); o.append(box); document.body.append(o); picker = o;
+    const esc = (e) => { if (e.key === 'Escape') close(); };
+    const close = () => { o.remove(); if (picker === o) picker = null; document.removeEventListener('keydown', esc); };
+    x.addEventListener('click', close);
+    o.addEventListener('mousedown', (e) => { if (e.target === o) close(); });
+    document.addEventListener('keydown', esc);
+    let seq = 0, timer = 0;
+    const draw = async () => {
+      const mine = ++seq;
+      let j;
+      try { j = await api(`/dm/people?q=${encodeURIComponent(q.value.trim())}`); }
+      catch (err) { if (err.login) { toLogin(); return; } list.replaceChildren(el('li', 'dm-empty', err.message)); return; }
+      if (mine !== seq) return;
+      list.replaceChildren();
+      if (!(j.people || []).length) { list.append(el('li', 'dm-empty', q.value.trim() ? 'No trainer by that name.' : 'Nobody else is here yet.')); return; }
+      j.people.forEach((p) => {
+        const li = el('li'); const a = el('button', 'dm-li'); a.type = 'button';
+        a.append(avatar(p, 44));
+        const t = el('span', 'dm-li-t'); const top = el('span', 'dm-li-top'); top.append(el('b', '', p.name));
+        if (p.role) top.append(el('span', 'dm-tag', p.role));
+        t.append(top);
+        const sub = [p.store, p.online ? 'Active now' : ''].filter(Boolean).join(' · ');
+        if (sub) t.append(el('span', 'dm-li-last', sub));
+        a.append(t);
+        a.addEventListener('click', async () => {
+          a.disabled = true;
+          try { const r = await api('/dm/open', { to: p.id }); close(); await win.open(r.thread); }
+          catch (err) { a.disabled = false; if (err.login) toLogin(); else toast(err.message, true); }
+        });
+        li.append(a); list.append(li);
+      });
+    };
+    q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(draw, 180); });
+    draw();
+    setTimeout(() => q.focus(), 30);
+  }
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('[data-dm-new]'); if (!b) return;
+    e.preventDefault();
+    if (!live.me) { toLogin(); return; }
+    people();
+  });
+
   /* ---------------- the inbox page ---------------- */
   async function inboxPage(root) {
     const box = $('[data-dm-inbox]', root), admin = root.hasAttribute('data-dm-admin');
@@ -588,6 +641,8 @@
     const icon2 = $('#barDm');
     if (!me) { if (icon2) icon2.hidden = true; return; }
     live.me = me.id;
+    // Nobody messages themselves: a Message button that points at you is put away.
+    document.querySelectorAll(`[data-dm-to="${me.id}"]`).forEach((n) => { n.hidden = true; });
     if (icon2) icon2.hidden = false;
     startLive();
     const page = $('[data-dm-page]'); if (page) inboxPage(page);

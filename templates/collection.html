@@ -3,7 +3,7 @@
 {% block layout %}wide{% endblock %}
 {% block content %}
 <section class="wrap mk">
-  <h1 class="h1">{{ title }}</h1>
+  <h1 class="h1">{% if crate::look::is_new() && title == "All cards" %}The Vault{% else %}{{ title }}{% endif %}</h1>
   <p class="sub">{{ total }} item{% if total != 1 %}s{% endif %}</p>
   {% if base == "/search" %}<div id="finder" class="fd"></div>{% endif %}
   <form class="filters" action="{{ base }}" hx-get="{{ base }}" hx-target="#grid" hx-select="#grid" hx-swap="outerHTML" hx-trigger="change, input from:.q delay:250ms" hx-push-url="true">

@@ -195,6 +195,79 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     Object.keys(talks).forEach((kind) => { const w = talks[kind].win; if (!w.hidden && w.contains(document.activeElement)) closeTalk(kind); });
   });
 
+  /* ---------- a card opens in a window over the page, with "More like this" under it ----------
+     (Its own page stays for shared links, search engines and the admin's editor.) */
+  let cw = null, cwStop = null, cwBase = null, cwTools = null, cwSeq = 0, cwTalk = null;
+  const cardPath = (a) => (a && a.origin === location.origin && /^\/products\/[^/]+$/.test(a.pathname) && !a.hash && !a.target ? a.pathname : '');
+  const cwDepth = () => (history.state && history.state.cw ? history.state.depth || 1 : 0);
+  const cwClose = () => { if (cwDepth()) history.go(-cwDepth()); else cwHide(); };
+  function cwBuild() {
+    cw = document.createElement('div'); cw.className = 'cardwin'; cw.hidden = true;
+    cw.setAttribute('role', 'dialog'); cw.setAttribute('aria-modal', 'true'); cw.setAttribute('aria-label', 'Card');
+    cw.innerHTML = '<div class="cardwin-in" tabindex="-1"><header class="cardwin-h"><button type="button" class="ibtn" data-cw-x aria-label="Close">✕</button><b class="cardwin-t"></b>'
+      + '<a class="btn soft sm staff-only" data-full-only data-cw-edit>Edit</a><a class="btn ghost sm" data-cw-page>Full page</a></header><div class="cardwin-b"></div></div>';
+    document.body.append(cw);
+    let down = false;
+    cw.addEventListener('mousedown', (e) => { down = e.target === cw; });
+    cw.addEventListener('click', (e) => { if ((e.target === cw && down) || e.target.closest('[data-cw-x]')) cwClose(); down = false; });
+  }
+  async function cwShow(href, push) {
+    if (!cw) cwBuild();
+    const mine = ++cwSeq, body = cw.querySelector('.cardwin-b'), box = cw.querySelector('.cardwin-in');
+    if (cw.hidden) {
+      cwBase = { title: document.title };
+      // On a phone a chat window fills the screen: it steps aside for the card and comes back afterwards.
+      if (matchMedia('(max-width: 699px)').matches) { cwTalk = Object.keys(talks).find((k) => !talks[k].win.hidden) || null; if (cwTalk) talks[cwTalk].win.hidden = true; }
+    }
+    cw.hidden = false; root.classList.add('cardwin-open'); body.classList.add('busy');
+    if (push) history.pushState({ cw: href, depth: cwDepth() + 1 }, '', href);
+    let html;
+    try {
+      const r = await fetch(`${href}${href.includes('?') ? '&' : '?'}part=1`, { credentials: 'same-origin', headers: { Accept: 'text/html' } });
+      if (!r.ok) throw new Error();
+      html = await r.text();
+    } catch (_) { location.href = href; return; } // the card's own page still works
+    if (mine !== cwSeq) return;
+    if (cwStop) { cwStop(); cwStop = null; }
+    body.innerHTML = html; body.classList.remove('busy'); cw.scrollTop = 0;
+    const detail = body.querySelector('.detail'), name = body.querySelector('.detail-info .h1')?.textContent.trim() || 'Card';
+    cw.setAttribute('aria-label', name); cw.querySelector('.cardwin-t').textContent = name;
+    document.title = `${name} · ${cwBase.title.split(' · ').pop()}`;
+    cw.querySelector('[data-cw-page]').href = href; cw.querySelector('[data-cw-page]').setAttribute('data-full-page', '');
+    cw.querySelector('[data-cw-edit]').href = `${href}#edit`;
+    if (detail && detail.dataset.hit && navigator.sendBeacon) navigator.sendBeacon(`/hit/${detail.dataset.hit}`);
+    document.dispatchEvent(new CustomEvent('float:filled', { detail: body }));
+    box.focus({ preventScroll: true });
+    try {
+      cwTools = cwTools || Promise.all([import('/static/holo.js?v=6'), import('/static/card-lang.js?v=4')]);
+      const [holo, lang] = await cwTools;
+      if (mine !== cwSeq || cw.hidden) return;
+      cwStop = holo.mountHolo(body); lang.mountLang(body);
+    } catch (_) {}
+  }
+  function cwHide() {
+    if (!cw || cw.hidden) return;
+    cwSeq++; cw.hidden = true; root.classList.remove('cardwin-open');
+    if (cwStop) { cwStop(); cwStop = null; }
+    cw.querySelector('.cardwin-b').innerHTML = '';
+    if (cwBase) document.title = cwBase.title;
+    if (cwTalk && talks[cwTalk]) { talks[cwTalk].win.hidden = false; root.classList.add('ask-open'); }
+    cwTalk = null;
+  }
+  document.addEventListener('click', (e) => {
+    if (e.defaultPrevented || e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest && e.target.closest('a[href]'), href = cardPath(a);
+    if (!href || a.hasAttribute('data-full-page')) return;
+    // The small buttons on a tile (add to cart, message, the admin's pencil) do their own thing.
+    if (e.target.closest('.cart-mini, .dm-mini, .card-pen, button, [role="button"]')) return;
+    // On a card's own page the links simply go on to the next page.
+    if (!a.closest('.cardwin') && document.querySelector('main .detail')) return;
+    e.preventDefault();
+    cwShow(href, true);
+  });
+  addEventListener('popstate', (e) => { if (e.state && e.state.cw) cwShow(e.state.cw, false); else cwHide(); });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && cw && !cw.hidden && !document.querySelector('.dm-lightbox, .cc, .sheet:not([hidden]), .dm-people')) cwClose(); });
+
   /* ---------- a card's picture, up close (today's look does this inside its floating window) ---------- */
   document.addEventListener('click', (e) => {
     const z = e.target.closest('[data-zoom]'); if (!z) return;
@@ -217,6 +290,13 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     if (more) return;
     more = setTimeout(() => { more = 0; const b = document.querySelector('.fd-more button'); if (b && b.getBoundingClientRect().top < innerHeight + 900) b.click(); }, 120);
   }, { passive: true });
+  // The card finder names its page "All cards" each time the search changes; here that page is called The Vault.
+  const vaultH = document.querySelector('.mk > .h1');
+  if (vaultH) {
+    const rename = () => { if (vaultH.textContent.trim() === 'All cards') vaultH.textContent = 'The Vault'; };
+    new MutationObserver(rename).observe(vaultH, { childList: true, characterData: true, subtree: true });
+    rename();
+  }
   const openFilters = () => { const d = document.querySelector('.fd-filters'); if (d && matchMedia('(min-width: 900px)').matches) d.open = true; };
   new MutationObserver(openFilters).observe(root, { attributes: true, attributeFilter: ['data-finder'] });
   openFilters();

@@ -259,3 +259,19 @@ html.cc-on, html.cc-on body { overflow: hidden; }
 .cc.free .cc-frame { display: none; }
 .cc.free .cc-video, .cc.free .cc-pic { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
 @media (max-width: 699px) { .dm-form.has-text .dm-pic, .dm-form.has-text .dm-cam { display: none; } }
+
+/* New message: pick anyone on the site. */
+.dm-page-h { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.dm-page-h .dm-page-sub { flex: 1 1 100%; margin: 0; }
+.dm-people { position: fixed; inset: 0; z-index: 2147483099; display: grid; place-items: center; padding: 16px; background: rgba(3,4,10,.72); }
+.dm-people-in { display: flex; flex-direction: column; gap: 10px; width: min(440px, 100%); max-height: min(640px, calc(100dvh - 32px)); padding: 14px; border-radius: 18px; background: #12151f; box-shadow: 0 0 0 1px rgba(239,200,115,.25), 0 24px 70px rgba(0,0,0,.7); color: #f6f2e8; }
+.dm-people-h { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.dm-people-h b { font: 800 1.125rem/1.2 var(--font); }
+.dm-people-in input { width: 100%; min-height: 42px; padding: 8px 14px; border: 1px solid rgba(255,255,255,.14); border-radius: 21px; background: rgba(255,255,255,.06); color: inherit; font: 500 1rem/1.2 var(--font); }
+.dm-people-list { flex: 1; min-height: 120px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.dm-people-list li { margin: 2px 0; }
+.dm-people-list .dm-empty { padding: 24px 8px; }
+.tr-tile { position: relative; }
+.tr-tile .tr-dm { position: absolute; top: 8px; right: 8px; margin: 0; }
+[data-dm-to][hidden] { display: none !important; }
+@media (max-width: 699px) { .dm-people { padding: 0; place-items: stretch; } .dm-people-in { width: 100%; max-height: none; border-radius: 0; padding-top: calc(14px + env(safe-area-inset-top)); } }

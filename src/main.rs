@@ -1398,6 +1398,7 @@ async fn main() {
         .route("/admin/dm", get(messages::admin_list))
         .route("/admin/dm/{id}", get(messages::admin_thread))
         .route("/dm/inbox", get(messages::inbox))
+        .route("/dm/people", get(messages::people_list))
         .route("/dm/poll", get(messages::poll))
         .route("/dm/ice", get(messages::ice))
         .route("/dm/open", post(messages::open))

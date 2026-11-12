@@ -36,7 +36,7 @@ One list of colours and sizes ("tokens") drives everything, in a new stylesheet 
 
 ## 2. The frame on each device
 
-**Desktop (1280 and wider): three columns**
+**Desktop (1536 and wider): three columns** (the feed is 1088 wide; the side columns take what is left, 208 to 300 each)
 
 ```
 [logo][ search……… ]   [Home][Marketplace][Stores][Trainers][Chat]   [cart][msgs][bell][me]
@@ -50,7 +50,8 @@ One list of colours and sizes ("tokens") drives everything, in a new stylesheet 
 └──────────────────┘ └────────────────────────┘ └──────────────────┘
 ```
 
-- 1100–1279 wide: left column hides (its items live in the Menu); feed + right column.
+- 1100–1535 wide: left column hides (its items live in the Menu); feed + right column (232 to 300), so the feed reaches its full width from about 1366.
+- The card section is called **The Vault** (Russell found "Marketplace" too generic); its sign is a vault door.
 - Header icons open **popovers** like Facebook: Messenger list, Notifications, Account menu. Cart opens a right-side drawer.
 - Chats dock bottom-right (already built).
 

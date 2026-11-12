@@ -208,6 +208,33 @@ pub async fn inbox(State(app): State<App>, h: HeaderMap) -> Res {
 }
 
 #[derive(Deserialize)]
+pub struct PeopleQs {
+    #[serde(default)]
+    q: String,
+}
+
+/// GET /dm/people?q=: who a conversation can be started with (every trainer on the site but you), for "New message".
+pub async fn people_list(State(app): State<App>, h: HeaderMap, Query(q): Query<PeopleQs>) -> Res {
+    let Some(m) = current(&app, &h).await? else { return Ok(signed_out()) };
+    let hub = app.dm.clone();
+    let (id, needle) = (m.id, q.q.trim().to_lowercase());
+    let rows = with_db(&app, move |c| {
+        Ok(members::approved(c)?
+            .into_iter()
+            .filter(|p| p.id != id)
+            .filter(|p| needle.is_empty() || p.name.to_lowercase().contains(&needle) || p.store_name.to_lowercase().contains(&needle))
+            .take(40)
+            .map(|p| {
+                let store = if p.seller && !p.store_name.trim().is_empty() { p.store_name.clone() } else { String::new() };
+                json!({ "id": p.id, "name": p.name, "store": store, "role": p.role_text(), "avatar": p.avatar, "initial": p.initial(), "online": hub.is_online(p.id) })
+            })
+            .collect::<Vec<Value>>())
+    })
+    .await?;
+    Ok(ok(json!({ "people": rows })))
+}
+
+#[derive(Deserialize)]
 pub struct PageQs {
     before: Option<i64>,
 }
@@ -321,7 +348,7 @@ pub async fn open(State(app): State<App>, h: HeaderMap, Json(req): Json<OpenReq>
             }
         };
         if to == m.id {
-            return Ok(Err("That's your own card."));
+            return Ok(Err(if r.vault.is_some() || r.card.is_some() { "That's your own card." } else { "That's you. Pick someone else to message." }));
         }
         if to == dm::VAULT && m.role == "admin" {
             return Ok(Err("This is the vault's own card: you answer for the vault."));
@@ -331,11 +358,8 @@ pub async fn open(State(app): State<App>, h: HeaderMap, Json(req): Json<OpenReq>
             if other.blocked {
                 return Ok(Err("That trainer can't get messages right now."));
             }
-            // Anyone may write to a seller or an admin; anyone else only once a conversation exists (they wrote first).
-            let known = dm::find_between(c, m.id, to)?.is_some();
-            if !(other.seller || other.role == "admin" || known || m.role == "admin") {
-                return Ok(Err("You can message sellers and the vault."));
-            }
+            // Anyone may write to anyone, about a card or about nothing at all. (How many new conversations a person
+            // can start in a day is limited where the first words are sent: see may_send.)
         }
         let t = dm::thread_between(c, m.id, to, now)?;
         let admins = dm::admins(c)?;
@@ -395,11 +419,18 @@ async fn may_send(app: &App, h: &HeaderMap, tid: i64) -> Result<Result<(members:
     };
     let now = crate::unix_now();
     let id = m.id;
-    let (t, minute, hour) = with_db(app, move |c| Ok((dm::thread(c, tid)?, dm::sent_since(c, id, now - 60)?, dm::sent_since(c, id, now - 3600)?))).await?;
+    let (t, minute, hour, fresh, started) = with_db(app, move |c| {
+        Ok((dm::thread(c, tid)?, dm::sent_since(c, id, now - 60)?, dm::sent_since(c, id, now - 3600)?, dm::is_fresh(c, tid)?, dm::started_since(c, id, now - 86_400)?))
+    })
+    .await?;
     let Some(t) = t else { return Ok(Err(fail(StatusCode::NOT_FOUND, "That conversation isn't here."))) };
     let Some(side) = side_of(&t, &m) else { return Ok(Err(fail(StatusCode::FORBIDDEN, "That conversation isn't yours."))) };
     if minute >= dm::PER_MINUTE || hour >= dm::PER_HOUR {
         return Ok(Err(fail(StatusCode::TOO_MANY_REQUESTS, "You're sending a lot right now. Wait a moment and try again.")));
+    }
+    // The first words of a new conversation: someone who isn't staff can start only so many in a day.
+    if fresh && !t.is_vault() && m.role.is_empty() && started >= dm::NEW_CHATS_PER_DAY {
+        return Ok(Err(fail(StatusCode::TOO_MANY_REQUESTS, "You've started a lot of new chats today. You can still answer the ones you have; new ones can wait until tomorrow.")));
     }
     Ok(Ok((m, t, side)))
 }

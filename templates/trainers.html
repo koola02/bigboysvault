@@ -20,6 +20,7 @@
       {% if !t.role_text().is_empty() %}<span class="role" data-role="{{ t.role }}">{{ t.role_text() }}</span>{% endif %}{% for g in t.tag_list() %}<span class="tag-hl mtag">{{ g }}</span>{% endfor %}
       {% if t.stars > 0 %}<span class="stars">★ {{ t.stars }}</span>{% endif %}{% if t.worth > 0.0 %}<span class="worth">{{ t.worth_text() }}</span>{% endif %}
       <small>{{ t.cards }} card{% if t.cards != 1 %}s{% endif %}</small>
+      <span class="dm-mini tr-dm" role="button" tabindex="0" data-dm-to="{{ t.id }}" aria-label="Message {{ t.name }}" title="Message {{ t.name }}"></span>
     </a></li>
     {% endfor %}
   </ul>

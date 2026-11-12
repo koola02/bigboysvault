@@ -401,41 +401,20 @@ fn build(c: &rusqlite::Connection, nav: &Chrome, viewer: i64, at: Cursor) -> rus
     Ok((items, next))
 }
 
-/// The showcase, as the row of stories at the top: the hand-picked cards, the rows the owner put on the home page,
-/// and the binders shown there.
-fn stories(c: &rusqlite::Connection, nav: &Chrome) -> rusqlite::Result<Vec<Story>> {
+/// The row of stories at the top is the showcase and nothing else: the cards the owner hand-picked for it, in the
+/// owner's order. (Binders and the home page's other rows have their own places; they are not stories.)
+fn stories(c: &rusqlite::Connection) -> rusqlite::Result<Vec<Story>> {
     let mut out: Vec<Story> = vec![];
-    let mut add = |title: String, img: String, url: String| {
-        if !img.is_empty() && !title.is_empty() && !out.iter().any(|s| s.url == url) {
-            out.push(Story { title, img, url });
-        }
-    };
-    for b in blocks::blocks(c)?.iter().filter(|b| b.visible) {
-        let d = &b.data;
-        let text = |k: &str| d[k].as_str().unwrap_or("").trim().to_string();
-        match b.kind.as_str() {
-            "showcase" => {
-                for id in d["ids"].as_array().cloned().unwrap_or_default().iter().filter_map(Value::as_i64).take(4) {
-                    if let Some(p) = db::product_by_id(c, id)?.filter(|p| p.available && p.has_image()) {
-                        add(p.short_title(), p.img(360), format!("/products/{}", p.handle));
-                    }
-                }
+    for b in blocks::blocks(c)?.iter().filter(|b| b.visible && b.kind == "showcase") {
+        for id in b.data["ids"].as_array().cloned().unwrap_or_default().iter().filter_map(Value::as_i64) {
+            let Some(p) = db::product_by_id(c, id)?.filter(|p| p.available && p.has_image()) else { continue };
+            let url = format!("/products/{}", p.handle);
+            if !out.iter().any(|s| s.url == url) {
+                out.push(Story { title: p.short_title(), img: p.img(360), url });
             }
-            "row" => {
-                let handle = text("handle");
-                let Some(col) = nav.links.iter().find(|x| x.handle == handle && x.count > 0) else { continue };
-                let (items, _) = db::list(c, &db::Query { collection: Some(handle.clone()), q: String::new(), sort: text("sort"), in_stock: true, page: 0 })?;
-                let img = items.iter().find(|p| p.has_image()).map(|p| p.img(360)).unwrap_or_else(|| col.image.clone());
-                let title = if text("title").is_empty() { col.title.clone() } else { text("title") };
-                add(title, img, format!("/collections/{handle}"));
-            }
-            _ => {}
         }
     }
-    for col in nav.links.iter().filter(|x| x.on_home && x.count > 0) {
-        add(col.title.clone(), col.image.clone(), format!("/collections/{}", col.handle));
-    }
-    out.truncate(14);
+    out.truncate(24);
     Ok(out)
 }
 
@@ -483,7 +462,7 @@ async fn feed_html(app: &App, viewer: i64, only: Option<i64>) -> Result<String, 
                 (items, next, false)
             }
         };
-        let stories = if single { vec![] } else { stories(c, &nav)? };
+        let stories = if single { vec![] } else { stories(c)? };
         let hero = blocks::blocks(c)?.into_iter().find(|b| b.kind == "hero");
         // The hero's words can hold "{count}": the number of cards in the vault.
         let tagline = hero.as_ref().and_then(|b| b.data["subtitle"].as_str()).unwrap_or("").trim().replace("{count}", &db::thousands(admin::in_vault(c)?.0));

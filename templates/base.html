@@ -38,11 +38,11 @@
 {% endif %}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@50..150,100..900&display=swap">
-{% if crate::look::is_new() %}<link rel="stylesheet" href="/static/fb.css?v=11">
+{% if crate::look::is_new() %}<link rel="stylesheet" href="/static/fb.css?v=12">
 {% else %}<link rel="stylesheet" href="/static/app.css?v=53">
 <link rel="stylesheet" href="/static/modern.css?v=27">
 <link rel="stylesheet" href="/static/vault.css?v=64">
-{% endif %}<link rel="stylesheet" href="/static/widgets.css?v=1">
+{% endif %}<link rel="stylesheet" href="/static/widgets.css?v=2">
 {% for t in nav.trials %}<meta http-equiv="origin-trial" content="{{ t }}">
 {% endfor %}<script type="speculationrules">
 {"prefetch":[{"where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":"/admin*"}},{"not":{"href_matches":"/products/*"}},{"not":{"href_matches":"/me*"}},{"not":{"href_matches":"/join*"}},{"not":{"href_matches":"/chat*"}},{"not":{"href_matches":"/ask*"}},{"not":{"href_matches":"/trainers/*"}},{"not":{"href_matches":"/collections/*"}},{"not":{"href_matches":"/static/*"}},{"not":{"href_matches":"/uploads/*"}}]},"eagerness":"moderate"}],
@@ -81,10 +81,10 @@
 {% if !crate::look::is_new() %}<script src="/static/card-float.js?v=24" defer></script>{% endif %}
 <script src="/static/tiles.js?v=2" defer></script>
 <script src="/static/vouches.js?v=5" defer></script>
-{% if crate::look::is_new() %}<script src="/static/fb-shell.js?v=8" defer></script><script src="/static/feed.js?v=3" defer></script>{% else %}<script src="/static/vault-core.js?v=12" defer></script>{% endif %}
+{% if crate::look::is_new() %}<script src="/static/fb-shell.js?v=9" defer></script><script src="/static/feed.js?v=3" defer></script>{% else %}<script src="/static/vault-core.js?v=12" defer></script>{% endif %}
 <script src="/static/cart.js?v=2" defer></script>
 <script src="/static/vault-talk.js?v=9" defer></script>
-<script src="/static/dm.js?v=4" defer></script>
+<script src="/static/dm.js?v=5" defer></script>
 <script src="/static/card-cam.js?v=3" defer></script>
 <script src="/static/vault-staff.js?v=5" defer></script>
 {% if !crate::look::is_new() %}<script type="module" src="/static/vault-gl.js?v=4"></script>{% endif %}

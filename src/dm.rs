@@ -15,6 +15,9 @@ pub const TEXT_MAX: usize = 1000;
 /// Messages one person may send in a minute and in an hour.
 pub const PER_MINUTE: i64 = 20;
 pub const PER_HOUR: i64 = 400;
+/// Anyone may write to anyone. So that this is never a way to pester the whole site, a person who isn't staff can
+/// start this many new conversations in a day; answering, and conversations already going, never count.
+pub const NEW_CHATS_PER_DAY: i64 = 30;
 
 pub const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS dm_threads(
@@ -211,6 +214,22 @@ pub fn mark_read(c: &Connection, t: &Thread, side: i64, upto: i64) -> rusqlite::
 }
 
 /// Messages sent by one person since a time, for the rate limit.
+/// True while nobody has written in this conversation yet.
+pub fn is_fresh(c: &Connection, thread: i64) -> rusqlite::Result<bool> {
+    c.query_row("SELECT NOT EXISTS(SELECT 1 FROM dm_messages WHERE thread_id=?1)", [thread], |r| r.get(0))
+}
+
+/// How many conversations this member started (theirs are the first words) since `since`.
+pub fn started_since(c: &Connection, member: i64, since: i64) -> rusqlite::Result<i64> {
+    c.query_row(
+        "SELECT COUNT(*) FROM dm_threads t
+         WHERE (SELECT m.author FROM dm_messages m WHERE m.thread_id=t.id ORDER BY m.id LIMIT 1)=?1
+           AND (SELECT m.created_at FROM dm_messages m WHERE m.thread_id=t.id ORDER BY m.id LIMIT 1)>=?2",
+        params![member, since],
+        |r| r.get(0),
+    )
+}
+
 pub fn sent_since(c: &Connection, author: i64, since: i64) -> rusqlite::Result<i64> {
     c.query_row("SELECT COUNT(*) FROM dm_messages WHERE author=?1 AND created_at>=?2 AND kind<>'call'", params![author, since], |r| r.get(0))
 }
@@ -301,6 +320,23 @@ mod tests {
 
     fn text(s: &str) -> New {
         New { kind: "text".into(), text: s.into(), ..Default::default() }
+    }
+
+    #[test]
+    fn new_conversations_are_counted_by_who_spoke_first() {
+        let c = db();
+        let ab = thread_between(&c, 3, 2, 100).unwrap();
+        assert!(is_fresh(&c, ab.id).unwrap(), "opened, nothing said yet");
+        assert_eq!(started_since(&c, 3, 0).unwrap(), 0, "opening a chat without writing starts nothing");
+        post(&c, &ab, 3, 3, &text("hi, is this still for sale?"), 110).unwrap();
+        assert!(!is_fresh(&c, ab.id).unwrap());
+        post(&c, &ab, 2, 2, &text("yes!"), 120).unwrap();
+        assert_eq!(started_since(&c, 3, 0).unwrap(), 1, "the buyer spoke first");
+        assert_eq!(started_since(&c, 2, 0).unwrap(), 0, "answering is not starting");
+        let ac = thread_between(&c, 3, 1, 200).unwrap();
+        post(&c, &ac, 3, 3, &text("hello admin"), 210).unwrap();
+        assert_eq!(started_since(&c, 3, 0).unwrap(), 2);
+        assert_eq!(started_since(&c, 3, 150).unwrap(), 1, "only the ones started since then");
     }
 
     #[test]

@@ -101,12 +101,14 @@ body[data-layout="plain"] main { max-width: 1568px; }
 .fb-foot { padding: 8px 16px calc(24px + var(--sab)); color: var(--faint); font-size: .75rem; line-height: 1.5; text-align: center; }
 .wrap { width: 100%; }
 .stack { display: flex; flex-direction: column; gap: 16px; }
+/* On a desktop the feed comes first (it is 60% wider than first drawn): the columns beside it take what is left,
+   and the left one waits until there is room for all three. */
 @media (min-width: 1100px) {
-  body[data-layout="feed"] .fb-app { grid-template-columns: minmax(0, 1fr) var(--rail); }
+  body[data-layout="feed"] .fb-app { grid-template-columns: minmax(0, 1fr) clamp(232px, calc(100vw - 1136px), 300px); }
   body[data-layout="feed"] .fb-right { display: block; }
 }
-@media (min-width: 1280px) {
-  body[data-layout="feed"] .fb-app { grid-template-columns: var(--rail) minmax(0, 1fr) var(--rail); }
+@media (min-width: 1536px) {
+  body[data-layout="feed"] .fb-app { --rail: clamp(208px, calc((100vw - 1120px) / 2), 300px); grid-template-columns: var(--rail) minmax(0, 1fr) var(--rail); }
   body[data-layout="page"] .fb-app { grid-template-columns: var(--rail) minmax(0, 1fr); }
   body:is([data-layout="feed"], [data-layout="page"]) .fb-left { display: block; position: sticky; top: calc(var(--hd-h) + var(--sat)); height: calc(100dvh - var(--hd-h) - var(--sat)); padding: 12px 4px 16px 8px; overflow-y: auto; scrollbar-width: thin; }
   body:is([data-layout="feed"], [data-layout="page"]) .fb-foot { display: none; }
@@ -127,14 +129,14 @@ body[data-layout="plain"] main { max-width: 1568px; }
 .mn-foot { margin: 16px 8px 0; color: var(--faint); font-size: .75rem; line-height: 1.5; }
 html:not([data-me]) [data-me-only], html:not([data-full]) [data-full-only], html:not([data-me="admin"]) [data-staff-only], html:not([data-seller]) [data-seller-only] { display: none !important; }
 html[data-me] [data-guest-only] { display: none !important; }
-@media (max-width: 1279px) {
+@media (max-width: 1535px) {
   html.menu-open { overflow: hidden; }
   html.menu-open .fb-left { display: block; position: fixed; z-index: 950; top: calc(var(--hd-h) + var(--sat)); bottom: 0; left: 0; width: min(360px, 100%); padding: 8px 8px calc(16px + var(--sab)); overflow-y: auto; background: var(--surface); box-shadow: var(--shadow-pop); }
   html.menu-open::after { content: ""; position: fixed; inset: calc(var(--hd-h) + var(--sat)) 0 0 0; z-index: 940; background: rgba(3,4,10,.6); }
 }
-@media (max-width: 1279px) and (min-width: 700px) { .hd-menu-btn { display: inline-grid; } }
+@media (max-width: 1535px) and (min-width: 700px) { .hd-menu-btn { display: inline-grid; } }
 body:is([data-layout="wide"], [data-layout="plain"]) .hd-menu-btn { display: inline-grid; }
-@media (min-width: 1280px) {
+@media (min-width: 1536px) {
   body:is([data-layout="wide"], [data-layout="plain"]) .fb-app { grid-template-columns: minmax(0, 1fr); }
   html.menu-open body:is([data-layout="wide"], [data-layout="plain"]) .fb-left { display: block; position: fixed; z-index: 950; top: calc(var(--hd-h) + var(--sat)); bottom: 0; left: 0; width: 360px; padding: 8px 8px 16px; overflow-y: auto; background: var(--surface); box-shadow: var(--shadow-pop); }
 }
@@ -1204,3 +1206,27 @@ a.card:hover .card-pen, .card-pen:focus-visible { opacity: 1; }
 }
 /* Phones have Menu in the bottom bar, so the header never needs a second menu button there (it only crowded the name). */
 @media (max-width: 699px) { .hd-menu-btn { display: none !important; } }
+
+/* ---------- 32. A card, opened in a window over the page ---------- */
+html.cardwin-open { overflow: hidden; }
+.cardwin { position: fixed; inset: 0; z-index: 975; display: flex; align-items: flex-start; justify-content: center; padding: 24px 16px 40px; overflow-y: auto; overscroll-behavior: contain; background: rgba(3,4,10,.8); }
+.cardwin[hidden] { display: none; }
+.cardwin-in { position: relative; width: min(1500px, 100%); border-radius: var(--r); background: var(--bg); box-shadow: 0 0 0 1px var(--line), var(--shadow-pop); outline: none; }
+.cardwin-h { position: sticky; top: -24px; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-bottom: 1px solid var(--line); border-radius: var(--r) var(--r) 0 0; background: var(--surface); }
+.cardwin-t { flex: 1; min-width: 0; font: 700 1rem/1.3 var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cardwin-b { min-height: 240px; }
+.cardwin-b.busy { min-height: 60dvh; opacity: .55; }
+.cardwin-b.busy::before { content: ""; position: absolute; left: 50%; top: 160px; width: 36px; height: 36px; margin-left: -18px; border: 3px solid var(--surface-3); border-top-color: var(--gold); border-radius: 50%; animation: cw-spin .8s linear infinite; }
+@keyframes cw-spin { to { rotate: 360deg; } }
+.cardwin .detail { max-width: none; padding: 16px; }
+.cardwin .detail-img { position: static; min-height: 0; --img-h: min(72dvh, 760px); }
+.cardwin .detail ~ .wrap { max-width: none; padding: 4px 16px 20px; }
+@media (min-width: 900px) { .cardwin .detail { grid-template-columns: minmax(0, 1fr) clamp(380px, 34%, 560px); } }
+@media (max-width: 699px) {
+  .cardwin { padding: 0; }
+  .cardwin-in { min-height: 100dvh; border-radius: 0; box-shadow: none; }
+  .cardwin-h { top: 0; padding-top: calc(10px + var(--sat)); border-radius: 0; }
+  .cardwin .detail { padding: 10px 12px 12px; }
+  .cardwin .detail ~ .wrap { padding-inline: 12px; }
+}
+.av > svg { width: 55%; height: 55%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
