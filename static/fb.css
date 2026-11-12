@@ -1187,3 +1187,11 @@ html[data-look="fb"] .dm-li.unread .dm-li-last { color: var(--gold-hi); }
   .st-note-k { grid-row: auto; justify-self: start; min-width: 0; height: 20px; }
   .st-table th, .st-table td { padding: 8px 4px; font-size: .875rem; }
 }
+
+/* ---------- 31. Admins: a pencil on every vault card opens that card's editor ---------- */
+.card-pen { position: absolute; left: 6px; bottom: 6px; z-index: 2; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: rgba(11,13,20,.88); box-shadow: 0 0 0 1px var(--gold-edge); color: var(--gold-hi); cursor: pointer; opacity: 0; transition: opacity .15s; }
+.card-pen svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+a.card:hover .card-pen, .card-pen:focus-visible { opacity: 1; }
+.card-pen:hover { background: var(--gold); color: var(--gold-ink); }
+/* No hover on a phone or tablet: there the pencil simply shows. */
+@media (hover: none), (max-width: 699px) { .card-pen { opacity: .92; } }

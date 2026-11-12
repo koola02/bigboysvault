@@ -46,6 +46,7 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     root.toggleAttribute('data-full', admin);
     // Things only their owner should see (an Edit button on your own listing, say).
     document.querySelectorAll('[data-owner-only]').forEach((n) => { n.hidden = !(me && String(me.id) === n.dataset.ownerOnly); });
+    if (admin) pencils();
     try { if (me || admin) localStorage.setItem('bbv:me', JSON.stringify({ me, admin })); else localStorage.removeItem('bbv:me'); } catch (_) {}
   });
 
@@ -112,6 +113,24 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     try { await fetch('/api/notifications/read', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' }); count(0); list.querySelectorAll('.unread').forEach((n) => n.classList.remove('unread')); } catch (_) {}
   });
   window.bbvWho().then((j) => { if (j && j.member) load(); else if (holder) holder.hidden = true; });
+
+  /* ---------- full admins: a pencil on every vault card, straight to that card's editor ---------- */
+  let penWatch = null, penSoon = 0;
+  function pencils() {
+    if (!root.hasAttribute('data-full')) return;
+    document.querySelectorAll('a.card[href^="/products/"]:not([data-pen])').forEach((a) => {
+      a.dataset.pen = '1';
+      const b = document.createElement('span'); b.className = 'card-pen staff-only'; b.setAttribute('role', 'link'); b.tabIndex = 0; b.title = 'Edit this card';
+      b.setAttribute('aria-label', `Edit ${a.querySelector('.card-t')?.textContent || 'this card'}`);
+      b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
+      (a.querySelector('.card-img') || a).append(b);
+    });
+    // Cards that arrive later (more results, a new search) get theirs too.
+    if (!penWatch) { penWatch = new MutationObserver(() => { if (!penSoon) penSoon = setTimeout(() => { penSoon = 0; pencils(); }, 150); }); penWatch.observe(document.body, { childList: true, subtree: true }); }
+  }
+  const toEditor = (e) => { const p = e.target.closest && e.target.closest('.card-pen'); if (!p) return false; e.preventDefault(); e.stopPropagation(); location.href = `${p.closest('a.card').getAttribute('href')}#edit`; return true; };
+  document.addEventListener('click', toEditor, true);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Enter') toEditor(e); }, true);
 
   /* ---------- Ask the Vault and the vault chat: chat windows, like a message, not pages of their own ---------- */
   const TALK = {
