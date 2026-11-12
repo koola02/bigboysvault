@@ -215,3 +215,19 @@ Each phase is deployed with the usual steps: live database backup, `fly deploy`,
 - **Photo space.** Post and story photos use the same capped space as other uploads; expired stories are deleted hourly.
 - **Voice calls, Gemini, the VM jobs** are untouched by this work.
 - **Not copied:** Facebook's logo, name, blue, icon set or text.
+
+## Status
+
+As of 12 November 2026, behind the new-look switch:
+
+- **Live:** the frame and style guide; the feed as home (endless, reactions, comments, automatic posts with admin
+  switches, editing of posts and comments); Marketplace and each card's page; the admin's editor on a card's page;
+  every content column 60% wider than first drawn.
+- **Built:** Trainers and Stores, a trainer's profile, a store, a listing's page, the vouches wall; the seller's
+  editor on their own store (Edit on each card, one-tap Out of stock, cover photo, store name and place); Ask the
+  Vault as a chat window.
+- **Next:** stories viewer and trainers' stories, follow, share to feed, the feed editor; vault chat as a chat
+  window; two-pane messages; log in and join; the account pages; admin pages; then the switch-over.
+
+Owner's rules added along the way: editing happens where the thing is shown and must feel natural; Ask the Vault
+opens as a chat, not a page; pages are 60% wider (phones unchanged, tablets fill their width).
