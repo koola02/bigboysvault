@@ -438,6 +438,8 @@ pub fn slugify(name: &str) -> String {
     }
 }
 
+/// A web address for a new trainer, made from their name: "brock", then "brock-2" if that is taken. An address the site
+/// keeps for itself (`sellers::reserved_slug`, such as "vault", the vault's own store) is never handed out: "Vault" gets "vault-2".
 pub fn unique_slug(c: &Connection, name: &str, member_id: i64) -> rusqlite::Result<String> {
     let base = slugify(name);
     let mut candidate = base.clone();
@@ -448,7 +450,7 @@ pub fn unique_slug(c: &Connection, name: &str, member_id: i64) -> rusqlite::Resu
             rusqlite::params![candidate, member_id],
             |r| r.get(0),
         )?;
-        if count == 0 {
+        if count == 0 && !crate::sellers::reserved_slug(&candidate) {
             return Ok(candidate);
         }
         candidate = format!("{base}-{n}");
@@ -1308,6 +1310,11 @@ pub fn public_vouches(c: &Connection, member: Option<i64>, before: Option<i64>, 
     Ok(list)
 }
 
+/// How many vouches the vouch wall shows (`public_vouches` with no trainer picked), replies not counted.
+pub fn public_vouch_count(c: &Connection) -> rusqlite::Result<i64> {
+    c.query_row("SELECT COUNT(*) FROM vouches v JOIN members m ON m.id=v.member_id WHERE v.parent_id IS NULL AND v.hidden=0 AND m.blocked=0", [], |r| r.get(0))
+}
+
 /// One vouch or reply, if the public may see it.
 pub fn public_vouch(c: &Connection, id: i64) -> rusqlite::Result<Option<Vouch>> {
     let sql = format!("SELECT {VOUCH_COLS} FROM vouches v JOIN members m ON m.id=v.member_id WHERE v.id=?1 AND v.hidden=0 AND m.blocked=0");
@@ -2082,6 +2089,20 @@ mod tests {
         let b = create(&c, "Brock 2", "h").unwrap().unwrap();
         let m_b = get(&c, b).unwrap().unwrap();
         assert_eq!(m_b.slug, "brock-2");
+    }
+
+    #[test]
+    fn a_new_trainer_never_gets_an_address_the_site_keeps() {
+        let c = db();
+        // /store/vault is the vault's own store: a trainer called "Vault" (or "The Vault") gets the next free address.
+        let v = create(&c, "Vault", "h").unwrap().unwrap();
+        assert_eq!(get(&c, v).unwrap().unwrap().slug, "vault-2");
+        let t = create(&c, "The Vault", "h").unwrap().unwrap();
+        assert_eq!(get(&c, t).unwrap().unwrap().slug, "the-vault-2");
+        let s = create(&c, "Stores", "h").unwrap().unwrap();
+        assert_eq!(get(&c, s).unwrap().unwrap().slug, "stores-2");
+        assert_eq!(unique_slug(&c, "Vault", 0).unwrap(), "vault-3", "vault-2 is taken now, and vault never is");
+        assert_eq!(unique_slug(&c, "Vault Hunter", 0).unwrap(), "vault-hunter", "a name that only starts with it is fine");
     }
 
     #[test]

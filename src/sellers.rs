@@ -18,12 +18,21 @@ pub const ORDER_STATUSES: [&str; 5] = ["Pending", "Confirmed", "Paid", "Declined
 pub const PAY_METHODS: [&str; 6] = ["GCash", "Maya", "Bank transfer", "GoTyme", "Cash on meetup", "Other"];
 /// Reservations the seller hasn't answered expire after this long. Confirmed ones wait this long for payment.
 pub const RESERVATION_DAYS: i64 = 3;
-/// Names a store address can't take, because the site uses them.
-const RESERVED_SLUGS: [&str; 35] = [
+/// The vault's own store: /store/vault, listed first among the stores. No trainer can take this address.
+pub const VAULT_SLUG: &str = "vault";
+
+/// Names a store address can't take, because the site uses them (or they would pass for the vault's own store).
+const RESERVED_SLUGS: &[&str] = &[
     "admin", "api", "me", "store", "stores", "seller", "sellers", "trainer", "trainers", "join", "signin", "signout", "static", "uploads",
     "all", "chat", "ask", "vouch", "vouches", "collections", "products", "cards", "search", "robots.txt", "sitemap.xml", "about", "help",
-    "support", "login", "logout", "new", "edit", "delete", "settings", "bigboysvault",
+    "support", "login", "logout", "new", "edit", "delete", "settings", "bigboysvault", VAULT_SLUG, "the-vault", "big-boys-vault",
 ];
+
+/// A store address the site keeps for itself, whatever the case.
+pub fn reserved_slug(s: &str) -> bool {
+    let t = s.trim().to_lowercase();
+    RESERVED_SLUGS.contains(&t.as_str())
+}
 
 /// Adds what the store needs to an existing database. Only ever adds (see docs/HANDOFF.md §5).
 pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
@@ -159,9 +168,9 @@ pub fn check_slug(s: &str) -> Result<String, &'static str> {
         return Err("A store address is 3 to 30 characters.");
     }
     if !t.chars().all(|c| c.is_ascii_alphanumeric() || c == '-') || t.starts_with('-') || t.ends_with('-') || t.contains("--") {
-        return Err("Use only letters, numbers and single dashes, like big-boys-vault.");
+        return Err("Use only letters, numbers and single dashes, like pallet-town-cards.");
     }
-    if RESERVED_SLUGS.contains(&t.as_str()) {
+    if reserved_slug(&t) {
         return Err("That address is taken by the site. Pick another.");
     }
     Ok(t)
@@ -2337,12 +2346,18 @@ mod tests {
         assert!(check_slug("bad--name").is_err());
         assert!(check_slug("-lead").is_err());
         assert!(check_slug("has space").is_err());
+        // The vault's own store lives at /store/vault: nobody else can be "vault", or pass for it.
+        for taken in ["vault", "Vault", "the-vault", "big-boys-vault", "bigboysvault"] {
+            assert_eq!(check_slug(taken), Err("That address is taken by the site. Pick another."), "{taken}");
+        }
+        assert_eq!(check_slug("vault-hunter"), Ok("vault-hunter".into()), "only the exact words are kept");
         let c = db();
         let a = create(&c, "Ash", "h").unwrap().unwrap();
         let b = create(&c, "Brock", "h").unwrap().unwrap();
         assert_eq!(set_slug(&c, a, "pallet-town").unwrap(), Ok(true));
         assert_eq!(set_slug(&c, b, "Pallet-Town").unwrap(), Ok(false), "taken whatever the case");
         assert!(set_slug(&c, b, "me").unwrap().is_err());
+        assert!(set_slug(&c, b, "vault").unwrap().is_err());
     }
 
     #[test]

@@ -319,3 +319,36 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     } catch (err) { toast(err.message, true); }
   });
 })();
+
+/* ---------- a binder on its own page (a trainer's store binder, or one of the vault's): the X, or Escape, goes back to its store ---------- */
+(() => {
+  const bx = document.querySelector('[data-binder-close]');
+  if (!bx) return;
+  const root = document.documentElement, path = (u) => u.pathname.replace(/\/+$/, '');
+  // The history entry this page opened on, marked. A search on the page adds entries of its own (htmx), and from those
+  // a step back would only undo the search.
+  const mark = `${Date.now()}.${Math.random()}`;
+  try { history.replaceState(Object.assign({}, history.state, { binder: mark }), ''); } catch (_) {}
+  // Came here from the store this X points to, and still where the page opened? Then step back to the store, so it opens
+  // where it was scrolled to. Otherwise the X is a plain link.
+  const fromStore = () => {
+    try {
+      const r = new URL(document.referrer), s = new URL(bx.href, location.href);
+      return history.length > 1 && r.origin === location.origin && path(r) === path(s) && (history.state || {}).binder === mark;
+    } catch (_) { return false; }
+  };
+  const leave = () => { if (fromStore()) history.back(); else location.href = bx.href; };
+  bx.addEventListener('click', (e) => {
+    if (e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return; // a new tab or window: the link does that
+    e.preventDefault(); leave();
+  });
+  // Escape too, unless something is open on top (a sheet, a card, a chat, a menu, the cart) or someone is typing.
+  const busy = () => {
+    const a = document.activeElement, on = root.classList;
+    if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.closest('[role="dialog"], dialog, .hd, .cart'))) return true;
+    if (['menu-open', 'search-open', 'cardwin-open', 'sheet-open', 'ask-open'].some((c) => on.contains(c)) || document.body.classList.contains('cart-open')) return true;
+    return !!document.querySelector('.sheet:not([hidden]), .cardwin:not([hidden]), .ask-win:not([hidden]), dialog[open], .dm-lightbox, .cc, .dm-people, .dm-call-ui, [aria-expanded="true"]');
+  };
+  // Heard before anything else hears the key, so a sheet or menu that Escape is about to close still counts as open.
+  addEventListener('keydown', (e) => { if (e.key === 'Escape' && !e.defaultPrevented && !e.repeat && !busy()) leave(); }, true);
+})();

@@ -55,17 +55,20 @@
   <h2 class="h2">{{ b.title }} <small>{{ cards.len() }} card{% if cards.len() != 1 %}s{% endif %}{% if b.visibility != "Public" %} · {{ b.visibility }}{% endif %}</small></h2>
   {% endif %}
   {% if !b.description.is_empty() %}<p class="sf-desc">{{ b.description }}</p>{% endif %}
+  {% else if crate::look::is_new() %}
+  {#- The binders as tiles: each counts the cards its page shows; one with nothing for sale is only for its owner. -#}
+  {% if !tiles.is_empty() %}
+  <h2 class="h2">Binders</h2>
+  <ul class="sf-bgrid">
+    {% for t in tiles %}{% include "binder_tile.html" %}{% endfor %}
+  </ul>
+  <h2 class="h2">Everything on sale</h2>
+  {% endif %}
   {% else if !binders.is_empty() %}
   <h2 class="h2">Binders</h2>
-  {% if crate::look::is_new() %}
-  <ul class="sf-bgrid">
-    {% for (b, pics) in binders %}<li><a class="sf-btile" href="{{ m.store_url() }}/binders/{{ b.slug }}"><span class="sf-bcov" data-n="{{ pics.len() }}">{% for p in pics %}<img src="{{ p }}" width="245" height="342" alt="" loading="lazy" decoding="async">{% endfor %}{% if pics.is_empty() %}<svg class="sf-bnone" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 4v10"/></svg>{% endif %}</span><span class="sf-btxt"><b class="sf-bname">{{ b.title }}</b><small>{{ b.count }} card{% if b.count != 1 %}s{% endif %}{% if b.visibility == "Unlisted" %} · unlisted{% endif %}</small></span></a></li>{% endfor %}
-  </ul>
-  {% else %}
   <div class="sf-binders">
-    {% for (b, _) in binders %}<a class="sf-binder" href="{{ m.store_url() }}/binders/{{ b.slug }}">{% if b.has_image() %}<img src="{{ b.cover_image }}" width="120" height="168" alt="" loading="lazy">{% else %}<span class="thumb-empty"></span>{% endif %}<b>{{ b.title }}</b><small>{{ b.count }} card{% if b.count != 1 %}s{% endif %}{% if b.visibility == "Unlisted" %} · unlisted{% endif %}</small></a>{% endfor %}
+    {% for b in binders %}<a class="sf-binder" href="{{ m.store_url() }}/binders/{{ b.slug }}">{% if b.has_image() %}<img src="{{ b.cover_image }}" width="120" height="168" alt="" loading="lazy">{% else %}<span class="thumb-empty"></span>{% endif %}<b>{{ b.title }}</b><small>{{ b.count }} card{% if b.count != 1 %}s{% endif %}{% if b.visibility == "Unlisted" %} · unlisted{% endif %}</small></a>{% endfor %}
   </div>
-  {% endif %}
   <h2 class="h2">Everything on sale</h2>
   {% endif %}
 

@@ -140,29 +140,5 @@
     try { await send(`/me/reviews/${f.dataset.reviewReply}/reply`, { text: f.querySelector('input').value }); location.reload(); } catch (err) { toast(err.message, true); }
   });
 
-  /* ----- a binder on its own page (new look): the X, or Escape, goes back to the store ----- */
-  const bx = document.querySelector('[data-binder-close]');
-  if (bx) {
-    // Came here from this store's page? Then step back to it, so it opens where it was scrolled to. Otherwise the X is a plain link.
-    const fromStore = () => {
-      try {
-        const r = new URL(document.referrer), s = new URL(bx.href, location.href), path = (u) => u.pathname.replace(/\/+$/, '');
-        return history.length > 1 && r.origin === location.origin && path(r) === path(s);
-      } catch (_) { return false; }
-    };
-    const leave = () => { if (fromStore()) history.back(); else location.href = bx.href; };
-    bx.addEventListener('click', (e) => {
-      if (e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return; // a new tab or window: the link does that
-      e.preventDefault(); leave();
-    });
-    // Escape too, unless something is open on top (a sheet, a chat, a menu, the cart) or someone is typing.
-    const busy = () => {
-      const a = document.activeElement, on = document.documentElement.classList;
-      if (a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) || a.closest('[role="dialog"], dialog, .hd, .cart'))) return true;
-      if (['menu-open', 'search-open', 'cardwin-open', 'sheet-open'].some((c) => on.contains(c)) || document.body.classList.contains('cart-open')) return true;
-      return !!document.querySelector('.sheet:not([hidden]), .cardwin:not([hidden]), dialog[open], .dm-lightbox, .cc, .dm-people, .dm-call-ui, [aria-expanded="true"]');
-    };
-    // Listened for before anything else hears the key, so a sheet or menu that Escape is about to close still counts as open.
-    addEventListener('keydown', (e) => { if (e.key === 'Escape' && !e.defaultPrevented && !e.repeat && !busy()) leave(); }, true);
-  }
+  /* (A binder on its own page, new look: its X and Escape are fb-shell.js's, the same for the vault's binders.) */
 })();

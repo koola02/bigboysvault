@@ -362,6 +362,13 @@ struct CollectionPage {
     nav: Chrome,
 }
 
+impl CollectionPage {
+    /// "1,117", the way a binder's tile on the vault's store page says it.
+    fn total_text(&self) -> String {
+        db::thousands(self.total)
+    }
+}
+
 #[derive(Template)]
 #[template(path = "grid.html")]
 struct Grid {
@@ -568,7 +575,7 @@ fn view(c: &rusqlite::Connection, b: &Block, nav: &Chrome, binders: &[Collection
 
 // ---------- handlers ----------
 #[derive(Deserialize, Default)]
-struct Params {
+pub(crate) struct Params {
     q: Option<String>,
     sort: Option<String>,
     stock: Option<String>,
@@ -932,7 +939,7 @@ async fn sitemap(State(app): State<App>) -> Res {
         let mut x = String::from("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<urlset xmlns=\"http://www.sitemaps.org/schemas/sitemap/0.9\" xmlns:image=\"http://www.google.com/schemas/sitemap-image/1.1\">\n");
         let newest = cards.iter().map(|c| c.2.clone()).max().unwrap_or_default();
         let lm = |d: &str| if d.len() >= 10 { format!("<lastmod>{}</lastmod>", &d[..10]) } else { String::new() };
-        for (path, when) in [("/", newest.as_str()), ("/all", newest.as_str()), ("/trainers", ""), ("/stores", ""), ("/vouches", "")] {
+        for (path, when) in [("/", newest.as_str()), ("/all", newest.as_str()), ("/trainers", ""), ("/stores", ""), ("/store/vault", newest.as_str()), ("/vouches", "")] {
             x.push_str(&format!("<url><loc>{site}{path}</loc>{}</url>\n", lm(when)));
         }
         for l in links.iter().filter(|l| l.count > 0) {
@@ -1130,6 +1137,38 @@ mod tests {
         assert_eq!(p(Some("abc")), 0);
         assert_eq!(p(Some("-1")), 0);
         assert_eq!(p(None), 0);
+    }
+
+    #[test]
+    fn a_vault_binder_opens_under_a_bar_with_an_x_back_to_the_vaults_store() {
+        let c = rusqlite::Connection::open_in_memory().unwrap();
+        db::register_set_code(&c).unwrap();
+        c.execute_batch(db::SCHEMA).unwrap();
+        c.execute_batch(blocks::SCHEMA).unwrap();
+        c.execute_batch(members::SCHEMA).unwrap();
+        members::migrate(&c).unwrap();
+        db::migrate(&c).unwrap();
+        let page = |base: &str, title: &str, total: i64, new: bool| {
+            look::in_thread(new);
+            let html = CollectionPage { title: title.into(), base: base.into(), q: String::new(), sort: String::new(), in_stock: false, total, items: vec![], next: None, nav: chrome(&c).unwrap() }.render().unwrap();
+            look::in_thread(false);
+            html
+        };
+        let binder = page("/collections/affordable-common-uncommon", "Affordable Common/Uncommon", 1117, true);
+        assert!(binder.contains("<a class=\"sf-bx\" href=\"/store/vault\" aria-label=\"Close\" title=\"Back to Big Boys Vault\" data-binder-close>"), "{binder}");
+        assert!(binder.contains("<h1 class=\"sf-bh\">Affordable Common/Uncommon</h1>"));
+        assert!(binder.contains("1,117 cards · by <a href=\"/store/vault\">Big Boys Vault</a>"), "the count its tile shows");
+        assert!(binder.contains("class=\"wrap mk mk-bpage\"") && binder.contains("<form class=\"filters\"") && binder.contains("id=\"grid\""), "its search and cards stay");
+        assert!(!binder.contains("<p class=\"sub\">"));
+        // The Vault (all cards) and a search: no bar.
+        for (base, title) in [("/search", "All cards"), ("/search", "Results for “pika”")] {
+            let other = page(base, title, 3, true);
+            assert!(!other.contains("data-binder-close") && other.contains("<h1 class=\"h1\">"));
+        }
+        // Today's look: the binder as it was.
+        let classic = page("/collections/pikachu-set", "Pikachu Set", 116, false);
+        assert!(!classic.contains("data-binder-close") && !classic.contains("sf-bbar"));
+        assert!(classic.contains("<h1 class=\"h1\">Pikachu Set</h1>") && classic.contains("<p class=\"sub\">116 items</p>"));
     }
 }
 
@@ -1394,6 +1433,9 @@ async fn main() {
         .route("/me/orders/vault/{id}", post(store::cancel_vault_order))
         // the public storefront
         .route("/stores", get(store::directory))
+        // The vault's own store: a fixed address no trainer can take (sellers::VAULT_SLUG), matched before a trainer's.
+        .route("/store/vault", get(store::vault_store))
+        .route("/store/vault/binders/{handle}", get(store::vault_binder))
         .route("/store/{slug}", get(store::storefront))
         .route("/store/{slug}/binders/{binder_slug}", get(store::store_binder))
         .route("/store/{slug}/follow", post(store::follow))
