@@ -967,7 +967,7 @@ async fn robots_header(req: axum::extract::Request, next: axum::middleware::Next
     let path = req.uri().path().to_string();
     let part = req.uri().query().is_some_and(|q| q.split('&').any(|kv| kv == "part" || kv.starts_with("part=")));
     let mut res = next.run(req).await;
-    if part || path.starts_with("/api/") || path.starts_with("/admin") || path == "/suggest" || path == "/cards.tsv" || path.starts_with("/me") {
+    if part || path.starts_with("/api/") || path.starts_with("/admin") || path == "/suggest" || path == "/cards.tsv" || path == "/vault.tsv" || path.starts_with("/me") {
         res.headers_mut().insert(header::HeaderName::from_static("x-robots-tag"), header::HeaderValue::from_static("noindex, nofollow"));
     }
     res
@@ -1339,6 +1339,7 @@ async fn main() {
         .route("/admin/sets/refresh", post(ops::refresh_sets_route))
         .route("/sitemap.xml", get(sitemap))
         .route("/cards.tsv", get(api::cards_file))
+        .route("/vault.tsv", get(api::vault_file))
         .route("/oops", post(oops).layer(axum::extract::DefaultBodyLimit::max(1024)))
         .route("/api/search", get(api::search_cards))
         .route("/api/card/{handle}", get(api::card))

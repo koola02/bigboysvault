@@ -806,6 +806,8 @@ pub fn catalogue(c: &Connection) -> rusqlite::Result<String> {
             tags: p.tags,
             text: String::new(),
             order: 0,
+            store: 0,
+            lid: 0,
         });
     }
     Ok(out)

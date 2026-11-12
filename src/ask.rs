@@ -490,6 +490,8 @@ mod tests {
             notes: "".into(),
             text,
             order: 0,
+            store: 0,
+            lid: 0,
         }
     }
 

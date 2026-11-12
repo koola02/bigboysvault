@@ -1,16 +1,49 @@
-//! The card finder: every card in the vault, filtered on the visitor's own device as they type.
+//! The card finder: every card in the vault, and every card the stores have for sale now, filtered on the visitor's own
+//! device as they type.
 //!
 //! The page arrives complete from the server and works without this. Once the catalogue has downloaded, the finder takes
 //! over the page's search box and card grid, so results change on every keystroke with no trip to the server.
 use leptos::mount::mount_to;
 use leptos::prelude::*;
 use std::sync::Arc;
-use vault_search::{norm, parse, peso, pos_for, price_at, read_tokens, read_words, search, title_and_set, Binder, Card, Found, Sort, Token, COND_LABELS, FINISH_LABELS, LANG_LABELS};
+use vault_search::{norm, parse, parse_market, peso, pos_for, price_at, read_tokens, read_words, search, title_and_set, Binder, Card, Found, Sort, Store, Token, COND_LABELS, FINISH_LABELS, LANG_LABELS};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
 const STEP: usize = 48;
+/// The vault's own picture, beside its name on its cards and its "Sold by" button.
+const LOGO: &str = "/static/img/logo-sm-144.png?v=1";
+
+/// The site's name as the page gives it (the owner can change it).
+fn brand() -> String {
+    document()
+        .query_selector("meta[property=\"og:site_name\"]")
+        .ok()
+        .flatten()
+        .and_then(|m| m.get_attribute("content"))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Big Boys Vault".into())
+}
+
+/// The signed-in member's number, from the page's shared `bbvWho()` (static/fb-shell.js, static/vault-core.js). None for a visitor.
+async fn who_am_i() -> Option<i64> {
+    let w = web_sys::window()?;
+    let ask: js_sys::Function = js_sys::Reflect::get(&w, &JsValue::from_str("bbvWho")).ok()?.dyn_into().ok()?;
+    let answer: js_sys::Promise = ask.call0(&w).ok()?.dyn_into().ok()?;
+    let who = JsFuture::from(answer).await.ok()?;
+    let member = js_sys::Reflect::get(&who, &JsValue::from_str("member")).ok()?;
+    if !member.is_object() {
+        return None;
+    }
+    js_sys::Reflect::get(&member, &JsValue::from_str("id")).ok()?.as_f64().map(|v| v as i64)
+}
+
+/// The first letter of a name, for a store with no picture.
+fn initial(name: &str) -> String {
+    name.chars().next().map(|c| c.to_uppercase().collect()).unwrap_or_default()
+}
 
 
 async fn fetch_text(url: &str) -> Result<String, JsValue> {
@@ -28,7 +61,7 @@ fn url_param(name: &str) -> Option<String> {
 }
 
 /// Keep the address bar in step, so links can be shared and the back button returns to the same results.
-fn write_url(q: &str, sort: Sort, binder: Option<&str>, tokens: &[Token], min: Option<f64>, max: Option<f64>) {
+fn write_url(q: &str, sort: Sort, binder: Option<&str>, store: Option<&str>, tokens: &[Token], min: Option<f64>, max: Option<f64>) {
     let Some(w) = web_sys::window() else { return };
     let Ok(p) = web_sys::UrlSearchParams::new() else { return };
     if !q.is_empty() {
@@ -39,6 +72,9 @@ fn write_url(q: &str, sort: Sort, binder: Option<&str>, tokens: &[Token], min: O
     }
     if let Some(b) = binder {
         p.set("binder", b);
+    }
+    if let Some(s) = store {
+        p.set("store", s);
     }
     let pick = |want: fn(&Token) -> Option<&String>| tokens.iter().filter_map(want).cloned().collect::<Vec<_>>().join(",");
     for (key, value) in [
@@ -114,20 +150,41 @@ fn commas(n: usize) -> String {
     out
 }
 
+/// One card's tile. `store` is the store selling it (None: the vault's own card). `me` is the visitor's member number
+/// (0 until known): a store's own cards get no "+" or Message for the seller themselves.
 #[component]
-fn Tile(card: Arc<Card>) -> impl IntoView {
-    let href = format!("/products/{}", card.handle);
-    let price = peso(card.price);
-    // The product's number is the tail of its handle; the cart (static/cart.js) wants it on the tile.
-    let pid: i64 = card.handle.rsplit('-').next().and_then(|t| t.parse().ok()).unwrap_or(0);
-    let (buy, buy_title, buy_price, buy_img, buy_url, buy_label) = (pid > 0 && card.price > 0.0 && card.qty > 0, title_and_set(&card.title, &card.set).0, format!("{}", card.price), card.img.clone(), format!("/products/{}", card.handle), format!("Add {} to cart", title_and_set(&card.title, &card.set).0));
-    let (title, title2, img, grade, qty) = (title_and_set(&card.title, &card.set).0, card.title.clone(), card.img.clone(), card.grade.clone(), card.qty);
+fn Tile(card: Arc<Card>, store: Option<Arc<Store>>, brand: Arc<str>, me: RwSignal<i64>) -> impl IntoView {
+    let short = title_and_set(&card.title, &card.set).0;
+    let priced = card.price > 0.0;
+    // A store's card with no price yet is asked about; a vault card shows its price as it always has.
+    let ask = store.is_some() && !priced;
+    let price = if ask { "Ask for a price".to_string() } else { peso(card.price) };
+    // Whose card it is. A store's card is a listing, with its own page, cart line (static/cart.js) and message (static/dm.js).
+    let (href, by, by_pic, sid) = match &store {
+        Some(s) => (format!("/trainers/{}/cards/{}", s.id, card.lid), s.title.clone(), s.img.clone(), s.id),
+        None => (format!("/products/{}", card.handle), brand.to_string(), LOGO.to_string(), 0),
+    };
+    let (by_letter, has_pic) = (initial(&by), !by_pic.is_empty());
+    // A vault card's product number is the tail of its handle; the cart wants it on the tile. Never read from a listing.
+    let pid: i64 = if store.is_none() { card.handle.rsplit('-').next().and_then(|t| t.parse().ok()).unwrap_or(0) } else { 0 };
+    let (buy, buy_title, buy_price, buy_img, buy_url, buy_label) = (pid > 0 && priced && card.qty > 0, short.clone(), format!("{}", card.price), card.img.clone(), href.clone(), format!("Add {short} to cart"));
+    // A store's card: Message whenever a copy is left, the cart only with a price ("Ask for a price" means a message first).
+    let (lid, sells, seller_name, seller_slug) = (card.lid, sid > 0 && card.lid > 0 && card.qty > 0, by.clone(), store.as_ref().map(|s| s.slug.clone()).unwrap_or_default());
+    let (s_title, s_price, s_img, s_url, s_label) = (buy_title.clone(), buy_price.clone(), buy_img.clone(), buy_url.clone(), buy_label.clone());
+    let store_cart = move || {
+        (sells && priced && me.get() != sid).then(|| {
+            let (t, p, i, u, l, n, g) = (s_title.clone(), s_price.clone(), s_img.clone(), s_url.clone(), s_label.clone(), seller_name.clone(), seller_slug.clone());
+            view! { <span class="cart-mini" role="button" tabindex="0" data-cart-card=lid data-title=t data-price=p data-image=i data-url=u data-seller=n data-seller-slug=g aria-label=l title="Add to cart">"+"</span> }
+        })
+    };
+    let store_dm = move || (sells && me.get() != sid).then(|| view! { <span class="dm-mini" role="button" tabindex="0" data-dm-card=lid aria-label="Message the seller" title="Message the seller"></span> });
+    let (title, title2, img, grade, qty) = (short.clone(), card.title.clone(), card.img.clone(), card.grade.clone(), card.qty);
     let (set, cond_c, cond, sym) = (card.set.clone(), vault_search::cond_class(&card.variant), vault_search::tile_condition(&card.variant), card.sym.clone());
     let foil = vault_search::foil_class(&format!("{} {}", card.title, card.variant));
     let notes = card.notes.clone();
     let tags: Vec<String> = card.tags.split(',').map(str::trim).filter(|t| !t.is_empty() && !["binder-", "finish-", "rarity-", "set-"].iter().any(|p| t.to_lowercase().starts_with(p))).map(str::to_string).collect();
     view! {
-        <a class="card" href=href data-foil=foil data-c=cond_c>
+        <a class="card" href=href data-foil=foil data-c=cond_c data-store=(sid > 0).then(|| sid.to_string())>
             <div class="card-img">
                 {(!img.is_empty()).then(|| view! { <img src=img loading="lazy" decoding="async" alt=title2/> })}
                 {(!grade.is_empty()).then(|| view! { <span class="grade">{grade}</span> })}
@@ -140,25 +197,48 @@ fn Tile(card: Arc<Card>) -> impl IntoView {
             </div>
             {(!tags.is_empty()).then(|| view! { <div class="card-tags">{tags.into_iter().map(|t| view! { <span class="tag-hl">{t}</span> }).collect_view()}</div> })}
             {(!notes.is_empty()).then(|| view! { <div class="card-note">{notes}</div> })}
-            <div class="card-p">{price}{buy.then(|| view! { <span class="dm-mini" role="button" tabindex="0" data-dm-vault=pid aria-label="Message the seller" title="Message the seller"></span> })}{buy.then(|| view! { <span class="cart-mini" role="button" tabindex="0" data-cart-vault=pid data-title=buy_title data-price=buy_price data-image=buy_img data-url=buy_url aria-label=buy_label title="Add to cart">"+"</span> })}</div>
+            <div class="card-p" class:card-ask=ask>{price}{buy.then(|| view! { <span class="dm-mini" role="button" tabindex="0" data-dm-vault=pid aria-label="Message the seller" title="Message the seller"></span> })}{buy.then(|| view! { <span class="cart-mini" role="button" tabindex="0" data-cart-vault=pid data-title=buy_title data-price=buy_price data-image=buy_img data-url=buy_url aria-label=buy_label title="Add to cart">"+"</span> })}{store_dm}{store_cart}</div>
+            <div class="card-by">
+                {has_pic.then(|| view! { <img class="card-by-av" src=by_pic width="16" height="16" loading="lazy" decoding="async" alt=""/> })}
+                {(!has_pic).then(|| view! { <span class="card-by-av" aria-hidden="true">{by_letter}</span> })}
+                <span class="card-by-t">{by}</span>
+            </div>
         </a>
     }
 }
 
 #[component]
-fn Finder(binders: Vec<Binder>, cards: Vec<Arc<Card>>, embedded: bool) -> impl IntoView {
+fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embedded: bool) -> impl IntoView {
     // Inside a binder's floating window the finder keeps to itself: it leaves the page's search box, heading and address alone.
     let param = move |k: &str| if embedded { None } else { url_param(k) };
     let input: Option<web_sys::HtmlInputElement> = if embedded { None } else { document().query_selector("form.search input").ok().flatten().and_then(|e| e.dyn_into().ok()) };
+    // An old link to a binder still shows just that binder's cards (the binders have no buttons here any more).
     let start_binder = param("binder").and_then(|h| binders.iter().position(|b| b.handle == h)).map(|i| i as u16);
+    // Who sells the cards shown: None for everyone, Some(0) the vault, Some(n) the n-th store. `?store=vault` or a store's address.
+    let store_keys: Vec<String> = stores.iter().map(Store::key).collect();
+    let start_store = param("store").and_then(|v| if v.eq_ignore_ascii_case("vault") { Some(0) } else { store_keys.iter().position(|k| k.eq_ignore_ascii_case(v.trim())).map(|i| i as u16 + 1) });
+    let store_keys = StoredValue::new(store_keys);
     let q = RwSignal::new(param("q").unwrap_or_default());
     let sort = RwSignal::new(Sort::parse(&param("sort").unwrap_or_default()));
     let binder = RwSignal::new(start_binder);
+    let sold_by = RwSignal::new(start_store);
     let shown = RwSignal::new(STEP);
-    // Every listed card counts once, sold out or not (a sold-out card stays listed with no "+").
+    // Every listed card counts once, sold out or not (a sold-out card stays listed with no "+"), the stores' cards too.
     let total_listed: usize = cards.len();
+    let vault_listed: usize = cards.iter().filter(|c| c.store == 0).count();
+    let brand: Arc<str> = Arc::from(brand());
+    // The visitor's own store cards get no "+": known once the page has asked who is here.
+    let me = RwSignal::new(0i64);
+    if !embedded && !stores.is_empty() {
+        wasm_bindgen_futures::spawn_local(async move {
+            if let Some(id) = who_am_i().await {
+                me.set(id);
+            }
+        });
+    }
+    let stores: Vec<Arc<Store>> = stores.into_iter().map(Arc::new).collect();
 
-    // What the filters can offer: only what's really in the vault.
+    // What the filters can offer: only what's really here.
     let cond_options: Vec<Token> = COND_LABELS.iter().filter(|(k, _)| cards.iter().any(|c| vault_search::cond_class(&c.variant) == *k || (*k == "gr" && !c.grade.is_empty()))).map(|(k, _)| Token::Cond((*k).to_string())).collect();
     let finish_options: Vec<Token> = FINISH_LABELS.iter().filter(|f| cards.iter().any(|c| c.finish == **f)).map(|f| Token::Finish((*f).to_string())).collect();
     let lang_options: Vec<Token> = LANG_LABELS.iter().filter(|(k, _)| cards.iter().any(|c| c.lang == *k)).map(|(k, _)| Token::Lang((*k).to_string())).collect();
@@ -239,6 +319,7 @@ fn Finder(binders: Vec<Binder>, cards: Vec<Arc<Card>>, embedded: bool) -> impl I
     let found = Memo::new(move |_| {
         let mut f = read_words(&q.get());
         f.binder = binder.get();
+        f.store = sold_by.get();
         f.min_price = f.min_price.or(min_price());
         f.max_price = f.max_price.or(max_price());
         applied.with(|t| f.apply_tokens(t));
@@ -251,7 +332,8 @@ fn Finder(binders: Vec<Binder>, cards: Vec<Arc<Card>>, embedded: bool) -> impl I
     Effect::new(move |_| {
         let (qv, s, b) = (q.get(), sort.get(), binder.get());
         let h = b.and_then(|i| handles.with_value(|hs| hs.get(i as usize).cloned()));
-        applied.with(|t| write_url(qv.trim(), s, h.as_deref(), t, min_price(), max_price()));
+        let st = sold_by.get().and_then(|i| if i == 0 { Some("vault".to_string()) } else { store_keys.with_value(|k| k.get(usize::from(i) - 1).cloned()) });
+        applied.with(|t| write_url(qv.trim(), s, h.as_deref(), st.as_deref(), t, min_price(), max_price()));
         if let Some(h1) = document().query_selector("main h1").ok().flatten() {
             let t = qv.trim();
             h1.set_text_content(Some(&if t.is_empty() { "All cards".to_string() } else { format!("Results for “{t}”") }));
@@ -331,11 +413,12 @@ fn Finder(binders: Vec<Binder>, cards: Vec<Arc<Card>>, embedded: bool) -> impl I
 
     let filter_count = move || applied.with(Vec::len) + usize::from(pmin.get() > 0 || pmax.get() < 100);
     // Anything at all narrowing the cards, or waiting to: words in either search box, a name not confirmed yet, a binder, a filter or a price.
-    let anything_set = move || filter_count() > 0 || !draft.with(Vec::is_empty) || !typed.get().trim().is_empty() || !q.get().trim().is_empty() || binder.get().is_some();
+    let anything_set = move || filter_count() > 0 || !draft.with(Vec::is_empty) || !typed.get().trim().is_empty() || !q.get().trim().is_empty() || binder.get().is_some() || sold_by.get().is_some();
 
     let reset = move |_| {
         q.set(String::new());
         binder.set(None);
+        sold_by.set(None);
         applied.set(vec![]);
         draft.set(vec![]);
         typed.set(String::new());
@@ -350,21 +433,30 @@ fn Finder(binders: Vec<Binder>, cards: Vec<Arc<Card>>, embedded: bool) -> impl I
         }
     };
 
-    let binder_chips = binders
-        .into_iter()
-        .enumerate()
-        .filter(|(_, b)| b.count > 0)
-        .map(|(i, b)| {
-            let i = i as u16;
-            view! {
-                <button type="button" class="fd-b" class:on=move || binder.get() == Some(i) aria-pressed=move || (binder.get() == Some(i)).to_string() on:click=move |_| { binder.update(|c| *c = if *c == Some(i) { None } else { Some(i) }); shown.set(STEP); }>
-                    <span class="fd-b-pic">{(!b.img.is_empty()).then(|| view! { <img src=b.img.clone() loading="lazy" decoding="async" alt=""/> })}</span>
-                    <span class="fd-b-t">{b.title.clone()}</span>
-                    <small>{b.count}</small>
-                </button>
-            }
-        })
-        .collect_view();
+    // "Sold by": everyone, the vault, then each store (most cards first, as the file has them), each with its count.
+    // A press shows only that seller's cards; pressing it again, or All, shows everyone's.
+    let has_stores = !stores.is_empty();
+    let sold_chip = move |pick: Option<u16>, name: String, pic: Option<String>, n: usize| {
+        let letter = initial(&name);
+        view! {
+            <button type="button" class="fd-b" class:on=move || sold_by.get() == pick aria-pressed=move || (sold_by.get() == pick).to_string()
+                on:click=move |_| { sold_by.update(|c| *c = if *c == pick { None } else { pick }); shown.set(STEP); }>
+                <span class="fd-b-pic">{match pic {
+                    Some(p) if !p.is_empty() => view! { <img src=p loading="lazy" decoding="async" alt=""/> }.into_any(),
+                    Some(_) => view! { <span class="fd-b-l" aria-hidden="true">{letter}</span> }.into_any(),
+                    None => view! { <svg class="fd-b-all" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path d="M4 4h7v7H4zM13 4h7v7h-7zM4 13h7v7H4zM13 13h7v7h-7z"/></svg> }.into_any(),
+                }}</span>
+                <span class="fd-b-t">{name}</span>
+                <small>{commas(n)}</small>
+            </button>
+        }
+    };
+    let seller_chips = has_stores.then(|| {
+        let mut chips = vec![sold_chip(None, "All".into(), None, total_listed).into_any(), sold_chip(Some(0), brand.to_string(), Some(LOGO.into()), vault_listed).into_any()];
+        chips.extend(stores.iter().enumerate().filter(|(_, s)| s.count > 0).map(|(i, s)| sold_chip(Some(i as u16 + 1), s.title.clone(), Some(s.img.clone()), s.count as usize).into_any()));
+        chips
+    });
+    let stores = StoredValue::new(stores);
 
     let chips = move |options: Vec<Token>| {
         options
@@ -380,7 +472,7 @@ fn Finder(binders: Vec<Binder>, cards: Vec<Arc<Card>>, embedded: bool) -> impl I
 
     view! {
         <div class="fd-tools">
-            {(!embedded).then(|| view! { <div class="fd-binders" role="group" aria-label="Pick a binder">{binder_chips}</div> })}
+            {(!embedded && has_stores).then(|| view! { <div class="fd-sold"><span class="fd-flabel">"Sold by"</span><div class="fd-binders" role="group" aria-label="Sold by">{seller_chips}</div></div> })}
             <form class="fd-adv" on:submit=move |e: leptos::ev::SubmitEvent| { e.prevent_default(); confirm(); }>
                 <label class="fd-adv-h" for=adv_id>"Advanced search"<small>"Combine anything, like Near Mint, Holofoil, Pikachu, Mewtwo"</small></label>
                 <div class="fd-bar">
@@ -491,7 +583,11 @@ fn Finder(binders: Vec<Binder>, cards: Vec<Arc<Card>>, embedded: bool) -> impl I
                     hits.iter().take(shown.get()).copied().collect::<Vec<_>>()
                 }
                 key=|i| *i
-                children=move |i| { let card = all.with_value(|c| c[i].clone()); view! { <Tile card=card/> } }
+                children=move |i| {
+                    let card = all.with_value(|c| c[i].clone());
+                    let store = (card.store > 0).then(|| stores.with_value(|s| s.get(usize::from(card.store) - 1).cloned())).flatten();
+                    view! { <Tile card=card store=store brand=brand.clone() me=me/> }
+                }
             />
         </div>
         <Show when=move || found.get().0.is_empty()>
@@ -513,7 +609,8 @@ pub async fn start(slot_id: String, data_url: String) -> Result<bool, JsValue> {
         return Ok(false);
     };
     let text = fetch_text(&data_url).await?;
-    let (binders, cards) = parse(&text);
+    // The Vault page's file (/vault.tsv) has the stores' cards after the vault's; the plain catalogue (/cards.tsv) reads the same, without them.
+    let (binders, stores, cards) = parse_market(&text);
     if cards.is_empty() {
         return Ok(false);
     }
@@ -525,7 +622,7 @@ pub async fn start(slot_id: String, data_url: String) -> Result<bool, JsValue> {
     }
     document().document_element().ok_or("no root")?.set_attribute("data-finder", "on")?;
     let cards: Vec<Arc<Card>> = cards.into_iter().map(Arc::new).collect();
-    mount_to(slot, move || view! { <Finder binders=binders cards=cards embedded=false/> }).forget();
+    mount_to(slot, move || view! { <Finder binders=binders stores=stores cards=cards embedded=false/> }).forget();
     Ok(true)
 }
 
@@ -554,6 +651,6 @@ pub async fn start_in_binder(slot: web_sys::HtmlElement, data_url: String, handl
     if cards.is_empty() {
         return Ok(None);
     }
-    let keep = mount_to(slot, move || view! { <Finder binders=vec![] cards=cards embedded=true/> });
+    let keep = mount_to(slot, move || view! { <Finder binders=vec![] stores=vec![] cards=cards embedded=true/> });
     Ok(Some(Mounted { _keep: Box::new(keep) }))
 }
