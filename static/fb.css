@@ -1310,9 +1310,9 @@ html.cardwin-open { overflow: hidden; }
 .av > svg { width: 55%; height: 55%; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 /* ---------- 33. Store binders: a grid, and a binder as its own page ---------- */
-/* The store page shows every binder at once: two to a row on a phone, three from 700px, never wider than the feed.
+/* The store page shows every binder at once: two to a row on a phone, three from 700px, as wide as the store's cards.
    A tile is its cover card in front with the next two cards behind it, on a soft panel, then its name and how many cards. */
-.sf-bgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; max-width: var(--feed); margin: 0; padding: 0; list-style: none; }
+.sf-bgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
 .sf-bgrid > li { min-width: 0; }
 .sf-btile { display: flex; flex-direction: column; height: 100%; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: var(--text); overflow: hidden; }
 .sf-btile:hover { text-decoration: none; box-shadow: 0 0 0 1px var(--gold-edge); }
@@ -1373,7 +1373,7 @@ html.cardwin-open { overflow: hidden; }
 
 /* ---------- 35. Binder tools: owners arrange their binders, and a binder's cards, where they are shown (binder-tools.js) ---------- */
 /* A seller on their own store, a full admin on the vault's: "Edit binders" beside the heading, "Edit binder" in a binder's bar. */
-.bt-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; max-width: var(--feed); }
+.bt-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
 .bt-head > .h2 { min-width: 0; margin-top: 4px; font-size: 1.25rem; }
 .btn.bt-toggle, .btn.bt-bedit { flex: none; min-height: 40px; }
 .bt-none, .bt-hint { margin: 0; max-width: var(--feed); color: var(--muted); font-size: .875rem; line-height: 1.4; }
