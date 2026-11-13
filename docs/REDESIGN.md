@@ -251,12 +251,41 @@ As of 12 November 2026, behind the new-look switch:
 - **Live, the header's Messages button** drops the inbox down beside it, as Facebook's does: the newest
   conversations with their unread counts (a row opens the chat window), a pencil for New message, and "Open the full
   inbox" for `/me/messages`. A phone has no room for it, so there the button opens the page. All in `static/dm.js`.
-- **Live, the menu lists a place only where the screen has no other button for it** (`data-mn` in `fb_top.html`):
-  Messages is gone (the header's button has it); Trainers and Vault chat show only on phones (from 700px they are
-  header tabs); Ask the Vault is a gold line, hidden on phones (the Ask tab at the bottom) and beside the feed from
-  1100px (the right column starts with a gold "Ask the Vault" card). On other pages and on tablets it stays, so it is
-  always one tap away. Binder pictures in the menu stand as tall as a card (44 by 62), and "Top of the vault" in the
-  right column shows its card whole and tall.
+- **The menu** (left column on wide screens, a sheet elsewhere) lists only what has no other button on that screen:
+  no The Vault, no Stores, no binders (the owner: "in the menu icon, remove the binders list ... we can remove the
+  stores from the menu ... "the vault" from the menu as well"). Trainers and Vault chat show there on phones only
+  (from 700px they are header tabs); Ask the Vault is a gold line, hidden on phones (the Ask tab) and beside the feed
+  from 1100px (the right column's gold card). The phone's header has the bell (a link to /me/notifications; from
+  700px it opens the drop-down), and the bottom bar is Home, Vault, Ask, Stores, Menu. Phones up to 411px get 36px
+  header buttons so the site's name keeps its size. Tab highlighting (fb-shell.js match()): Stores on /stores,
+  /store/... and /collections/...; The Vault on /all, /search, /products/....
+- **Binders belong to stores.** The vault's binders are its collections (Legendary Collections, Pikachu Set, Mew &
+  Mewtwo, Japanese, Playables, Favorites, Trainers, Vintage, Affordable Common/Uncommon, E X Cards). Big Boys Vault
+  is a store: `/store/vault` (store::vault_store, templates/store_vault.html; the address is reserved, and a trainer
+  who held it is moved), listed first on /stores, its binders as a grid (2 per row below 700px, 3 from 700px; the
+  same `binder_tile.html` as sellers' binders), then everything in the vault. A vault binder keeps its address
+  `/collections/{handle}`; in the new look it opens under a sticky bar with an X back to /store/vault. A seller's
+  binders show the same way on their store, and a seller binder (`/store/{slug}/binders/{bslug}`) opens as its own
+  opaque page with the X (fb-shell.js `[data-binder-close]`: back when the store is the previous page, else the
+  link). A binder with nothing for sale is hidden from visitors; tiles count only what the binder page shows and
+  prefer pictures no earlier tile shows.
+- **Binder tools, for sellers and admins alike, where the binders are** (static/binder-tools.js): "Edit binders" on
+  the store (drag to reposition, + New binder, rename, cover, delete — cards are never deleted with a binder),
+  "Edit binder" on a binder's page (add cards from a picker, remove, drag to order, make cover), and in the Manager
+  (seller Binders: drag to reorder, add/remove cards; admin Binders: delete, add/remove cards). Vault binders: full
+  admins only. The owner: "sellers should be able to do that as well and admins too ... add/remove cards in the
+  binders, add/remove binders, select the cover of the binders and the ability to reposition their binders."
+- **The Vault shows every card for sale:** the vault's cards and every store card that can be bought now (Active,
+  copies left after reservations, store approved, selling, not on vacation), from `/vault.tsv` (the catalogue plus
+  `S`/`M` lines; `/cards.tsv` is unchanged for Ask the Vault and the AI tools). By default one store card follows
+  every three of the vault's; each tile says whose card it is; "Sold by" buttons filter by store; a store's name finds
+  its cards only when no card has that word; an old binder link shows a removable chip.
+- **Call and message alerts with the site closed** (Web Push): see docs/SELLER_API.md "Push". The call screen says
+  Calling..., Ringing... (only once a page or phone really rings), Connecting..., then the length; the mute button
+  shows the microphone as it is.
+- **Reviewed:** before release, seven independent reviewers each read the whole change through one lens (push
+  rules, security and privacy, calls, binders and stores, The Vault, navigation, running it live) and three skeptics
+  tried to refute every finding; all 23 confirmed findings were fixed (see the commit "Fixes from the release review").
 - **Calls, fixed:** every open page of a person now gets every call message. Before, the server handed each one (a
   ring, an answer, connection details) to whichever page asked first, and a page in a background tab didn't listen
   at all: with the site open on a phone and a computer only one rang, an answer could land on the wrong page (the
