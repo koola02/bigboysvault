@@ -211,7 +211,7 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
   });
 
   /* ---------- a card opens in a window over the page, with "More like this" under it ----------
-     (Its own page stays for shared links, search engines and the admin's editor.) */
+     (Its own page stays for shared links, search engines and the admin's editor; the window needs no button to it.) */
   let cw = null, cwStop = null, cwBase = null, cwTools = null, cwSeq = 0, cwTalk = null;
   // A vault card, or a card a store has for sale (its ?part=1 is the same .detail).
   const cardPath = (a) => (a && a.origin === location.origin && /^\/(products\/[^/]+|trainers\/\d+\/cards\/\d+)$/.test(a.pathname) && !a.hash && !a.target ? a.pathname : '');
@@ -221,7 +221,7 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     cw = document.createElement('div'); cw.className = 'cardwin'; cw.hidden = true;
     cw.setAttribute('role', 'dialog'); cw.setAttribute('aria-modal', 'true'); cw.setAttribute('aria-label', 'Card');
     cw.innerHTML = '<div class="cardwin-in" tabindex="-1"><header class="cardwin-h"><button type="button" class="ibtn" data-cw-x aria-label="Close">✕</button><b class="cardwin-t"></b>'
-      + '<a class="btn soft sm staff-only" data-full-only data-cw-edit>Edit</a><a class="btn ghost sm" data-cw-page>Full page</a></header><div class="cardwin-b"></div></div>';
+      + '<a class="btn soft sm staff-only" data-full-only data-cw-edit>Edit</a></header><div class="cardwin-b"></div></div>';
     document.body.append(cw);
     let down = false;
     cw.addEventListener('mousedown', (e) => { down = e.target === cw; });
@@ -249,7 +249,6 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     const detail = body.querySelector('.detail'), name = body.querySelector('.detail-info .h1')?.textContent.trim() || 'Card';
     cw.setAttribute('aria-label', name); cw.querySelector('.cardwin-t').textContent = name;
     document.title = `${name} · ${cwBase.title.split(' · ').pop()}`;
-    cw.querySelector('[data-cw-page]').href = href; cw.querySelector('[data-cw-page]').setAttribute('data-full-page', '');
     // Only a vault card has an editor behind #edit: a store's card is the seller's to change.
     const edit = cw.querySelector('[data-cw-edit]'); edit.href = `${href}#edit`; edit.hidden = !href.startsWith('/products/');
     if (detail && detail.dataset.hit && navigator.sendBeacon) navigator.sendBeacon(`/hit/${detail.dataset.hit}`);
@@ -284,6 +283,27 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
   });
   addEventListener('popstate', (e) => { if (e.state && e.state.cw) cwShow(e.state.cw, false); else cwHide(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && cw && !cw.hidden && !document.querySelector('.dm-lightbox, .cc, .sheet:not([hidden]), .dm-people')) cwClose(); });
+
+  /* ---------- rows that slide sideways (a store's binders and highlighted cards on Stores) ----------
+     A finger swipes them; a mouse can't, so on a computer an arrow shows at each end that has more to see. */
+  if (matchMedia('(hover: hover) and (pointer: fine)').matches) {
+    document.querySelectorAll('.st-brow, .seller-cards-row').forEach((row) => {
+      const wrap = document.createElement('div'); wrap.className = 'slide-wrap';
+      row.before(wrap); wrap.append(row);
+      const arrow = (back) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = `slide-btn ${back ? 'slide-prev' : 'slide-next'}`; b.hidden = true;
+        b.setAttribute('aria-label', back ? 'Show the ones before' : 'Show more'); b.tabIndex = -1;   // keyboard users tab along the row itself
+        b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${back ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'}"/></svg>`;
+        b.addEventListener('click', () => row.scrollBy({ left: (back ? -1 : 1) * Math.max(160, row.clientWidth * 0.8), behavior: 'smooth' }));
+        wrap.append(b); return b;
+      };
+      const prev = arrow(true), next = arrow(false);
+      const sync = () => { prev.hidden = row.scrollLeft <= 2; next.hidden = row.scrollLeft + row.clientWidth >= row.scrollWidth - 2; };
+      row.addEventListener('scroll', sync, { passive: true });
+      new ResizeObserver(sync).observe(row);
+      sync();
+    });
+  }
 
   /* ---------- a card's picture, up close (today's look does this inside its floating window) ---------- */
   document.addEventListener('click', (e) => {

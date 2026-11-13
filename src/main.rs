@@ -1165,7 +1165,7 @@ mod tests {
         assert!(binder.contains("class=\"wrap mk mk-bpage\"") && binder.contains("<form class=\"filters\"") && binder.contains("id=\"grid\""), "its search and cards stay");
         assert!(!binder.contains("<p class=\"sub\">"));
         // Full admins arrange its cards right there: the button is in every visitor's page (it is kept), hidden unless they are signed in.
-        assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=1"));
+        assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=2"));
         // The Vault (all cards) and a search: no bar.
         for (base, title) in [("/search", "All cards"), ("/search", "Results for “pika”")] {
             let other = page(base, title, 3, true);
@@ -1415,6 +1415,10 @@ async fn main() {
         .route("/me/listings/move", post(store::move_cards))
         .route("/me/listings/{id}", post(store::edit_listing))
         .route("/me/listings/{id}/renew", post(store::renew_listing))
+        .route("/me/featured", get(store::featured_me).post(store::featured_me_save))
+        .route("/me/featured/choices", get(store::featured_me_choices))
+        .route("/admin/featured", get(store::featured_vault).post(store::featured_vault_save))
+        .route("/admin/featured/choices", get(store::featured_vault_choices))
         .route("/me/binders", get(store::binders).post(community::me_create_binder))
         .route("/me/binders/order", post(store::order_binders))
         .route("/me/binders/{id}/cards", get(store::binder_cards).post(store::change_binder_cards))

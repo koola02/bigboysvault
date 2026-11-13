@@ -744,7 +744,8 @@ html.sheet-open { overflow: hidden; }
 [data-holo] img { -webkit-user-drag: none; }
 .detail-img.holo-tilt > img, .holo-sheen { transform: perspective(1100px) rotateX(var(--rx, 0rad)) rotateY(var(--ry, 0rad)) !important; animation: none !important; transition: none !important; }
 .holo-gpu.detail-img > img { opacity: 0; box-shadow: none !important; transform: none !important; }
-.holo-flat > img { transform: none !important; animation: none !important; }
+/* Flat while holo.js measures the card (it must win over the tilt above, which is just as specific). */
+.holo-flat > img, .detail-img.holo-flat > img { transform: none !important; animation: none !important; }
 .holo-sheen { position: absolute; z-index: 2; pointer-events: none; overflow: hidden; background: radial-gradient(circle at var(--mx, 50%) var(--my, 30%), rgba(255,255,255,.42), rgba(246,227,160,.12) 34%, transparent 62%), linear-gradient(115deg, transparent 18%, rgba(255,0,128,.2), rgba(255,220,0,.2), rgba(0,255,170,.2), rgba(0,150,255,.2), transparent 82%) var(--foil, 50%) 50% / 240% 100% no-repeat; mix-blend-mode: screen; }
 .holo-gpu > .holo-sheen { display: none; }
 .holo-motion { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; margin: var(--s3) auto; padding: 0 16px; border: 1px solid var(--gold); border-radius: 10px; background: rgba(226,185,75,.1); color: var(--gold-hi); font: 700 .9375rem/1.2 var(--font); cursor: pointer; }
@@ -1297,7 +1298,8 @@ html.cardwin-open { overflow: hidden; }
 .cardwin-b.busy::before { content: ""; position: absolute; left: 50%; top: 160px; width: 36px; height: 36px; margin-left: -18px; border: 3px solid var(--surface-3); border-top-color: var(--gold); border-radius: 50%; animation: cw-spin .8s linear infinite; }
 @keyframes cw-spin { to { rotate: 360deg; } }
 .cardwin .detail { max-width: none; padding: 16px; }
-.cardwin .detail-img { position: static; min-height: 0; --img-h: min(72dvh, 760px); }
+/* The picture's box keeps a position (not sticky here): the shiny card (holo.js) is placed inside it, centred on the picture. */
+.cardwin .detail-img { position: relative; top: auto; min-height: 0; --img-h: min(72dvh, 760px); }
 .cardwin .detail ~ .wrap { max-width: none; padding: 4px 16px 20px; }
 @media (min-width: 900px) { .cardwin .detail { grid-template-columns: minmax(0, 1fr) clamp(380px, 34%, 560px); } }
 @media (max-width: 699px) {
@@ -1500,3 +1502,56 @@ html.bt-modal { overflow: hidden; }
 .bt-grip.st-bgrip { position: static; display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: 100%; height: 40px; padding: 0 4px; border-radius: var(--r-sm); background: var(--surface-3); box-shadow: none; font: 600 .8125rem/1 var(--font); }
 .st-binder.dragging { cursor: grabbing; }
 .bd-cards { align-self: flex-start; min-height: 40px; }
+
+/* ---------- 36. The Stores page: each store shows its binders and the cards its owner highlights ---------- */
+/* A row of binder tiles (each opens its binder's page) and a row of highlighted cards (each opens in the card window),
+   both sliding sideways. The owner's "Choose what shows" opens the chooser (binder-tools.js). */
+.svh-act { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.st-feat-edit { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.st-feat-edit[hidden] { display: none; }
+.st-feat-edit svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.st-feat-h { margin: 0; padding: 4px 16px 8px; color: var(--muted); font: 700 .8125rem/1.3 var(--font); letter-spacing: .02em; text-transform: uppercase; }
+.st-brow { display: grid; grid-auto-flow: column; grid-auto-columns: 220px; gap: 12px; margin: 0; padding: 0 16px 16px; list-style: none; overflow-x: auto; overscroll-behavior-x: contain; scroll-snap-type: x proximity; scroll-padding-inline: 16px; scrollbar-width: none; }
+.st-brow::-webkit-scrollbar { display: none; }
+.st-brow > li { min-width: 0; scroll-snap-align: start; }
+/* The tile's picture keeps the shape it has on a phone's store page, whatever the screen: the row sets its width. */
+.st-brow .sf-bcov, .bt-fb .sf-bcov { --fw: 43%; --sw: 36%; --off: 24%; aspect-ratio: 4 / 3; }
+.st-brow .sf-btile { background: var(--surface-2); }
+.seller-cards-row { scroll-snap-type: x proximity; scroll-padding-inline: 16px; }
+.seller-cards-row > * { scroll-snap-align: start; }
+.st-feat-none { margin: 0; padding: 0 16px 16px; color: var(--muted); font-size: .875rem; }
+@media (max-width: 699px) {
+  .st-brow { grid-auto-columns: 168px; gap: 8px; padding: 0 12px 14px; scroll-padding-inline: 12px; }
+  .st-feat-h { padding-inline: 12px; }
+  .st-feat-none { padding-inline: 12px; }
+}
+/* The chooser: binders to tap on or off, the highlighted cards in order, and a search for more. */
+.bt-sec { margin: 4px 0 0; font: 700 1rem/1.3 var(--font); }
+.bt-fbinders { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.bt-fb { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; padding: 0; border: 0; border-radius: var(--r); background: var(--surface-2); color: var(--text); text-align: left; overflow: hidden; box-shadow: 0 0 0 1px var(--line); cursor: pointer; }
+.bt-fb:hover { box-shadow: 0 0 0 1px var(--gold-edge); }
+.bt-fb[aria-pressed="true"] { background: var(--gold-tint); box-shadow: 0 0 0 2px var(--gold); }
+.bt-fb[aria-pressed="false"] .sf-bcov { opacity: .5; }
+.bt-fb[aria-pressed="true"] .bt-tick { display: grid; }
+.bt-fb .sf-btxt { padding: 6px 10px 10px; }
+.bt-fchosen { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.bt-fchosen[hidden] { display: none; }
+.bt-fc { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; padding: 4px 4px 4px 4px; border-radius: 10px; background: var(--gold-tint); box-shadow: 0 0 0 1px var(--gold-edge); }
+.bt-fc-pic { flex: none; width: 30px; aspect-ratio: 63 / 88; border-radius: 3px; background: var(--surface-3); overflow: hidden; }
+.bt-fc-pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.bt-fc-t { min-width: 0; max-width: 180px; overflow: hidden; font-size: .8125rem; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.bt-fc-x { flex: none; display: inline-grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text); cursor: pointer; }
+.bt-fc-x:hover { background: var(--surface-3); }
+.bt-fc-x .bt-ic { width: 16px; height: 16px; }
+@media (max-width: 699px) {
+  .bt-fbinders { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bt-fc-t { max-width: 120px; }
+}
+/* On a computer, arrows at the ends of a row with more to see (fb-shell.js); fingers just swipe. */
+.slide-wrap { position: relative; min-width: 0; }
+.slide-btn { position: absolute; top: calc(50% - 8px); z-index: 2; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: var(--surface-3); color: var(--text); box-shadow: 0 0 0 1px var(--line), 0 4px 14px rgba(0,0,0,.55); transform: translateY(-50%); cursor: pointer; }
+.slide-btn:hover { background: #30364b; }
+.slide-btn[hidden] { display: none; }
+.slide-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; }
+.slide-prev { left: 8px; }
+.slide-next { right: 8px; }

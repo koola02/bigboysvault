@@ -1415,33 +1415,91 @@ pub async fn store_binder(State(app): State<App>, h: HeaderMap, Path((slug, bslu
     store_for(&app, &h, slug, Some(bslug)).await
 }
 
+/// One trainer's store on the Stores page: its numbers, then what it features. In the new look that is its binders and
+/// the cards its owner highlighted (`featured_row`); today's look keeps showing its first cards for sale, and no binders.
+type StoreRow = (Member, StoreStats, Vec<BinderTile>, Vec<MemberCard>);
+
 #[derive(Template)]
 #[template(path = "stores.html")]
 struct StoresPage {
     nav: Chrome,
-    stores: Vec<(Member, StoreStats, Vec<MemberCard>)>,
+    stores: Vec<StoreRow>,
     me: Option<Member>,
     /// The vault's own store, always first (new look only; today's look lists the trainers' stores alone).
     vault: Option<VaultCard>,
 }
 
-/// The vault's card at the top of /stores: its numbers and its first cards for sale.
+/// The vault's card at the top of /stores: its numbers, then the binders and highlighted cards it features.
 struct VaultCard {
     n: VaultNumbers,
+    binders: Vec<BinderTile>,
     cards: Vec<Product>,
 }
 
+/// Keeps the binders the owner chose to feature, in the store's own order (Edit binders arranges that order).
+fn chosen_binders(tiles: Vec<BinderTile>, keys: &[String]) -> Vec<BinderTile> {
+    tiles.into_iter().filter(|t| keys.contains(&t.key)).collect()
+}
+
+/// The vault's highlighted cards, in the owner's order: only those still for sale.
+fn vault_highlights(c: &rusqlite::Connection, keys: &[String]) -> rusqlite::Result<Vec<Product>> {
+    let mut out = vec![];
+    for id in keys.iter().filter_map(|k| k.parse::<i64>().ok()) {
+        if let Some(p) = db::product_by_id(c, id)?.filter(|p| p.available) {
+            out.push(p);
+        }
+    }
+    Ok(out)
+}
+
 /// The vault is not a seller: it stays out of sellers::directory (the feed and the admin's Sellers use that) and comes first here.
+/// What it features: the binders and cards a full admin chose; nothing chosen yet, every binder with cards for sale.
 fn vault_card(c: &rusqlite::Connection) -> rusqlite::Result<VaultCard> {
-    let tiles = vault_tiles(&db::collections(c)?, &db::binder_peeks(c, 0)?, false);
-    let (cards, _) = db::list(c, &db::Query { in_stock: true, ..Default::default() })?;
-    Ok(VaultCard { n: vault_numbers(c, &tiles)?, cards: cards.into_iter().take(6).collect() })
+    let tiles = vault_tiles(&db::collections(c)?, &db::binder_peeks(c, PEEK_CHOICES)?, false);
+    let n = vault_numbers(c, &tiles)?;
+    let (binders, cards) = match sellers::featured(c, 0)? {
+        None => (tiles, vec![]),
+        Some(f) => (chosen_binders(tiles, &f.binders), vault_highlights(c, &f.cards)?),
+    };
+    Ok(VaultCard { n, binders, cards })
+}
+
+/// A seller's binders that may show off their store: public ones with cards for sale, in the store's order.
+fn public_tiles(c: &rusqlite::Connection, m: &Member, listings: &[MemberCard]) -> rusqlite::Result<Vec<BinderTile>> {
+    let public: Vec<MemberBinder> = members::binders_of(c, m.id)?.into_iter().filter(|b| b.visibility == "Public").collect();
+    Ok(seller_tiles(m, &public, listings, false))
+}
+
+/// A seller's highlighted cards, in their order: only cards on sale right now (not reserved, not out of stock).
+fn seller_highlights(keys: &[String], listings: &[MemberCard]) -> Vec<MemberCard> {
+    keys.iter().filter_map(|k| listings.iter().find(|x| x.id.to_string() == *k && x.status == "Active")).cloned().collect()
+}
+
+/// A trainer's store on the Stores page (new look): its binders, then its highlighted cards, as its owner chose.
+/// Nothing chosen yet: every public binder with cards for sale, and no highlighted cards.
+fn featured_row(c: &rusqlite::Connection, m: Member, s: StoreStats) -> rusqlite::Result<StoreRow> {
+    let listings = sellers::storefront_listings(c, m.id)?;
+    let tiles = public_tiles(c, &m, &listings)?;
+    let (binders, cards) = match sellers::featured(c, m.id)? {
+        None => (tiles, vec![]),
+        Some(f) => (chosen_binders(tiles, &f.binders), seller_highlights(&f.cards, &listings)),
+    };
+    Ok((m, s, binders, cards))
 }
 
 pub async fn directory(State(app): State<App>, h: HeaderMap) -> Res {
     let me = crate::community::current(&app, &h).await?;
     let new = crate::look::is_new();
-    let (mut nav, stores, vault) = with_db(&app, move |c| Ok((chrome(c)?, sellers::directory(c)?, if new { Some(vault_card(c)?) } else { None }))).await?;
+    let (mut nav, stores, vault) = with_db(&app, move |c| {
+        let rows = sellers::directory(c)?;
+        let stores: Vec<StoreRow> = if new {
+            rows.into_iter().map(|(m, s, _)| featured_row(c, m, s)).collect::<rusqlite::Result<_>>()?
+        } else {
+            rows.into_iter().map(|(m, s, cards)| (m, s, vec![], cards)).collect()
+        };
+        Ok((chrome(c)?, stores, if new { Some(vault_card(c)?) } else { None }))
+    })
+    .await?;
     nav.seo = crate::Seo {
         title: format!("Stores · {}", nav.brand),
         desc: if new {
@@ -1454,6 +1512,189 @@ pub async fn directory(State(app): State<App>, h: HeaderMap) -> Res {
         ..Default::default()
     };
     Ok(html(render(StoresPage { nav, stores, me, vault })?))
+}
+
+// ---------- what a store features on the Stores page: chosen where it shows (static/binder-tools.js) ----------
+
+/// Who is choosing: a full admin for the vault's store, or a seller for their own.
+enum Featurer {
+    Vault,
+    Seller(Member),
+}
+
+async fn featurer(app: &App, h: &HeaderMap, vault: bool) -> Result<Result<Featurer, Response>, (StatusCode, String)> {
+    if !vault {
+        return Ok(binder_owner(app, h).await?.map(Featurer::Seller));
+    }
+    if !crate::community::same_site(h) {
+        return Ok(Err(fail(StatusCode::FORBIDDEN, "That request didn't come from this site.")));
+    }
+    if !admin::authed(app, h) {
+        return Ok(Err(fail(StatusCode::UNAUTHORIZED, "Only a full admin can choose what the vault's store shows. Please sign in again.")));
+    }
+    Ok(Ok(Featurer::Vault))
+}
+
+/// A vault card as the picker shows it.
+fn vault_pick_json(p: &Product) -> serde_json::Value {
+    let sub = [p.set_text(), p.card_no.trim().to_string(), p.tile_cond()].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" · ");
+    json!({ "id": p.id, "title": p.short_title(), "sub": sub, "image": p.img(360), "price": p.price_text(), "note": "", "inside": "" })
+}
+
+/// The binders that can show and the highlighted cards, as the tile shows them now (nothing chosen: every binder).
+fn feature_state(c: &rusqlite::Connection, who: &Featurer) -> rusqlite::Result<serde_json::Value> {
+    let f = sellers::featured(c, match who { Featurer::Vault => 0, Featurer::Seller(m) => m.id })?;
+    let keys: &[String] = f.as_ref().map_or(&[][..], |f| &f.cards);
+    let (tiles, cards) = match who {
+        Featurer::Vault => {
+            let tiles = vault_tiles(&db::collections(c)?, &db::binder_peeks(c, PEEK_CHOICES)?, false);
+            (tiles, vault_highlights(c, keys)?.iter().map(vault_pick_json).collect::<Vec<_>>())
+        }
+        Featurer::Seller(m) => {
+            let listings = sellers::storefront_listings(c, m.id)?;
+            let tiles = public_tiles(c, m, &listings)?;
+            (tiles, seller_highlights(keys, &listings).iter().map(|k| binder_card_json(k, false, "")).collect::<Vec<_>>())
+        }
+    };
+    let binders: Vec<serde_json::Value> = tiles
+        .iter()
+        .map(|t| {
+            let mut v = t.json();
+            v["on"] = json!(f.as_ref().is_none_or(|f| f.binders.contains(&t.key)));
+            v
+        })
+        .collect();
+    Ok(json!({ "ok": true, "saved": f.is_some(), "max": sellers::FEATURE_MAX, "binders": binders, "cards": cards }))
+}
+
+async fn featured_get(app: App, h: HeaderMap, vault: bool) -> Res {
+    let who = match featurer(&app, &h, vault).await? {
+        Ok(w) => w,
+        Err(r) => return Ok(r),
+    };
+    let v = with_db(&app, move |c| feature_state(c, &who)).await?;
+    Ok(ok(v))
+}
+
+/// GET /me/featured: what the seller's store shows on the Stores page, for the chooser.
+pub async fn featured_me(State(app): State<App>, h: HeaderMap) -> Res {
+    featured_get(app, h, false).await
+}
+
+/// GET /admin/featured: the same for the vault's store (full admins).
+pub async fn featured_vault(State(app): State<App>, h: HeaderMap) -> Res {
+    featured_get(app, h, true).await
+}
+
+async fn feature_choices(app: App, h: HeaderMap, vault: bool, q: String) -> Res {
+    let who = match featurer(&app, &h, vault).await? {
+        Ok(w) => w,
+        Err(r) => return Ok(r),
+    };
+    let q: String = q.trim().chars().take(80).collect();
+    let rows = with_db(&app, move |c| -> rusqlite::Result<Vec<serde_json::Value>> {
+        Ok(match &who {
+            Featurer::Vault => {
+                let sort = if q.is_empty() { "price-desc".to_string() } else { String::new() };
+                let (rows, _) = db::list(c, &db::Query { q: q.clone(), sort, in_stock: true, ..Default::default() })?;
+                rows.iter().map(vault_pick_json).collect()
+            }
+            Featurer::Seller(m) => {
+                let words: Vec<String> = q.split_whitespace().take(6).map(|w| w.to_lowercase()).collect();
+                sellers::storefront_listings(c, m.id)?
+                    .iter()
+                    .filter(|k| k.status == "Active")
+                    .filter(|k| {
+                        let hay = format!("{} {} {}", k.title, k.number, k.card_set).to_lowercase();
+                        words.iter().all(|w| hay.contains(w.as_str()))
+                    })
+                    .take(60)
+                    .map(|k| binder_card_json(k, false, ""))
+                    .collect()
+            }
+        })
+    })
+    .await?;
+    Ok(ok(json!({ "ok": true, "cards": rows })))
+}
+
+/// GET /me/featured/choices?q=: the seller's cards on sale that can be highlighted.
+pub async fn featured_me_choices(State(app): State<App>, h: HeaderMap, Query(qs): Query<ChoiceQs>) -> Res {
+    feature_choices(app, h, false, qs.q).await
+}
+
+/// GET /admin/featured/choices?q=: the vault's cards for sale (its dearest first until something is typed).
+pub async fn featured_vault_choices(State(app): State<App>, h: HeaderMap, Query(qs): Query<ChoiceQs>) -> Res {
+    feature_choices(app, h, true, qs.q).await
+}
+
+#[derive(Deserialize)]
+pub struct FeatureReq {
+    #[serde(default)]
+    binders: Vec<serde_json::Value>,
+    #[serde(default)]
+    cards: Vec<serde_json::Value>,
+}
+
+/// Numbers or words, as text: a seller's binders and cards go by number, the vault's binders by handle.
+fn as_keys(v: &[serde_json::Value]) -> Vec<String> {
+    v.iter()
+        .take(200)
+        .filter_map(|x| match x {
+            serde_json::Value::String(s) => Some(s.trim().to_string()),
+            serde_json::Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        })
+        .filter(|s| !s.is_empty() && s.len() <= 120)
+        .collect()
+}
+
+async fn featured_post(app: App, h: HeaderMap, vault: bool, req: FeatureReq) -> Res {
+    let who = match featurer(&app, &h, vault).await? {
+        Ok(w) => w,
+        Err(r) => return Ok(r),
+    };
+    let (binders, cards) = (as_keys(&req.binders), as_keys(&req.cards));
+    if binders.len() > sellers::FEATURE_MAX || cards.len() > sellers::FEATURE_MAX {
+        return Ok(fail(StatusCode::BAD_REQUEST, &format!("Choose up to {} binders and {} cards.", sellers::FEATURE_MAX, sellers::FEATURE_MAX)));
+    }
+    let saved = with_db(&app, move |c| {
+        // Only the store's own binders and cards: anything else is left out.
+        let (store, f) = match &who {
+            Featurer::Vault => {
+                let handles: Vec<String> = db::collections(c)?.into_iter().map(|b| b.handle).collect();
+                let mut keep = vec![];
+                for k in &cards {
+                    if let Ok(id) = k.parse::<i64>() {
+                        if db::product_by_id(c, id)?.is_some() {
+                            keep.push(id.to_string());
+                        }
+                    }
+                }
+                (0, sellers::Featured { binders: binders.into_iter().filter(|k| handles.contains(k)).collect(), cards: keep })
+            }
+            Featurer::Seller(m) => {
+                let mine: Vec<String> = members::binders_of(c, m.id)?.into_iter().map(|b| b.id.to_string()).collect();
+                let listings: Vec<String> = sellers::storefront_listings(c, m.id)?.into_iter().map(|k| k.id.to_string()).collect();
+                (m.id, sellers::Featured { binders: binders.into_iter().filter(|k| mine.contains(k)).collect(), cards: cards.into_iter().filter(|k| listings.contains(k)).collect() })
+            }
+        };
+        sellers::set_featured(c, store, &f)?;
+        Ok(sellers::featured(c, store)?.unwrap_or_default())
+    })
+    .await?;
+    app.forget();
+    Ok(ok(json!({ "ok": true, "binders": saved.binders.len(), "cards": saved.cards.len() })))
+}
+
+/// POST /me/featured {binders, cards}: what the seller's store shows on the Stores page.
+pub async fn featured_me_save(State(app): State<App>, h: HeaderMap, Json(req): Json<FeatureReq>) -> Res {
+    featured_post(app, h, false, req).await
+}
+
+/// POST /admin/featured {binders, cards}: what the vault's store shows on the Stores page (full admins).
+pub async fn featured_vault_save(State(app): State<App>, h: HeaderMap, Json(req): Json<FeatureReq>) -> Res {
+    featured_post(app, h, true, req).await
 }
 
 async fn seller_by_slug(app: &App, slug: String) -> Result<Option<Member>, (StatusCode, String)> {
@@ -2093,7 +2334,7 @@ mod tests {
         let slug = members::get(&c, s).unwrap().unwrap().slug;
         // No binders yet: the owner still gets the heading, the button and a word on what binders are for.
         let own = page_as(&c, &slug, None, true, true);
-        assert!(own.contains("data-bt-edit=\"seller\"") && own.contains("class=\"bt-none\"") && own.contains("/static/binder-tools.js?v=1"), "{own}");
+        assert!(own.contains("data-bt-edit=\"seller\"") && own.contains("class=\"bt-none\"") && own.contains("/static/binder-tools.js?v=2"), "{own}");
         let visitor = page(&c, &slug, None, true);
         assert!(!visitor.contains("data-bt-edit") && !visitor.contains("binder-tools.js") && !visitor.contains(">Binders<"));
         let b = members::create_member_binder(&c, s, "Fire").unwrap();

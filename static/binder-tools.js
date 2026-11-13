@@ -7,6 +7,8 @@
      in order, and "Add cards": a picker of the owner's cards (the vault's cards; a seller's cards on sale, where a card
      in another binder moves here, and the picker says so).
    - Store Manager › Binders: each binder has a handle to drag it into place.
+   - The Stores page: "Choose what shows" on the owner's own store picks which binders show there and which cards are
+     highlighted (a full admin does the same for the vault's store).
    Everything saves by itself and says so in a short message. The server decides who may change what. */
 (() => {
   if (window.bbvBinderTools) return;
@@ -659,8 +661,136 @@
     list.addEventListener('click', (e) => { if (e.target.closest('[data-bgrip]')) toast('Drag the handle to move the binder, or use the arrow keys.'); });
   }
 
+  /* ================= The Stores page: what a store shows there, chosen by its owner ================= */
+  // A seller (on their own store) and a full admin (on the vault's) pick the binders and the highlighted cards shoppers
+  // see on /stores. Binders keep the store's own order; highlighted cards show in the order they were picked.
+  const FEATURE = {
+    vault: {
+      get: () => req('/admin/featured'), choices: (q) => req(`/admin/featured/choices?q=${enc(q)}`), save: (b) => req('/admin/featured', b),
+      title: 'What Big Boys Vault shows on Stores', order: 'They show in the vault’s order (Edit binders on its store changes it).',
+      find: 'Search the vault’s cards: name, number or set', start: 'The vault’s dearest cards. Type to find any card.',
+      none: 'No binder has cards for sale yet.',
+    },
+    seller: {
+      get: () => req('/me/featured'), choices: (q) => req(`/me/featured/choices?q=${enc(q)}`), save: (b) => req('/me/featured', b),
+      title: 'What your store shows on Stores', order: 'They show in your store’s order (Edit binders on your store changes it).',
+      find: 'Search your cards: name, number or set', start: '',
+      none: 'None of your binders has cards for sale yet. Make one with Edit binders on your store, then come back.',
+    },
+  };
+  function featureChooser(btn) {
+    const api = FEATURE[btn.dataset.feature]; if (!api) return;
+    btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try { open(await api.get()); } catch (e) { say(e.message, { bad: true }); } finally { btn.disabled = false; }
+    });
+    function open(state) {
+      const max = state.max || 12;
+      const g = dialog(api.title, { wide: true }); g.d.classList.add('bt-feat');
+      const on = new Set(state.binders.filter((b) => b.on).map((b) => b.key));
+      const picked = new Map(state.cards.map((c) => [String(c.id), c]));
+
+      // Binders: tap to show or hide.
+      const bh = el('h3', 'bt-sec', 'Binders');
+      const bhow = el('p', 'bt-how', state.binders.length ? `Tap a binder to show or hide it. ${api.order}` : api.none);
+      const bl = el('ul', 'bt-fbinders');
+      bl.replaceChildren(...state.binders.map((b) => {
+        const li = el('li');
+        const t = button('bt-fb', null); t.setAttribute('aria-pressed', String(on.has(b.key)));
+        const cov = el('span', `sf-bcov${b.photo ? ' sf-bphoto' : ''}`); cov.dataset.n = String(b.pics.length);
+        b.pics.forEach((p) => { const im = el('img'); im.src = p; im.alt = ''; im.loading = 'lazy'; im.decoding = 'async'; cov.append(im); });
+        if (!b.pics.length) { const n = icon('book'); n.setAttribute('class', 'sf-bnone'); cov.append(n); }
+        const tick = el('span', 'bt-tick'); tick.append(icon('check'));
+        const txt = el('span', 'sf-btxt'); txt.append(el('b', 'sf-bname', b.title), el('small', '', b.words));
+        t.append(cov, tick, txt);
+        t.addEventListener('click', () => { if (on.has(b.key)) on.delete(b.key); else on.add(b.key); t.setAttribute('aria-pressed', String(on.has(b.key))); sync(); });
+        li.append(t); return li;
+      }));
+
+      // Highlighted cards: the chosen ones in order (each can come off), then a search to add more.
+      const ch = el('h3', 'bt-sec');
+      const chow = el('p', 'bt-how', `Pick up to ${max} cards to show off. Tap a card again to take it off.`);
+      const chosen = el('ul', 'bt-fchosen'); chosen.setAttribute('aria-label', 'Highlighted cards, in order');
+      const find = el('input', 'bt-find'); find.type = 'search'; find.placeholder = api.find; find.setAttribute('aria-label', api.find);
+      find.autocomplete = 'off'; find.enterKeyHint = 'search'; find.spellcheck = false;
+      const status = el('p', 'bt-state'); status.setAttribute('aria-live', 'polite');
+      const results = el('ul', 'bt-picks');
+      g.body.append(bh, bhow, bl, ch, chow, chosen, find, status, results);
+
+      const tally = el('span', 'bt-tally'); tally.setAttribute('aria-live', 'polite');
+      const no = button('btn ghost', null, null, 'Cancel'), go = button('btn', null, null, 'Save');
+      g.foot.append(tally, no, go);
+      no.addEventListener('click', g.close);
+
+      function sync() {
+        const nb = on.size, nc = picked.size;
+        ch.textContent = `Highlighted cards · ${nc} of ${max}`;
+        tally.textContent = !nb && !nc ? 'Only your store’s name and its Visit store button will show.'
+          : `${plural(nb, 'binder')} and ${plural(nc, 'card')} will show.`;
+      }
+      function drawChosen() {
+        chosen.replaceChildren(...[...picked.values()].map((c) => {
+          const li = el('li', 'bt-fc');
+          const pic = el('span', 'bt-fc-pic');
+          if (c.image) { const im = el('img'); im.src = c.image; im.alt = ''; im.decoding = 'async'; pic.append(im); }
+          const x = button('bt-fc-x', `Take ${c.title} off`, 'x');
+          x.addEventListener('click', () => { picked.delete(String(c.id)); drawChosen(); mark(); sync(); find.focus({ preventScroll: true }); });
+          li.append(pic, el('span', 'bt-fc-t', c.title), x);
+          return li;
+        }));
+        chosen.hidden = !picked.size;
+      }
+      function mark() { results.querySelectorAll('.bt-pc').forEach((b) => b.setAttribute('aria-pressed', String(picked.has(b.dataset.id)))); }
+      function row(c) {
+        const li = el('li');
+        const b = button('bt-pc bt-pick', null); b.dataset.id = String(c.id);
+        b.setAttribute('aria-pressed', String(picked.has(String(c.id))));
+        const pic = el('span', 'bt-pc-pic');
+        if (c.image) { const im = el('img'); im.src = c.image; im.alt = ''; im.loading = 'lazy'; im.decoding = 'async'; pic.append(im); }
+        const tick = el('span', 'bt-tick'); tick.append(icon('check')); pic.append(tick);
+        const t = el('span', 'bt-pc-t'); t.append(el('b', '', c.title));
+        if (c.sub) t.append(el('small', '', c.sub));
+        t.append(el('small', 'bt-price', c.price));
+        b.append(pic, t);
+        b.addEventListener('click', () => {
+          const id = String(c.id);
+          if (picked.has(id)) picked.delete(id);
+          else if (picked.size >= max) { status.textContent = `Up to ${max} cards. Take one off first.`; return; }
+          else picked.set(id, c);
+          status.textContent = '';
+          b.setAttribute('aria-pressed', String(picked.has(id))); drawChosen(); sync();
+        });
+        li.append(b); return li;
+      }
+      let seq = 0, wait = 0;
+      async function search() {
+        const my = ++seq, q = clean(find.value);
+        status.textContent = 'Looking…';
+        try {
+          const j = await api.choices(q); if (my !== seq) return;
+          const rows = j.cards || [];
+          status.textContent = rows.length ? (q ? '' : api.start) : q ? `No card for sale matches “${q}”.` : 'You have no cards on sale right now.';
+          results.replaceChildren(...rows.map(row));
+        } catch (e) { if (my === seq) status.textContent = e.message; }
+      }
+      find.addEventListener('input', () => { clearTimeout(wait); wait = setTimeout(search, 250); });
+      find.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(wait); search(); } });
+      go.addEventListener('click', async () => {
+        go.disabled = true;
+        try {
+          await api.save({ binders: state.binders.map((b) => b.key).filter((k) => on.has(k)), cards: [...picked.keys()] });
+          try { sessionStorage.setItem('bbv:toast', 'Saved. This is what shoppers see on Stores now ✓'); } catch (_) {}
+          location.reload();
+        } catch (e) { go.disabled = false; status.textContent = e.message; status.scrollIntoView({ block: 'nearest' }); }
+      });
+      drawChosen(); sync(); search();
+      (bl.querySelector('.bt-fb') || find).focus({ preventScroll: true });
+    }
+  }
+
   /* ---------- start ---------- */
   document.querySelectorAll('[data-bt-edit]').forEach(gridEditor);
   document.querySelectorAll('[data-bt-binder]').forEach(binderEditor);
+  document.querySelectorAll('[data-feature]').forEach(featureChooser);
   const mgr = document.getElementById('storeBinders'); if (mgr) managerOrder(mgr);
 })();

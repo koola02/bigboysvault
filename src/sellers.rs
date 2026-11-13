@@ -112,6 +112,8 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
            id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, link TEXT NOT NULL, created_at INTEGER NOT NULL);
          CREATE TABLE IF NOT EXISTS card_events(
            id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, card_id INTEGER NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL);
+         CREATE TABLE IF NOT EXISTS store_features(
+           store_id INTEGER NOT NULL, kind TEXT NOT NULL, ref TEXT NOT NULL, position INTEGER NOT NULL, PRIMARY KEY(store_id, kind, ref));
          CREATE UNIQUE INDEX IF NOT EXISTS idx_sf_pair ON store_follows(follower_id, seller_id);
          CREATE INDEX IF NOT EXISTS idx_reviews_seller ON reviews(seller_id, created_at);
          CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_tx ON reviews(transaction_id);
@@ -654,6 +656,54 @@ pub fn storefront_listings(c: &Connection, member_id: i64) -> rusqlite::Result<V
     let mut st = c.prepare(&format!("SELECT {} FROM member_cards c WHERE c.member_id=?1 AND c.kind='sale' AND c.status IN ('Active','Out of stock','Reserved') ORDER BY c.position, c.id", members::CARD_COLS))?;
     let v = st.query_map([member_id], |r| members::map_card(r, 0))?.collect::<Result<Vec<_>, _>>()?;
     Ok(v)
+}
+
+/// What a store shows on its tile on the Stores page, as its owner chose: binders and highlighted cards, each in order.
+/// Store 0 is the vault (binders by handle, cards by product id); a seller's binders and cards go by their numbers.
+/// Nothing chosen yet (`featured` gives `None`): the tile shows every binder and no highlighted cards.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Featured {
+    pub binders: Vec<String>,
+    pub cards: Vec<String>,
+}
+
+/// At most this many of each on a tile (the tile scrolls sideways; more would only bury the rest).
+pub const FEATURE_MAX: usize = 12;
+
+pub fn featured(c: &Connection, store: i64) -> rusqlite::Result<Option<Featured>> {
+    let mut st = c.prepare_cached("SELECT kind, ref FROM store_features WHERE store_id=?1 ORDER BY position, ref")?;
+    let mut f = Featured::default();
+    let mut saved = false;
+    for row in st.query_map([store], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
+        let (kind, key) = row?;
+        match kind.as_str() {
+            "binder" => f.binders.push(key),
+            "card" => f.cards.push(key),
+            _ => saved = true,
+        }
+    }
+    Ok((saved || !f.binders.is_empty() || !f.cards.is_empty()).then_some(f))
+}
+
+/// Saves a store's choice, replacing the last one: the order given, each once, at most FEATURE_MAX of each. Even an empty
+/// choice is kept (a store can show no binders); the caller checks that every one belongs to the store.
+pub fn set_featured(c: &Connection, store: i64, f: &Featured) -> rusqlite::Result<()> {
+    c.execute_batch("BEGIN IMMEDIATE")?;
+    let r = (|| {
+        c.execute("DELETE FROM store_features WHERE store_id=?1", [store])?;
+        c.execute("INSERT INTO store_features(store_id, kind, ref, position) VALUES(?1, 'saved', '', 0)", [store])?;
+        let mut st = c.prepare_cached("INSERT OR IGNORE INTO store_features(store_id, kind, ref, position) VALUES(?1, ?2, ?3, ?4)")?;
+        for (kind, keys) in [("binder", &f.binders), ("card", &f.cards)] {
+            let mut seen = std::collections::HashSet::new();
+            let keep: Vec<&str> = keys.iter().map(|k| k.trim()).filter(|k| !k.is_empty() && seen.insert(k.to_string())).take(FEATURE_MAX).collect();
+            for (i, k) in keep.iter().enumerate() {
+                st.execute(rusqlite::params![store, kind, k, i as i64 + 1])?;
+            }
+        }
+        Ok(())
+    })();
+    c.execute_batch(if r.is_ok() { "COMMIT" } else { "ROLLBACK" })?;
+    r
 }
 
 /// Every seller's card that can be bought right now, for The Vault page's card finder (`/vault.tsv`, after the vault's
@@ -2390,6 +2440,25 @@ mod tests {
         members::migrate(&c).unwrap();
         crate::db::migrate(&c).unwrap();
         c
+    }
+
+    #[test]
+    fn a_store_keeps_its_featured_binders_and_cards_in_order() {
+        let c = db();
+        assert_eq!(featured(&c, 7).unwrap(), None, "nothing chosen yet");
+        let f = Featured { binders: vec!["3".into(), "1".into(), "3".into(), " ".into()], cards: (1..=20).map(|n| n.to_string()).collect() };
+        set_featured(&c, 7, &f).unwrap();
+        let got = featured(&c, 7).unwrap().unwrap();
+        assert_eq!(got.binders, vec!["3", "1"], "the order given, each once, no blanks");
+        assert_eq!(got.cards.len(), FEATURE_MAX);
+        assert_eq!(got.cards[0], "1");
+        assert_eq!(got.cards[FEATURE_MAX - 1], FEATURE_MAX.to_string());
+        set_featured(&c, 7, &Featured::default()).unwrap();
+        assert_eq!(featured(&c, 7).unwrap(), Some(Featured::default()), "an empty choice is a choice: no binders on the tile");
+        assert_eq!(featured(&c, 0).unwrap(), None, "the vault's choice is its own");
+        set_featured(&c, 0, &Featured { binders: vec!["pikachu-set".into()], cards: vec![] }).unwrap();
+        assert_eq!(featured(&c, 0).unwrap().unwrap().binders, vec!["pikachu-set"]);
+        assert_eq!(featured(&c, 7).unwrap(), Some(Featured::default()));
     }
 
     fn seller_with_card(c: &Connection) -> (i64, i64, i64) {
