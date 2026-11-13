@@ -1487,19 +1487,20 @@ fn featured_row(c: &rusqlite::Connection, m: Member, s: StoreStats) -> rusqlite:
     Ok((m, s, binders, cards))
 }
 
+/// The trainers' stores on the Stores page, best sellers first: what each features (new look) or its first cards (today's look).
+fn store_rows(c: &rusqlite::Connection, new: bool) -> rusqlite::Result<Vec<StoreRow>> {
+    let rows = sellers::directory(c)?;
+    if new {
+        rows.into_iter().map(|(m, s, _)| featured_row(c, m, s)).collect()
+    } else {
+        Ok(rows.into_iter().map(|(m, s, cards)| (m, s, vec![], cards)).collect())
+    }
+}
+
 pub async fn directory(State(app): State<App>, h: HeaderMap) -> Res {
     let me = crate::community::current(&app, &h).await?;
     let new = crate::look::is_new();
-    let (mut nav, stores, vault) = with_db(&app, move |c| {
-        let rows = sellers::directory(c)?;
-        let stores: Vec<StoreRow> = if new {
-            rows.into_iter().map(|(m, s, _)| featured_row(c, m, s)).collect::<rusqlite::Result<_>>()?
-        } else {
-            rows.into_iter().map(|(m, s, cards)| (m, s, vec![], cards)).collect()
-        };
-        Ok((chrome(c)?, stores, if new { Some(vault_card(c)?) } else { None }))
-    })
-    .await?;
+    let (mut nav, stores, vault) = with_db(&app, move |c| Ok((chrome(c)?, store_rows(c, new)?, if new { Some(vault_card(c)?) } else { None }))).await?;
     nav.seo = crate::Seo {
         title: format!("Stores · {}", nav.brand),
         desc: if new {
@@ -2452,7 +2453,7 @@ mod tests {
 
     fn stores_html(c: &rusqlite::Connection, new: bool) -> String {
         crate::look::in_thread(new);
-        let html = render(StoresPage { nav: chrome(c).unwrap(), stores: sellers::directory(c).unwrap(), me: None, vault: if new { Some(vault_card(c).unwrap()) } else { None } });
+        let html = render(StoresPage { nav: chrome(c).unwrap(), stores: store_rows(c, new).unwrap(), me: None, vault: if new { Some(vault_card(c).unwrap()) } else { None } });
         crate::look::in_thread(false);
         html.unwrap()
     }
@@ -2465,7 +2466,15 @@ mod tests {
         let html = stores_html(&c, true);
         assert!(html.contains("<article class=\"seller-card vault-card\">") && html.contains("href=\"/store/vault\""));
         assert!(html.contains("3 cards for sale · 2 binders · 0 vouches"), "{html}");
-        assert_eq!(html.matches("<a class=\"card\" href=\"/products/").count(), 3, "a few of its cards for sale");
+        assert_eq!(html.matches("class=\"sf-btile\" href=\"/collections/").count(), 2, "its binders with cards for sale, not a row of cards");
+        assert_eq!(html.matches("<a class=\"card\" href=\"/products/").count(), 0, "no highlighted cards until an admin picks some");
+        // A full admin chooses: one binder, and cards (one has sold: it doesn't show).
+        sellers::set_featured(&c, 0, &sellers::Featured { binders: vec!["graded-cards".into()], cards: vec!["2".into(), "3".into()] }).unwrap();
+        let html = stores_html(&c, true);
+        assert_eq!(html.matches("class=\"sf-btile\" href=\"/collections/").count(), 1);
+        assert!(html.contains("class=\"sf-btile\" href=\"/collections/graded-cards\""));
+        assert_eq!(html.matches("<a class=\"card\" href=\"/products/").count(), 1);
+        assert!(html.contains("<a class=\"card\" href=\"/products/c2\"") && html.contains(">Highlights<"));
         assert!(html.contains("No trainer has a store with cards on sale yet."));
         // A trainer opens one: after the vault.
         let s = members::create(&c, "Shop", "h").unwrap().unwrap();
@@ -2477,11 +2486,14 @@ mod tests {
         let (v, t) = (html.find("vault-card").unwrap(), html.find(&format!("href=\"{}\"", shop.store_url())).unwrap());
         assert!(v < t, "the vault first");
         assert!(!html.contains("No trainer has a store"));
+        // A store with no binders and nothing highlighted says where its cards are.
+        assert!(html.contains("Visit the store to see its 1 card for sale."), "{html}");
         // Today's look: the trainers' stores alone, worded as before.
         let classic = stores_html(&c, false);
         assert!(!classic.contains("vault-card") && !classic.contains("/store/vault"));
         assert!(classic.contains("Trainers' stores") && classic.contains("Cards for sale by the trainers of Big Boys Vault."));
         assert!(classic.contains(&format!("href=\"{}\"", shop.store_url())));
+        assert!(classic.contains(&format!("<a class=\"card\" href=\"/trainers/{s}/cards/")), "today's look keeps the store's first cards");
         // The vault is never one of the sellers (the feed and the admin's Sellers list those).
         assert!(sellers::directory(&c).unwrap().iter().all(|(m, _, _)| m.id == s));
     }
