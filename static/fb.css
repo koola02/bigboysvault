@@ -629,6 +629,20 @@ html.sheet-open { overflow: hidden; }
 .fd-chip:hover { background: #30364b; }
 .fd-chip.on { background: var(--gold-tint); color: var(--gold-hi); box-shadow: inset 0 0 0 1px var(--gold-edge); }
 .fd-chip[data-c]:not([data-c=""]).on { background: rgba(var(--tone), .2); color: rgb(var(--tone)); box-shadow: inset 0 0 0 1px rgba(var(--tone), .6); }
+/* The ⓘ beside Finish and Language and its note (crates/finder, `tip`). The note hangs under the label, never wider
+   than the filter column or sheet; the finder shows and hides it with the hidden attribute. */
+.fd-fhead { position: relative; display: flex; align-items: center; gap: 2px; }
+.fd-tipw { display: inline-flex; }
+.fd-tip { position: relative; display: grid; place-items: center; width: 24px; height: 24px; margin: -6px 0; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--muted); cursor: pointer; transition: color .12s, background-color .12s; }
+.fd-tip::before { content: ""; position: absolute; inset: -10px -8px 0; }
+.fd-tip svg { display: block; }
+.fd-tip:hover, .fd-tipw.on .fd-tip { background: var(--gold-tint); color: var(--gold-hi); }
+.fd-tip:focus-visible { outline-offset: 0; border-radius: 50%; }
+.fd-tipw.on .fd-tip::after { content: ""; position: absolute; z-index: 31; left: 50%; top: calc(100% + 1px); width: 10px; height: 10px; margin-left: -5px; background: var(--surface-2); box-shadow: -1px -1px 0 0 var(--gold-edge); transform: rotate(45deg); pointer-events: none; }
+.fd-tip-t { position: absolute; z-index: 30; left: 0; top: calc(100% + 12px); width: max-content; max-width: min(100%, 300px); padding: 9px 12px; border-radius: var(--r); background: var(--surface-2); color: var(--text); font: 500 .8125rem/1.4 var(--font); text-align: left; white-space: normal; overflow-wrap: anywhere; box-shadow: 0 0 0 1px var(--gold-edge), var(--shadow-pop); cursor: default; animation: fd-tip-in .14s var(--ease); }
+.fd-tip-t::before { content: ""; position: absolute; left: 0; right: 0; bottom: 100%; height: 14px; }
+@keyframes fd-tip-in { from { opacity: 0; transform: translateY(-3px); } }
+@media (prefers-reduced-motion: reduce) { .fd-tip-t { animation: none; } }
 .fd-price { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; }
 .fd-p-v { color: var(--gold-hi); font: 700 .8125rem/1 var(--display); }
 .fd-range { position: relative; min-width: 0; height: 40px; --th: 26px; }
