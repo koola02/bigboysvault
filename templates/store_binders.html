@@ -5,7 +5,7 @@
 {% block content %}
 <section class="wrap admin wide st" id="storeBinders" data-store="{{ p.m.store_url() }}" data-site="{{ nav.site }}">
   {% include "store_tabs.html" %}
-  <p class="mc-how">Binders group your cards: by set, by Pokémon, by price, however you like. <b>Public</b> binders show in your store, <b>Unlisted</b> ones only to people with the link, <b>Private</b> ones only to you.</p>
+  <p class="mc-how">Binders group your cards: by set, by Pokémon, by price, however you like. <b>Public</b> binders show in your store, <b>Unlisted</b> ones only to people with the link, <b>Private</b> ones only to you. Drag a binder by its handle (or use the arrow keys on it) to put your binders in the order your store shows them.</p>
 
   <form class="st-newbinder" id="newBinder">
     <input name="title" maxlength="60" placeholder="New binder, like “Base Set” or “Under ₱100”" aria-label="New binder name" required autocomplete="off">
@@ -16,7 +16,7 @@
   <div class="st-binders">
     {% for b in binders %}
     <article class="st-binder" data-id="{{ b.id }}" data-slug="{{ b.slug }}">
-      <div class="st-binder-cover">{% if b.has_image() %}<img src="{{ b.cover_image }}" width="120" height="168" alt="" loading="lazy">{% else %}<span class="thumb-empty">No cover</span>{% endif %}</div>
+      <div class="st-binder-cover">{% if b.has_image() %}<img src="{{ b.cover_image }}" width="120" height="168" alt="" loading="lazy">{% else %}<span class="thumb-empty">No cover</span>{% endif %}<button type="button" class="bt-grip st-bgrip" data-bgrip aria-label="Move {{ b.title }}: drag it, or press the arrow keys" title="Drag to move"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="6" r="1.4"/><circle cx="15" cy="6" r="1.4"/><circle cx="9" cy="12" r="1.4"/><circle cx="15" cy="12" r="1.4"/><circle cx="9" cy="18" r="1.4"/><circle cx="15" cy="18" r="1.4"/></svg><span>Move</span></button></div>
       <div class="st-binder-body">
         <input class="st-binder-title" value="{{ b.title }}" maxlength="60" data-title aria-label="Binder name">
         <textarea class="st-binder-desc" rows="2" maxlength="300" placeholder="What's in this binder? (optional)" data-desc aria-label="Binder description">{{ b.description }}</textarea>
@@ -25,6 +25,7 @@
           <span class="st-binder-n">{{ b.count }} card{% if b.count != 1 %}s{% endif %}</span>
           <button type="button" class="linkbtn inline" data-share>Copy link</button>
           <a class="linkbtn inline" href="{{ p.m.store_url() }}/binders/{{ b.slug }}" target="_blank" rel="noopener">Open ↗</a>
+          <a class="linkbtn inline" href="{{ p.m.store_url() }}/binders/{{ b.slug }}#edit">Add or remove cards</a>
           <button type="button" class="linkbtn inline danger" data-del-binder>Delete</button>
         </div>
         <details class="st-binder-cards">
@@ -76,4 +77,5 @@
 <script src="/static/dragsort.js?v=5" defer></script>
 <script src="/static/admin-ui.js?v=10" defer></script>
 <script src="/static/store.js?v=4" defer></script>
+<script src="/static/binder-tools.js?v=1" defer></script>
 {% endblock %}

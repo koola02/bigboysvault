@@ -69,6 +69,8 @@
     f.name.value = b ? b.title : ''; f.name.placeholder = 'For example: Eeveelutions';
     f.done.textContent = isNew ? 'Create binder' : 'Done';
     if (b) { f.onHome.checked = b.on_home; loadPicks(b); }
+    // Its cards are added, taken out and arranged on the binder's own page, in its editor (binder-tools.js).
+    const cards = $('bdCards'); if (cards && b) cards.href = `/collections/${encodeURIComponent(b.handle)}#edit`;
     sheet.hidden = false; requestAnimationFrame(() => sheet.classList.add('open')); document.body.style.overflow = 'hidden';
     if (isNew) setTimeout(() => f.name.focus(), 250);
   }

@@ -367,6 +367,10 @@ impl CollectionPage {
     fn total_text(&self) -> String {
         db::thousands(self.total)
     }
+    /// The binder's handle on a binder's page ("pikachu-set"), for its owner's binder tools.
+    fn handle(&self) -> &str {
+        self.base.strip_prefix("/collections/").unwrap_or("")
+    }
 }
 
 #[derive(Template)]
@@ -1160,10 +1164,12 @@ mod tests {
         assert!(binder.contains("1,117 cards · by <a href=\"/store/vault\">Big Boys Vault</a>"), "the count its tile shows");
         assert!(binder.contains("class=\"wrap mk mk-bpage\"") && binder.contains("<form class=\"filters\"") && binder.contains("id=\"grid\""), "its search and cards stay");
         assert!(!binder.contains("<p class=\"sub\">"));
+        // Full admins arrange its cards right there: the button is in every visitor's page (it is kept), hidden unless they are signed in.
+        assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=1"));
         // The Vault (all cards) and a search: no bar.
         for (base, title) in [("/search", "All cards"), ("/search", "Results for “pika”")] {
             let other = page(base, title, 3, true);
-            assert!(!other.contains("data-binder-close") && other.contains("<h1 class=\"h1\">"));
+            assert!(!other.contains("data-binder-close") && other.contains("<h1 class=\"h1\">") && !other.contains("binder-tools.js"));
         }
         // Today's look: the binder as it was.
         let classic = page("/collections/pikachu-set", "Pikachu Set", 116, false);
@@ -1410,6 +1416,9 @@ async fn main() {
         .route("/me/listings/{id}", post(store::edit_listing))
         .route("/me/listings/{id}/renew", post(store::renew_listing))
         .route("/me/binders", get(store::binders).post(community::me_create_binder))
+        .route("/me/binders/order", post(store::order_binders))
+        .route("/me/binders/{id}/cards", get(store::binder_cards).post(store::change_binder_cards))
+        .route("/me/binders/{id}/choices", get(store::binder_choices))
         .route("/me/binders/{id}/rename", post(community::me_rename_binder))
         .route("/me/binders/{id}/delete", post(community::me_delete_binder))
         .route("/me/binders/{id}/cover", post(community::me_binder_cover))
@@ -1523,6 +1532,9 @@ async fn main() {
         .route("/admin/binders/{handle}", post(admin::binder_update))
         .route("/admin/binders/{handle}/covers", get(admin::binder_covers))
         .route("/admin/binders/{handle}/cover", post(admin::binder_cover_upload).layer(big()))
+        .route("/admin/binders/{handle}/cards", get(admin::binder_cards).post(admin::binder_cards_change))
+        .route("/admin/binders/{handle}/arrange", post(admin::binder_arrange))
+        .route("/admin/binders/{handle}/choices", get(admin::binder_choices))
         .route("/admin/sets/search", get(admin::set_search))
         .route("/admin/sets/cards", get(admin::set_cards))
         .route("/admin/cardimg/unlimited", get(admin::cardimg_unlimited))

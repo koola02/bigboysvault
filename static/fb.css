@@ -1370,3 +1370,133 @@ html.cardwin-open { overflow: hidden; }
 /* One of the vault's binders opened (/collections/...): the bar hangs under the site's header, as on a trainer's binder. */
 .mk-bpage { padding-top: 0; }
 .mk > .sf-bbar { margin: 0 0 16px; }
+
+/* ---------- 35. Binder tools: owners arrange their binders, and a binder's cards, where they are shown (binder-tools.js) ---------- */
+/* A seller on their own store, a full admin on the vault's: "Edit binders" beside the heading, "Edit binder" in a binder's bar. */
+.bt-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; max-width: var(--feed); }
+.bt-head > .h2 { min-width: 0; margin-top: 4px; font-size: 1.25rem; }
+.btn.bt-toggle, .btn.bt-bedit { flex: none; min-height: 40px; }
+.bt-none, .bt-hint { margin: 0; max-width: var(--feed); color: var(--muted); font-size: .875rem; line-height: 1.4; }
+.storefront > .bt-hint { margin-top: -6px; }
+.bt-ic { width: 20px; height: 20px; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.bt-ic-grip circle { fill: currentColor; stroke: none; }
+.bt-ic-star { stroke-width: 1.8; }
+[aria-pressed="true"] > .bt-ic-star { fill: currentColor; }
+
+/* The binders while they are arranged: every one, even those visitors don't see, then a tile to make a new one. */
+.bt-tile, .bt-card { position: relative; container-type: inline-size; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
+.bt-tile img, .bt-card img { pointer-events: none; -webkit-user-drag: none; -webkit-touch-callout: none; }
+.bt-tile .sf-btxt { padding-bottom: 8px; }
+.bt-open { display: block; color: inherit; cursor: grab; }
+.bt-open:hover { text-decoration: none; }
+.bt-open:hover .sf-bcov { filter: brightness(1.08); }
+.bt-open:focus-visible { outline-offset: -3px; border-radius: var(--r) var(--r) 0 0; }
+.bt-grip { position: absolute; top: 6px; left: 6px; z-index: 2; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: rgba(11,13,20,.84); color: var(--text); box-shadow: 0 0 0 1px var(--line-2); cursor: grab; touch-action: none; }
+.bt-grip:hover { background: #30364b; }
+.bt-acts { display: grid; grid-template-columns: repeat(auto-fit, minmax(40px, 1fr)); gap: 4px; margin-top: auto; padding: 0 6px 6px; }
+.bt-act { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 40px; min-height: 40px; padding: 0 4px; border: 0; border-radius: var(--r-sm); background: var(--surface-3); color: var(--text); font: 600 .8125rem/1 var(--font); white-space: nowrap; }
+.bt-act:hover { background: #30364b; }
+.bt-act > span { display: none; }
+.bt-act[aria-pressed="true"] { background: var(--gold-tint); color: var(--gold-hi); box-shadow: inset 0 0 0 1px var(--gold-edge); }
+.bt-del { color: #ffb4ad; }
+/* Their words show when there is room: a card has two buttons, a binder three. */
+@container (min-width: 166px) { .bt-card .bt-act > span { display: inline; } }
+@container (min-width: 236px) { .bt-tile .bt-act > span { display: inline; } }
+.bt-name-in { min-height: 40px; font-weight: 600; }
+.bt-new { min-width: 0; }
+.bt-newbtn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 100%; min-height: 168px; padding: 16px; border: 2px dashed var(--line-2); border-radius: var(--r); background: none; color: var(--gold); font: 700 .9375rem/1.2 var(--font); }
+.bt-newbtn:hover { border-color: var(--gold-edge); background: var(--gold-tint); }
+.bt-newbtn .bt-ic { width: 28px; height: 28px; }
+.bt-newf { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 168px; padding: 12px; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--gold-edge); }
+.bt-newf-t { font-weight: 700; }
+.bt-newf-acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
+.bt-newf-acts .btn { flex: 1 1 auto; min-height: 40px; }
+/* Dragging: the binder or card follows the finger; a gold gap shows where it will land. */
+.bt-on .drag-ph, .bt-cards .drag-ph { list-style: none; border-radius: var(--r); background: var(--gold-tint); box-shadow: inset 0 0 0 2px var(--gold-edge); }
+.bt-li.dragging, .bt-card.dragging { border-radius: var(--r); box-shadow: 0 0 0 2px var(--gold), var(--shadow-pop); rotate: -1.5deg; opacity: .97; transition: none; cursor: grabbing; }
+.bt-li.dropped .bt-tile, .bt-card.dropped { box-shadow: 0 0 0 2px var(--gold); transition: box-shadow .6s; }
+body.is-dragging { cursor: grabbing; -webkit-user-select: none; user-select: none; }
+
+/* A binder's own page while its cards are arranged. */
+.bt-ed { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.bt-ed-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; }
+.bt-ed-top .bt-hint { flex: 1 1 240px; }
+.bt-ed-top .btn { flex: none; min-height: 44px; }
+.bt-count { margin: 0; color: var(--muted); font: 600 .8125rem/1.2 var(--font); }
+.bt-count:empty { display: none; }
+.bt-cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.bt-card { display: flex; flex-direction: column; min-width: 0; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); overflow: hidden; cursor: grab; }
+.bt-card-pic { position: relative; display: block; aspect-ratio: 63 / 88; background: var(--surface-2); }
+.bt-card-pic img { width: 100%; height: 100%; object-fit: cover; }
+.bt-flag, .bt-note { position: absolute; right: 6px; display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--pill); font: 800 .6875rem/1 var(--font); pointer-events: none; }
+.bt-flag { bottom: 6px; background: var(--gold); color: var(--gold-ink); }
+.bt-note { top: 6px; background: rgba(11,13,20,.84); color: var(--text); }
+.bt-card-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 8px 10px 6px; }
+.bt-card-t b, .bt-pc-t b { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: .875rem; line-height: 1.25; overflow-wrap: anywhere; }
+.bt-card-t small, .bt-pc-t small { overflow: hidden; color: var(--muted); font-size: .75rem; text-overflow: ellipsis; white-space: nowrap; }
+.bt-card-t .bt-price, .bt-pc-t .bt-price { color: var(--gold-hi); font-weight: 700; }
+.bt-card .bt-acts { padding-top: 2px; }
+.bt-empty { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 32px 16px; border-radius: var(--r); background: var(--surface); color: var(--muted); text-align: center; box-shadow: 0 0 0 1px var(--line); }
+.bt-empty p { margin: 0; }
+.bt-empty .btn { min-height: 44px; }
+@media (min-width: 700px) { .bt-cards { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 12px; } }
+@media (max-width: 699px) { .mk > .bt-ed { padding-inline: 12px; } }
+
+/* Windows over the page (the cover, Add cards, are you sure): in the middle on a computer, the whole screen on a phone. */
+html.bt-modal { overflow: hidden; }
+.bt-dlg { width: min(560px, calc(100% - 32px)); max-width: none; max-height: min(88dvh, 820px); padding: 0; border: 0; border-radius: var(--r-lg); background: var(--surface); color: var(--text); box-shadow: 0 0 0 1px var(--line), var(--shadow-pop); overflow: hidden; }
+.bt-dlg[open] { display: flex; flex-direction: column; }
+.bt-dlg.bt-wide { width: min(920px, calc(100% - 32px)); height: min(88dvh, 820px); }
+.bt-dlg::backdrop { background: rgba(3,4,10,.72); }
+.bt-dlg-h { display: flex; align-items: center; gap: 12px; padding: 10px 10px 10px 16px; border-bottom: 1px solid var(--line); }
+.bt-dlg-h h2 { flex: 1; min-width: 0; font: 800 1.125rem/1.25 var(--font); overflow-wrap: anywhere; }
+.bt-x { flex: none; display: grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: var(--surface-3); color: var(--text); }
+.bt-x:hover { background: #30364b; }
+.bt-dlg-b { display: flex; flex: 1; flex-direction: column; gap: 12px; min-height: 0; padding: 16px; overflow-y: auto; overscroll-behavior: contain; }
+.bt-dlg-f { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 16px calc(12px + var(--sab)); border-top: 1px solid var(--line); }
+.bt-dlg-f .btn { min-height: 44px; }
+.bt-tally { flex: 1 1 180px; color: var(--muted); font-size: .875rem; }
+.bt-tally:empty { display: none; }
+.bt-how, .bt-state { margin: 0; color: var(--muted); font-size: .875rem; }
+.bt-state:empty { display: none; }
+.bt-ask-t { margin: 0; color: var(--muted); line-height: 1.45; }
+.btn.bt-danger { background: var(--red); color: #fff; }
+.bt-find { flex: none; min-height: 44px; font-size: 1rem; }
+.bt-cover-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.bt-cover-opts .btn { min-height: 40px; white-space: normal; text-align: left; }
+.bt-up { cursor: pointer; }
+.bt-up:focus-within { outline: 2px solid var(--gold); outline-offset: 2px; }
+.bt-picks, .bt-covers { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.bt-covers { grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); }
+.bt-pc { position: relative; display: flex; flex-direction: column; width: 100%; height: 100%; padding: 0; border: 0; border-radius: var(--r); background: var(--surface-2); color: var(--text); text-align: left; overflow: hidden; box-shadow: 0 0 0 1px var(--line); }
+.bt-pc:hover { box-shadow: 0 0 0 1px var(--gold-edge); }
+.bt-pc[aria-pressed="true"] { background: var(--gold-tint); box-shadow: 0 0 0 2px var(--gold); }
+.bt-pc-pic { position: relative; display: block; aspect-ratio: 63 / 88; background: var(--surface-3); }
+.bt-pc-pic img { width: 100%; height: 100%; object-fit: cover; }
+.bt-pc-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 6px 8px 8px; font-size: .8125rem; }
+.bt-pc-t .bt-moves { color: var(--gold-hi); white-space: normal; }
+.bt-tick { position: absolute; top: 6px; right: 6px; display: none; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--gold); color: var(--gold-ink); box-shadow: 0 2px 6px rgba(0,0,0,.5); }
+.bt-tick .bt-ic { width: 18px; height: 18px; stroke-width: 3; }
+.bt-pc[aria-pressed="true"] .bt-tick { display: grid; }
+@media (max-width: 699px) {
+  .bt-dlg, .bt-dlg.bt-wide { width: 100%; height: 100%; max-height: none; margin: 0; border-radius: 0; padding-top: var(--sat); }
+  .bt-dlg.bt-ask, .bt-dlg.bt-fit { height: fit-content; max-height: 90dvh; margin: auto 0 0; border-radius: var(--r-lg) var(--r-lg) 0 0; }
+  .bt-picks, .bt-covers { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .bt-dlg-f .bt-tally { flex-basis: 100%; }
+  .bt-dlg-f .btn { flex: 1 1 0; }
+}
+@media (max-width: 359px) { .bt-picks { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* A message at the bottom, now and then with Undo (a card taken out of a binder). */
+.bt-toast { position: fixed; left: 50%; bottom: calc(24px + var(--sab)); z-index: 2147483100; display: flex; align-items: center; gap: 12px; max-width: calc(100vw - 32px); padding: 12px 16px; border-radius: var(--r); background: #f6f2e8; color: #14161f; font: 600 .875rem/1.3 var(--font); box-shadow: var(--shadow-pop); opacity: 0; pointer-events: none; translate: -50% 20px; transition: opacity .2s, translate .25s var(--ease); }
+.bt-toast.on { opacity: 1; pointer-events: auto; translate: -50% 0; }
+.bt-toast.bad { background: #ffd9d4; color: #5c120b; }
+.bt-toast:has(.bt-undo) { padding-block: 6px; padding-right: 6px; }
+.bt-undo { flex: none; min-height: 40px; padding: 0 16px; border: 0; border-radius: var(--r-sm); background: #14161f; color: #fcefc9; font: 700 .875rem/1 var(--font); }
+@media (max-width: 699px) { .bt-toast { bottom: calc(var(--bt-h) + 16px + var(--sab)); } }
+
+/* Store Manager › Binders: a handle under each binder's cover drags it into place; the vault's Manager links to a binder's cards. */
+.st-binder-cover { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
+.bt-grip.st-bgrip { position: static; display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: 100%; height: 40px; padding: 0 4px; border-radius: var(--r-sm); background: var(--surface-3); box-shadow: none; font: 600 .8125rem/1 var(--font); }
+.st-binder.dragging { cursor: grabbing; }
+.bd-cards { align-self: flex-start; min-height: 40px; }

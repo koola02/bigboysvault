@@ -7,7 +7,7 @@
   {% include "admin_tabs.html" %}
   <header class="a-head">
     <h1 class="h1">Binders</h1>
-    <p class="bd-how"><b>Drag</b> a binder to move it. <b>Tap</b> it to change its name or picture. Every binder with cards for sale shows on <a href="/store/vault">your store page</a>, in this order.</p>
+    <p class="bd-how"><b>Drag</b> a binder to move it. <b>Tap</b> it to change its name or picture, add or remove its cards, or delete it. Every binder with cards for sale shows on <a href="/store/vault">your store page</a>, in this order.</p>
   </header>
 
   <h2 class="bd-h">On your home page <span class="bd-n" id="bdHomeN"></span></h2>
@@ -30,6 +30,7 @@
       <label class="bd-field"><span>Name</span><input id="bdName" maxlength="40" autocomplete="off" enterkeyhint="done" autocapitalize="words"></label>
       <div class="bd-edit-only">
         <label class="bd-home"><input type="checkbox" id="bdOnHome"><span class="bd-switch" aria-hidden="true"></span><span>Show on the home page</span></label>
+        <a class="btn ghost bd-cards" id="bdCards" href="/store/vault">Add, remove or arrange its cards</a>
         <p class="bd-label">Picture</p>
         <div class="bd-opts">
           <label class="btn bd-upload">Upload a photo<input type="file" accept="image/*" id="bdFile" class="sr"></label>

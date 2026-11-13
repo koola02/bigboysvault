@@ -1675,7 +1675,16 @@ fn binder_json(c: &db::Collection) -> Value {
     json!({ "handle": c.handle, "title": c.title, "image": c.img(480), "count": c.count, "on_home": c.on_home, "custom_cover": c.custom_cover })
 }
 
+/// GET /admin/binders: the Manager's Binders page. Asked for JSON (the binder tools on the vault's store page), every
+/// vault binder as the owner arranges them, as tiles, in order. Full admins only.
 pub async fn binders_page(State(app): State<App>, h: HeaderMap) -> Res {
+    if wants_json(&h) {
+        if !authed(&app, &h) {
+            return Ok(deny(&h));
+        }
+        let v = with_db(&app, |c| crate::store::vault_tiles_json(c)).await?;
+        return Ok(ok_json(v));
+    }
     if !authed(&app, &h) {
         return login_page(&app, false).await;
     }
@@ -1870,6 +1879,100 @@ pub async fn binders_order(State(app): State<App>, h: HeaderMap, Json(req): Json
     .await?;
     app.forget();
     Ok(ok_json(json!({ "ok": true, "binders": links.iter().map(binder_json).collect::<Vec<_>>() })))
+}
+
+// ---------- a vault binder's cards, arranged on its own page (static/binder-tools.js) ----------
+
+/// A full admin, asking from this site. The binder tools change the vault's binders: moderators can't.
+fn binder_admin(app: &App, h: &HeaderMap) -> Result<(), Response> {
+    if !crate::community::same_site(h) {
+        return Err(err_json(StatusCode::FORBIDDEN, "That request didn't come from this site."));
+    }
+    if !authed(app, h) {
+        return Err(deny(h));
+    }
+    Ok(())
+}
+
+/// A vault card as the binder tools show it: picture, name, what it is, price, and whether it is the binder's cover.
+fn binder_card_json(p: &Product, cover: bool) -> Value {
+    let sub = [p.set_text(), p.card_no.trim().to_string(), p.tile_cond()].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" · ");
+    let note = if p.qty == 0 { "Sold".to_string() } else if p.qty > 1 { format!("×{}", p.qty) } else { String::new() };
+    json!({ "id": p.id, "title": p.short_title(), "sub": sub, "image": p.img(360), "price": p.price_text(), "cover": cover, "note": note, "inside": "" })
+}
+
+/// GET /admin/binders/{handle}/cards: every card in a vault binder, in the binder's order, for its editor.
+pub async fn binder_cards(State(app): State<App>, h: HeaderMap, Path(handle): Path<String>) -> Res {
+    if let Err(r) = binder_admin(&app, &h) {
+        return Ok(r);
+    }
+    if !known_binder(&app, &handle).await? {
+        return Ok(err_json(StatusCode::NOT_FOUND, "That binder doesn't exist."));
+    }
+    let (title, cover, cards) = with_db(&app, move |c| {
+        let b = db::collections(c)?.into_iter().find(|b| b.handle == handle);
+        let (title, cover) = b.map(|b| (b.title.clone(), if b.custom_cover { b.image } else { String::new() })).unwrap_or_default();
+        Ok((title, cover, db::binder_cards(c, &handle)?))
+    })
+    .await?;
+    let cards: Vec<Value> = cards.iter().map(|p| binder_card_json(p, !cover.is_empty() && p.image == cover)).collect();
+    Ok(ok_json(json!({ "ok": true, "title": title, "cards": cards, "photo_cover": db::uploaded_cover(&cover) })))
+}
+
+#[derive(Deserialize)]
+pub struct BinderCards {
+    #[serde(default)]
+    add: Vec<i64>,
+    #[serde(default)]
+    remove: Vec<i64>,
+}
+
+/// POST /admin/binders/{handle}/cards {add, remove}: cards into a vault binder (every copy, after the cards already
+/// there) or out of it. A card taken out stays in the vault, and in any other binder it is in.
+pub async fn binder_cards_change(State(app): State<App>, h: HeaderMap, Path(handle): Path<String>, Json(req): Json<BinderCards>) -> Res {
+    if let Err(r) = binder_admin(&app, &h) {
+        return Ok(r);
+    }
+    if !known_binder(&app, &handle).await? {
+        return Ok(err_json(StatusCode::NOT_FOUND, "That binder doesn't exist."));
+    }
+    let (add, remove): (Vec<i64>, Vec<i64>) = (req.add.into_iter().take(500).collect(), req.remove.into_iter().take(500).collect());
+    let (added, removed) = with_db(&app, move |c| Ok((db::add_to_binder(c, &handle, &add)?, db::remove_from_binder(c, &handle, &remove)?))).await?;
+    app.forget();
+    Ok(ok_json(json!({ "ok": true, "added": added, "moved": 0, "removed": removed })))
+}
+
+/// POST /admin/binders/{handle}/arrange {ids}: the order of a vault binder's cards (dragged on its page), first to last.
+pub async fn binder_arrange(State(app): State<App>, h: HeaderMap, Path(handle): Path<String>, Json(req): Json<BlockOrder>) -> Res {
+    if let Err(r) = binder_admin(&app, &h) {
+        return Ok(r);
+    }
+    if !known_binder(&app, &handle).await? {
+        return Ok(err_json(StatusCode::NOT_FOUND, "That binder doesn't exist."));
+    }
+    let ids: Vec<i64> = req.ids.into_iter().take(20_000).collect();
+    with_db(&app, move |c| db::arrange_binder(c, &handle, &ids)).await?;
+    app.forget();
+    Ok(ok_json(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub struct ChoiceQs {
+    #[serde(default)]
+    q: String,
+}
+
+/// GET /admin/binders/{handle}/choices?q=: the vault's cards not in this binder yet, for its "Add cards" picker.
+pub async fn binder_choices(State(app): State<App>, h: HeaderMap, Path(handle): Path<String>, Qs(qs): Qs<ChoiceQs>) -> Res {
+    if let Err(r) = binder_admin(&app, &h) {
+        return Ok(r);
+    }
+    if !known_binder(&app, &handle).await? {
+        return Ok(err_json(StatusCode::NOT_FOUND, "That binder doesn't exist."));
+    }
+    let q: String = qs.q.trim().chars().take(80).collect();
+    let rows = with_db(&app, move |c| db::binder_choices(c, &handle, &q)).await?;
+    Ok(ok_json(json!({ "ok": true, "cards": rows.iter().map(|p| binder_card_json(p, false)).collect::<Vec<_>>() })))
 }
 
 // ---------- card picker (showcase) ----------

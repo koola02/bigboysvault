@@ -299,25 +299,41 @@ impl Collection {
     /// first (an uploaded photo stands alone), then `peeks`, its cards for sale (from `binder_peeks`), never the same twice.
     /// An automatic cover isn't used: it may be a card that has sold, and the dearest card for sale comes first anyway.
     pub fn tile_pics(&self, peeks: &[String], n: usize) -> Vec<String> {
-        let mut pics: Vec<String> = vec![];
-        if self.custom_cover && !self.image.is_empty() {
-            pics.push(cdn(&self.image, 360));
-            if self.photo_cover() {
-                return pics;
-            }
-        }
-        for p in peeks {
-            if pics.len() >= n {
-                break;
-            }
-            let u = cdn(p, 360);
-            if !pics.contains(&u) {
-                pics.push(u);
-            }
-        }
-        pics.truncate(n);
-        pics
+        self.tile_pics_among(peeks, n, &mut std::collections::HashSet::new())
     }
+    /// The same, for one tile among several on a page: pictures an earlier tile already shows (`seen`) are used only
+    /// when this binder has nothing else, so tiles don't all show the same dearest cards. The cover still comes first.
+    pub fn tile_pics_among(&self, peeks: &[String], n: usize, seen: &mut std::collections::HashSet<String>) -> Vec<String> {
+        let cover = (self.custom_cover && !self.image.is_empty()).then(|| cdn(&self.image, 360));
+        if self.photo_cover() {
+            return fresh_pics(cover.as_deref(), &[], 1, seen);
+        }
+        let cards: Vec<String> = peeks.iter().map(|p| cdn(p, 360)).collect();
+        fresh_pics(cover.as_deref(), &cards, n, seen)
+    }
+}
+
+/// The pictures on one binder's tile, at most `n`: `cover` first whenever there is one, then `cards` in their order,
+/// never the same picture twice. Pictures an earlier tile on the same page already shows (`seen`) wait until this binder
+/// has nothing new to show, so a page of tiles doesn't repeat the same few cards. Whatever is picked joins `seen`.
+pub fn fresh_pics(cover: Option<&str>, cards: &[String], n: usize, seen: &mut std::collections::HashSet<String>) -> Vec<String> {
+    let mut pics: Vec<String> = vec![];
+    if let Some(c) = cover.filter(|c| !c.is_empty()) {
+        pics.push(c.to_string());
+    }
+    let fresh = cards.iter().filter(|p| !seen.contains(p.as_str()));
+    let again = cards.iter().filter(|p| seen.contains(p.as_str()));
+    for p in fresh.chain(again) {
+        if pics.len() >= n {
+            break;
+        }
+        if !p.is_empty() && !pics.contains(p) {
+            pics.push(p.clone());
+        }
+    }
+    pics.truncate(n);
+    seen.extend(pics.iter().cloned());
+    pics
 }
 
 /// A binder cover the site stored from the owner's own upload (Manager › Binders), as opposed to a card's photo.
@@ -716,13 +732,21 @@ fn card_columns() -> Vec<(&'static str, String)> {
 }
 
 pub fn list(c: &Connection, q: &Query) -> rusqlite::Result<(Vec<Product>, i64)> {
+    list_n(c, q, PAGE_SIZE)
+}
+
+/// `list`, `per_page` cards at a time. In a binder, the owner's order is the binder's own (`collection_products.position`,
+/// set by dragging its cards), then the vault's.
+fn list_n(c: &Connection, q: &Query, per_page: usize) -> rusqlite::Result<(Vec<Product>, i64)> {
     let mut wh: Vec<String> = vec!["1=1".into()];
     let mut args: Vec<Value> = vec![];
     let mut join = String::new();
+    let mut bpos = "0";
     if let Some(col) = &q.collection {
         join = " JOIN collection_products cp ON cp.product_id=p.id".into();
         wh.push("cp.collection=?".into());
         args.push(Value::Text(col.clone()));
+        bpos = "cp.position";
     }
     for term in q.q.split_whitespace().take(6) {
         wh.push("(p.title LIKE ? ESCAPE '\\' OR p.tags LIKE ? ESCAPE '\\')".into());
@@ -744,25 +768,25 @@ pub fn list(c: &Connection, q: &Query) -> rusqlite::Result<(Vec<Product>, i64)> 
         // By the set's release date (card_sets, filled from the card service). Sets with no known date go last.
         "set-old" => "(rel=''), rel ASC, card_set COLLATE NOCASE, card_no, id",
         "set-new" => "(rel=''), rel DESC, card_set COLLATE NOCASE, card_no, id",
-        // The owner's order. Copies of a card sit where the first of them does.
-        _ => "gpos ASC, p.created_at DESC, p.id DESC",
+        // The owner's order (in a binder, the binder's own first). Copies of a card sit where the first of them does.
+        _ => "gbpos ASC, gpos ASC, p.created_at DESC, p.id DESC",
     };
     // The table's own columns ("price:desc,card:asc") come before the named orders above.
     let cols = card_columns();
     let by_column = column_sort(&q.sort, &cols.iter().map(|(k, v)| (*k, v.as_str())).collect::<Vec<_>>()).map(|o| format!("{o}, id"));
     let whs = wh.join(" AND ");
     // Copies of the same card are one entry with a count ("×2"), everywhere a list is shown.
-    let matched = format!("SELECT DISTINCT {COLS}, {DUP_KEY} AS gk, p.created_at AS created, p.position AS pos, {SET_DATE} AS rel FROM products p{join} WHERE {whs}");
+    let matched = format!("SELECT DISTINCT {COLS}, {DUP_KEY} AS gk, p.created_at AS created, p.position AS pos, {bpos} AS bpos, {SET_DATE} AS rel FROM products p{join} WHERE {whs}");
     let total: i64 = c.query_row(&format!("SELECT COUNT(DISTINCT gk) FROM ({matched})"), params_from_iter(args.iter()), |r| r.get(0))?;
     let order = by_column.unwrap_or_else(|| order.replace("p.created_at", "created").replace("p.", ""));
     let mut a2 = args.clone();
-    a2.push(Value::Integer(PAGE_SIZE as i64));
-    a2.push(Value::Integer((q.page * PAGE_SIZE) as i64));
+    a2.push(Value::Integer(per_page as i64));
+    a2.push(Value::Integer((q.page * per_page) as i64));
     let cols = COLS.replace("p.", "");
     let sql = format!(
         "WITH m AS ({matched}),
               g AS (SELECT *, SUM(available) OVER (PARTITION BY gk) AS qty, group_concat(id) OVER (PARTITION BY gk) AS ids, MIN(pos) OVER (PARTITION BY gk) AS gpos,
-                           ROW_NUMBER() OVER (PARTITION BY gk ORDER BY available DESC, created DESC, id DESC) AS rn FROM m)
+                           MIN(bpos) OVER (PARTITION BY gk) AS gbpos, ROW_NUMBER() OVER (PARTITION BY gk ORDER BY available DESC, created DESC, id DESC) AS rn FROM m)
          SELECT {cols}, qty, ids FROM g WHERE rn=1 ORDER BY {order} LIMIT ? OFFSET ?"
     );
     let mut st = c.prepare(&sql)?;
@@ -1052,7 +1076,8 @@ pub fn create_binder(c: &Connection, title: &str) -> rusqlite::Result<String> {
     let base: String = base.chars().take(48).collect::<String>().trim_matches('-').to_string();
     let mut handle = base.clone();
     let mut n = 2;
-    while binder_exists(c, &handle) || handle == "all" {
+    // "order" is the address that saves the binders' order (/admin/binders/order): no binder may take it.
+    while binder_exists(c, &handle) || handle == "all" || handle == "order" {
         handle = format!("{base}-{n}");
         n += 1;
     }
@@ -1135,6 +1160,129 @@ pub fn binder_cover_choices(c: &Connection, handle: &str, limit: i64) -> rusqlit
     )?;
     let v = st.query_map(rusqlite::params![handle, limit], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;
     Ok(v)
+}
+
+/// Every card in a binder, in the binder's order (what its page shows first), copies of a card as one entry whose
+/// `copy_ids` are the copies in this binder. For the binder's editor.
+pub fn binder_cards(c: &Connection, handle: &str) -> rusqlite::Result<Vec<Product>> {
+    Ok(list_n(c, &Query { collection: Some(handle.to_string()), ..Default::default() }, 20_000)?.0)
+}
+
+/// Every copy of the card `id` is one of, sold or not, itself included. Empty when there is no such card.
+fn copies_of(c: &Connection, id: i64) -> rusqlite::Result<Vec<i64>> {
+    let mut st = c.prepare_cached(&format!("SELECT p.id FROM products p WHERE {DUP_KEY} = (SELECT {DUP_KEY} FROM products p WHERE p.id=?1) ORDER BY p.id"))?;
+    let v = st.query_map([id], |r| r.get(0))?.collect::<Result<Vec<i64>, _>>()?;
+    Ok(v)
+}
+
+/// Put these cards in a binder, every copy of each, after the cards already in it. A card already there stays where it
+/// is. Returns how many cards joined (copies of one card count once). An unknown binder takes nothing.
+pub fn add_to_binder(c: &Connection, handle: &str, ids: &[i64]) -> rusqlite::Result<usize> {
+    if !binder_exists(c, handle) {
+        return Ok(0);
+    }
+    let tx = c.unchecked_transaction()?;
+    let mut next: i64 = tx.query_row("SELECT COALESCE(MAX(position), -1) + 1 FROM collection_products WHERE collection=?1", [handle], |r| r.get(0))?;
+    let mut added = 0;
+    let mut done: Vec<i64> = vec![];
+    for id in ids {
+        if done.contains(id) {
+            continue;
+        }
+        let copies = copies_of(&tx, *id)?;
+        done.extend(copies.iter().copied());
+        let mut joined = false;
+        for k in &copies {
+            joined |= tx.execute("INSERT OR IGNORE INTO collection_products(collection,product_id,position) VALUES(?1,?2,?3)", rusqlite::params![handle, k, next])? > 0;
+        }
+        if joined {
+            added += 1;
+            next += 1;
+        }
+    }
+    tx.commit()?;
+    Ok(added)
+}
+
+/// Take these cards (every copy of each) out of a binder. The cards themselves stay in the vault, and in any other
+/// binder they are in. Returns how many cards left it.
+pub fn remove_from_binder(c: &Connection, handle: &str, ids: &[i64]) -> rusqlite::Result<usize> {
+    let tx = c.unchecked_transaction()?;
+    let mut removed = 0;
+    let mut done: Vec<i64> = vec![];
+    for id in ids {
+        if done.contains(id) {
+            continue;
+        }
+        let copies = copies_of(&tx, *id)?;
+        done.extend(copies.iter().copied());
+        let mut left = false;
+        for k in &copies {
+            left |= tx.execute("DELETE FROM collection_products WHERE collection=?1 AND product_id=?2", rusqlite::params![handle, k])? > 0;
+        }
+        if left {
+            removed += 1;
+        }
+    }
+    // A card picked as the cover that has left the binder no longer covers it: the cover picks itself again.
+    // An uploaded photo isn't a card and stays.
+    tx.execute(
+        "UPDATE collections SET image='' WHERE handle=?1 AND image<>'' AND image NOT LIKE '/uploads/b-%'
+           AND NOT EXISTS (SELECT 1 FROM collection_products cp JOIN products p ON p.id=cp.product_id WHERE cp.collection=?1 AND p.image=collections.image)",
+        [handle],
+    )?;
+    tx.commit()?;
+    Ok(removed)
+}
+
+/// The order of the cards in a binder (drag and drop): `ids` names cards (any copy of each), first to last. Cards in the
+/// binder that aren't named keep their order after them; names of cards not in the binder are ignored.
+pub fn arrange_binder(c: &Connection, handle: &str, ids: &[i64]) -> rusqlite::Result<()> {
+    let groups: Vec<Vec<i64>> = binder_cards(c, handle)?.iter().map(|p| p.copy_ids.split(',').filter_map(|x| x.trim().parse().ok()).collect()).collect();
+    let mut order: Vec<usize> = vec![];
+    for id in ids {
+        if let Some(g) = groups.iter().position(|g| g.contains(id)) {
+            if !order.contains(&g) {
+                order.push(g);
+            }
+        }
+    }
+    order.extend((0..groups.len()).filter(|g| !order.contains(g)).collect::<Vec<_>>());
+    let tx = c.unchecked_transaction()?;
+    for (pos, g) in order.iter().enumerate() {
+        for k in &groups[*g] {
+            tx.execute("UPDATE collection_products SET position=?3 WHERE collection=?1 AND product_id=?2", rusqlite::params![handle, k, pos as i64])?;
+        }
+    }
+    tx.commit()
+}
+
+/// Cards of the vault not in this binder yet, for its "Add cards" picker: a search by name, number or tag (the vault's
+/// usual search), dearest first when nothing is typed. At most `PAGE_SIZE`.
+pub fn binder_choices(c: &Connection, handle: &str, q: &str) -> rusqlite::Result<Vec<Product>> {
+    let mut st = c.prepare_cached("SELECT 1 FROM collection_products WHERE collection=?1 AND product_id=?2")?;
+    let mut out = vec![];
+    for page in 0..6 {
+        let (rows, _) = list(c, &Query { q: q.to_string(), sort: if q.trim().is_empty() { "price-desc".into() } else { String::new() }, page, ..Default::default() })?;
+        let last = rows.len() < PAGE_SIZE;
+        for p in rows {
+            let ids: Vec<i64> = p.copy_ids.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+            let mut inside = false;
+            for k in &ids {
+                inside |= st.exists(rusqlite::params![handle, k])?;
+            }
+            if !inside {
+                out.push(p);
+            }
+            if out.len() >= PAGE_SIZE {
+                return Ok(out);
+            }
+        }
+        if last {
+            break;
+        }
+    }
+    Ok(out)
 }
 
 /// One more copy of a card: same details, photo and binders; a new id and link. Returns the new id.
@@ -1873,5 +2021,84 @@ mod vault_store_tests {
         assert_eq!(pika.tile_pics(pics, 3), vec!["/uploads/b-pika_s.jpg"]);
         // The number on a tile is the binder's own count, the same one its page shows.
         assert_eq!(pika.count, cards_in(&c, Some("pikachu-set")).unwrap());
+    }
+
+    /// Tiles side by side don't all show the same dearest cards: a picture an earlier tile shows waits its turn.
+    #[test]
+    fn tiles_on_one_page_repeat_pictures_as_little_as_they_can() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let mut seen = std::collections::HashSet::new();
+        assert_eq!(fresh_pics(None, &s(&["a", "b", "c", "d"]), 3, &mut seen), s(&["a", "b", "c"]), "the first tile: its dearest cards");
+        assert_eq!(fresh_pics(None, &s(&["a", "b", "e", "f"]), 3, &mut seen), s(&["e", "f", "a"]), "the next one prefers what isn't shown yet");
+        assert_eq!(fresh_pics(Some("a"), &s(&["a", "g"]), 3, &mut seen), s(&["a", "g"]), "a chosen cover always comes first, shown or not");
+        assert_eq!(fresh_pics(None, &s(&["a", "b"]), 3, &mut seen), s(&["a", "b"]), "nothing new to show: repeats rather than an empty tile");
+        assert_eq!(fresh_pics(Some(""), &s(&["x", "x", ""]), 3, &mut seen), s(&["x"]), "never the same picture twice, never an empty one");
+        assert_eq!(fresh_pics(None, &s(&["y", "z"]), 1, &mut seen), s(&["y"]), "never more than asked for");
+    }
+
+    /// The vault's binder tools: cards join a binder (every copy, at the end), leave it, and are put in order; the
+    /// binder's page follows its own order. Nothing here ever deletes a card.
+    #[test]
+    fn a_vault_binder_is_filled_emptied_and_arranged() {
+        let c = db();
+        for (i, h) in ["pikachu-set", "trainers"].iter().enumerate() {
+            c.execute("INSERT INTO collections(handle,title,position) VALUES(?1,?1,?2)", rusqlite::params![h, i as i64]).unwrap();
+        }
+        let add = |id: i64, title: &str, price: f64, image: &str| {
+            c.execute(
+                "INSERT INTO products(id,handle,title,price,image,available,created_at) VALUES(?1,?2,?3,?4,?5,1,'2026-01-01T00:00:00')",
+                rusqlite::params![id, format!("c{id}"), title, price, image],
+            )
+            .unwrap();
+        };
+        add(1, "Pikachu", 100.0, "/uploads/c0-1_l.jpg");
+        add(2, "Raichu", 200.0, "/uploads/c0-2_l.jpg");
+        add(3, "Pichu", 300.0, "/uploads/c0-3_l.jpg");
+        add(4, "Pichu", 300.0, "/uploads/c0-3_l.jpg"); // a second copy of Pichu
+        add(5, "Iono", 50.0, "/uploads/c0-5_l.jpg");
+        c.execute("INSERT INTO collection_products(collection,product_id) VALUES('trainers',3)", []).unwrap();
+        let titles = |h: &str| binder_cards(&c, h).unwrap().iter().map(|p| p.title.clone()).collect::<Vec<_>>();
+
+        // Adding: every copy of a card joins, after what is there; a card already in it stays put; an unknown binder takes nothing.
+        assert_eq!(add_to_binder(&c, "pikachu-set", &[2, 3, 1]).unwrap(), 3);
+        assert_eq!(cards_in(&c, Some("pikachu-set")).unwrap(), 4, "both copies of Pichu");
+        assert_eq!(titles("pikachu-set"), vec!["Raichu", "Pichu", "Pikachu"], "in the order they were added");
+        assert_eq!(add_to_binder(&c, "pikachu-set", &[4, 2]).unwrap(), 0, "already in");
+        assert_eq!(add_to_binder(&c, "nope", &[5]).unwrap(), 0);
+        assert_eq!(add_to_binder(&c, "pikachu-set", &[999]).unwrap(), 0, "no such card");
+
+        // Arranging: the dragged order, by any copy; the binder's page shows it, and its grouped copy count stays.
+        arrange_binder(&c, "pikachu-set", &[1, 4]).unwrap();
+        assert_eq!(titles("pikachu-set"), vec!["Pikachu", "Pichu", "Raichu"], "the named ones first, the rest after in their order");
+        let (page, _) = list(&c, &Query { collection: Some("pikachu-set".into()), ..Default::default() }).unwrap();
+        assert_eq!(page.iter().map(|p| p.title.as_str()).collect::<Vec<_>>(), vec!["Pikachu", "Pichu", "Raichu"], "visitors see the binder's own order");
+        assert_eq!(page[1].qty, 2);
+        let (all, _) = list(&c, &Query::default()).unwrap();
+        assert_eq!(all.len(), 4, "the vault's own list is untouched");
+        // The picker offers only what isn't in the binder yet.
+        assert_eq!(binder_choices(&c, "pikachu-set", "").unwrap().iter().map(|p| p.title.as_str()).collect::<Vec<_>>(), vec!["Iono"]);
+        assert!(binder_choices(&c, "trainers", "pichu").unwrap().is_empty(), "Pichu is in Trainers already (one copy is enough)");
+        assert_eq!(binder_choices(&c, "trainers", "rai").unwrap().len(), 1);
+
+        // Taking out: every copy leaves this binder only; the cards stay in the vault and in Trainers. A cover that leaves
+        // stops being the cover; an uploaded photo stays.
+        set_binder_cover(&c, "pikachu-set", "/uploads/c0-3_l.jpg").unwrap();
+        assert_eq!(remove_from_binder(&c, "pikachu-set", &[3]).unwrap(), 1);
+        assert_eq!(titles("pikachu-set"), vec!["Pikachu", "Raichu"]);
+        assert_eq!(cards_in(&c, Some("trainers")).unwrap(), 1, "still in Trainers");
+        assert_eq!(total(&c).unwrap(), 5, "no card was deleted");
+        let pika = collections(&c).unwrap().into_iter().find(|b| b.handle == "pikachu-set").unwrap();
+        assert!(!pika.custom_cover, "the cover picks itself again");
+        set_binder_cover(&c, "pikachu-set", "/uploads/b-pika_l.jpg").unwrap();
+        remove_from_binder(&c, "pikachu-set", &[1]).unwrap();
+        assert!(collections(&c).unwrap().into_iter().find(|b| b.handle == "pikachu-set").unwrap().photo_cover(), "an uploaded photo isn't a card: it stays");
+        assert_eq!(remove_from_binder(&c, "pikachu-set", &[5]).unwrap(), 0, "not in it");
+
+        // Deleting the binder lets go of its cards, never deletes them.
+        delete_binder(&c, "pikachu-set").unwrap();
+        assert_eq!(total(&c).unwrap(), 5);
+        assert_eq!(cards_in(&c, Some("trainers")).unwrap(), 1);
+        // No binder may be called "order": that address saves the binders' order.
+        assert_eq!(create_binder(&c, "Order").unwrap(), "order-2");
     }
 }
