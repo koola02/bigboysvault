@@ -642,14 +642,14 @@ pub fn storefront_listings(c: &Connection, member_id: i64) -> rusqlite::Result<V
     Ok(v)
 }
 
-/// The pictures on a binder's tile on the store page, at most `n`: its cover first (the card the seller picked,
-/// or else its first card, as the binder has always shown), then the binder's next cards on sale, in the seller's order.
-/// `listings` is what the store page already shows (`storefront_listings`), so this costs no trip to the database,
-/// and a card that is hidden, sold or ended never peeks out. The same picture is never shown twice.
+/// The pictures on a binder's tile on the store page, at most `n`: the cover the seller picked first, while that card
+/// is on sale in this binder, then the binder's cards on sale, in the seller's order. `listings` is what the store page
+/// already shows (`storefront_listings`), so this costs no trip to the database, and a card that is hidden, sold, ended,
+/// a highlight or on a wishlist never shows, not even in front. The same picture is never shown twice.
 pub fn binder_peeks(b: &MemberBinder, listings: &[MemberCard], n: usize) -> Vec<String> {
     let mut pics: Vec<String> = Vec::new();
-    if b.has_image() {
-        pics.push(b.cover_image.clone());
+    if let Some(cover) = picked_cover(b, listings) {
+        pics.push(cover.image.clone());
     }
     for k in listings.iter().filter(|k| k.binder_id == Some(b.id) && Some(k.id) != b.cover_card && !k.image.is_empty()) {
         if pics.len() >= n {
@@ -661,6 +661,12 @@ pub fn binder_peeks(b: &MemberBinder, listings: &[MemberCard], n: usize) -> Vec<
     }
     pics.truncate(n);
     pics
+}
+
+/// The card a seller picked as a binder's cover, while it is on sale in that binder (one of `listings`) and has a picture.
+pub fn picked_cover<'a>(b: &MemberBinder, listings: &'a [MemberCard]) -> Option<&'a MemberCard> {
+    let id = b.cover_card?;
+    listings.iter().find(|k| k.id == id && k.binder_id == Some(b.id) && !k.image.is_empty())
 }
 
 fn short(title: &str) -> String {

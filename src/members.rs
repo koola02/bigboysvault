@@ -976,16 +976,23 @@ pub fn save_profile_seller(
     Ok(true)
 }
 
+/// A binder's cover picture: the card its owner picked while it is on sale in this binder, else the binder's first card
+/// on sale, in the binder's order. Never a sold, hidden, highlight or wishlist card, so the store page, its binder tiles
+/// and the Store Manager all show the same one.
+const BINDER_COVER: &str = "COALESCE(
+    (SELECT c.image FROM member_cards c WHERE c.id=b.cover_card AND c.member_id=b.member_id AND c.binder_id=b.id AND c.kind='sale' AND c.status IN ('Active','Reserved','Out of stock') AND c.image<>''),
+    (SELECT c.image FROM member_cards c WHERE c.binder_id=b.id AND c.member_id=b.member_id AND c.kind='sale' AND c.status IN ('Active','Reserved','Out of stock') AND c.image<>'' ORDER BY c.position, c.id LIMIT 1),
+    '')";
+
 pub fn binders_of(c: &Connection, member_id: i64) -> rusqlite::Result<Vec<MemberBinder>> {
-    let sql = "SELECT b.id, b.member_id, b.title, b.slug, b.cover_card, b.position, b.created_at,
+    let sql = format!("SELECT b.id, b.member_id, b.title, b.slug, b.cover_card, b.position, b.created_at,
                       (SELECT COUNT(*) FROM member_cards x WHERE x.binder_id=b.id AND x.member_id=b.member_id),
-                      COALESCE((SELECT c.image FROM member_cards c WHERE c.id=b.cover_card AND c.member_id=b.member_id),
-                               (SELECT c.image FROM member_cards c WHERE c.binder_id=b.id AND c.member_id=b.member_id LIMIT 1), ''),
+                      {BINDER_COVER},
                       b.description, b.visibility
                FROM member_binders b
                WHERE b.member_id=?1
-               ORDER BY b.position ASC, b.id ASC";
-    let mut st = c.prepare(sql)?;
+               ORDER BY b.position ASC, b.id ASC");
+    let mut st = c.prepare(&sql)?;
     let rows = st.query_map([member_id], |r| {
         Ok(MemberBinder {
             id: r.get(0)?,
@@ -1005,14 +1012,13 @@ pub fn binders_of(c: &Connection, member_id: i64) -> rusqlite::Result<Vec<Member
 }
 
 pub fn binder_by_slug(c: &Connection, member_id: i64, slug: &str) -> rusqlite::Result<Option<MemberBinder>> {
-    let sql = "SELECT b.id, b.member_id, b.title, b.slug, b.cover_card, b.position, b.created_at,
+    let sql = format!("SELECT b.id, b.member_id, b.title, b.slug, b.cover_card, b.position, b.created_at,
                       (SELECT COUNT(*) FROM member_cards x WHERE x.binder_id=b.id AND x.member_id=b.member_id),
-                      COALESCE((SELECT c.image FROM member_cards c WHERE c.id=b.cover_card AND c.member_id=b.member_id),
-                               (SELECT c.image FROM member_cards c WHERE c.binder_id=b.id AND c.member_id=b.member_id LIMIT 1), ''),
+                      {BINDER_COVER},
                       b.description, b.visibility
                FROM member_binders b
-               WHERE b.member_id=?1 AND b.slug=?2";
-    c.query_row(sql, rusqlite::params![member_id, slug], |r| {
+               WHERE b.member_id=?1 AND b.slug=?2");
+    c.query_row(&sql, rusqlite::params![member_id, slug], |r| {
         Ok(MemberBinder {
             id: r.get(0)?,
             member_id: r.get(1)?,
@@ -1029,9 +1035,23 @@ pub fn binder_by_slug(c: &Connection, member_id: i64, slug: &str) -> rusqlite::R
     }).optional()
 }
 
+/// The most binders one trainer may have, and the longest a binder's name may be (in letters).
+pub const MAX_BINDERS: i64 = 50;
+pub const BINDER_NAME_MAX: usize = 60;
+
+/// A binder's name as it is kept: trimmed, no line breaks, at most `BINDER_NAME_MAX` letters.
+fn binder_name(title: &str) -> String {
+    title.split_whitespace().collect::<Vec<_>>().join(" ").chars().filter(|c| !c.is_control()).take(BINDER_NAME_MAX).collect::<String>().trim().to_string()
+}
+
+/// How many binders this trainer has.
+pub fn binder_count(c: &Connection, member_id: i64) -> rusqlite::Result<i64> {
+    c.query_row("SELECT COUNT(*) FROM member_binders WHERE member_id=?1", [member_id], |r| r.get(0))
+}
+
 pub fn create_member_binder(c: &Connection, member_id: i64, title: &str) -> rusqlite::Result<MemberBinder> {
-    let t = title.trim();
-    let title = if t.is_empty() { "New Binder" } else { t };
+    let t = binder_name(title);
+    let title = if t.is_empty() { "New Binder" } else { t.as_str() };
     let slug = unique_binder_slug(c, member_id, title, None)?;
     let t_now = now();
     c.execute(
@@ -1056,7 +1076,8 @@ pub fn create_member_binder(c: &Connection, member_id: i64, title: &str) -> rusq
 }
 
 pub fn rename_member_binder(c: &Connection, member_id: i64, binder_id: i64, title: &str) -> rusqlite::Result<bool> {
-    let t = title.trim();
+    let t = binder_name(title);
+    let t = t.as_str();
     if t.is_empty() {
         return Ok(false);
     }
@@ -1100,6 +1121,100 @@ pub fn move_card_to_binder(c: &Connection, member_id: i64, card_id: i64, binder_
         rusqlite::params![card_id, member_id, binder_id],
     )?;
     Ok(changed > 0)
+}
+
+/// Put a trainer's binders in this order (drag and drop): `ids` first to last. Their other binders keep their order
+/// after these; ids that aren't theirs are ignored.
+pub fn reorder_member_binders(c: &Connection, member_id: i64, ids: &[i64]) -> rusqlite::Result<()> {
+    let now: Vec<i64> = binders_of(c, member_id)?.into_iter().map(|b| b.id).collect();
+    let mut order: Vec<i64> = vec![];
+    for id in ids.iter().chain(now.iter()) {
+        if now.contains(id) && !order.contains(id) {
+            order.push(*id);
+        }
+    }
+    let tx = c.unchecked_transaction()?;
+    for (pos, id) in order.iter().enumerate() {
+        tx.execute("UPDATE member_binders SET position=?3 WHERE id=?1 AND member_id=?2", rusqlite::params![id, member_id, pos as i64])?;
+    }
+    tx.commit()
+}
+
+/// What adding cards to a binder did: how many joined it, and how many of those left another binder to do so.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Added2Binder {
+    pub added: usize,
+    pub moved: usize,
+}
+
+/// Put a trainer's own cards in one of their binders, after the cards already in it. A card can be in one binder only,
+/// so a card in another binder moves here. None when the binder isn't theirs; cards that aren't theirs are ignored.
+pub fn add_to_member_binder(c: &Connection, member_id: i64, binder_id: i64, ids: &[i64]) -> rusqlite::Result<Option<Added2Binder>> {
+    let owns: bool = c.query_row("SELECT EXISTS(SELECT 1 FROM member_binders WHERE id=?1 AND member_id=?2)", rusqlite::params![binder_id, member_id], |r| r.get(0))?;
+    if !owns {
+        return Ok(None);
+    }
+    let tx = c.unchecked_transaction()?;
+    let mut next: i64 = tx.query_row("SELECT COALESCE(MAX(position), -1) + 1 FROM member_cards WHERE member_id=?1 AND binder_id=?2", rusqlite::params![member_id, binder_id], |r| r.get(0))?;
+    let mut out = Added2Binder::default();
+    for id in ids {
+        let was: Option<Option<i64>> = tx.query_row("SELECT binder_id FROM member_cards WHERE id=?1 AND member_id=?2", rusqlite::params![id, member_id], |r| r.get(0)).optional()?;
+        let Some(was) = was else { continue };
+        if was == Some(binder_id) {
+            continue;
+        }
+        tx.execute("UPDATE member_cards SET binder_id=?3, position=?4 WHERE id=?1 AND member_id=?2", rusqlite::params![id, member_id, binder_id, next])?;
+        // The binder it left no longer has it as its cover.
+        tx.execute("UPDATE member_binders SET cover_card=NULL WHERE member_id=?1 AND id<>?2 AND cover_card=?3", rusqlite::params![member_id, binder_id, id])?;
+        next += 1;
+        out.added += 1;
+        if was.is_some() {
+            out.moved += 1;
+        }
+    }
+    tx.commit()?;
+    Ok(Some(out))
+}
+
+/// Take a trainer's cards out of one of their binders: they stay theirs, just in no binder. Returns how many left it.
+pub fn remove_from_member_binder(c: &Connection, member_id: i64, binder_id: i64, ids: &[i64]) -> rusqlite::Result<usize> {
+    let tx = c.unchecked_transaction()?;
+    let mut n = 0;
+    for id in ids {
+        n += tx.execute("UPDATE member_cards SET binder_id=NULL WHERE id=?1 AND member_id=?2 AND binder_id=?3", rusqlite::params![id, member_id, binder_id])?;
+    }
+    // A cover that has left the binder no longer covers it: the binder's first card does again.
+    tx.execute(
+        "UPDATE member_binders SET cover_card=NULL WHERE id=?1 AND member_id=?2 AND cover_card IS NOT NULL
+           AND cover_card NOT IN (SELECT id FROM member_cards WHERE member_id=?2 AND binder_id=?1)",
+        rusqlite::params![binder_id, member_id],
+    )?;
+    tx.commit()?;
+    Ok(n)
+}
+
+/// A seller's cards on sale that aren't in this binder yet, for its "Add cards" picker, with the name of the binder each
+/// is in now (if any). Found by name, number or set; cards in no binder first, then the store's own order.
+pub fn binder_choices(c: &Connection, member_id: i64, binder_id: i64, q: &str, limit: usize) -> rusqlite::Result<Vec<(MemberCard, String)>> {
+    let mut st = c.prepare(&format!(
+        "SELECT {CARD_COLS}, COALESCE((SELECT b.title FROM member_binders b WHERE b.id=c.binder_id AND b.member_id=c.member_id), '')
+         FROM member_cards c WHERE c.member_id=?1 AND c.kind='sale' AND c.status IN ('Active','Reserved','Out of stock') AND c.binder_id IS NOT ?2
+         ORDER BY (c.binder_id IS NOT NULL), c.position, c.id"
+    ))?;
+    let words: Vec<String> = q.split_whitespace().take(6).map(|w| w.to_lowercase()).collect();
+    let at = CARD_COLS.split(',').count();
+    let mut out = vec![];
+    for row in st.query_map(rusqlite::params![member_id, binder_id], |r| Ok((map_card(r, 0)?, r.get::<_, String>(at)?)))? {
+        let (k, b) = row?;
+        let hay = format!("{} {} {}", k.title, k.number, k.card_set).to_lowercase();
+        if words.iter().all(|w| hay.contains(w.as_str())) {
+            out.push((k, b));
+            if out.len() >= limit {
+                break;
+            }
+        }
+    }
+    Ok(out)
 }
 
 pub fn cards_of_binder(c: &Connection, member_id: i64, binder_id: Option<i64>) -> rusqlite::Result<Vec<MemberCard>> {
@@ -2226,6 +2341,98 @@ mod tests {
         let cards_after = cards_of(&c, a).unwrap();
         assert_eq!(cards_after.len(), 1);
         assert_eq!(cards_after[0].binder_id, None);
+    }
+
+    /// The binder tools: a seller puts their binders in order, fills and empties them, and picks covers. Never anyone else's.
+    #[test]
+    fn a_sellers_binders_are_arranged_filled_and_emptied_by_their_owner_only() {
+        let c = db();
+        let a = create(&c, "Misty", "h").unwrap().unwrap();
+        let b = create(&c, "Brock", "h").unwrap().unwrap();
+        let [x, y, z] = ["Water", "Rock", "Grass"].map(|t| create_member_binder(&c, a, t).unwrap().id);
+        let theirs = create_member_binder(&c, b, "Brock's").unwrap().id;
+        let order = |m: i64| binders_of(&c, m).unwrap().iter().map(|b| b.id).collect::<Vec<_>>();
+        assert_eq!(order(a), vec![x, y, z], "new binders go last");
+
+        // Order: the dragged ones first, the rest keep their order after them; someone else's binder isn't moved or counted.
+        reorder_member_binders(&c, a, &[z, theirs, x]).unwrap();
+        assert_eq!(order(a), vec![z, x, y]);
+        reorder_member_binders(&c, b, &[y, x, theirs]).unwrap();
+        assert_eq!(order(a), vec![z, x, y], "Brock can't reorder Misty's binders");
+
+        // Cards: Misty's three cards on sale, one already in Water.
+        let card = |m: i64, n: &str| {
+            let Added::Yes(id) = add_card(&c, m, &format!("tcgdex:{n}"), n, "1", "Set", &format!("/p/{n}.webp"), "").unwrap() else { panic!() };
+            c.execute("UPDATE member_cards SET kind='sale', status='Active' WHERE id=?1", [id]).unwrap();
+            id
+        };
+        let (k1, k2, k3) = (card(a, "Staryu"), card(a, "Starmie"), card(a, "Psyduck"));
+        let onix = card(b, "Onix");
+        assert!(move_card_to_binder(&c, a, k1, Some(x)).unwrap());
+        assert!(set_member_binder_cover(&c, a, x, Some(k1)).unwrap());
+
+        // Adding to Rock: Staryu moves from Water (and stops being Water's cover), Starmie joins; Onix isn't hers.
+        let done = add_to_member_binder(&c, a, y, &[k1, k2, onix]).unwrap().unwrap();
+        assert_eq!(done, Added2Binder { added: 2, moved: 1 });
+        let ids = |bid: i64| cards_of_binder(&c, a, Some(bid)).unwrap().iter().map(|k| k.id).collect::<Vec<_>>();
+        assert_eq!(ids(y), vec![k1, k2], "in the order they were added");
+        assert!(ids(x).is_empty());
+        assert_eq!(binders_of(&c, a).unwrap().iter().find(|b| b.id == x).unwrap().cover_card, None, "a cover that moved away no longer covers Water");
+        assert_eq!(card_binder(&c, b, onix), None, "Brock's card stays where it was");
+        assert_eq!(add_to_member_binder(&c, a, y, &[k1]).unwrap().unwrap(), Added2Binder::default(), "already there: nothing to do");
+        // A card added later goes after the ones already there.
+        add_to_member_binder(&c, a, y, &[k3]).unwrap();
+        assert_eq!(ids(y), vec![k1, k2, k3]);
+        // Nobody adds to, or takes from, another trainer's binder.
+        assert!(add_to_member_binder(&c, b, y, &[onix]).unwrap().is_none());
+        assert_eq!(remove_from_member_binder(&c, b, y, &[k1, k2]).unwrap(), 0);
+        assert_eq!(ids(y).len(), 3);
+
+        // Taking a card out: it stays hers, in no binder; if it was the cover, the binder's first card covers it again.
+        assert!(set_member_binder_cover(&c, a, y, Some(k2)).unwrap());
+        assert_eq!(remove_from_member_binder(&c, a, y, &[k2, onix]).unwrap(), 1);
+        assert_eq!(ids(y), vec![k1, k3]);
+        assert_eq!(card_binder(&c, a, k2), None);
+        assert_eq!(cards_of(&c, a).unwrap().len(), 3, "taking a card out never deletes it");
+        let rock = binders_of(&c, a).unwrap().into_iter().find(|b| b.id == y).unwrap();
+        assert_eq!(rock.cover_card, None);
+        assert_eq!(rock.cover_image, "/p/Staryu.webp");
+
+        // The picker: her cards on sale that aren't in this binder, loose ones first, each with the binder it's in.
+        let choices = |q: &str| binder_choices(&c, a, y, q, 60).unwrap().into_iter().map(|(k, b)| (k.id, b)).collect::<Vec<_>>();
+        assert_eq!(choices(""), vec![(k2, String::new())]);
+        add_to_member_binder(&c, a, z, &[k2]).unwrap();
+        assert_eq!(choices(""), vec![(k2, "Grass".to_string())], "a card in another binder, named so it can say it will move");
+        assert!(binder_choices(&c, a, z, "", 60).unwrap().iter().all(|(k, _)| k.id != k2), "not the binder's own cards");
+        assert_eq!(binder_choices(&c, a, z, "star", 60).unwrap().len(), 1, "by name: Staryu (Starmie is already in Grass)");
+        assert!(binder_choices(&c, a, z, "onix", 60).unwrap().is_empty(), "never someone else's card");
+        c.execute("UPDATE member_cards SET status='Hidden' WHERE id=?1", [k1]).unwrap();
+        assert!(binder_choices(&c, a, z, "staryu", 60).unwrap().is_empty(), "only cards on show in the store");
+
+        // Deleting a binder never deletes its cards.
+        assert!(delete_member_binder(&c, a, y).unwrap());
+        assert_eq!(cards_of(&c, a).unwrap().len(), 3);
+        assert_eq!(card_binder(&c, a, k3), None);
+    }
+
+    fn card_binder(c: &Connection, m: i64, id: i64) -> Option<i64> {
+        cards_of(c, m).unwrap().into_iter().find(|k| k.id == id).unwrap().binder_id
+    }
+
+    #[test]
+    fn binder_names_are_tidy_and_a_trainer_has_at_most_fifty() {
+        let c = db();
+        let a = create(&c, "Erika", "h").unwrap().unwrap();
+        let long = "Grass ".repeat(30);
+        let b = create_member_binder(&c, a, &format!("  {long}\n")).unwrap();
+        let n = b.title.chars().count();
+        assert!(n <= BINDER_NAME_MAX && n > 50, "{n}");
+        assert!(b.title.starts_with("Grass Grass") && !b.title.ends_with(' ') && !b.title.contains('\n'));
+        assert!(rename_member_binder(&c, a, b.id, &"Tangela ".repeat(20)).unwrap());
+        assert!(binders_of(&c, a).unwrap()[0].title.chars().count() <= BINDER_NAME_MAX);
+        assert!(!rename_member_binder(&c, a, b.id, "   ").unwrap(), "a binder keeps a name");
+        assert_eq!(binder_count(&c, a).unwrap(), 1);
+        assert_eq!(MAX_BINDERS, 50);
     }
 }
 

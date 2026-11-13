@@ -334,7 +334,32 @@ struct BindersPage {
     cards: Vec<MemberCard>,
 }
 
+/// The binder tools (`static/binder-tools.js`) ask for JSON; they get JSON back, errors included, never a page.
+fn wants_json(h: &HeaderMap) -> bool {
+    h.get(header::ACCEPT).and_then(|v| v.to_str().ok()).is_some_and(|a| a.contains("application/json"))
+}
+
+/// The seller using the binder tools: signed in, from this site, not locked, selling. Only their own binders and cards.
+async fn binder_owner(app: &App, h: &HeaderMap) -> Result<Result<Member, Response>, (StatusCode, String)> {
+    let m = match acting(app, h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(Err(r)),
+    };
+    Ok(seller_only(&m).map(|_| m))
+}
+
+/// GET /me/binders: the Store Manager's Binders page. Asked for JSON (the binder tools on the store page), the seller's
+/// binders as they arrange them: every one, in their order, as tiles.
 pub async fn binders(State(app): State<App>, h: HeaderMap) -> Res {
+    if wants_json(&h) {
+        let m = match binder_owner(&app, &h).await? {
+            Ok(m) => m,
+            Err(r) => return Ok(r),
+        };
+        let id = m.id;
+        let tiles = with_db(&app, move |c| Ok(seller_tiles(&m, &members::binders_of(c, id)?, &sellers::storefront_listings(c, id)?, true))).await?;
+        return Ok(ok(json!({ "ok": true, "binders": tiles.iter().map(BinderTile::json).collect::<Vec<_>>(), "max": members::MAX_BINDERS })));
+    }
     let m = match selling(&app, &h).await? {
         Ok(m) => m,
         Err(r) => return Ok(r),
@@ -438,6 +463,97 @@ pub async fn move_cards(State(app): State<App>, h: HeaderMap, Json(req): Json<Mo
     .await?;
     app.forget();
     Ok(ok(json!({ "ok": true, "n": n })))
+}
+
+/// POST /me/binders/order {ids}: the seller's binders in this order (dragged on their store or in the Store Manager).
+pub async fn order_binders(State(app): State<App>, h: HeaderMap, Json(req): Json<OrderReq>) -> Res {
+    let m = match binder_owner(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let id = m.id;
+    let ids: Vec<i64> = req.ids.into_iter().take(200).collect();
+    with_db(&app, move |c| members::reorder_member_binders(c, id, &ids)).await?;
+    app.forget();
+    Ok(ok(json!({ "ok": true })))
+}
+
+/// A seller's card as the binder tools show it: picture, name, what it is, price, and whether it is the binder's cover.
+/// `inside` names the binder it is in now (the "Add cards" picker says it will move).
+fn binder_card_json(k: &MemberCard, cover: bool, inside: &str) -> serde_json::Value {
+    let sub = [k.card_set.trim(), k.number.trim(), k.cond.trim()].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" · ");
+    let note = if k.status == "Active" { String::new() } else { k.status.clone() };
+    json!({ "id": k.id, "title": k.title, "sub": sub, "image": k.image, "price": if k.has_price() { k.price_text() } else { "Ask for a price".to_string() }, "cover": cover, "note": note, "inside": inside })
+}
+
+/// GET /me/binders/{id}/cards: the cards of one of the seller's binders as its page shows them (on sale, reserved or out
+/// of stock), in the binder's order, for the binder's editor.
+pub async fn binder_cards(State(app): State<App>, h: HeaderMap, Path(bid): Path<i64>) -> Res {
+    let m = match binder_owner(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let id = m.id;
+    let found = with_db(&app, move |c| {
+        let Some(b) = members::binders_of(c, id)?.into_iter().find(|b| b.id == bid) else { return Ok(None) };
+        let cards: Vec<MemberCard> = members::cards_of_binder(c, id, Some(bid))?.into_iter().filter(|k| k.is_sale() && matches!(k.status.as_str(), "Active" | "Reserved" | "Out of stock")).collect();
+        Ok(Some((b, cards)))
+    })
+    .await?;
+    let Some((b, cards)) = found else { return Ok(fail(StatusCode::NOT_FOUND, "Binder not found.")) };
+    Ok(ok(json!({ "ok": true, "title": b.title, "cards": cards.iter().map(|k| binder_card_json(k, b.cover_card == Some(k.id), "")).collect::<Vec<_>>() })))
+}
+
+#[derive(Deserialize)]
+pub struct BinderCardsReq {
+    #[serde(default)]
+    add: Vec<i64>,
+    #[serde(default)]
+    remove: Vec<i64>,
+}
+
+/// POST /me/binders/{id}/cards {add, remove}: cards into one of the seller's binders (a card in another binder moves
+/// here) or out of it (it stays in the store, in no binder). Says how many moved from another binder.
+pub async fn change_binder_cards(State(app): State<App>, h: HeaderMap, Path(bid): Path<i64>, Json(req): Json<BinderCardsReq>) -> Res {
+    let m = match binder_owner(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let id = m.id;
+    let (add, remove): (Vec<i64>, Vec<i64>) = (req.add.into_iter().take(500).collect(), req.remove.into_iter().take(500).collect());
+    let done = with_db(&app, move |c| {
+        let Some(a) = members::add_to_member_binder(c, id, bid, &add)? else { return Ok(None) };
+        Ok(Some((a, members::remove_from_member_binder(c, id, bid, &remove)?)))
+    })
+    .await?;
+    let Some((a, removed)) = done else { return Ok(fail(StatusCode::NOT_FOUND, "Binder not found.")) };
+    app.forget();
+    Ok(ok(json!({ "ok": true, "added": a.added, "moved": a.moved, "removed": removed })))
+}
+
+#[derive(Deserialize)]
+pub struct ChoiceQs {
+    #[serde(default)]
+    q: String,
+}
+
+/// GET /me/binders/{id}/choices?q=: the seller's cards on sale not in this binder yet, for its "Add cards" picker.
+pub async fn binder_choices(State(app): State<App>, h: HeaderMap, Path(bid): Path<i64>, Query(qs): Query<ChoiceQs>) -> Res {
+    let m = match binder_owner(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let id = m.id;
+    let q: String = qs.q.trim().chars().take(80).collect();
+    let found = with_db(&app, move |c| {
+        if !members::binders_of(c, id)?.iter().any(|b| b.id == bid) {
+            return Ok(None);
+        }
+        Ok(Some(members::binder_choices(c, id, bid, &q, 60)?))
+    })
+    .await?;
+    let Some(rows) = found else { return Ok(fail(StatusCode::NOT_FOUND, "Binder not found.")) };
+    Ok(ok(json!({ "ok": true, "cards": rows.iter().map(|(k, inside)| binder_card_json(k, false, inside)).collect::<Vec<_>>() })))
 }
 
 // ---------- orders ----------
@@ -1017,6 +1133,8 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
 /// One binder on a store page in the new look: two or three to a row, each with its pictures, its name and how many
 /// cards its own page shows. Sellers' binders and the vault's own (`/store/vault`) share it, and `binder_tile.html`.
 pub(crate) struct BinderTile {
+    /// What the binder tools call it: a seller's binder by its number, a vault binder by its handle.
+    pub key: String,
     pub href: String,
     pub title: String,
     /// Up to three card pictures, the cover first. Or one photo the owner uploaded (`photo`), which fills the tile.
@@ -1026,6 +1144,15 @@ pub(crate) struct BinderTile {
     pub words: String,
     /// Visitors don't see this tile on the store page; its owner (and staff) do, faded.
     pub off: bool,
+    /// Every card in the binder, on sale or not (the binder tools say how many a deleted binder lets go).
+    pub count: i64,
+}
+
+impl BinderTile {
+    /// For the binder tools (`binder-tools.js`): the tiles as the owner sees them while arranging them.
+    fn json(&self) -> serde_json::Value {
+        json!({ "key": self.key, "href": self.href, "title": self.title, "pics": self.pics, "photo": self.photo, "words": self.words, "off": self.off, "count": self.count })
+    }
 }
 
 /// "1 card", "1,117 cards".
@@ -1037,7 +1164,10 @@ fn cards_word(n: i64) -> String {
 /// reserved or out of stock), which are exactly the cards its own page lists, and shows them peeking out.
 /// A binder with nothing for sale has nothing to open to, so visitors don't see it; `owner_view` (the seller, or staff)
 /// still does, marked, along with the binders visitors can't see at all.
+/// A tile's pictures are the cover the seller picked, then the binder's cards on sale (`sellers::binder_peeks` says the
+/// same for one binder alone); across the page, cards an earlier tile already shows wait their turn (`db::fresh_pics`).
 fn seller_tiles(m: &Member, binders: &[MemberBinder], listings: &[MemberCard], owner_view: bool) -> Vec<BinderTile> {
+    let mut seen = std::collections::HashSet::new();
     binders
         .iter()
         .filter_map(|b| {
@@ -1052,13 +1182,19 @@ fn seller_tiles(m: &Member, binders: &[MemberBinder], listings: &[MemberCard], o
                 _ if n == 0 => words.push_str(" · hidden from visitors"),
                 _ => {}
             }
+            // A cover the seller picked leads while that card is on sale here. Everything else is the binder's cards on
+            // sale, in its order: never a sold, hidden, highlight or wishlist card.
+            let picked = sellers::picked_cover(b, listings);
+            let cards: Vec<String> = listings.iter().filter(|k| k.binder_id == Some(b.id) && Some(k.id) != b.cover_card && !k.image.is_empty()).map(|k| k.image.clone()).collect();
             Some(BinderTile {
+                key: b.id.to_string(),
                 href: format!("{}/binders/{}", m.store_url(), b.slug),
                 title: b.title.clone(),
-                pics: sellers::binder_peeks(b, listings, 3),
+                pics: db::fresh_pics(picked.map(|k| k.image.as_str()), &cards, 3, &mut seen),
                 photo: false,
                 words,
                 off: n == 0 || b.visibility != "Public",
+                count: b.count,
             })
         })
         .collect()
@@ -1066,15 +1202,46 @@ fn seller_tiles(m: &Member, binders: &[MemberBinder], listings: &[MemberCard], o
 
 /// The vault's own binders as tiles: every binder with cards for sale, in the owner's order (Manager › Binders), whether
 /// or not it is on today's home page or was ever in the menu. `peeks` is `db::binder_peeks`.
-/// A tile says the binder's own count, the same number its page shows.
-fn vault_tiles(links: &[Collection], peeks: &HashMap<String, (i64, Vec<String>)>) -> Vec<BinderTile> {
+/// A tile says the binder's own count, the same number its page shows. The owner arranging them (`owner_view`) also sees
+/// the binders with nothing for sale, faded, so a new binder can be filled. Pictures repeat as little as they can.
+pub(crate) fn vault_tiles(links: &[Collection], peeks: &HashMap<String, (i64, Vec<String>)>, owner_view: bool) -> Vec<BinderTile> {
+    let mut seen = std::collections::HashSet::new();
+    let none: Vec<String> = vec![];
     links
         .iter()
         .filter_map(|b| {
-            let (_, pics) = peeks.get(&b.handle)?;
-            Some(BinderTile { href: format!("/collections/{}", b.handle), title: b.title.clone(), pics: b.tile_pics(pics, 3), photo: b.photo_cover(), words: cards_word(b.count), off: false })
+            let pics = match peeks.get(&b.handle) {
+                Some((_, pics)) => pics,
+                None if owner_view => &none,
+                None => return None,
+            };
+            let off = !peeks.contains_key(&b.handle);
+            let words = match (off, b.count) {
+                (false, n) => cards_word(n),
+                (true, 0) => "No cards yet · hidden from visitors".to_string(),
+                (true, n) => format!("{} · none for sale · hidden from visitors", cards_word(n)),
+            };
+            Some(BinderTile {
+                key: b.handle.clone(),
+                href: format!("/collections/{}", b.handle),
+                title: b.title.clone(),
+                pics: b.tile_pics_among(pics, 3, &mut seen),
+                photo: b.photo_cover(),
+                words,
+                off,
+                count: b.count,
+            })
         })
         .collect()
+}
+
+/// How many pictures each vault binder offers its tile to choose from, so tiles side by side can show different cards.
+const PEEK_CHOICES: usize = 12;
+
+/// GET /admin/binders as JSON: the vault's binders as the owner arranges them (every one, in order).
+pub(crate) fn vault_tiles_json(c: &rusqlite::Connection) -> rusqlite::Result<serde_json::Value> {
+    let tiles = vault_tiles(&db::collections(c)?, &db::binder_peeks(c, PEEK_CHOICES)?, true);
+    Ok(json!({ "ok": true, "binders": tiles.iter().map(BinderTile::json).collect::<Vec<_>>() }))
 }
 
 /// Copies of the vault's cards for sale, binders with cards for sale, and vouches: the numbers the vault's store shows.
@@ -1146,7 +1313,7 @@ fn next_page(q: &db::Query, found: i64) -> Option<usize> {
 fn vault_page(c: &rusqlite::Connection, q: db::Query) -> rusqlite::Result<VaultStorePage> {
     let mut nav = chrome(c)?;
     let (items, found) = db::list(c, &q)?;
-    let tiles = vault_tiles(&nav.links, &db::binder_peeks(c, 3)?);
+    let tiles = vault_tiles(&nav.links, &db::binder_peeks(c, PEEK_CHOICES)?, false);
     let n = vault_numbers(c, &tiles)?;
     let next = next_page(&q, found);
     let site = nav.site.clone();
@@ -1255,7 +1422,7 @@ struct VaultCard {
 
 /// The vault is not a seller: it stays out of sellers::directory (the feed and the admin's Sellers use that) and comes first here.
 fn vault_card(c: &rusqlite::Connection) -> rusqlite::Result<VaultCard> {
-    let tiles = vault_tiles(&db::collections(c)?, &db::binder_peeks(c, 0)?);
+    let tiles = vault_tiles(&db::collections(c)?, &db::binder_peeks(c, 0)?, false);
     let (cards, _) = db::list(c, &db::Query { in_stock: true, ..Default::default() })?;
     Ok(VaultCard { n: vault_numbers(c, &tiles)?, cards: cards.into_iter().take(6).collect() })
 }
@@ -1902,6 +2069,133 @@ mod tests {
         let found = vault_html(&c, "charizard");
         assert!(found.contains("<meta name=\"robots\" content=\"noindex, follow\">"));
         assert_eq!(found.matches("<a class=\"card\" href=").count(), 1);
+    }
+
+    /// The binder tools show only for whoever owns the binders: a seller on their own store and binder pages; on the
+    /// vault's (kept, the same page for everyone) a button hidden unless a full admin is signed in.
+    #[test]
+    fn binder_tools_are_offered_to_the_owner_only() {
+        let c = db();
+        let s = members::create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        let slug = members::get(&c, s).unwrap().unwrap().slug;
+        // No binders yet: the owner still gets the heading, the button and a word on what binders are for.
+        let own = page_as(&c, &slug, None, true, true);
+        assert!(own.contains("data-bt-edit=\"seller\"") && own.contains("class=\"bt-none\"") && own.contains("/static/binder-tools.js?v=1"), "{own}");
+        let visitor = page(&c, &slug, None, true);
+        assert!(!visitor.contains("data-bt-edit") && !visitor.contains("binder-tools.js") && !visitor.contains(">Binders<"));
+        let b = members::create_member_binder(&c, s, "Fire").unwrap();
+        let Added::Yes(id) = sellers::add_listing(&c, s, "tcgdex:x-1", "Charmander", "1", "Set", "/p/1.webp", "").unwrap() else { panic!() };
+        members::move_card_to_binder(&c, s, id, Some(b.id)).unwrap();
+        let own = page_as(&c, &slug, None, true, true);
+        assert!(own.contains(&format!("<a class=\"sf-btile\" href=\"/store/{slug}/binders/fire\" data-b=\"{}\">", b.id)), "{own}");
+        assert!(!own.contains("bt-none"));
+        let visitor = page(&c, &slug, None, true);
+        assert!(visitor.contains("<h2 class=\"h2\">Binders</h2>") && !visitor.contains("data-bt-edit") && !visitor.contains("bt-head"), "visitors' page as before");
+        // A binder's own page: Edit binder for its owner only.
+        let fire_own = page_as(&c, &slug, Some("fire"), true, true);
+        assert!(fire_own.contains(&format!("data-bt-binder=\"seller\" data-key=\"{}\"", b.id)) && fire_own.contains("binder-tools.js"));
+        assert!(!page(&c, &slug, Some("fire"), true).contains("data-bt-binder"));
+        // Today's look has none of it.
+        assert!(!page_as(&c, &slug, None, false, true).contains("data-bt-edit"));
+
+        // The vault's store: the button is in every visitor's page, hidden unless a full admin is signed in.
+        vault(&c);
+        let html = vault_html(&c, "");
+        assert!(html.contains("data-bt-edit=\"vault\" aria-pressed=\"false\" data-staff-only data-full-only>"), "{html}");
+        assert!(html.contains("<a class=\"sf-btile\" href=\"/collections/pikachu-set\" data-b=\"pikachu-set\">"));
+        // Arranging them, the owner sees every binder, those with nothing for sale faded and saying why.
+        let all = vault_tiles(&db::collections(&c).unwrap(), &db::binder_peeks(&c, PEEK_CHOICES).unwrap(), true);
+        assert_eq!(all.iter().map(|t| t.key.as_str()).collect::<Vec<_>>(), vec!["pikachu-set", "graded-cards", "trainers", "legendary-collections"]);
+        assert_eq!((all[2].off, all[2].words.as_str()), (true, "1 card · none for sale · hidden from visitors"));
+        assert_eq!((all[3].off, all[3].words.as_str()), (true, "No cards yet · hidden from visitors"));
+        assert!(!all[0].off && all[0].count == 3);
+    }
+
+    /// The same few dearest cards sit in several binders: each tile shows cards the tiles before it don't, when it can.
+    #[test]
+    fn binder_tiles_on_a_page_show_different_cards() {
+        let c = db();
+        for (i, h) in ["pikachu-set", "favorites", "playables"].iter().enumerate() {
+            c.execute("INSERT INTO collections(handle,title,position) VALUES(?1,?1,?2)", rusqlite::params![h, i as i64]).unwrap();
+        }
+        for (id, price, binders) in [(1, 900.0, "pikachu-set favorites playables"), (2, 800.0, "pikachu-set favorites playables"), (3, 700.0, "pikachu-set favorites"), (4, 100.0, "pikachu-set"), (5, 90.0, "favorites"), (6, 80.0, "favorites")] {
+            c.execute("INSERT INTO products(id,handle,title,price,image,available,created_at) VALUES(?1,?2,?2,?3,?4,1,'2026-01-01T00:00:00')", rusqlite::params![id, format!("c{id}"), price, format!("/uploads/c0-{id}_l.jpg")]).unwrap();
+            for b in binders.split(' ') {
+                c.execute("INSERT INTO collection_products(collection,product_id) VALUES(?1,?2)", rusqlite::params![b, id]).unwrap();
+            }
+        }
+        let pics = |t: &BinderTile| t.pics.iter().map(|p| p.trim_start_matches("/uploads/c0-").trim_end_matches("_s.jpg").to_string()).collect::<Vec<_>>().join(",");
+        let tiles = vault_tiles(&db::collections(&c).unwrap(), &db::binder_peeks(&c, PEEK_CHOICES).unwrap(), false);
+        assert_eq!(pics(&tiles[0]), "1,2,3", "the first tile: its dearest");
+        assert_eq!(pics(&tiles[1]), "5,6,1", "the next: what isn't shown yet first, then the dearest again");
+        assert_eq!(pics(&tiles[2]), "1,2", "nothing new: it still shows its cards");
+        // A cover the owner picked always leads, even one an earlier tile shows.
+        db::set_binder_cover(&c, "favorites", "/uploads/c0-1_l.jpg").unwrap();
+        let tiles = vault_tiles(&db::collections(&c).unwrap(), &db::binder_peeks(&c, PEEK_CHOICES).unwrap(), false);
+        assert_eq!(pics(&tiles[1]), "1,5,6");
+
+        // A seller's tiles too: two listings of the same card share a picture.
+        let s = members::create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        let m = members::get(&c, s).unwrap().unwrap();
+        let (a, b) = (members::create_member_binder(&c, s, "A").unwrap(), members::create_member_binder(&c, s, "B").unwrap());
+        for (n, img, bid) in [(1, "/p/x.webp", a.id), (2, "/p/y.webp", a.id), (3, "/p/x.webp", b.id), (4, "/p/z.webp", b.id)] {
+            let Added::Yes(id) = sellers::add_listing(&c, s, &format!("tcgdex:s-{n}"), &format!("Card {n}"), "1", "Set", img, "").unwrap() else { panic!() };
+            members::move_card_to_binder(&c, s, id, Some(bid)).unwrap();
+        }
+        let tiles = seller_tiles(&m, &members::binders_of(&c, s).unwrap(), &sellers::storefront_listings(&c, s).unwrap(), false);
+        assert_eq!(tiles[0].pics, vec!["/p/x.webp", "/p/y.webp"]);
+        assert_eq!(tiles[1].pics, vec!["/p/z.webp", "/p/x.webp"], "B's first card is A's picture: B leads with its own");
+        assert_eq!(tiles[1].key, b.id.to_string());
+    }
+
+    /// A seller's binder tile (and its cover everywhere else) never leads with a card that isn't for sale: not a sold or
+    /// hidden listing, not a highlight, not a wishlist card, even when it is the binder's first card or the picked cover.
+    #[test]
+    fn a_binder_tile_never_leads_with_a_card_not_for_sale() {
+        let c = db();
+        let s = members::create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        let b = members::create_member_binder(&c, s, "Mixed").unwrap();
+        let mut ids = vec![];
+        for (pos, (name, kind, status)) in [("own", "own", "Active"), ("wish", "wish", "Active"), ("sold", "sale", "Sold"), ("hidden", "sale", "Hidden"), ("ok1", "sale", "Active"), ("ok2", "sale", "Reserved")].iter().enumerate() {
+            let Added::Yes(id) = sellers::add_listing(&c, s, &format!("tcgdex:m-{name}"), name, "1", "Set", &format!("/p/{name}.webp"), "").unwrap() else { panic!() };
+            members::move_card_to_binder(&c, s, id, Some(b.id)).unwrap();
+            c.execute("UPDATE member_cards SET kind=?2, status=?3, position=?4 WHERE id=?1", rusqlite::params![id, kind, status, pos as i64]).unwrap();
+            ids.push(id);
+        }
+        let m = members::get(&c, s).unwrap().unwrap();
+        let look = |c: &rusqlite::Connection| {
+            let binders = members::binders_of(c, s).unwrap();
+            let listings = sellers::storefront_listings(c, s).unwrap();
+            let tile = seller_tiles(&m, &binders, &listings, false).remove(0).pics;
+            (binders[0].cover_image.clone(), tile, sellers::binder_peeks(&binders[0], &listings, 3))
+        };
+        let (cover, tile, peeks) = look(&c);
+        assert_eq!(cover, "/p/ok1.webp", "no cover picked: the first card on sale, not the highlight, wish, sold or hidden ones before it");
+        assert_eq!(tile, vec!["/p/ok1.webp", "/p/ok2.webp"]);
+        assert_eq!(peeks, tile, "binder_peeks agrees");
+        // A picked cover that has sold (or is hidden, a highlight...) doesn't lead either.
+        for gone in &ids[..4] {
+            members::set_member_binder_cover(&c, s, b.id, Some(*gone)).unwrap();
+            let (cover, tile, peeks) = look(&c);
+            assert_eq!((cover.as_str(), tile.clone(), peeks), ("/p/ok1.webp", vec!["/p/ok1.webp".to_string(), "/p/ok2.webp".into()], tile));
+        }
+        // A picked cover on sale leads.
+        members::set_member_binder_cover(&c, s, b.id, Some(ids[5])).unwrap();
+        let (cover, tile, peeks) = look(&c);
+        assert_eq!(cover, "/p/ok2.webp");
+        assert_eq!(tile, vec!["/p/ok2.webp", "/p/ok1.webp"]);
+        assert_eq!(peeks, tile);
+        // The page visitors get shows none of the others.
+        let slug = m.slug.clone();
+        let html = page(&c, &slug, None, true);
+        let grid = &html[html.find("<ul class=\"sf-bgrid\">").unwrap()..];
+        let grid = &grid[..grid.find("</ul>").unwrap()];
+        assert!(grid.contains("<img src=\"/p/ok2.webp\"") && ["own", "wish", "sold", "hidden"].iter().all(|n| !grid.contains(&format!("/p/{n}.webp"))), "{grid}");
     }
 
     fn stores_html(c: &rusqlite::Connection, new: bool) -> String {

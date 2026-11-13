@@ -1302,7 +1302,17 @@ pub async fn me_create_binder(State(app): State<App>, h: HeaderMap, Json(req): J
     };
     let id = m.id;
     let title = req.title.unwrap_or_default();
-    let binder = with_db(&app, move |c| members::create_member_binder(c, id, &title)).await?;
+    // A sensible ceiling: a store of binders, not a wall of them.
+    let binder = with_db(&app, move |c| {
+        if members::binder_count(c, id)? >= members::MAX_BINDERS {
+            return Ok(None);
+        }
+        members::create_member_binder(c, id, &title).map(Some)
+    })
+    .await?;
+    let Some(binder) = binder else {
+        return Ok(fail(StatusCode::BAD_REQUEST, &format!("You have {} binders, the most one trainer can have. Delete one to make another.", members::MAX_BINDERS)));
+    };
     app.forget();
     Ok(ok(json!({ "ok": true, "binder": binder })))
 }
