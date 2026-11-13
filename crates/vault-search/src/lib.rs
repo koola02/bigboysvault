@@ -26,7 +26,8 @@ pub struct Card {
     pub lang: String,
     /// The owner's notes about this copy, on one line.
     pub notes: String,
-    /// Normalised text used for matching. Worked out when a card is read, not sent over the wire.
+    /// Normalised text used for matching: the card's own words only, never its store's name (see `search_market`).
+    /// Worked out when a card is read, not sent over the wire.
     pub text: String,
     /// Position in the catalogue: 0 is the newest card.
     pub order: u32,
@@ -390,6 +391,15 @@ pub struct Found {
 
 /// Find the cards. `sort` is the sort menu's value; words like "cheapest" take priority over it.
 pub fn search<C: Borrow<Card>>(cards: &[C], f: &Filter, sort: Sort) -> Found {
+    search_market::<C, Store>(cards, &[], f, sort)
+}
+
+/// `search` for The Vault page's list (`parse_market`): `stores` are the stores its cards' `store` numbers point to.
+/// A store's name is not in its cards' text, so "pikachu" finds Pikachu cards only, never every card of a store called
+/// "Pikachu Corner". A typed word that some card has in its own text must be in the card's own text. Only a word that no
+/// card has, but a store's name or address does, asks for that store's cards: "cerulean" finds Cerulean Gym's cards,
+/// and "charizard cerulean" the Charizards it sells.
+pub fn search_market<C: Borrow<Card>, S: Borrow<Store>>(cards: &[C], stores: &[S], f: &Filter, sort: Sort) -> Found {
     let card = |i: usize| -> &Card { cards[i].borrow() };
     // Each name finds whole words first ("mew" isn't Mewtwo), then the start of a word ("pika"), then the closest spelling.
     let titles: Vec<String> = if f.names.is_empty() { vec![] } else { (0..cards.len()).map(|i| norm(&title_and_set(&card(i).title, &card(i).set).0)).collect() };
@@ -417,14 +427,38 @@ pub fn search<C: Borrow<Card>>(cards: &[C], f: &Filter, sort: Sort) -> Found {
             && (names.is_empty() || names.iter().any(|(w, l)| name_is(&titles[i], w, *l)))
     };
     let picked = |test: &dyn Fn(&Card) -> bool| -> Vec<usize> { (0..cards.len()).filter(|&i| passes(i) && test(card(i))).collect() };
-    let mut hits = picked(&|c| f.words.iter().all(|w| word_hit(&c.text, w)));
+    // What each typed word asks for: None, the card's own words; Some, the cards of these stores (`Card::store`).
+    // A word is a store's only when no card has it in its own text and a store's name or address does.
+    let store_texts: Vec<String> = stores.iter().map(|s| { let s = s.borrow(); norm(&format!("{} {}", s.title, s.slug)) }).collect();
+    let read = |w: &str, hit: &dyn Fn(&str, &str) -> bool| -> Option<Vec<u16>> {
+        if store_texts.is_empty() || (0..cards.len()).any(|i| hit(&card(i).text, w)) {
+            return None;
+        }
+        let from: Vec<u16> = store_texts.iter().enumerate().filter(|(_, t)| hit(t, w)).map(|(i, _)| i as u16 + 1).collect();
+        (!from.is_empty()).then_some(from)
+    };
+    let exact = |t: &str, w: &str| word_hit(t, w);
+    let near = |t: &str, w: &str| word_hit(t, w) || typo_hit(t, w);
+    let fits = |c: &Card, from: &[Option<Vec<u16>>], hit: &dyn Fn(&str, &str) -> bool| f.words.iter().zip(from).all(|(w, s)| match s {
+        Some(s) => s.contains(&c.store),
+        None => hit(&c.text, w),
+    });
+    let mut from: Vec<Option<Vec<u16>>> = f.words.iter().map(|w| read(w, &exact)).collect();
+    let mut hits = picked(&|c| fits(c, &from, &exact));
     let mut typo = !hits.is_empty() && names.iter().any(|(_, l)| *l == 2);
     if hits.is_empty() && !f.words.is_empty() {
-        hits = picked(&|c| f.words.iter().all(|w| word_hit(&c.text, w) || typo_hit(&c.text, w)));
+        // Nothing matched exactly: near spellings count, of a card's words or of a store's name.
+        for (w, s) in f.words.iter().zip(from.iter_mut()) {
+            if s.is_none() {
+                *s = read(w, &near);
+            }
+        }
+        hits = picked(&|c| fits(c, &from, &near));
         typo = !hits.is_empty();
     }
     // Typed words and no sort asked for: the best match comes first, and the owner's order settles ties.
-    let query: Vec<String> = f.words.iter().cloned().chain(names.iter().flat_map(|(w, _)| w.iter().cloned())).collect();
+    // A word that only picked a store says nothing about which of its cards matches best, so it doesn't count here.
+    let query: Vec<String> = f.words.iter().zip(&from).filter(|(_, s)| s.is_none()).map(|(w, _)| w.clone()).chain(names.iter().flat_map(|(w, _)| w.iter().cloned())).collect();
     if f.sort.is_none() && sort == Sort::Newest && !query.is_empty() && hits.len() > 1 {
         let all: Vec<&str> = (0..cards.len()).map(|i| card(i).text.as_str()).collect();
         let heads: Vec<String> = hits.iter().map(|&i| norm(&title_and_set(&card(i).title, &card(i).set).0)).collect();
@@ -651,9 +685,8 @@ pub fn market_line(c: &Card) -> String {
     format!("M\t{}\t{}\t{}", c.store, c.lid, card_fields(c))
 }
 
-/// A card from the fields after a line's first ones. `more` is extra text to search by (a store's name).
-/// Older files have no notes at the end.
-fn read_card(fields: &[&str], more: &str, order: u32) -> Option<Card> {
+/// A card from the fields after a line's first ones. Older files have no notes at the end.
+fn read_card(fields: &[&str], order: u32) -> Option<Card> {
     let [handle, title, variant, set, no, price, img, grade, qty, bs, tags, sym, finish, lang, extra @ ..] = fields else { return None };
     if extra.len() > 1 {
         return None;
@@ -665,7 +698,7 @@ fn read_card(fields: &[&str], more: &str, order: u32) -> Option<Card> {
         "1st Edition" => "1st Edition first",
         f => f,
     };
-    let text = norm(&format!("{title} {variant} {set} {no} {grade} {tags} {notes} {fin} {more}"));
+    let text = norm(&format!("{title} {variant} {set} {no} {grade} {tags} {notes} {fin}"));
     Some(Card {
         handle: handle.to_string(),
         title: title.to_string(),
@@ -698,7 +731,7 @@ pub fn parse(data: &str) -> (Vec<Binder>, Vec<Card>) {
         match f.as_slice() {
             ["B", handle, title, img, count] => binders.push(Binder { handle: handle.to_string(), title: title.to_string(), img: img.to_string(), count: count.parse().unwrap_or(0) }),
             ["C", rest @ ..] => {
-                if let Some(c) = read_card(rest, "", cards.len() as u32) {
+                if let Some(c) = read_card(rest, cards.len() as u32) {
                     cards.push(c);
                 }
             }
@@ -710,8 +743,9 @@ pub fn parse(data: &str) -> (Vec<Binder>, Vec<Card>) {
 
 /// Read The Vault page's file (`/vault.tsv`): the vault's binders and cards as `parse` reads them, then the stores
 /// (`S` lines) and every card they have for sale (`M` lines). The stores' cards come after the vault's in the list, in
-/// the file's order (newest first), and each is found by its store's name too. The default order mixes them in among
-/// the vault's (see `mix_in_stores`).
+/// the file's order (newest first). Typing a store's name finds its cards when searched with `search_market`, which is
+/// given the stores; the name is not in the cards' own text. The default order mixes them in among the vault's (see
+/// `mix_in_stores`).
 pub fn parse_market(data: &str) -> (Vec<Binder>, Vec<Store>, Vec<Card>) {
     let (binders, mut cards) = parse(data);
     let mut stores: Vec<Store> = vec![];
@@ -731,12 +765,10 @@ pub fn parse_market(data: &str) -> (Vec<Binder>, Vec<Store>, Vec<Card>) {
             ["M", at, lid, rest @ ..] => {
                 let Some(store) = at.parse::<u16>().ok().and_then(|at| index.iter().find(|x| x.0 == at)).map(|x| x.1) else { continue };
                 let Ok(lid) = lid.parse::<i64>() else { continue };
-                let s = &mut stores[usize::from(store) - 1];
-                let more = format!("{} {}", s.title, s.slug);
-                if let Some(mut c) = read_card(rest, &more, cards.len() as u32) {
+                if let Some(mut c) = read_card(rest, cards.len() as u32) {
                     c.store = store;
                     c.lid = lid;
-                    s.count += 1;
+                    stores[usize::from(store) - 1].count += 1;
                     cards.push(c);
                 }
             }
@@ -993,8 +1025,8 @@ mod tests {
         for i in 0..3 {
             data += &market_line(&Card { store: 1, lid: 100 + i64::from(i), title: format!("s{i}"), price: 500.0 - 100.0 * f64::from(i), qty: 1, ..Default::default() });
         }
-        let (_, _, cards) = parse_market(&data);
-        let run = |f: &Filter, sort: Sort| search(&cards, f, sort).hits.iter().map(|&i| cards[i].title.clone()).collect::<Vec<_>>().join(" ");
+        let (_, stores, cards) = parse_market(&data);
+        let run = |f: &Filter, sort: Sort| search_market(&cards, &stores, f, sort).hits.iter().map(|&i| cards[i].title.clone()).collect::<Vec<_>>().join(" ");
         assert_eq!(run(&Filter::default(), Sort::Newest), "v0 v1 v2 s0 v3 v4 v5 s1 v6 s2", "the vault's order, a store card (newest first) after every three");
         assert_eq!(run(&Filter { min_price: Some(13.0), ..Default::default() }, Sort::Newest), "v3 v4 v5 s0 v6 s1 s2", "the same rhythm in what a filter leaves; store cards left over come last");
         assert_eq!(run(&Filter { store: Some(1), ..Default::default() }, Sort::Newest), "s0 s1 s2");
@@ -1010,8 +1042,8 @@ mod tests {
 
     #[test]
     fn a_store_is_found_by_its_name_and_unpriced_cards_go_last() {
-        let (_, _, cards) = parse_market(&market());
-        let titles = |f: &Filter, sort: Sort| search(&cards, f, sort).hits.iter().map(|&i| (cards[i].store, cards[i].lid)).collect::<Vec<_>>();
+        let (_, stores, cards) = parse_market(&market());
+        let titles = |f: &Filter, sort: Sort| search_market(&cards, &stores, f, sort).hits.iter().map(|&i| (cards[i].store, cards[i].lid)).collect::<Vec<_>>();
         assert_eq!(titles(&read_words("cerulean"), Sort::Newest), vec![(2, 502)], "typing a store's name finds its cards");
         assert_eq!(titles(&read_words("ash shop"), Sort::Newest), vec![(1, 501), (1, 503)]);
         assert_eq!(titles(&Filter { store: Some(0), ..Default::default() }, Sort::Newest).len(), 2, "only the vault's");
@@ -1022,6 +1054,81 @@ mod tests {
         let under = titles(&Filter { max_price: Some(500.0), ..Default::default() }, Sort::Newest);
         assert!(!under.contains(&(1, 503)), "a card with no price isn't under any price: {under:?}");
         assert_eq!(titles(&Filter { binder: Some(0), ..Default::default() }, Sort::Newest), vec![(0, 0)], "a binder still holds only vault cards");
+    }
+
+    /// The vault's Pikachu, Charizard, Eevee and Dratini; "Pikachu Corner PH" sells a Charizard, an Umbreon and a
+    /// Pikachu; Cerulean Gym (no address) a Charizard and a Mew with no price. Each card as "store:Name".
+    fn corner() -> (Vec<Store>, Vec<Card>) {
+        let mut data = String::new();
+        for (i, t) in ["Pikachu - 25/102", "Charizard - 4/102", "Eevee - 51/64", "Dratini - 26/64"].into_iter().enumerate() {
+            data += &card_line(&Card { handle: format!("v-{i}"), title: t.into(), price: 100.0 + 10.0 * i as f64, qty: 1, ..Default::default() });
+        }
+        data += &store_line(1, &Store { id: 7, slug: "pikachu-corner".into(), title: "Pikachu Corner PH".into(), ..Default::default() });
+        data += &store_line(2, &Store { id: 8, slug: String::new(), title: "Cerulean Gym".into(), ..Default::default() });
+        for (store, lid, t, price) in [(1, 11, "Charizard ex - 199/165", 900.0), (1, 12, "Umbreon VMAX - 215/203", 5000.0), (1, 13, "Pikachu V - 43/185", 50.0), (2, 21, "Charizard - 4/102", 2000.0), (2, 22, "Mew - 8/9", 0.0)] {
+            data += &market_line(&Card { store, lid, title: t.into(), price, qty: 1, ..Default::default() });
+        }
+        let (_, stores, cards) = parse_market(&data);
+        (stores, cards)
+    }
+
+    #[test]
+    fn a_pokemon_in_a_stores_name_finds_only_that_pokemon() {
+        let (stores, cards) = corner();
+        let name = |i: usize| format!("{}:{}", cards[i].store, cards[i].title.split(' ').next().unwrap_or(""));
+        let run = |f: &Filter, sort: Sort| search_market(&cards, &stores, f, sort).hits.iter().map(|&i| name(i)).collect::<Vec<_>>().join(" ");
+        let find = |q: &str, sort: Sort| run(&read_words(q), sort);
+        assert!(cards.iter().all(|c| !c.text.contains("corner") && !c.text.contains("cerulean") && !c.text.contains(" ph")), "a store's name isn't in its cards' text");
+        // A word some card has must be on the card itself, in every order: the store's Charizard and Umbreon stay out.
+        assert_eq!(find("pikachu", Sort::Newest), "0:Pikachu 1:Pikachu", "the card that is just Pikachu first");
+        assert_eq!(find("pikachu", Sort::PriceAsc), "1:Pikachu 0:Pikachu");
+        assert_eq!(find("pikachu", Sort::PriceDesc), "0:Pikachu 1:Pikachu");
+        assert_eq!(find("pikachu", Sort::Name), "0:Pikachu 1:Pikachu");
+        assert_eq!(find("cheapest pikachu", Sort::Newest), "1:Pikachu 0:Pikachu");
+        assert_eq!(find("pika", Sort::PriceAsc), "1:Pikachu 0:Pikachu", "the start of a word too");
+        // A word no card has, but a store's name or address does, finds that store's cards.
+        assert_eq!(find("cerulean", Sort::Newest), "2:Charizard 2:Mew");
+        assert_eq!(find("cerulean gym", Sort::PriceAsc), "2:Charizard 2:Mew", "a card with no price still comes last");
+        assert_eq!(find("corner", Sort::Newest), "1:Charizard 1:Umbreon 1:Pikachu");
+        assert_eq!(find("ph", Sort::Newest), "1:Charizard 1:Umbreon 1:Pikachu");
+        // Both kinds together: the card's words on the card, from the stores the other words name.
+        assert_eq!(find("charizard cerulean", Sort::Newest), "2:Charizard");
+        assert_eq!(find("cerulean charizard", Sort::PriceDesc), "2:Charizard");
+        assert_eq!(find("charizard corner", Sort::Newest), "1:Charizard");
+        assert_eq!(find("pikachu corner", Sort::Newest), "1:Pikachu", "Pikachu cards from the store called Pikachu Corner");
+        assert_eq!(find("umbreon cerulean", Sort::Newest), "", "Cerulean has no Umbreon");
+        assert_eq!(find("charizard under 1000", Sort::PriceAsc), "0:Charizard 1:Charizard");
+        assert_eq!(find("charizard", Sort::Name).split(' ').count(), 3, "every Charizard, whoever sells it");
+        // With a seller picked, a store's word still only narrows: a different store's name finds nothing.
+        assert_eq!(run(&Filter { store: Some(1), ..read_words("pikachu") }, Sort::Newest), "1:Pikachu");
+        assert_eq!(run(&Filter { store: Some(1), ..read_words("cerulean") }, Sort::Newest), "");
+        assert_eq!(run(&Filter { store: Some(0), ..read_words("charizard") }, Sort::Newest), "0:Charizard");
+        // Near spellings: of a card's words, and of a store's name, only when nothing matched exactly.
+        let typo = |q: &str| search_market(&cards, &stores, &read_words(q), Sort::Newest).typo;
+        assert_eq!(find("cerulaen", Sort::Newest), "2:Charizard 2:Mew");
+        assert!(typo("cerulaen") && !typo("cerulean"));
+        assert_eq!(find("charizrd cerulean", Sort::Newest), "2:Charizard");
+        assert!(typo("charizrd cerulean"));
+        assert_eq!(find("zzzzzzzz", Sort::Newest), "");
+        // Without the stores (the server's search of the vault's own catalogue) no word is a store's.
+        assert!(search(&cards, &read_words("cerulean"), Sort::Newest).hits.is_empty());
+        assert_eq!(search(&cards, &read_words("pikachu"), Sort::PriceAsc).hits.len(), 2);
+    }
+
+    #[test]
+    fn the_default_order_is_the_same_with_store_names_left_out() {
+        let (stores, cards) = corner();
+        let name = |i: usize| format!("{}:{}", cards[i].store, cards[i].title.split(' ').next().unwrap_or(""));
+        let run = |f: &Filter, sort: Sort| search_market(&cards, &stores, f, sort).hits.iter().map(|&i| name(i)).collect::<Vec<_>>().join(" ");
+        let every = "0:Pikachu 0:Charizard 0:Eevee 1:Charizard 0:Dratini 1:Umbreon 1:Pikachu 2:Charizard 2:Mew";
+        assert_eq!(run(&Filter::default(), Sort::Newest), every, "a store card after every three of the vault's, the rest last");
+        assert_eq!(search(&cards, &Filter::default(), Sort::Newest).hits, search_market(&cards, &stores, &Filter::default(), Sort::Newest).hits, "no words, no difference");
+        assert_eq!(run(&read_words(""), Sort::Newest), every);
+        assert_eq!(run(&Filter { store: Some(1), ..Default::default() }, Sort::Newest), "1:Charizard 1:Umbreon 1:Pikachu");
+        assert_eq!(run(&Filter::default(), Sort::PriceAsc), "1:Pikachu 0:Pikachu 0:Charizard 0:Eevee 0:Dratini 1:Charizard 2:Charizard 1:Umbreon 2:Mew");
+        // The plain catalogue reader is as it was: the vault's cards, read the same.
+        let (_, vault) = parse(&cards.iter().filter(|c| c.store == 0).map(card_line).collect::<String>());
+        assert_eq!(vault.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(), cards[..4].iter().map(|c| c.text.as_str()).collect::<Vec<_>>());
     }
 
     #[test]
