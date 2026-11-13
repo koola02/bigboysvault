@@ -6,7 +6,7 @@
 use leptos::mount::mount_to;
 use leptos::prelude::*;
 use std::sync::Arc;
-use vault_search::{norm, parse, parse_market, peso, pos_for, price_at, read_tokens, read_words, search, title_and_set, Binder, Card, Found, Sort, Store, Token, COND_LABELS, FINISH_LABELS, LANG_LABELS};
+use vault_search::{norm, parse, parse_market, peso, pos_for, price_at, read_tokens, read_words, search_market, title_and_set, Binder, Card, Found, Sort, Store, Token, COND_LABELS, FINISH_LABELS, LANG_LABELS};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -212,8 +212,10 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
     // Inside a binder's floating window the finder keeps to itself: it leaves the page's search box, heading and address alone.
     let param = move |k: &str| if embedded { None } else { url_param(k) };
     let input: Option<web_sys::HtmlInputElement> = if embedded { None } else { document().query_selector("form.search input").ok().flatten().and_then(|e| e.dyn_into().ok()) };
-    // An old link to a binder still shows just that binder's cards (the binders have no buttons here any more).
+    // An old link to a binder still shows just that binder's cards. The binders have no buttons here any more, so while
+    // one is on, a button in the "Sold by" row names it and takes it off (`binder_chip`).
     let start_binder = param("binder").and_then(|h| binders.iter().position(|b| b.handle == h)).map(|i| i as u16);
+    let binders = StoredValue::new(binders);
     // Who sells the cards shown: None for everyone, Some(0) the vault, Some(n) the n-th store. `?store=vault` or a store's address.
     let store_keys: Vec<String> = stores.iter().map(Store::key).collect();
     let start_store = param("store").and_then(|v| if v.eq_ignore_ascii_case("vault") { Some(0) } else { store_keys.iter().position(|k| k.eq_ignore_ascii_case(v.trim())).map(|i| i as u16 + 1) });
@@ -236,7 +238,9 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
             }
         });
     }
+    let has_stores = !stores.is_empty();
     let stores: Vec<Arc<Store>> = stores.into_iter().map(Arc::new).collect();
+    let stores = StoredValue::new(stores);
 
     // What the filters can offer: only what's really here.
     let cond_options: Vec<Token> = COND_LABELS.iter().filter(|(k, _)| cards.iter().any(|c| vault_search::cond_class(&c.variant) == *k || (*k == "gr" && !c.grade.is_empty()))).map(|(k, _)| Token::Cond((*k).to_string())).collect();
@@ -272,8 +276,6 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
     let max_price = move || { let p = pmax.get(); (p < 100).then(|| price_at(p, price_lo, price_hi)) };
     let has_url_filters = !applied.get_untracked().is_empty() || pmin.get_untracked() > 0 || pmax.get_untracked() < 100;
     let all = StoredValue::new(cards);
-    let handles: Vec<String> = binders.iter().map(|b| b.handle.clone()).collect();
-    let handles = StoredValue::new(handles);
 
     // The search box in the page header drives the finder, so there is only ever one box to type in.
     if let Some(input) = input.clone() {
@@ -309,9 +311,8 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
             i.set_value(&words);
         }
         q.set(words);
-        if let Some(h) = wanted {
-            binder.set(handles.with_value(|hs| hs.iter().position(|x| *x == h)).map(|i| i as u16));
-        }
+        // A new sentence replaces the last reading: one that names no binder takes off a binder an earlier one put on.
+        binder.set(wanted.and_then(|h| binders.with_value(|bs| bs.iter().position(|b| b.handle == h))).map(|i| i as u16));
         shown.set(STEP);
     });
     }
@@ -324,14 +325,15 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
         f.max_price = f.max_price.or(max_price());
         applied.with(|t| f.apply_tokens(t));
         let s = sort.get();
-        let r: Found = all.with_value(|c| search(c, &f, s));
+        // With the stores, so typing a store's name finds its cards (and only a word no card has does that).
+        let r: Found = stores.with_value(|ss| all.with_value(|c| search_market(c, ss, &f, s)));
         (Arc::new(r.hits), r.typo)
     });
 
     if !embedded {
     Effect::new(move |_| {
         let (qv, s, b) = (q.get(), sort.get(), binder.get());
-        let h = b.and_then(|i| handles.with_value(|hs| hs.get(i as usize).cloned()));
+        let h = b.and_then(|i| binders.with_value(|bs| bs.get(usize::from(i)).map(|x| x.handle.clone())));
         let st = sold_by.get().and_then(|i| if i == 0 { Some("vault".to_string()) } else { store_keys.with_value(|k| k.get(usize::from(i) - 1).cloned()) });
         applied.with(|t| write_url(qv.trim(), s, h.as_deref(), st.as_deref(), t, min_price(), max_price()));
         if let Some(h1) = document().query_selector("main h1").ok().flatten() {
@@ -434,13 +436,26 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
     };
 
     // "Sold by": everyone, the vault, then each store (most cards first, as the file has them), each with its count.
-    // A press shows only that seller's cards; pressing it again, or All, shows everyone's.
-    let has_stores = !stores.is_empty();
+    // A press shows only that seller's cards; pressing it again, or All, shows everyone's. All is lit only when nothing
+    // narrows whose cards these are, so a binder turns it off too, and pressing All takes the binder off as well.
     let sold_chip = move |pick: Option<u16>, name: String, pic: Option<String>, n: usize| {
         let letter = initial(&name);
+        let lit = move || sold_by.get() == pick && (pick.is_some() || binder.get().is_none());
         view! {
-            <button type="button" class="fd-b" class:on=move || sold_by.get() == pick aria-pressed=move || (sold_by.get() == pick).to_string()
-                on:click=move |_| { sold_by.update(|c| *c = if *c == pick { None } else { pick }); shown.set(STEP); }>
+            <button type="button" class="fd-b" class:on=lit aria-pressed=move || lit().to_string()
+                on:click=move |_| {
+                    if pick.is_none() {
+                        sold_by.set(None);
+                        binder.set(None);
+                    } else {
+                        sold_by.update(|c| *c = if *c == pick { None } else { pick });
+                        // A binder holds only the vault's cards, so with a store picked it would leave nothing to show.
+                        if pick != Some(0) && sold_by.get_untracked() == pick {
+                            binder.set(None);
+                        }
+                    }
+                    shown.set(STEP);
+                }>
                 <span class="fd-b-pic">{match pic {
                     Some(p) if !p.is_empty() => view! { <img src=p loading="lazy" decoding="async" alt=""/> }.into_any(),
                     Some(_) => view! { <span class="fd-b-l" aria-hidden="true">{letter}</span> }.into_any(),
@@ -451,12 +466,38 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
             </button>
         }
     };
-    let seller_chips = has_stores.then(|| {
-        let mut chips = vec![sold_chip(None, "All".into(), None, total_listed).into_any(), sold_chip(Some(0), brand.to_string(), Some(LOGO.into()), vault_listed).into_any()];
-        chips.extend(stores.iter().enumerate().filter(|(_, s)| s.count > 0).map(|(i, s)| sold_chip(Some(i as u16 + 1), s.title.clone(), Some(s.img.clone()), s.count as usize).into_any()));
-        chips
+    // A binder (from an old ?binder= link, or "Read my sentence") shows only the vault's cards in it. While one is on,
+    // this button names it, lit, and pressing it (its ✕) takes the binder off.
+    let binder_chip = move || {
+        let (title, img) = binders.with_value(|bs| binder.get().and_then(|b| bs.get(usize::from(b))).map(|b| (b.title.clone(), b.img.clone())))?;
+        let (letter, aria) = (initial(&title), format!("Binder: {title}. Press to show every card again"));
+        Some(view! {
+            <button type="button" class="fd-b fd-b-binder on" aria-label=aria title="Take the binder off" on:click=move |_| { binder.set(None); shown.set(STEP); }>
+                <span class="fd-b-pic">{if img.is_empty() {
+                    view! { <span class="fd-b-l" aria-hidden="true">{letter}</span> }.into_any()
+                } else {
+                    view! { <img src=img loading="lazy" decoding="async" alt=""/> }.into_any()
+                }}</span>
+                <span class="fd-b-t">{title}</span>
+                <small aria-hidden="true">"✕"</small>
+            </button>
+        })
+    };
+    // The row: All, the binder while one is on, the vault, then the stores. With no stores at all it is there only
+    // while a binder is on, to show it.
+    let sold_row = (!embedded).then(|| {
+        let mut chips = vec![];
+        if has_stores {
+            chips.push(sold_chip(None, "All".into(), None, total_listed).into_any());
+        }
+        chips.push(binder_chip.into_any());
+        if has_stores {
+            chips.push(sold_chip(Some(0), brand.to_string(), Some(LOGO.into()), vault_listed).into_any());
+            stores.with_value(|ss| chips.extend(ss.iter().enumerate().filter(|(_, s)| s.count > 0).map(|(i, s)| sold_chip(Some(i as u16 + 1), s.title.clone(), Some(s.img.clone()), s.count as usize).into_any())));
+        }
+        let label = if has_stores { "Sold by" } else { "Binder" };
+        view! { <div class="fd-sold" hidden=move || !has_stores && binder.get().is_none()><span class="fd-flabel">{label}</span><div class="fd-binders" role="group" aria-label=label>{chips}</div></div> }
     });
-    let stores = StoredValue::new(stores);
 
     let chips = move |options: Vec<Token>| {
         options
@@ -472,7 +513,7 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
 
     view! {
         <div class="fd-tools">
-            {(!embedded && has_stores).then(|| view! { <div class="fd-sold"><span class="fd-flabel">"Sold by"</span><div class="fd-binders" role="group" aria-label="Sold by">{seller_chips}</div></div> })}
+            {sold_row}
             <form class="fd-adv" on:submit=move |e: leptos::ev::SubmitEvent| { e.prevent_default(); confirm(); }>
                 <label class="fd-adv-h" for=adv_id>"Advanced search"<small>"Combine anything, like Near Mint, Holofoil, Pikachu, Mewtwo"</small></label>
                 <div class="fd-bar">
