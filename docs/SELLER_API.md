@@ -86,6 +86,9 @@ The same card can be listed more than once (say a Near Mint and a Lightly Played
 | `POST /me/binders/{id}/edit` | `{ title?, description?, visibility? }` (`Public`, `Unlisted`, `Private`) |
 | `POST /me/binders/{id}/order` | `{ ids }`: the order of cards inside the binder |
 | `POST /me/binders/{id}/cover`, `/rename`, `/delete` | As before |
+| `GET /me/featured` | What the store shows on the Stores page: `binders` (those that can show, each with `on`), `cards` (highlighted, in order), `saved`, `max` (12) |
+| `GET /me/featured/choices?q=` | The seller's cards on sale now, to highlight |
+| `POST /me/featured` | `{ binders, cards }`: binder and card numbers, at most 12 of each; only the seller's own count. An empty choice shows nothing but the store's name. (Full admins: the same at `/admin/featured` for the vault, binders by handle, cards by product id) |
 | `GET /me/orders?tab=selling\|questions\|sales\|buying` | Orders page |
 | `POST /me/orders/reservations/{id}` | Seller: `{ status: "Confirmed" \| "Paid" \| "Declined", paid_via }`. Buyer: `{ status: "Cancelled" }`. `Paid` creates the sale, lowers stock |
 | `POST /me/orders/offers/{id}` | Seller: `{ status: "Accepted" \| "Declined" \| "Countered", counter }`. Buyer: `{ status: "accept" \| "withdraw" }` on a counter |

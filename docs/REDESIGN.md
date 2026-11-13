@@ -280,6 +280,22 @@ As of 12 November 2026, behind the new-look switch:
   `S`/`M` lines; `/cards.tsv` is unchanged for Ask the Vault and the AI tools). By default one store card follows
   every three of the vault's; each tile says whose card it is; "Sold by" buttons filter by store; a store's name finds
   its cards only when no card has that word; an old binder link shows a removable chip.
+- **Stores shows each store's binders, then the cards its owner highlights** (the owner: "In the stores tab, the binders
+  should be the one displayed not the cards ... Sellers can feature binders and cards they can highlight from their
+  store"). A store's card on /stores has a row of binder tiles (each opens its binder's page, as /collections/pikachu-set
+  does) and a "Highlights" row of cards (each opens in the card window); both slide sideways, with arrows on a computer
+  (fb-shell.js, `.slide-wrap`). Its owner chooses right there: "Choose what shows" (binder-tools.js `featureChooser`;
+  a seller on their own store, `data-owner-only`; a full admin on the vault's). Binders are tapped on or off and keep
+  the store's own order; up to 12 cards, in the order picked. Saved in `store_features` (sellers::featured /
+  set_featured; store 0 is the vault): GET/POST /me/featured and /admin/featured, picker search at .../choices?q=.
+  Nothing chosen yet: every public binder with cards for sale, no cards. Only public binders with cards for sale and
+  cards on sale right now (not reserved) ever show. Today's look keeps its first cards for sale.
+- **The card window** has no "Full page" button (the owner: "redundant"); the card's own page stays for shared links.
+  Its picture box is the shine's frame (`position: relative; top: auto` in section 32): before, the shine (holo.js) was
+  placed against the whole window, about 70px too high, and on wide screens the box sat 68px below the details.
+- **The Vault's filters:** Condition is pick-one (chips, Advanced search, suggestions, old `?cond=` links keep the first;
+  vault-search `add_token` / `toggle_token` / `one_condition`). Finish and Language take several, each with an
+  info note: several picks in one group show cards with any of them; the groups still combine (all must match).
 - **Call and message alerts with the site closed** (Web Push): see docs/SELLER_API.md "Push". The call screen says
   Calling..., Ringing... (only once a page or phone really rings), Connecting..., then the length; the mute button
   shows the microphone as it is.
