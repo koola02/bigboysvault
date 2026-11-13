@@ -109,7 +109,9 @@ pub struct Filter {
     pub store: Option<u16>,
     /// Set by words like "cheapest". The sort menu is used when this is None.
     pub sort: Option<Sort>,
-    /// Pick any number in each list. A card has to fit one choice from every list that has any: Near Mint or Lightly Played, and Holofoil, and Pikachu or Mewtwo.
+    /// A card has to fit one choice from every list that has any: Near Mint, and Holofoil or Reverse Holo, and Pikachu or Mewtwo.
+    /// The finder lets a shopper pick only one condition at a time (`add_token`, `toggle_token`), since a card has just one;
+    /// Ask the Vault may still name two ("near mint or lightly played"), and then either one fits.
     pub conds: Vec<String>,
     pub finishes: Vec<String>,
     pub langs: Vec<String>,
@@ -139,6 +141,38 @@ impl Token {
             Token::Finish(f) | Token::Name(f) => f.clone(),
         }
     }
+
+    pub fn is_cond(&self) -> bool {
+        matches!(self, Token::Cond(_))
+    }
+}
+
+/// `t` added in the advanced search (typed, or a suggestion taken): never takes anything off, except that a card has
+/// only one condition, so a condition replaces the one picked before. Finishes, languages and names add up.
+pub fn add_token(list: &mut Vec<Token>, t: Token) {
+    if list.contains(&t) {
+        return;
+    }
+    if t.is_cond() {
+        list.retain(|x| !x.is_cond());
+    }
+    list.push(t);
+}
+
+/// A filter button pressed: `t` comes off when it was on, and goes on (as `add_token`) when it wasn't. So pressing a
+/// condition picks it instead of the last one, and pressing the picked one again leaves no condition (every condition).
+pub fn toggle_token(list: &mut Vec<Token>, t: &Token) {
+    if list.contains(t) {
+        list.retain(|x| x != t);
+    } else {
+        add_token(list, t.clone());
+    }
+}
+
+/// At most one condition, the first: an old link asking for `?cond=nm,lp` keeps Near Mint. Everything else stays.
+pub fn one_condition(list: Vec<Token>) -> Vec<Token> {
+    let mut seen = false;
+    list.into_iter().filter(|t| !t.is_cond() || !std::mem::replace(&mut seen, true)).collect()
 }
 
 impl Filter {
@@ -808,6 +842,52 @@ mod tests {
         assert_eq!(read_tokens("flying pikachu", &|n| n == "flying pikachu"), vec![Token::Name("Flying Pikachu".into())]);
         assert_eq!(read_tokens("flying pikachu", &|_| false), vec![Token::Name("Flying".into()), Token::Name("Pikachu".into())]);
         assert_eq!(read_tokens("Reverse Holo, NM", &|_| false), vec![Token::Finish("Reverse Holo".into()), Token::Cond("nm".into())]);
+    }
+
+    #[test]
+    fn one_condition_at_a_time_but_any_number_of_finishes_and_languages() {
+        let (nm, lp) = (Token::Cond("nm".into()), Token::Cond("lp".into()));
+        let (holo, rev, ja, en) = (Token::Finish("Holofoil".into()), Token::Finish("Reverse Holo".into()), Token::Lang("ja".into()), Token::Lang("en".into()));
+        // The filter buttons.
+        let mut on = vec![];
+        toggle_token(&mut on, &nm);
+        toggle_token(&mut on, &holo);
+        toggle_token(&mut on, &lp);
+        assert_eq!(on, vec![holo.clone(), lp.clone()], "a second condition replaces the first");
+        toggle_token(&mut on, &lp);
+        assert_eq!(on, vec![holo.clone()], "pressing the picked condition again takes it off: every condition");
+        for t in [&rev, &ja, &en, &nm] {
+            toggle_token(&mut on, t);
+        }
+        assert_eq!(on, vec![holo.clone(), rev.clone(), ja.clone(), en.clone(), nm.clone()], "finishes and languages add up");
+        toggle_token(&mut on, &rev);
+        assert_eq!(on, vec![holo.clone(), ja.clone(), en.clone(), nm.clone()], "and come off one by one");
+        // The advanced search: adding never takes off, but a condition still replaces the one there.
+        let mut draft = vec![nm.clone(), holo.clone()];
+        add_token(&mut draft, nm.clone());
+        assert_eq!(draft, vec![nm.clone(), holo.clone()], "adding what is there changes nothing");
+        add_token(&mut draft, lp.clone());
+        assert_eq!(draft, vec![holo.clone(), lp.clone()]);
+        let mut typed = vec![];
+        for t in read_tokens("near mint, lightly played, holo, reverse holo", &|_| false) {
+            add_token(&mut typed, t);
+        }
+        assert_eq!(typed, vec![lp.clone(), holo.clone(), rev.clone()], "typing two conditions keeps the later one");
+        // An old link with two conditions keeps the first, and everything else.
+        assert_eq!(one_condition(vec![nm.clone(), lp.clone(), holo.clone(), Token::Cond("gr".into()), ja.clone()]), vec![nm.clone(), holo.clone(), ja.clone()]);
+        assert_eq!(one_condition(vec![holo.clone(), ja.clone()]), vec![holo.clone(), ja.clone()]);
+        // What those picks find: one condition, and any of the finishes, and any of the languages.
+        let cards = vec![
+            tiny("Pikachu - 1/9", "Near Mint", "Holofoil", "en", 100.0),
+            tiny("Pikachu - 2/9", "Near Mint", "Reverse Holo", "ja", 200.0),
+            tiny("Pikachu - 3/9", "Lightly Played", "Holofoil", "en", 300.0),
+            tiny("Pikachu - 4/9", "Near Mint", "Normal", "en", 400.0),
+            tiny("Pikachu - 5/9", "Near Mint", "Holofoil", "zh", 500.0),
+        ];
+        let find = |picked: &[Token]| { let mut f = Filter::default(); f.apply_tokens(picked); let mut v: Vec<&str> = search(&cards, &f, Sort::Newest).hits.iter().map(|i| &*cards[*i].title).collect(); v.sort(); v };
+        assert_eq!(find(&[nm.clone(), holo.clone(), rev.clone()]), vec!["Pikachu - 1/9", "Pikachu - 2/9", "Pikachu - 5/9"], "Holofoil or Reverse Holo");
+        assert_eq!(find(&[nm.clone(), holo.clone(), rev.clone(), en.clone(), ja.clone()]), vec!["Pikachu - 1/9", "Pikachu - 2/9"], "and English or Japanese");
+        assert_eq!(find(&[lp.clone(), holo.clone(), rev.clone()]), vec!["Pikachu - 3/9"], "and the one condition");
     }
 
     #[test]

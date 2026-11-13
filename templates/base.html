@@ -38,7 +38,7 @@
 {% endif %}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@50..150,100..900&display=swap">
-{% if crate::look::is_new() %}<link rel="stylesheet" href="/static/fb.css?v=18">
+{% if crate::look::is_new() %}<link rel="stylesheet" href="/static/fb.css?v=19">
 {% else %}<link rel="stylesheet" href="/static/app.css?v=53">
 <link rel="stylesheet" href="/static/modern.css?v=27">
 <link rel="stylesheet" href="/static/vault.css?v=65">
@@ -76,7 +76,7 @@
 <!-- Back after a filter or sort loads that page fresh, so the cart, the bell and the card window keep working. -->
 <meta name="htmx-config" content='{"historyCacheSize":0,"refreshOnHistoryMiss":true}'>
 <!-- The card finder's files: change this one number after build-wasm.sh. -->
-<meta name="finder-v" content="15">
+<meta name="finder-v" content="16">
 <script src="/static/htmx.min.js?v=4" defer></script>
 <script src="/static/suggest.js?v=3" defer></script>
 {% if !crate::look::is_new() %}<script src="/static/card-float.js?v=24" defer></script>{% endif %}

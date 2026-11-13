@@ -6,7 +6,7 @@
 use leptos::mount::mount_to;
 use leptos::prelude::*;
 use std::sync::Arc;
-use vault_search::{norm, parse, parse_market, peso, pos_for, price_at, read_tokens, read_words, search_market, title_and_set, Binder, Card, Found, Sort, Store, Token, COND_LABELS, FINISH_LABELS, LANG_LABELS};
+use vault_search::{add_token, norm, one_condition, parse, parse_market, peso, pos_for, price_at, read_tokens, read_words, search_market, title_and_set, toggle_token, Binder, Card, Found, Sort, Store, Token, COND_LABELS, FINISH_LABELS, LANG_LABELS};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -101,7 +101,7 @@ fn write_url(q: &str, sort: Sort, binder: Option<&str>, store: Option<&str>, tok
     }
 }
 
-/// What a shared link asked for.
+/// What a shared link asked for. A card has one condition, so an old link asking for two keeps the first.
 fn tokens_from_url() -> Vec<Token> {
     let list = |k: &str| url_param(k).map(|v| v.split(',').map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect::<Vec<_>>()).unwrap_or_default();
     let mut out = vec![];
@@ -109,7 +109,7 @@ fn tokens_from_url() -> Vec<Token> {
     out.extend(list("fin").into_iter().filter(|f| FINISH_LABELS.contains(&f.as_str())).map(Token::Finish));
     out.extend(list("lang").into_iter().filter(|l| LANG_LABELS.iter().any(|x| x.0 == l)).map(Token::Lang));
     out.extend(list("names").into_iter().map(Token::Name));
-    out
+    one_condition(out)
 }
 
 /// The Pokémon's name from a card's title: "Pikachu V - SWSH285/307" becomes "Pikachu V", and "Dratini (148)" becomes "Dratini".
@@ -353,11 +353,13 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
     });
     }
 
+    // A filter button: on or off, as the cards are filtered now. A condition goes on instead of the one there was
+    // (a card has one condition); finishes and languages add up (`toggle_token`).
     let toggle = move |t: Token| {
         let on = applied.with_untracked(|a| a.contains(&t));
-        let change = |list: &mut Vec<Token>| { list.retain(|x| *x != t); if !on { list.push(t.clone()); } };
-        applied.update(change);
-        draft.update(change);
+        applied.update(|a| toggle_token(a, &t));
+        // The advanced search bar follows the button, even when it held words not confirmed yet.
+        draft.update(|d| if on { d.retain(|x| *x != t) } else { add_token(d, t.clone()) });
         shown.set(STEP);
     };
     let is_name = move |n: &str| known_norm.with_value(|k| k.iter().any(|x| x == n));
@@ -365,7 +367,8 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
         let text = typed.get_untracked();
         if text.trim().is_empty() { return; }
         let found = read_tokens(&text, &is_name);
-        draft.update(|d| for t in found { if !d.contains(&t) { d.push(t); } });
+        // "near mint, lightly played" keeps Lightly Played: each condition replaces the one before it.
+        draft.update(|d| for t in found { add_token(d, t); });
         typed.set(String::new());
         picked_at.set(None);
     };
@@ -376,17 +379,24 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
     };
     let waiting = move || !typed.get().trim().is_empty() || draft.with(|d| applied.with(|a| d.len() != a.len() || d.iter().any(|t| !a.contains(t))));
 
-    // Suggestions while typing: conditions, finishes and languages first, then Pokémon.
+    // Suggestions while typing: conditions, finishes and languages first, then Pokémon. A condition says which one it
+    // replaces, when one is picked already.
     let suggestions = Memo::new(move |_| {
         let text = typed.get();
         let want = norm(text.rsplit(',').next().unwrap_or(&text));
         if want.is_empty() { return vec![]; }
         let mut out: Vec<(Token, String)> = vec![];
         let fixed = COND_LABELS.iter().map(|(k, _)| Token::Cond((*k).to_string())).chain(FINISH_LABELS.iter().map(|f| Token::Finish((*f).to_string()))).chain(LANG_LABELS.iter().map(|(k, _)| Token::Lang((*k).to_string())));
+        let picked_cond = draft.with(|d| d.iter().find(|x| x.is_cond()).map(Token::label));
         for t in fixed {
             if norm(&t.label()).contains(&want) && !draft.with(|d| d.contains(&t)) {
-                let hint = match t { Token::Cond(_) => "Condition", Token::Finish(_) => "Finish", _ => "Language" };
-                out.push((t, hint.to_string()));
+                let hint = match (&t, &picked_cond) {
+                    (Token::Cond(_), Some(was)) => format!("Replaces {was}"),
+                    (Token::Cond(_), None) => "Condition".into(),
+                    (Token::Finish(_), _) => "Finish".into(),
+                    _ => "Language".into(),
+                };
+                out.push((t, hint));
             }
         }
         known.with_value(|list| {
@@ -406,7 +416,7 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
         let keep = typed.with_untracked(|x| x.rsplit_once(',').map(|(a, _)| a.to_string()).unwrap_or_default());
         typed.set(keep);
         add_typed();
-        draft.update(|d| if !d.contains(&t) { d.push(t.clone()); });
+        draft.update(|d| add_token(d, t.clone()));
         typed.set(String::new());
         picked_at.set(None);
     };
@@ -511,6 +521,65 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
     };
     let (cond_chips, finish_chips, lang_chips) = (chips(cond_options), chips(finish_options), chips(lang_options));
 
+    // The ⓘ beside Finish and Language: those take several picks, and a card shows when it has any one of them (and fits
+    // the other filters too). The note shows while a mouse is over the ⓘ or the note, while the keyboard is on the ⓘ, and
+    // after a tap or click on it until the next tap anywhere else; Escape hides it. Shown or not, it is the ⓘ's
+    // description (aria-describedby), and only the `hidden` attribute hides it, so it never shows unasked in any look.
+    let tip_open = RwSignal::new(None::<&'static str>);
+    let tip_hover = RwSignal::new(None::<&'static str>);
+    let tip_focus = RwSignal::new(None::<&'static str>);
+    let tip_hide = move || {
+        tip_open.set(None);
+        tip_hover.set(None);
+        tip_focus.set(None);
+    };
+    let away = window_event_listener(leptos::ev::pointerdown, move |e| {
+        if tip_open.get_untracked().is_none() {
+            return;
+        }
+        let inside = e.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()).and_then(|el| el.closest(".fd-tipw.on").ok().flatten()).is_some();
+        if !inside {
+            tip_open.set(None);
+        }
+    });
+    let esc = window_event_listener(leptos::ev::keydown, move |e| {
+        if e.key() == "Escape" && [tip_open, tip_hover, tip_focus].iter().any(|s| s.get_untracked().is_some()) {
+            tip_hide();
+        }
+    });
+    on_cleanup(move || {
+        away.remove();
+        esc.remove();
+    });
+    let tip = move |key: &'static str, group: &'static str, text: &'static str| {
+        let id = format!("fdTip{key}{}", if embedded { "B" } else { "" });
+        let shown = move || [tip_open.get(), tip_hover.get(), tip_focus.get()].contains(&Some(key));
+        let mouse = |e: &web_sys::PointerEvent| e.pointer_type() != "touch";
+        view! {
+            <span class="fd-tipw" class:on=shown
+                on:pointerenter=move |e| if mouse(&e) { tip_hover.set(Some(key)) }
+                on:pointerleave=move |e| if mouse(&e) { tip_hover.set(None) }>
+                <button type="button" class="fd-tip" aria-label=format!("About picking {group}") aria-describedby=id.clone()
+                    on:click=move |_| tip_open.update(|o| *o = if *o == Some(key) { None } else { Some(key) })
+                    on:focus=move |e| {
+                        // Only a keyboard's focus shows it: a tap focuses the button too, and the tap itself opens it.
+                        let keys = e.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()).is_some_and(|el| el.matches(":focus-visible").unwrap_or(false));
+                        if keys { tip_focus.set(Some(key)) }
+                    }
+                    on:blur=move |_| { tip_focus.set(None); tip_open.update(|o| if *o == Some(key) { *o = None }); }
+                    on:keydown=move |e: web_sys::KeyboardEvent| if e.key() == "Escape" && shown() {
+                        // Only the note goes: a binder's window around the finder stays open.
+                        e.stop_propagation();
+                        e.prevent_default();
+                        tip_hide();
+                    }>
+                    <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true"><circle cx="10" cy="10" r="8.25" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="10" cy="6.4" r="1.15" fill="currentColor"/><path d="M10 9.2v5.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+                </button>
+                <span class="fd-tip-t" role="tooltip" id=id hidden=move || !shown() on:click=move |_| tip_open.set(None)>{text}</span>
+            </span>
+        }
+    };
+
     view! {
         <div class="fd-tools">
             {sold_row}
@@ -566,9 +635,10 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
                     <Show when=move || { filter_count() > 0 }><span class="fd-f-n">{filter_count}</span></Show>
                 </summary>
                 <div class="fd-f-rows">
-                    <div class="fd-frow"><span class="fd-flabel">"Condition"</span><div class="fd-opts" role="group" aria-label="Condition">{cond_chips}</div></div>
-                    <div class="fd-frow"><span class="fd-flabel">"Finish"</span><div class="fd-opts" role="group" aria-label="Finish">{finish_chips}</div></div>
-                    <div class="fd-frow"><span class="fd-flabel">"Language"</span><div class="fd-opts" role="group" aria-label="Language">{lang_chips}</div></div>
+                    // One condition at a time; the group's name says so to a screen reader, and only one chip is ever pressed.
+                    <div class="fd-frow"><span class="fd-flabel">"Condition"</span><div class="fd-opts" role="group" aria-label="Condition, pick one">{cond_chips}</div></div>
+                    <div class="fd-frow"><div class="fd-fhead"><span class="fd-flabel">"Finish"</span>{tip("Fin", "finishes", "Pick as many as you like. Cards with any one of these finishes show up.")}</div><div class="fd-opts" role="group" aria-label="Finish, pick one or more">{finish_chips}</div></div>
+                    <div class="fd-frow"><div class="fd-fhead"><span class="fd-flabel">"Language"</span>{tip("Lang", "languages", "Pick as many as you like. Cards in any one of these languages show up.")}</div><div class="fd-opts" role="group" aria-label="Language, pick one or more">{lang_chips}</div></div>
                     <div class="fd-frow"><span class="fd-flabel">"Price"</span>
                         <div class="fd-price">
                             <output class="fd-p-v">{move || peso(price_at(pmin.get(), price_lo, price_hi))}</output>
