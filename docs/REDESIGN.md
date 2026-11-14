@@ -313,9 +313,16 @@ As of 12 November 2026, behind the new-look switch:
   need the other person to have the site open: a phone whose browser is closed can't ring until push notifications
   are sent from the server (subscriptions are already saved; sending needs VAPID keys).
 - **The new look is on for everyone** (the owner switched `site_look` to `new` on 12 November 2026).
-- **Next:** stories viewer and trainers' stories, follow, share to feed, the feed editor (today's home page editor,
-  `/admin/page`, is still there in today's look, but no longer in the Manager's sidebar); My trainer (`/me`); push
-  notifications so a call rings a phone whose browser is closed; then the switch-over.
+- **One look (14 November 2026).** My trainer (`/me`) moved into the Manager's frame, and the switch-over (phase 7)
+  was done at the owner's word: the older look is deleted (`app.css`, `modern.css`, `vault.css`, the old header,
+  the binder-ring home page, its editor and the binder window), with `look::is_new()`, the `bbv_look` cookie, the
+  `site_look` setting's switch and the two-look tests. Sections 6 and 7 below describe how it was built; what they
+  say about two looks is history. The site's name moved to the Manager's Showcase page, beside the welcome line.
+  The Overview counts visitors (`src/visits.rs`), and `tests/browser/smoke.mjs` checks a buyer's path on a phone
+  and a computer before every release (`docs/HANDOFF.md` §6).
+- **Not built:** stories viewer and trainers' stories, follow, share to feed. A review on 14 November 2026 advised
+  holding new features until real buyers and sellers are using what is here, and watching the Overview's visitor
+  and order counts; what comes next is the owner's to decide.
 
 Owner's rules added along the way: editing happens where the thing is shown and must feel natural; Ask the Vault
 opens as a chat, not a page; pages are 60% wider (phones unchanged, tablets fill their width); the card section is
