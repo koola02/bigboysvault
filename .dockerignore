@@ -9,3 +9,7 @@ uploads
 graphify-out
 .git
 **/graphify-out
+backups
+tests
+**/node_modules
+.claude

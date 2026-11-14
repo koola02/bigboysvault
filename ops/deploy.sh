@@ -21,3 +21,10 @@ log "deploying $FLY_APP"
 fly deploy -a "$FLY_APP" --remote-only --strategy immediate
 sleep 10
 if curl -sS --max-time 20 "$SITE/healthz" | grep -q '"ok":true'; then log "live: $(fly releases -a "$FLY_APP" | sed -n 2p)"; else alert "Deploy of $FLY_APP finished but /healthz isn't answering"; exit 1; fi
+# The phone-and-computer check (docs/HANDOFF.md §6), where this machine has Node, Chrome and the check's packages.
+# It writes nothing on the live site.
+if command -v node >/dev/null && [ -d "$SRC/tests/browser/node_modules" ]; then
+  if node "$SRC/tests/browser/smoke.mjs" "$SITE" | tail -4; then log "the phone-and-computer check passed"; else alert "Deploy of $FLY_APP is live, but the phone-and-computer check failed: run node tests/browser/smoke.mjs $SITE"; exit 1; fi
+else
+  log "the phone-and-computer check wasn't run here (no Node, or tests/browser isn't installed): run it where the commit was made"
+fi

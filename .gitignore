@@ -8,3 +8,5 @@ backups/
 *.log
 ops/env
 __pycache__/
+node_modules/
+jar.txt
