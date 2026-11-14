@@ -71,7 +71,7 @@
   {% if cards.is_empty() %}
   <div class="me-empty st-empty" id="listEmpty">{% if total == 0 %}<b>Your store is empty.</b><span>Tap <b>+ Add cards</b> to list your first card. Prices are suggested from today's market.</span>{% else %}<b>No cards match.</b><span>Try another word, or clear the filters.</span>{% endif %}</div>
   {% endif %}
-  {% if crate::look::is_new() %}<div class="mgr-scroll"><div class="mgr-thead" data-sort="{{ f.sort }}"><span></span><span>On / off</span><span></span><span data-col="card" data-min="170" data-up="A to Z" data-down="Z to A">Card</span><span data-col="status" data-name="Delivery" data-min="104" data-up="active first" data-down="sold first">Delivery</span><span class="num" data-col="price" data-min="130" data-first="desc" data-up="lowest first" data-down="highest first">Price</span><span data-col="stock" data-min="112" data-first="desc" data-up="lowest first" data-down="highest first">Stock</span><span data-col="kind" data-name="What it is" data-min="216" data-up="for sale first" data-down="wishlist first">What it is</span><span data-col="cond" data-name="Condition" data-min="124" data-up="best first" data-down="worst first">Condition</span><span data-col="binder" data-min="120" data-up="A to Z" data-down="Z to A">Binder</span><span data-col="note" data-name="Note" data-min="130" data-up="A to Z" data-down="Z to A">Note for buyers</span></div>{% endif %}
+  <div class="mgr-scroll"><div class="mgr-thead" data-sort="{{ f.sort }}"><span></span><span>On / off</span><span></span><span data-col="card" data-min="170" data-up="A to Z" data-down="Z to A">Card</span><span data-col="status" data-name="Delivery" data-min="104" data-up="active first" data-down="sold first">Delivery</span><span class="num" data-col="price" data-min="130" data-first="desc" data-up="lowest first" data-down="highest first">Price</span><span data-col="stock" data-min="112" data-first="desc" data-up="lowest first" data-down="highest first">Stock</span><span data-col="kind" data-name="What it is" data-min="216" data-up="for sale first" data-down="wishlist first">What it is</span><span data-col="cond" data-name="Condition" data-min="124" data-up="best first" data-down="worst first">Condition</span><span data-col="binder" data-min="120" data-up="A to Z" data-down="Z to A">Binder</span><span data-col="note" data-name="Note" data-min="130" data-up="A to Z" data-down="Z to A">Note for buyers</span></div>
   <ul class="rows mc-grid ls-grid" id="rows">
     {% for c in cards %}
     <li class="crow ctile ls-tile" data-id="{{ c.id }}" data-status="{{ c.status }}" data-market="{{ c.value }}" data-own="{{ c.value_own }}" data-cond="{{ c.cond }}" data-qty="{{ c.qty }}" data-c="{{ c.cond_class() }}"{% if c.own_photo() %} data-own-photo{% endif %}{% if let Some(b) = c.binder_id %} data-binder="{{ b }}"{% endif %}>
@@ -106,8 +106,8 @@
     </li>
     {% endfor %}
   </ul>
-  {% if crate::look::is_new() %}</div>
-  <script>addEventListener("load", function () { if (location.hash === "#add") { var b = document.getElementById("addOpen"); if (b) b.click(); } });</script>{% endif %}
+  </div>
+  <script>addEventListener("load", function () { if (location.hash === "#add") { var b = document.getElementById("addOpen"); if (b) b.click(); } });</script>
 </section>
 <div class="selbar" id="selbar" hidden role="toolbar" aria-label="Bulk actions">
   <span class="selbar-n" id="selCount">0 selected</span>

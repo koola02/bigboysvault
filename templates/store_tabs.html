@@ -1,4 +1,4 @@
-{% if crate::look::is_new() %}
+
 {% if p.m.seller %}
 <nav class="mgr-rail" aria-label="Store Manager">
   <a class="mgr-rail-h" href="/me/store">{% if p.m.has_avatar() %}<img src="{{ p.m.avatar }}" width="36" height="36" alt="">{% else %}<span class="av">{{ p.m.initial() }}</span>{% endif %}<span><b>Store Manager</b><small>{{ p.m.store_title() }}</small></span></a>
@@ -26,47 +26,4 @@
   <div class="mgr-bar-r"><a class="btn ghost sm" href="/me/orders?tab=buying"{% if p.tab == "orders" %} aria-current="page"{% endif %}>My orders</a><a class="btn ghost sm" href="/me/notifications"{% if p.tab == "notifications" %} aria-current="page"{% endif %}>Notifications</a><a class="btn ghost sm" href="/me"{% if p.tab == "me" %} aria-current="page"{% endif %}>My trainer</a></div>
 </header>
 {% endif %}
-{% else %}
-{% if p.m.seller %}
-<div class="st-head">
-  <div>
-    <p class="eyebrow">My store</p>
-    <h1 class="h1 a-title">{{ p.m.store_title() }}</h1>
-  </div>
-  <div class="st-head-acts">
-    <a class="linkbtn" href="/me">← My trainer</a>
-    <a class="btn ghost" href="{{ p.m.store_url() }}" target="_blank" rel="noopener">See my store ↗</a>
-  </div>
-</div>
-{% if !p.m.profile_ok %}<p class="me-status">⏳ The vault owner still has to approve your page. Until then only you can see your store.</p>{% endif %}
-{% if p.m.on_vacation() %}<p class="me-status">🏝️ Your store is on vacation: nobody can reserve or make offers. Change it in <a href="/me/settings">Store settings</a>.</p>{% endif %}
-<div class="adm-top">
-  <nav class="seg" aria-label="Store sections">
-    <a href="/me/store" class="{% if p.tab == "dash" %}on{% endif %}">Dashboard</a>
-    <a href="/me/listings" class="{% if p.tab == "listings" %}on{% endif %}">Listings</a>
-    <a href="/me/binders" class="{% if p.tab == "binders" %}on{% endif %}">Binders</a>
-    <a href="/me/orders" class="{% if p.tab == "orders" %}on{% endif %}">Orders{% if p.todo > 0 %} <span class="seg-n">{{ p.todo }}</span>{% endif %}</a>
-    <a href="/me/notifications" class="{% if p.tab == "notifications" %}on{% endif %}">Notifications{% if p.unread > 0 %} <span class="seg-n">{{ p.unread }}</span>{% endif %}</a>
-    <a href="/me/settings" class="{% if p.tab == "settings" %}on{% endif %}">Store settings</a>
-  </nav>
-</div>
-{% else %}
-{# A member who doesn't sell: just their orders and notifications, no store. #}
-<div class="st-head">
-  <div>
-    <p class="eyebrow">My trainer</p>
-    <h1 class="h1 a-title">{% if p.tab == "notifications" %}Notifications{% else %}My orders{% endif %}</h1>
-  </div>
-  <div class="st-head-acts">
-    <a class="linkbtn" href="/me">← My trainer</a>
-  </div>
-</div>
-<div class="adm-top">
-  <nav class="seg" aria-label="My orders and notifications">
-    <a href="/me/orders?tab=buying" class="{% if p.tab == "orders" %}on{% endif %}">My orders</a>
-    <a href="/me/notifications" class="{% if p.tab == "notifications" %}on{% endif %}">Notifications{% if p.unread > 0 %} <span class="seg-n">{{ p.unread }}</span>{% endif %}</a>
-  </nav>
-</div>
-{% endif %}
-<script>{ const s = document.querySelector('.adm-top .seg'), a = s && s.querySelector('a.on'); if (a && s.scrollWidth > s.clientWidth) s.scrollLeft = a.getBoundingClientRect().left - s.getBoundingClientRect().left + s.scrollLeft - (s.clientWidth - a.offsetWidth) / 2; }</script>
-{% endif %}
+

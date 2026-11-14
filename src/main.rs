@@ -17,7 +17,7 @@ use axum::{
     routing::{get, post},
     Router,
 };
-use marcuru_rs::blocks::{self, Block};
+use marcuru_rs::blocks;
 use marcuru_rs::db::{self, Collection, Product, Query, PAGE_SIZE};
 use marcuru_rs::{market, members, suggest, visits};
 use moka::sync::Cache;
@@ -158,23 +158,6 @@ impl Chrome {
     fn og_type(&self) -> &'static str {
         if self.seo.kind.is_empty() { "website" } else { self.seo.kind }
     }
-    /// The name is drawn as a two-colour lockup: everything before the last word, then the last word ("Big Boys" + "Vault").
-    /// One-word names are drawn plain.
-    fn split(&self) -> bool {
-        self.lockup().is_some()
-    }
-    fn lockup(&self) -> Option<(String, String)> {
-        let b = self.brand.trim();
-        let i = b.rfind(char::is_whitespace)?;
-        let (l, r) = (b[..i].trim(), b[i..].trim());
-        (!l.is_empty() && !r.is_empty()).then(|| (l.to_string(), r.to_string()))
-    }
-    fn left(&self) -> String {
-        self.lockup().map(|l| l.0).unwrap_or_default()
-    }
-    fn right(&self) -> String {
-        self.lockup().map(|l| l.1).unwrap_or_default()
-    }
 }
 
 fn chrome(c: &rusqlite::Connection) -> rusqlite::Result<Chrome> {
@@ -218,12 +201,7 @@ async fn with_db<T: Send + 'static>(
     f: impl FnOnce(&rusqlite::Connection) -> rusqlite::Result<T> + Send + 'static,
 ) -> Result<T, (StatusCode, String)> {
     let path = app.db_path.clone();
-    // Pages rendered on the database thread need to know the look too (see look.rs).
-    let new_look = look::is_new();
-    tokio::task::spawn_blocking(move || {
-        look::in_thread(new_look);
-        db::open(&path).and_then(|c| f(&c))
-    })
+    tokio::task::spawn_blocking(move || db::open(&path).and_then(|c| f(&c)))
         .await
         .map_err(ise)?
         .map_err(ise)
@@ -248,8 +226,6 @@ where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = Result<String, (StatusCode, String)>>,
 {
-    // The two looks never share a kept page.
-    let key = if look::is_new() { format!("fb|{key}") } else { key };
     if let Some(hit) = app.cache.get(&key) {
         return Ok(page((*hit).clone()));
     }
@@ -266,88 +242,6 @@ where
 }
 
 // ---------- templates ----------
-/// One renderable section of the home page. Fields are a superset; each kind uses its own.
-#[derive(Default)]
-struct BlockView {
-    kind: String,
-    /// Editor only: which section this is, its saved settings (JSON) and a plain-words name.
-    id: i64,
-    visible: bool,
-    json: String,
-    label: String,
-    eyebrow: String,
-    title: String,
-    subtitle: String,
-    body: String,
-    button_label: String,
-    button_link: String,
-    img_a: String,
-    img_a_w: i64,
-    img_a_h: i64,
-    img_b: String,
-    img_b_w: i64,
-    img_b_h: i64,
-    img: String,
-    img_w: i64,
-    img_h: i64,
-    link: String,
-    spotlight: bool,
-    count: i64,
-    items: Vec<Product>,
-    binders: Vec<Collection>,
-    /// The binders shelf: each binder with the photos of its first page of cards (up to nine pockets).
-    shelf: Vec<(Collection, Vec<String>)>,
-    nbinders: usize,
-    total: i64,
-    graded: i64,
-    value: String,
-    total_fmt: String,
-    count_fmt: String,
-    phrases: Vec<String>,
-    sticker: String,
-    /// Number boxes: (key, label, value) in the owner's order; removed boxes aren't listed.
-    stats: Vec<(String, String, String)>,
-    /// Community sections: only what the owner has approved.
-    highlights: Vec<members::Highlight>,
-    insights: Option<marcuru_rs::insights::Insights>,
-    trainer_count: i64,
-    trainer_faces: Vec<members::Member>,
-    vouches: Vec<members::Vouch>,
-}
-
-#[derive(Template)]
-#[template(path = "home.html")]
-struct Home {
-    nav: Chrome,
-    blocks: Vec<BlockView>,
-    /// The owner's editor: the real home page with every part editable in place.
-    edit: bool,
-    collections: String,
-    tab: &'static str,
-}
-
-#[derive(Template)]
-#[template(path = "binder_part.html")]
-struct BinderPart {
-    title: String,
-    handle: String,
-    total: i64,
-    /// Different cards (one tile each), for counting pages of nine.
-    tiles: i64,
-    tone: u8,
-    fan: Vec<Product>,
-    items: Vec<Product>,
-    next: Option<usize>,
-}
-
-#[derive(Template)]
-#[template(path = "binder_more.html")]
-struct BinderMore {
-    handle: String,
-    items: Vec<Product>,
-    next: Option<usize>,
-}
-
 #[derive(Template)]
 #[template(path = "collection.html")]
 struct CollectionPage {
@@ -417,166 +311,6 @@ struct NotFound {
     nav: Chrome,
 }
 
-fn st(v: &Value, k: &str) -> String {
-    v[k].as_str().unwrap_or("").to_string()
-}
-fn num(v: &Value, k: &str) -> i64 {
-    v[k].as_i64().unwrap_or(0)
-}
-fn fill(s: &str, total: i64) -> String {
-    s.replace("{count}", &db::thousands(total))
-}
-/// Only same-site paths or http(s) links are allowed for buttons.
-fn safe_link(s: &str) -> String {
-    let s = s.trim();
-    if s.starts_with('/') && !s.starts_with("//") || s.starts_with("https://") || s.starts_with("http://") {
-        s.to_string()
-    } else {
-        "/all".into()
-    }
-}
-
-fn view(c: &rusqlite::Connection, b: &Block, nav: &Chrome, binders: &[Collection], total: i64, graded: i64, value: &str) -> rusqlite::Result<BlockView> {
-    let d = &b.data;
-    let mut v = BlockView { kind: b.kind.clone(), total, total_fmt: db::thousands(total), graded, value: value.into(), nbinders: binders.len(), ..Default::default() };
-    v.id = b.id;
-    v.visible = b.visible;
-    v.json = d.to_string();
-    v.label = admin::label(&b.kind).to_string();
-    match b.kind.as_str() {
-        "hero" => {
-            v.eyebrow = st(d, "eyebrow");
-            v.title = fill(&st(d, "title"), total);
-            v.subtitle = fill(&st(d, "subtitle"), total);
-            v.button_label = fill(&st(d, "button_label"), total);
-            v.button_link = safe_link(&st(d, "button_link"));
-            v.sticker = st(d, "sticker");
-            v.img_a = st(d, "img_a");
-            v.img_a_w = num(d, "img_a_w");
-            v.img_a_h = num(d, "img_a_h");
-            v.img_b = st(d, "img_b");
-            v.img_b_w = num(d, "img_b_w");
-            v.img_b_h = num(d, "img_b_h");
-            v.items = db::orbit_cards(c, 14)?;
-        }
-        "ticker" => {
-            v.phrases = st(d, "phrases").lines().map(|l| l.trim().to_string()).filter(|l| !l.is_empty()).take(24).collect();
-        }
-        "binders" => {
-            v.title = st(d, "title");
-            v.binders = binders.to_vec();
-            for b in binders {
-                let (items, _) = db::list(c, &Query { collection: Some(b.handle.clone()), ..Default::default() })?;
-                v.shelf.push((b.clone(), items.iter().filter(|p| p.has_image()).take(9).map(|p| p.img(240)).collect()));
-            }
-        }
-        "row" => {
-            let h = st(d, "handle");
-            let col = (!h.is_empty() && h != "all").then(|| h.clone());
-            let sort = match st(d, "sort").as_str() {
-                "price-desc" => "price-desc",
-                "price-asc" => "price-asc",
-                "title" => "title",
-                "newest" => "newest",
-                _ => "",
-            };
-            let (items, count) = db::list(c, &Query { collection: col.clone(), sort: sort.into(), ..Default::default() })?;
-            v.items = items.into_iter().take(12).collect();
-            let _ = count;
-            let count = db::cards_in(c, col.as_deref())?;
-            v.count = count;
-            v.count_fmt = db::thousands(count);
-            let t = st(d, "title");
-            v.title = if !t.is_empty() {
-                t
-            } else {
-                col.as_ref().and_then(|h| nav.links.iter().find(|x| &x.handle == h)).map(|x| x.title.clone()).unwrap_or_else(|| "All cards".into())
-            };
-            v.link = col.map(|h| format!("/collections/{h}")).unwrap_or_else(|| "/all".into());
-            v.eyebrow = st(d, "eyebrow");
-            v.spotlight = d["spotlight"].as_bool().unwrap_or(false);
-        }
-        "feature" => {
-            v.eyebrow = st(d, "eyebrow");
-            v.title = fill(&st(d, "title"), total);
-            v.subtitle = fill(&st(d, "subtitle"), total);
-            v.button_label = fill(&st(d, "button_label"), total);
-            v.button_link = safe_link(&st(d, "button_link"));
-            v.img = st(d, "img");
-            v.img_w = num(d, "img_w");
-            v.img_h = num(d, "img_h");
-        }
-        "text" => {
-            v.title = st(d, "title");
-            v.body = st(d, "body");
-        }
-        "stats" => {
-            // Only what the vault still holds: sold copies stay in the table as a record but aren't counted.
-            let cards = admin::vault_cards(c)?;
-            let mut i = marcuru_rs::insights::read(&cards);
-            if let Some(x) = i.as_mut() {
-                x.newest = admin::newest_arrival(c)?.as_ref().map(marcuru_rs::insights::spot_of);
-            }
-            v.insights = i;
-            // Which boxes show, in what order, with what words: all owner-editable.
-            const ALL: [(&str, &str); 4] = [("cards", "Cards"), ("graded", "Graded"), ("binders", "Binders"), ("value", "Collection value")];
-            let order: Vec<String> = d["items"].as_array().map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect()).unwrap_or_else(|| ALL.iter().map(|x| x.0.to_string()).collect());
-            for k in order.iter().filter(|k| ALL.iter().any(|a| a.0 == k.as_str())) {
-                let default = ALL.iter().find(|a| a.0 == k.as_str()).map(|a| a.1).unwrap_or("");
-                let label = d["labels"][k.as_str()].as_str().filter(|l| !l.trim().is_empty()).unwrap_or(default).to_string();
-                let val = match k.as_str() {
-                    "cards" => v.total_fmt.clone(),
-                    "graded" => graded.to_string(),
-                    "binders" => v.nbinders.to_string(),
-                    _ => v.value.clone(),
-                };
-                v.stats.push((k.clone(), label, val));
-            }
-        }
-        "showcase" => {
-            v.title = st(d, "title");
-            v.eyebrow = st(d, "eyebrow");
-            let ids: Vec<i64> = d["ids"].as_array().map(|a| a.iter().filter_map(|x| x.as_i64()).collect()).unwrap_or_default();
-            v.items = ids.iter().filter_map(|id| db::product_by_id(c, *id).ok().flatten()).collect();
-            v.count = v.items.len() as i64;
-        }
-        "highlights" => {
-            v.title = st(d, "title");
-            v.eyebrow = st(d, "eyebrow");
-            // The owner's order from the home page editor first; trainers not placed yet follow, newest first.
-            let order: Vec<i64> = d["order"].as_array().map(|a| a.iter().filter_map(|x| x.as_i64()).collect()).unwrap_or_default();
-            let mut hl = members::approved_highlights(c, 60)?;
-            hl.sort_by_key(|h| order.iter().position(|id| *id == h.member.id).unwrap_or(usize::MAX));
-            hl.truncate(12);
-            v.highlights = hl;
-            v.trainer_count = members::approved_count(c)?;
-            v.trainer_faces = members::approved_faces(c, 5)?;
-        }
-        "vouches" => {
-            v.title = st(d, "title");
-            v.eyebrow = st(d, "eyebrow");
-            v.vouches = members::public_vouches(c, None, None, 6)?;
-        }
-        _ => {}
-    }
-    // The editor names each part by what it shows ("Binder · Playables"), not by its type.
-    let short = |t: &str| -> String { let t: String = t.chars().take(36).collect(); t };
-    v.label = match b.kind.as_str() {
-        "hero" => format!("Top banner · {}", short(&st(d, "title"))),
-        "row" => format!("Binder · {}", v.title),
-        "binders" => "Binders slider".to_string(),
-        "feature" => format!("Picture banner · {}", short(&st(d, "title"))),
-        "stats" => "Numbers".to_string(),
-        "ticker" => "Moving text".to_string(),
-        "text" => format!("Text · {}", short(&v.title)),
-        "showcase" => format!("Showcase · {} card{}", v.count, if v.count == 1 { "" } else { "s" }),
-        "highlights" => "Trainers' picks".to_string(),
-        "vouches" => "Vouches".to_string(),
-        _ => v.label.clone(),
-    };
-    Ok(v)
-}
-
 // ---------- handlers ----------
 #[derive(Deserialize, Default)]
 pub(crate) struct Params {
@@ -585,7 +319,6 @@ pub(crate) struct Params {
     stock: Option<String>,
     /// Text, so a bad page number (?page=abc) opens the first page instead of an error.
     page: Option<String>,
-    part: Option<String>,
 }
 
 impl Params {
@@ -598,51 +331,9 @@ fn is_htmx(h: &HeaderMap) -> bool {
     h.get("hx-request").is_some() && h.get("hx-boosted").is_none()
 }
 
+/// GET /: home is the feed (feed.rs).
 async fn home(State(app): State<App>, h: HeaderMap) -> Res {
-    // The new look's home is the feed (feed.rs).
-    if look::is_new() {
-        return feed::home(app, h).await;
-    }
-    let a = app.clone();
-    cached(&app, "home".into(), || async move {
-        let t = with_db(&a, |c| {
-            let nav = chrome(c)?;
-            // What the vault still holds (copies for sale and their value), not the sold copies kept as a record.
-            let (total, value, _) = admin::in_vault(c)?;
-            let value = db::peso(value);
-            let graded = nav.links.iter().find(|x| x.handle == "graded-cards").map(|x| x.count).unwrap_or(0);
-            // The owner picks which binders appear on the home page, and their order, in Admin › Binders.
-            let binders = nav.links.iter().filter(|x| x.on_home).cloned().collect::<Vec<_>>();
-            let mut views = vec![];
-            // The numbers live on the admin dashboard now, not on the public page.
-            for b in blocks::blocks(c)?.iter().filter(|b| b.visible && b.kind != "stats") {
-                let v = view(c, b, &nav, &binders, total, graded, &value)?;
-                // A collection row with no cards yet isn't shown to visitors.
-                if ((v.kind == "row" || v.kind == "showcase") && v.items.is_empty()) || (v.kind == "stats" && v.stats.is_empty()) || (v.kind == "highlights" && v.highlights.is_empty()) || (v.kind == "vouches" && v.vouches.is_empty()) {
-                    continue;
-                }
-                views.push(v);
-            }
-            let mut nav = nav;
-            let site = nav.site.clone();
-            nav.seo = Seo {
-                title: format!("{} · Pokémon cards, graded slabs & collectibles in the Philippines", nav.brand),
-                desc: clip(&format!("{} Pokémon cards and collectibles worth {} in one vault: graded slabs, Japanese cards, sealed product and figures, priced in pesos. Search them, browse the binders and meet the trainers.", db::thousands(total), value), 165),
-                path: "/".into(),
-                kind: "website",
-                ld: ld(serde_json::json!({ "@context": "https://schema.org", "@graph": [
-                    { "@type": "Organization", "@id": format!("{site}/#org"), "name": nav.brand, "url": format!("{site}/"), "logo": format!("{site}/static/img/icon-512.png") },
-                    { "@type": "WebSite", "@id": format!("{site}/#site"), "name": nav.brand, "url": format!("{site}/"), "inLanguage": "en", "publisher": { "@id": format!("{site}/#org") },
-                      "potentialAction": { "@type": "SearchAction", "target": { "@type": "EntryPoint", "urlTemplate": format!("{site}/search?q={{search_term_string}}") }, "query-input": "required name=search_term_string" } }
-                ] })),
-                ..Default::default()
-            };
-            Ok(Home { nav, blocks: views, edit: false, collections: String::new(), tab: "page" })
-        })
-        .await?;
-        render(t)
-    })
-    .await
+    feed::home(app, h).await
 }
 
 async fn browse(app: App, headers: HeaderMap, collection: Option<String>, p: Params) -> Res {
@@ -654,9 +345,7 @@ async fn browse(app: App, headers: HeaderMap, collection: Option<String>, p: Par
         page: p.page_no().min(500),
     };
     let htmx = is_htmx(&headers);
-    // A binder opened in the floating window.
-    let window = p.part.is_some() && collection.is_some();
-    let key = format!("{htmx}|{window}|{q:?}");
+    let key = format!("{htmx}|{q:?}");
     let a = app.clone();
     cached(&app, key, || async move {
         let q2 = q.clone();
@@ -681,15 +370,6 @@ async fn browse(app: App, headers: HeaderMap, collection: Option<String>, p: Par
             None => "/search".into(),
         };
         let next = ((q.page + 1) * PAGE_SIZE < tiles as usize).then_some(q.page + 1);
-        if window {
-            let handle = q.collection.clone().unwrap_or_default();
-            if q.page > 0 {
-                return render(BinderMore { handle, items, next });
-            }
-            let fan: Vec<Product> = items.iter().filter(|p| p.has_image()).take(7).cloned().collect();
-            let tone = db::tone(&handle);
-            return render(BinderPart { title, handle, total, tiles, tone, fan, items, next });
-        }
         if htmx && q.page > 0 {
             render(Grid { base, q: q.q, sort: q.sort, in_stock: q.in_stock, items, next })
         } else {
@@ -1034,31 +714,6 @@ async fn manifest(State(app): State<App>) -> impl IntoResponse {
     ([(header::CONTENT_TYPE, "application/manifest+json")], m.to_string())
 }
 
-/// Admin › Home page: the real home page, every part editable in place (hidden parts and empty rows included, greyed).
-async fn home_editor(State(app): State<App>, h: HeaderMap) -> Res {
-    if !admin::authed(&app, &h) {
-        return Ok(Redirect::to("/admin").into_response());
-    }
-    let t = with_db(&app, |c| {
-        let nav = chrome(c)?;
-        let (total, value, _) = admin::in_vault(c)?;
-        let value = db::peso(value);
-        let graded = nav.links.iter().find(|x| x.handle == "graded-cards").map(|x| x.count).unwrap_or(0);
-        let binders = nav.links.iter().filter(|x| x.on_home).cloned().collect::<Vec<_>>();
-        let mut views = vec![];
-        for b in blocks::blocks(c)?.iter().filter(|b| b.kind != "stats") {
-            views.push(view(c, b, &nav, &binders, total, graded, &value)?);
-        }
-        let mut cols: Vec<serde_json::Value> = vec![serde_json::json!({ "handle": "all", "title": "All cards" })];
-        cols.extend(nav.links.iter().map(|c| serde_json::json!({ "handle": c.handle, "title": c.title, "image": c.img(360), "count": c.count, "in_menu": c.in_menu })));
-        Ok(Home { nav, blocks: views, edit: true, collections: serde_json::Value::Array(cols).to_string(), tab: "page" })
-    })
-    .await?;
-    let mut r = Html(t.render().map_err(ise)?).into_response();
-    r.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-    Ok(r)
-}
-
 /// Any address that isn't a page: the site's own "not found" page (with the menu and a way back), not a blank browser error.
 pub(crate) async fn not_found(State(app): State<App>) -> Response {
     let html = match with_db(&app, |c| chrome(c)).await {
@@ -1184,13 +839,11 @@ mod tests {
         c.execute_batch(members::SCHEMA).unwrap();
         members::migrate(&c).unwrap();
         db::migrate(&c).unwrap();
-        let page = |base: &str, title: &str, total: i64, new: bool| {
-            look::in_thread(new);
+        let page = |base: &str, title: &str, total: i64| {
             let html = CollectionPage { title: title.into(), base: base.into(), q: String::new(), sort: String::new(), in_stock: false, total, items: vec![], next: None, nav: chrome(&c).unwrap() }.render().unwrap();
-            look::in_thread(false);
             html
         };
-        let binder = page("/collections/affordable-common-uncommon", "Affordable Common/Uncommon", 1117, true);
+        let binder = page("/collections/affordable-common-uncommon", "Affordable Common/Uncommon", 1117);
         assert!(binder.contains("<a class=\"sf-bx\" href=\"/store/vault\" aria-label=\"Close\" title=\"Back to Big Boys Vault\" data-binder-close>"), "{binder}");
         assert!(binder.contains("<h1 class=\"sf-bh\">Affordable Common/Uncommon</h1>"));
         assert!(binder.contains("1,117 cards · by <a href=\"/store/vault\">Big Boys Vault</a>"), "the count its tile shows");
@@ -1200,13 +853,9 @@ mod tests {
         assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=2"));
         // The Vault (all cards) and a search: no bar.
         for (base, title) in [("/search", "All cards"), ("/search", "Results for “pika”")] {
-            let other = page(base, title, 3, true);
+            let other = page(base, title, 3);
             assert!(!other.contains("data-binder-close") && other.contains("<h1 class=\"h1\">") && !other.contains("binder-tools.js"));
         }
-        // Today's look: the binder as it was.
-        let classic = page("/collections/pikachu-set", "Pikachu Set", 116, false);
-        assert!(!classic.contains("data-binder-close") && !classic.contains("sf-bbar"));
-        assert!(classic.contains("<h1 class=\"h1\">Pikachu Set</h1>") && classic.contains("<p class=\"sub\">116 items</p>"));
     }
 }
 
@@ -1283,7 +932,6 @@ async fn main() {
         blocks::ensure_blocks(&c).expect("blocks");
         blocks::refresh_hero_art(&c).expect("hero art");
         blocks::community_once(&c).expect("community");
-        look::load(&c).expect("look");
         // The site's own Web Push key pair: made on the first start, kept in the settings table.
         push::init(&c).expect("push keys");
         // Old prices that didn't say where they came from are sorted once in db::migrate (price_src_v).
@@ -1510,8 +1158,6 @@ async fn main() {
         .route("/comments/{id}/delete", post(feed::comment_remove))
         .route("/admin/feed/auto", post(feed::auto))
         .route("/admin/look", get(look::guide))
-        .route("/admin/look/all", post(look::for_all))
-        .route("/me/look", post(look::pick))
         .route("/me/messages", get(messages::page))
         .route("/admin/messages", get(messages::admin_page))
         .route("/admin/dm", get(messages::admin_list))
@@ -1579,9 +1225,8 @@ async fn main() {
         .route("/admin/bulk", post(admin::bulk))
         .route("/admin/photo/{id}", post(admin::photo).layer(big()))
         .route("/admin/photo/{id}/remove", post(admin::photo_remove))
-        // admin: page sections
-        .route("/admin/page", get(home_editor))
-        .route("/admin/page/list", get(admin::page_editor))
+        // The old home page editor's address: what it did for the feed is on the Showcase page now.
+        .route("/admin/page", get(|| async { Redirect::to("/admin/showcase") }))
         .route("/admin/settings", post(admin::settings))
         .route("/admin/settings/condition-shares", post(admin::settings_condition_shares))
         .route("/admin/sellers", get(store::admin_sellers))
@@ -1591,14 +1236,7 @@ async fn main() {
         .route("/admin/sellers/announce", post(store::announce))
         .route("/admin/sellers/reviews/{id}", post(store::admin_review))
         .route("/admin/sellers/flag/{id}/clear", post(store::admin_clear_flag))
-        .route("/admin/blocks/add", post(admin::block_add))
-        .route("/admin/blocks/order", post(admin::blocks_order))
         .route("/admin/pick", get(admin::pick))
-        .route("/admin/menu", post(admin::menu_save))
-        .route("/admin/blocks/{id}/save", post(admin::block_save).layer(big()))
-        .route("/admin/blocks/{id}/move", post(admin::block_move))
-        .route("/admin/blocks/{id}/visible", post(admin::block_visible))
-        .route("/admin/blocks/{id}/delete", post(admin::block_delete))
         // Pictures: AVIF or WebP when the browser takes it and the file exists; kept for a day.
         .nest("/uploads", Router::new().fallback_service(ServeDir::new(uploads)).layer(axum::middleware::from_fn_with_state(app.clone(), ops::negotiate_uploads)))
         // App code with a version (?v=N) keeps for a year; without one it revalidates on every load (cheap 304).
@@ -1612,7 +1250,6 @@ async fn main() {
         // Browsers that have seen the site once only ever ask for it over https (they ignore this on plain http).
         .layer(SetResponseHeaderLayer::if_not_present(header::STRICT_TRANSPORT_SECURITY, HeaderValue::from_static("max-age=15552000")))
         .layer(axum::middleware::from_fn_with_state(app.clone(), count_visit))
-        .layer(axum::middleware::from_fn(look::layer))
         .layer(axum::middleware::from_fn(robots_header))
         .layer(CompressionLayer::new())
         .layer(axum::middleware::from_fn(www_redirect))

@@ -1,5 +1,6 @@
-//! Editable page sections ("blocks") and site settings. The home page is a list of blocks the owner can
-//! add, edit, reorder, hide and delete from /admin/page. Counts and card lists inside blocks stay automatic.
+//! Site settings and the page sections ("blocks") the older home page was made of. What the site reads from here
+//! today: the settings (the site's name, the welcome line) and the showcase block's cards, both set on the
+//! Manager's Showcase page.
 use rusqlite::{Connection, OptionalExtension};
 use serde_json::{json, Value};
 

@@ -1,5 +1,5 @@
 // For admins and moderators only: one floating button that edits whatever is in front of you.
-// A card opens its edit form, a trainer opens their row in Admin › Trainers, a binder or the home page opens its editor.
+// A card opens its edit form, a trainer opens their row in Admin › Trainers.
 // Moderators only see what's theirs to change. Nobody else ever sees the button.
 (() => {
   // Hiding the admin buttons: remembered on this device, switched with any [data-staff-toggle] button (My profile,
@@ -53,7 +53,6 @@
     const theirs = trainer && (full || !trainer.dataset.ownerRole);
     if (trainer && staff && theirs) return { href: `/admin/trainers#trainer-${trainer.dataset.trainer || trainer.dataset.owner}`, text: 'Manage this trainer', mcard: mcard?.dataset.mcard };
     if (scope.querySelector('.bf') && full) return { href: '/admin/binders', text: 'Edit binders' };
-    if (document.getElementById('hxHero') && full && !document.querySelector('dialog.float[open]')) return { href: '/admin/page', text: 'Edit the home page' };
     // The new look has Admin in its menu: only the buttons about what's on screen float there.
     if (document.documentElement.dataset.look === 'fb') return null;
     if (full) return { href: '/admin', text: 'Admin' };

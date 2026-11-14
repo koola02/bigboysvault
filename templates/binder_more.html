@@ -1,2 +1,0 @@
-{% for p in items %}{% include "card.html" %}{% endfor %}
-{% if let Some(n) = next %}<button type="button" class="linkbtn bf-more" data-more="/collections/{{ handle|urlencode }}?part=1&amp;page={{ n }}">Show more cards</button>{% endif %}

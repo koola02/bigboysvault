@@ -1,6 +1,6 @@
-//! Private admin: manage cards (add / edit / delete / change photo) and the home page's sections.
+//! Private admin: manage cards (add / edit / delete / change photo), binders, the showcase and the dashboard.
 //! Open by default; set ADMIN_TOKEN to require a password.
-use super::{chrome, ise, safe_link, with_db, App, Chrome};
+use super::{chrome, ise, with_db, App, Chrome};
 use askama::Template;
 use axum::{
     extract::{Json, Multipart, Path, Query as Qs, State},
@@ -8,7 +8,7 @@ use axum::{
     response::{Html, IntoResponse, Redirect, Response},
     Form,
 };
-use marcuru_rs::blocks::{self, Block};
+use marcuru_rs::blocks;
 use marcuru_rs::{bulk, market};
 use marcuru_rs::db::{self, Entry, Product, Query};
 use serde::Deserialize;
@@ -218,34 +218,6 @@ fn split_sold(c: &rusqlite::Connection, items: Vec<Product>) -> rusqlite::Result
             (p, Sold { n: gone.len() as i64, ids: gone.join(",") })
         })
         .collect())
-}
-
-struct BlockRow {
-    id: i64,
-    kind: String,
-    label: &'static str,
-    summary: String,
-    visible: bool,
-    editable: bool,
-    first: bool,
-    last: bool,
-    json: String,
-}
-
-#[derive(Template)]
-#[template(path = "admin_page.html")]
-struct PagePage {
-    nav: Chrome,
-    tab: &'static str,
-    brand: String,
-    blocks: Vec<BlockRow>,
-    collections: String,
-}
-
-#[derive(Template)]
-#[template(path = "admin_blocks.html")]
-struct BlocksFrag {
-    blocks: Vec<BlockRow>,
 }
 
 fn rd<T: Template>(t: T) -> Res {
@@ -507,19 +479,6 @@ fn store_image(bytes: Vec<u8>, dir: PathBuf, stem: String) -> Result<String, Str
         JpegEncoder::new_with_quality(&mut w, 86).encode_image(&out.to_rgb8()).map_err(|e| e.to_string())?;
     }
     Ok(format!("/uploads/{stem}_l.jpg"))
-}
-
-/// Page-section image: keeps transparency (PNG) when the source has it, otherwise JPEG. Returns (path, w, h).
-fn store_block_image(bytes: Vec<u8>, dir: PathBuf, stem: String) -> Result<(String, u32, u32), String> {
-    use image::{imageops::FilterType, DynamicImage};
-    let mut img = open_image(bytes)?;
-    if img.width().max(img.height()) > 1200 {
-        img = img.resize(1200, 1200, FilterType::Triangle);
-    }
-    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
-    let (name, out) = if img.color().has_alpha() { (format!("{stem}.png"), img.clone()) } else { (format!("{stem}.jpg"), DynamicImage::ImageRgb8(img.to_rgb8())) };
-    out.save(dir.join(&name)).map_err(|e| e.to_string())?;
-    Ok((format!("/uploads/{name}"), img.width(), img.height()))
 }
 
 /// Delete a picture only when nothing uses it any more: copies of a card share one file.
@@ -813,76 +772,6 @@ pub async fn photo_remove(State(app): State<App>, h: HeaderMap, Path(id): Path<i
 }
 
 // ---------- page sections ----------
-pub fn label(kind: &str) -> &'static str {
-    match kind {
-        "hero" => "Big banner at the top",
-        "ticker" => "Scrolling words",
-        "stats" => "Number boxes",
-        "binders" => "Binder pictures",
-        "row" => "Row of cards",
-        "feature" => "Picture banner",
-        "text" => "Text",
-        _ => "Section",
-    }
-}
-
-fn block_rows(bs: &[Block], cols: &[marcuru_rs::db::Collection]) -> Vec<BlockRow> {
-    let n = bs.len();
-    bs.iter()
-        .enumerate()
-        .map(|(i, b)| {
-            let t = |k: &str| b.data[k].as_str().unwrap_or("").to_string();
-            let summary = match b.kind.as_str() {
-                "hero" => t("title"),
-                "ticker" => t("phrases").lines().next().unwrap_or("").to_string(),
-                "binders" => format!("{} · automatic", t("title")),
-                "stats" => "Cards · Graded · Binders · Value — automatic".into(),
-                "row" => {
-                    let h = t("handle");
-                    let name = cols.iter().find(|c| c.handle == h).map(|c| c.title.clone()).unwrap_or_else(|| "All cards".into());
-                    let title = t("title");
-                    format!("{}{}", if title.is_empty() { name } else { title }, if b.data["spotlight"].as_bool().unwrap_or(false) { " · highlighted" } else { "" })
-                }
-                "feature" => t("title"),
-                "text" => t("title"),
-                _ => String::new(),
-            };
-            BlockRow {
-                id: b.id,
-                kind: b.kind.clone(),
-                label: label(&b.kind),
-                summary,
-                visible: b.visible,
-                editable: b.kind != "stats",
-                first: i == 0,
-                last: i + 1 == n,
-                json: b.data.to_string(),
-            }
-        })
-        .collect()
-}
-
-#[derive(Deserialize, Default)]
-pub struct PageQs {
-    frag: Option<String>,
-}
-
-pub async fn page_editor(State(app): State<App>, h: HeaderMap, Qs(qs): Qs<PageQs>) -> Res {
-    if !authed(&app, &h) {
-        return login_page(&app, false).await;
-    }
-    let (nav, mut bs, brand) = with_db(&app, |c| Ok((chrome(c)?, blocks::blocks(c)?, blocks::setting(c, "brand")?))).await?;
-    bs.retain(|b| b.kind != "stats");
-    let rows = block_rows(&bs, &nav.links);
-    if qs.frag.is_some() {
-        return rd(BlocksFrag { blocks: rows });
-    }
-    let mut cols: Vec<Value> = vec![json!({ "handle": "all", "title": "All cards" })];
-    cols.extend(nav.links.iter().map(|c| json!({ "handle": c.handle, "title": c.title })));
-    let brand = brand.filter(|b| !b.trim().is_empty()).unwrap_or_else(|| "Big Boys Vault".into());
-    rd(PagePage { nav, tab: "page", brand, blocks: rows, collections: Value::Array(cols).to_string() })
-}
-
 #[derive(Deserialize)]
 pub struct SettingsForm {
     brand: String,
@@ -941,206 +830,6 @@ pub async fn settings_condition_shares(State(app): State<App>, h: HeaderMap, Jso
     let shares = with_db(&app, move |c| marcuru_rs::pricing::save(c, Some(&map))).await?;
     app.forget();
     Ok(ok_json(json!({ "ok": true, "shares": shares })))
-}
-
-#[derive(Deserialize)]
-pub struct AddForm {
-    kind: String,
-    /// Put the new section right after this one (else at the end).
-    after: Option<i64>,
-    /// For a card row: which binder it shows.
-    handle: Option<String>,
-}
-
-pub async fn block_add(State(app): State<App>, h: HeaderMap, Form(f): Form<AddForm>) -> Res {
-    if !authed(&app, &h) {
-        return Ok(deny(&h));
-    }
-    if !blocks::KINDS.contains(&f.kind.as_str()) || f.kind == "stats" {
-        return Ok(err_json(StatusCode::BAD_REQUEST, "Unknown section type."));
-    }
-    let id = with_db(&app, move |c| {
-        let mut data = blocks::default_data(&f.kind);
-        if f.kind == "row" {
-            if let Some(h) = f.handle.as_deref().filter(|h| *h == "all" || db::binder_exists(c, h)) {
-                data["handle"] = json!(h);
-                data["title"] = json!("");
-            }
-        }
-        blocks::add_block_at(c, &f.kind, &data, f.after)
-    })
-    .await?;
-    app.forget();
-    Ok(ok_json(json!({ "ok": true, "id": id })))
-}
-
-#[derive(Deserialize)]
-pub struct MoveForm {
-    dir: String,
-}
-
-pub async fn block_move(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Form(f): Form<MoveForm>) -> Res {
-    if !authed(&app, &h) {
-        return Ok(deny(&h));
-    }
-    with_db(&app, move |c| blocks::move_block(c, id, f.dir == "up")).await?;
-    app.forget();
-    Ok(ok_json(json!({ "ok": true })))
-}
-
-#[derive(Deserialize)]
-pub struct VisibleForm {
-    on: String,
-}
-
-pub async fn block_visible(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Form(f): Form<VisibleForm>) -> Res {
-    if !authed(&app, &h) {
-        return Ok(deny(&h));
-    }
-    with_db(&app, move |c| blocks::set_visible(c, id, f.on == "1")).await?;
-    app.forget();
-    Ok(ok_json(json!({ "ok": true })))
-}
-
-pub async fn block_delete(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -> Res {
-    if !authed(&app, &h) {
-        return Ok(deny(&h));
-    }
-    with_db(&app, move |c| blocks::delete_block(c, id)).await?;
-    app.forget();
-    Ok(ok_json(json!({ "ok": true })))
-}
-
-/// Which keys each kind of block may edit (anything else posted is ignored).
-fn text_keys(kind: &str) -> &'static [&'static str] {
-    match kind {
-        "hero" => &["eyebrow", "title", "subtitle", "button_label", "button_link", "sticker"],
-        "ticker" => &["phrases"],
-        "binders" => &["title"],
-        "row" => &["handle", "title", "eyebrow", "sort"],
-        "feature" => &["eyebrow", "title", "subtitle", "button_label", "button_link"],
-        "text" => &["title", "body"],
-        "showcase" | "highlights" | "vouches" => &["title", "eyebrow"],
-        _ => &[],
-    }
-}
-fn image_keys(kind: &str) -> &'static [&'static str] {
-    match kind {
-        "hero" => &["img_a", "img_b"],
-        "feature" => &["img"],
-        _ => &[],
-    }
-}
-
-pub async fn block_save(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, mut mp: Multipart) -> Res {
-    if !authed(&app, &h) {
-        return Ok(deny(&h));
-    }
-    let Some(blk) = with_db(&app, move |c| blocks::block(c, id)).await? else {
-        return Ok(err_json(StatusCode::NOT_FOUND, "That section no longer exists."));
-    };
-    let mut fields = std::collections::HashMap::<String, String>::new();
-    let mut files = std::collections::HashMap::<String, Vec<u8>>::new();
-    while let Some(f) = mp.next_field().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))? {
-        let name = f.name().unwrap_or_default().to_string();
-        if image_keys(&blk.kind).contains(&name.as_str()) {
-            let b = f.bytes().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-            if !b.is_empty() {
-                files.insert(name, b.to_vec());
-            }
-        } else {
-            fields.insert(name, f.text().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?);
-        }
-    }
-    let mut data = blk.data.clone();
-    for k in text_keys(&blk.kind) {
-        if let Some(v) = fields.get(*k) {
-            let v = v.trim();
-            let v = match *k {
-                "button_link" => safe_link(v),
-                "body" => v.chars().take(2000).collect(),
-                "phrases" => v.chars().take(1500).collect(),
-                _ => v.chars().take(200).collect(),
-            };
-            data[*k] = json!(v);
-        }
-    }
-    if blk.kind == "stats" {
-        const KEYS: [&str; 4] = ["cards", "graded", "binders", "value"];
-        if let Some(v) = fields.get("items") {
-            let mut items: Vec<&str> = vec![];
-            for k in v.split(',').map(str::trim) {
-                if KEYS.contains(&k) && !items.contains(&k) {
-                    items.push(k);
-                }
-            }
-            data["items"] = json!(items);
-        }
-        for k in KEYS {
-            if let Some(l) = fields.get(&format!("label_{k}")) {
-                if !data["labels"].is_object() {
-                    data["labels"] = json!({});
-                }
-                data["labels"][k] = json!(l.trim().chars().take(40).collect::<String>());
-            }
-        }
-    }
-    if blk.kind == "showcase" {
-        if let Some(v) = fields.get("ids") {
-            let ids: Vec<i64> = v.split(',').filter_map(|x| x.trim().parse().ok()).take(24).collect();
-            data["ids"] = json!(ids);
-        }
-    }
-    if blk.kind == "highlights" {
-        if let Some(v) = fields.get("order") {
-            let ids: Vec<i64> = v.split(',').filter_map(|x| x.trim().parse().ok()).take(60).collect();
-            data["order"] = json!(ids);
-        }
-    }
-    if blk.kind == "row" {
-        if let Some(v) = fields.get("spotlight") {
-            data["spotlight"] = json!(v == "1");
-        }
-    }
-    let mut trash: Vec<String> = vec![];
-    for k in image_keys(&blk.kind) {
-        let (kw, kh) = (format!("{k}_w"), format!("{k}_h"));
-        let old = data[*k].as_str().unwrap_or("").to_string();
-        if fields.get(&format!("rm_{k}")).map(String::as_str) == Some("1") {
-            trash.push(old.clone());
-            data[*k] = json!("");
-            data[&kw] = json!(0);
-            data[&kh] = json!(0);
-        }
-        if let Some(bytes) = files.remove(*k) {
-            let dir = PathBuf::from(&*app.uploads);
-            let stem = format!("blk{id}-{k}-{}", nanos());
-            let stored = crate::community::gated(move || store_block_image(bytes, dir, stem)).await?;
-            match stored {
-                Ok((path, w, h)) => {
-                    // Hero characters are fitted into the same 250×286 box so any picture lands at a consistent scale.
-                    let (dw, dh) = if blk.kind == "hero" {
-                        let f = (250.0 / w as f64).min(286.0 / h as f64);
-                        ((w as f64 * f).round() as i64, (h as f64 * f).round() as i64)
-                    } else {
-                        (w as i64, h as i64)
-                    };
-                    trash.push(old.clone());
-                    data[*k] = json!(path);
-                    data[&kw] = json!(dw);
-                    data[&kh] = json!(dh);
-                }
-                Err(e) => return Ok(err_json(StatusCode::BAD_REQUEST, &photo_problem(&e))),
-            }
-        }
-    }
-    let d2 = data.clone();
-    with_db(&app, move |c| blocks::save_block(c, id, &d2)).await?;
-    for t in trash {
-        remove_upload(&app.uploads, &t);
-    }
-    app.forget();
-    Ok(ok_json(json!({ "ok": true })))
 }
 
 // ---------- market price lookup ----------
@@ -1615,10 +1304,6 @@ pub async fn showcase_page(State(app): State<App>, h: HeaderMap) -> Res {
     if !authed(&app, &h) {
         return login_page(&app, false).await;
     }
-    // Today's look changes the showcase on the home page itself.
-    if !crate::look::is_new() {
-        return Ok(Redirect::to("/admin/page").into_response());
-    }
     let (nav, cards, welcome, count) = with_db(&app, |c| Ok((chrome(c)?, show_cards(c, &blocks::showcase_ids(c)?), blocks::welcome(c)?, db::thousands(in_vault(c)?.0)))).await?;
     rd(ShowcasePage { nav, tab: "showcase", cards, max: blocks::SHOWCASE_MAX, welcome, welcome_max: blocks::WELCOME_MAX, count })
 }
@@ -1844,16 +1529,6 @@ pub struct BlockOrder {
     ids: Vec<i64>,
 }
 
-pub async fn blocks_order(State(app): State<App>, h: HeaderMap, Json(req): Json<BlockOrder>) -> Res {
-    if !authed(&app, &h) {
-        return Ok(deny(&h));
-    }
-    let ids: Vec<i64> = req.ids.into_iter().take(500).collect();
-    with_db(&app, move |c| blocks::reorder(c, &ids)).await?;
-    app.forget();
-    Ok(ok_json(json!({ "ok": true })))
-}
-
 #[derive(Deserialize)]
 pub struct BinderOrder {
     handles: Vec<String>,
@@ -2009,22 +1684,6 @@ pub async fn pick(State(app): State<App>, h: HeaderMap, Qs(q): Qs<PickQs>) -> Re
 }
 
 // ---------- the site's top menu ----------
-#[derive(Deserialize)]
-pub struct MenuReq {
-    handles: Vec<String>,
-}
-
-/// Which binders show in the top menu, and in what order (drag and drop in the Home page editor).
-pub async fn menu_save(State(app): State<App>, h: HeaderMap, Json(req): Json<MenuReq>) -> Res {
-    if !authed(&app, &h) {
-        return Ok(deny(&h));
-    }
-    let hs: Vec<String> = req.handles.into_iter().filter(|h| db::handle_ok(h)).take(60).collect();
-    with_db(&app, move |c| db::set_menu(c, &hs)).await?;
-    app.forget();
-    Ok(ok_json(json!({ "ok": true })))
-}
-
 /// One more copy of a card (the "+" on a card in My cards).
 pub async fn dup(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -> Res {
     if !authed(&app, &h) {

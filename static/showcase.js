@@ -155,4 +155,20 @@
     addEventListener('pagehide', () => { if (box.value !== kept) navigator.sendBeacon?.('/admin/welcome', new Blob([JSON.stringify({ text: box.value })], { type: 'application/json' })); });
     show();
   }
+
+  // The site's name: saved with its button.
+  const brand = $('shwBrand'), bState = $('shwBState');
+  if (brand) brand.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    bState.textContent = 'Saving…';
+    try {
+      const r = await fetch('/admin/settings', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(new FormData(brand)) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || 'That didn’t save. Check your connection and try again.');
+      bState.textContent = 'Saved ✓';
+    } catch (err) {
+      bState.textContent = 'Not saved';
+      A.toast(err.message, { kind: 'err' });
+    }
+  });
 })();

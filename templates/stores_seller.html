@@ -13,7 +13,7 @@
             {% if !m.pay_list().is_empty() %}<div class="svh-tags">{% for pm in m.pay_list() %}<span class="sf-pay">{{ pm }}</span>{% endfor %}</div>{% endif %}
           </div>
         </div>
-        <div class="svh-act"><a class="btn ghost" href="{{ m.store_url() }}">Visit store →</a>{% if crate::look::is_new() %}<button type="button" class="btn ghost sm st-feat-edit" data-feature="seller" data-owner-only="{{ m.id }}" hidden aria-label="Choose what your store shows here"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg><span>Choose what shows</span></button>{% endif %}</div>
+        <div class="svh-act"><a class="btn ghost" href="{{ m.store_url() }}">Visit store →</a><button type="button" class="btn ghost sm st-feat-edit" data-feature="seller" data-owner-only="{{ m.id }}" hidden aria-label="Choose what your store shows here"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg><span>Choose what shows</span></button></div>
       </div>
       {#- New look: the store's binders (each opens its own page), then the cards its owner highlighted. -#}
       {% if !binders.is_empty() %}
@@ -21,7 +21,7 @@
       <ul class="st-brow" aria-label="{{ m.store_title() }}'s binders">{% for t in binders %}{% include "binder_tile.html" %}{% endfor %}</ul>
       {% endif %}
       {% if !cards.is_empty() %}
-      {% if crate::look::is_new() %}<h3 class="st-feat-h">Highlights</h3>{% endif %}
+      <h3 class="st-feat-h">Highlights</h3>
       <div class="seller-cards-row">
         {% for c in cards %}
         <a class="card" href="/trainers/{{ m.id }}/cards/{{ c.id }}" data-float data-c="{{ c.cond_class() }}">
@@ -33,5 +33,5 @@
         {% endfor %}
       </div>
       {% endif %}
-      {% if crate::look::is_new() && binders.is_empty() && cards.is_empty() %}<p class="st-feat-none">Visit the store to see its {{ s.on_sale }} card{% if s.on_sale != 1 %}s{% endif %} for sale.</p>{% endif %}
+      {% if binders.is_empty() && cards.is_empty() %}<p class="st-feat-none">Visit the store to see its {{ s.on_sale }} card{% if s.on_sale != 1 %}s{% endif %} for sale.</p>{% endif %}
     </article>

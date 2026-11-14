@@ -30,6 +30,12 @@
     </article>
   </div>
 
+  <article class="dash-panel shw-welcome">
+    <h2 class="dash-h">Site name <small id="shwBState" role="status" aria-live="polite"></small></h2>
+    <p class="dash-sub">The name at the top of every page, on a phone's home screen and in search results.</p>
+    <form class="shw-brand" id="shwBrand"><input name="brand" value="{{ nav.brand }}" maxlength="40" autocomplete="off" aria-label="Site name" required><button class="btn" type="submit">Save</button></form>
+  </article>
+
   <article class="dash-panel shw-welcome" id="shwWelcomeBox" data-count="{{ count }}">
     <h2 class="dash-h">Welcome line <small id="shwWState" role="status" aria-live="polite"></small></h2>
     <p class="dash-sub">The sentence under the site's name at the top of the home page. Only visitors who aren't logged in see it, so you won't see it yourself. Type <b>{count}</b> where the number of cards should go. It saves by itself.</p>
@@ -40,5 +46,5 @@
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/admin-ui.js?v=10" defer></script>
 <script src="/static/dragsort.js?v=5" defer></script>
-<script src="/static/showcase.js?v=2" defer></script>
+<script src="/static/showcase.js?v=3" defer></script>
 {% endblock %}

@@ -41,7 +41,7 @@
       <p class="sub" id="countLine">{{ self.total_text() }} card{% if total != 1 %}s{% endif %}{% if !q.is_empty() %} matching “{{ q }}”{% else if binder.is_empty() %} · {{ copies }} copies{% endif %}</p>
     </div>
     <p class="selnote" id="selNote" hidden></p>
-    {% if crate::look::is_new() %}<div class="mgr-scroll"><div class="mgr-thead" data-sort="{{ sort }}"><span></span><span></span><span></span><span data-col="card" data-min="170" data-up="A to Z" data-down="Z to A">Card</span><span class="num" data-col="price" data-min="120" data-first="desc" data-up="lowest first" data-down="highest first">Price</span><span data-col="cond" data-name="Condition" data-min="124" data-up="best first" data-down="worst first">Condition</span><span data-col="copies" data-min="108" data-first="desc" data-up="fewest first" data-down="most first">Copies</span><span data-col="desc" data-min="130" data-up="A to Z" data-down="Z to A">Description</span><span data-col="tags" data-min="120" data-up="A to Z" data-down="Z to A">Tags</span><span></span></div>{% endif %}
+    <div class="mgr-scroll"><div class="mgr-thead" data-sort="{{ sort }}"><span></span><span></span><span></span><span data-col="card" data-min="170" data-up="A to Z" data-down="Z to A">Card</span><span class="num" data-col="price" data-min="120" data-first="desc" data-up="lowest first" data-down="highest first">Price</span><span data-col="cond" data-name="Condition" data-min="124" data-up="best first" data-down="worst first">Condition</span><span data-col="copies" data-min="108" data-first="desc" data-up="fewest first" data-down="most first">Copies</span><span data-col="desc" data-min="130" data-up="A to Z" data-down="Z to A">Description</span><span data-col="tags" data-min="120" data-up="A to Z" data-down="Z to A">Tags</span><span></span></div>
     <ul class="rows mc-grid" id="rows">
       {% for (p, sold) in items %}
       <li class="crow ctile" data-id="{{ p.id }}" data-title="{{ p.title }}" data-ids="{{ p.copy_ids }}" data-sold="{{ sold.ids }}" data-c="{{ p.cond_class() }}" data-api-id="{{ p.api_id }}" data-finish="{{ p.finish }}" data-price-src="{{ p.price_src }}" data-market="{{ p.market_php }}">
@@ -73,7 +73,7 @@
       </li>
       {% endfor %}
     </ul>
-    {% if crate::look::is_new() %}</div>{% endif %}
+    </div>
     {% if items.is_empty() %}<div class="mc-empty"><p>No cards here yet.</p><a class="btn" href="/admin/quick">＋ Add cards</a></div>{% endif %}
     {% if let Some(n) = next %}<p class="mc-flow"><a class="mc-more" href="/admin?q={{ q|urlencode }}&amp;binder={{ binder }}&amp;sort={{ sort }}&amp;page={{ n }}"><i aria-hidden="true"></i>Loading more cards…</a></p>{% else %}{% if !items.is_empty() %}<p class="mc-flow mc-end">That's all {{ total }} card{% if total != 1 %}s{% endif %}.</p>{% endif %}{% endif %}
   </div>

@@ -1,6 +1,5 @@
-/* Widgets every page shares, in today's look and the new one: private messages, the card camera, the switch that
-   hides admin buttons. They use the shared names (--gold, --text, --font, --brass…), which each look defines. */
-html:not([data-look="fb"]) .fb-right { display: none; }
+/* Widgets every page shares: private messages, the card camera, the staff's floating buttons.
+   They use the names fb.css defines (--gold, --text, --font, --brass…). */
 
 /* ---------- Private messages (static/dm.js): a Messenger-style chat window, the inbox, voice calls ---------- */
 .dm-mini { flex: none; position: relative; display: inline-grid; place-items: center; width: 30px; height: 30px; margin-left: auto; border-radius: 50%; background: rgba(111,216,232,.12); color: #bfeff6; box-shadow: inset 0 0 0 1px rgba(111,216,232,.5); cursor: pointer; transition: background .2s, scale .3s var(--spring); }

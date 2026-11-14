@@ -1,4 +1,4 @@
-/* The feed (new look): likes and other reactions, comments, sharing, the post menu, and writing a post.
+/* The feed: likes and other reactions, comments, sharing, the post menu, and writing a post.
    The posts themselves are drawn by the server; more arrive as you scroll (the last element asks for the next page).
    Everything here is one set of listeners on the page, so posts that arrive later work without any setup. */
 (() => {
@@ -133,7 +133,7 @@
     else if (staff) item(post.dataset.kind === 'post' || post.dataset.kind === 'share' ? 'Delete post (staff)' : 'Hide from the feed (staff)', () => remove(post, 'Take this post out of the feed?'), 'staff-only');
     // Full admins can stop a whole kind of automatic post from here (and switch it back on at /admin/look).
     if (full && !['post', 'share'].includes(post.dataset.kind)) item('Turn off automatic posts like this', async () => {
-      if (!confirm('Stop showing this kind of automatic post in the feed? You can switch it back on at Admin \u203a The new look.')) return;
+      if (!confirm('Stop showing this kind of automatic post in the feed? You can switch it back on at Admin \u203a The look.')) return;
       try { await api('/admin/feed/auto', { kind: post.dataset.kind, on: false }); location.reload(); } catch (e) { toast(e.message, true); }
     }, 'staff-only');
     btn.parentElement.append(menu);

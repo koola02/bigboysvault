@@ -3,7 +3,7 @@
 {% block layout %}wide{% endblock %}
 {% block content %}
 {#- The new look opens one of the vault's binders as a plain page under a bar: an X back to the vault's store, its name and count. -#}
-{% let bpage = crate::look::is_new() && base.starts_with("/collections/") %}
+{% let bpage = base.starts_with("/collections/") %}
 <section class="wrap mk{% if bpage %} mk-bpage{% endif %}">
   {% if bpage %}
   <div class="sf-bbar">
@@ -17,7 +17,7 @@
   </div>
   <script src="/static/binder-tools.js?v=2" defer></script>
   {% else %}
-  <h1 class="h1">{% if crate::look::is_new() && title == "All cards" %}The Vault{% else %}{{ title }}{% endif %}</h1>
+  <h1 class="h1">{% if title == "All cards" %}The Vault{% else %}{{ title }}{% endif %}</h1>
   <p class="sub">{{ total }} item{% if total != 1 %}s{% endif %}</p>
   {% endif %}
   {% if base == "/search" %}<div id="finder" class="fd"></div>{% endif %}

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Page not found · {{ nav.brand }}{% endblock %}
 {% block content %}
-<section class="hero nf"><div class="hero-copy">
-  <p class="eyebrow plate">Page not found</p>
-  <h1>Nothing in this vault.</h1>
-  <p class="lede">That page doesn’t exist, or the card was moved. Try a search, or start from the home page.</p>
+<section class="box box-p stack nf">
+  <p class="eyebrow">Page not found</p>
+  <h1 class="h1">Nothing in this vault.</h1>
+  <p>That page doesn’t exist, or the card was moved. Try a search, or start from the home page.</p>
   <form class="nf-search" action="/search" role="search"><input type="search" name="q" placeholder="Search cards, sets, binders" aria-label="Search" data-suggest></form>
-  <div class="nf-acts"><a class="btn" href="/">Home page</a><a class="btn ghost" href="/all">Browse all cards</a></div>
-</div></section>
+  <div class="nf-acts"><a class="btn" href="/">Home page</a><a class="btn ghost" href="/all">Browse The Vault</a></div>
+</section>
 {% endblock %}

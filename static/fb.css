@@ -1,8 +1,8 @@
-/* Big Boys Vault, the new look: a calm, flat frame in the brand's dark and gold.
+/* Big Boys Vault's look: a calm, flat frame in the brand's dark and gold.
    A feed in the middle, navigation at the sides, everything in one obvious place.
    1 tokens · 2 base · 3 header · 4 frame · 5 menu (left column) · 6 right column · 7 bottom tabs (phones)
    8 components · 9 card tiles · 10 feed pieces · 11 cart · 12 notifications & popovers · 13 search · 14 odds and ends
-   Widgets shared with today's look (messages, card camera) are in widgets.css and use the names defined here. */
+   Widgets every page shares (messages, card camera) are in widgets.css and use the names defined here. */
 
 /* ---------- 1. Tokens ---------- */
 :root {
@@ -1569,3 +1569,7 @@ html.bt-modal { overflow: hidden; }
 .slide-btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.25; stroke-linecap: round; stroke-linejoin: round; }
 .slide-prev { left: 8px; }
 .slide-next { right: 8px; }
+/* The page for an address that isn't there. */
+.nf { max-width: 560px; margin: 24px auto; }
+.nf-search input { width: 100%; }
+.nf-acts { display: flex; flex-wrap: wrap; gap: 8px; }

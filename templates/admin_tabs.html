@@ -1,4 +1,4 @@
-{% if crate::look::is_new() %}
+
 <nav class="mgr-rail" aria-label="Vault Manager">
   <a class="mgr-rail-h" href="/admin/dashboard"><img src="/static/img/logo-sm-144.png?v=1" width="36" height="36" alt=""><span><b>Vault Manager</b><small>{{ nav.brand }}</small></span></a>
   <a href="/admin/dashboard"{% if tab == "dash" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="10" rx="1.5"/><rect x="13" y="3" width="8" height="6" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="15" width="8" height="6" rx="1.5"/></svg><span>Overview</span></a>
@@ -20,20 +20,4 @@
   <div class="mgr-bar-l"><h1 class="mgr-title">{% if tab == "dash" %}Overview{% else if tab == "cards" %}Cards{% else if tab == "quick" %}Add cards{% else if tab == "sets" %}Add by set{% else if tab == "binders" %}Binders{% else if tab == "showcase" %}Showcase{% else if tab == "page" %}Home page{% else if tab == "trainers" %}Trainers{% else if tab == "sellers" %}Sellers{% else if tab == "orders" %}Orders{% else %}Vault Manager{% endif %}</h1><span class="mgr-acct"><img src="/static/img/logo-sm-144.png?v=1" width="24" height="24" alt=""><b>{{ nav.brand }}</b></span></div>
   <div class="mgr-bar-r">{% if tab != "quick" %}<a class="btn mgr-create" href="/admin/quick"><span aria-hidden="true">+</span> Add cards</a>{% else %}<a class="btn ghost mgr-create" href="/admin/new">Add by hand</a>{% endif %}</div>
 </header>
-{% else %}
-<div class="adm-top">
-  <nav class="seg" aria-label="Admin sections">
-    <a href="/admin/dashboard" class="{% if tab == "dash" %}on{% endif %}">Dashboard</a>
-    <a href="/admin/quick" class="{% if tab == "quick" %}on{% endif %}">Quick add</a>
-    <a href="/admin/sets" class="{% if tab == "sets" %}on{% endif %}">Add by set</a>
-    <a href="/admin" class="{% if tab == "cards" %}on{% endif %}">My cards</a>
-    <a href="/admin/binders" class="{% if tab == "binders" %}on{% endif %}">Binders</a>
-    <a href="/admin/page" class="{% if tab == "page" %}on{% endif %}">Home page</a>
-    <a href="/admin/trainers" class="{% if tab == "trainers" %}on{% endif %}">Trainers{% if nav.pending > 0 %} <span class="seg-n">{{ nav.pending }}</span>{% endif %}</a>
-    <a href="/admin/sellers" class="{% if tab == "sellers" %}on{% endif %}">Sellers</a>
-    <a href="/admin/orders" class="{% if tab == "orders" %}on{% endif %}">Orders{% if nav.orders > 0 %} <span class="seg-n">{{ nav.orders }}</span>{% endif %}</a>
-  </nav>
-  <a class="linkbtn" href="/" target="_blank" rel="noopener">View site ↗</a>
-</div>
-<script>{ const s = document.querySelector('.adm-top .seg'), a = s && s.querySelector('a.on'); if (a && s.scrollWidth > s.clientWidth) s.scrollLeft = a.getBoundingClientRect().left - s.getBoundingClientRect().left + s.scrollLeft - (s.clientWidth - a.offsetWidth) / 2; }</script>
-{% endif %}
+

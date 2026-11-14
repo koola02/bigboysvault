@@ -1,15 +1,15 @@
 <!doctype html>
-<html lang="en"{% if crate::look::is_new() %} data-look="fb"{% endif %}>
+<html lang="en" data-look="fb">
 <head>
 <script>
-// Phones and low-power devices get a lighter page: no live sky, no glass blur, no endless shimmer. Decided before anything paints.
+// Phones and low-power devices get a lighter page: a card's shine is left off (holo.js). Decided before anything paints.
 (function () { var n = navigator, d = document.documentElement, small = matchMedia('(pointer: coarse)').matches && Math.min(screen.width, screen.height) < 900;
   if (small || (n.hardwareConcurrency && n.hardwareConcurrency <= 4) || (n.deviceMemory && n.deviceMemory <= 4) || (n.connection && n.connection.saveData) || /[?&]lite=1/.test(location.search)) d.dataset.lite = '1'; })();
 </script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
-<meta name="theme-color" content="{% if crate::look::is_new() %}#141826{% else %}#03040a{% endif %}">
+<meta name="theme-color" content="#141826">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black">
@@ -38,11 +38,8 @@
 {% endif %}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@50..150,100..900&display=swap">
-{% if crate::look::is_new() %}<link rel="stylesheet" href="/static/fb.css?v=19">
-{% else %}<link rel="stylesheet" href="/static/app.css?v=53">
-<link rel="stylesheet" href="/static/modern.css?v=27">
-<link rel="stylesheet" href="/static/vault.css?v=65">
-{% endif %}<link rel="stylesheet" href="/static/widgets.css?v=4">
+<link rel="stylesheet" href="/static/fb.css?v=20">
+<link rel="stylesheet" href="/static/widgets.css?v=5">
 {% block head %}{% endblock %}
 {% for t in nav.trials %}<meta http-equiv="origin-trial" content="{{ t }}">
 {% endfor %}<script type="speculationrules">
@@ -57,18 +54,6 @@
     r.textContent = JSON.stringify({ prerender: [{ where: { and: [{ href_matches: '/*' }, { not: { href_matches: '/admin*' } }, { not: { href_matches: '/products/*' } }, { not: { href_matches: '/me*' } }, { not: { href_matches: '/join*' } }, { not: { href_matches: '/chat*' } }, { not: { href_matches: '/ask*' } }, { not: { href_matches: '/trainers/*' } }, { not: { href_matches: '/collections/*' } }, { not: { href_matches: '/search*' } }, { not: { href_matches: '/static/*' } }, { not: { href_matches: '/uploads/*' } }] }, eagerness: 'moderate' }] });
     document.head.append(r);
   }
-  // The first page of a visit opens from a single point of light. It never blocks anything: it ignores touches and ends by itself.
-  try {
-    if (!sessionStorage.getItem('bbvGate') && !location.pathname.startsWith('/admin') && !matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      sessionStorage.setItem('bbvGate', '1');
-      document.documentElement.dataset.gate = '1';
-    }
-    // A new page opens from where you tapped on the last one.
-    addEventListener('pagereveal', function () {
-      var t = (sessionStorage.getItem('bbvTap') || '').split(',');
-      if (t.length === 2) { document.documentElement.style.setProperty('--ox', t[0] + 'px'); document.documentElement.style.setProperty('--oy', t[1] + 'px'); }
-    });
-  } catch (_) {}
   // Tools for AI assistants: only for browsers that have this feature.
   if ('modelContext' in document) import('/static/webmcp.js?v=1');
 })();
@@ -79,66 +64,26 @@
 <meta name="finder-v" content="16">
 <script src="/static/htmx.min.js?v=4" defer></script>
 <script src="/static/suggest.js?v=3" defer></script>
-{% if !crate::look::is_new() %}<script src="/static/card-float.js?v=24" defer></script>{% endif %}
 <script src="/static/tiles.js?v=2" defer></script>
 <script src="/static/vouches.js?v=5" defer></script>
-{% if crate::look::is_new() %}<script src="/static/fb-shell.js?v=11" defer></script><script src="/static/feed.js?v=3" defer></script>{% else %}<script src="/static/vault-core.js?v=12" defer></script>{% endif %}
+<script src="/static/fb-shell.js?v=12" defer></script><script src="/static/feed.js?v=4" defer></script>
 <script src="/static/cart.js?v=2" defer></script>
 <script src="/static/vault-talk.js?v=9" defer></script>
 <script src="/static/dm.js?v=8" defer></script>
 <script src="/static/alerts.js?v=1" defer></script>
 <script src="/static/card-cam.js?v=3" defer></script>
-<script src="/static/vault-staff.js?v=6" defer></script>
-{% if !crate::look::is_new() %}<script type="module" src="/static/vault-gl.js?v=4"></script>{% endif %}
+<script src="/static/vault-staff.js?v=7" defer></script>
 </head>
 <body data-layout="{% block layout %}page{% endblock %}">
 <a class="skip" href="#main">Skip to content</a>
-{% if !crate::look::is_new() %}<script>try { if (localStorage.getItem('bbv:staff-hide')) document.documentElement.setAttribute('data-staff-hide', ''); } catch (_) {}</script>{% endif %}
-<script>(function () { try { // Signed in last time? Say so before the top bar paints, so "Log in" never flashes. Saved by vault-core.js as { me, admin }.
+<script>(function () { try { // Signed in last time? Say so before the top bar paints, so "Log in" never flashes. Saved by fb-shell.js as { me, admin }.
   var s = JSON.parse(localStorage.getItem('bbv:me') || 'null'); if (!s) return;
   var me = s.me || (s.name ? s : null), d = document.documentElement.dataset;
   if (me && me.name) d.me = (me.role === 'admin' || s.admin) ? 'admin' : '1'; else if (s.admin) d.me = 'admin';
 } catch (_) {} })();</script>
-{% if crate::look::is_new() %}{% include "fb_top.html" %}{% else %}<div class="hx-gate" aria-hidden="true"><img src="/static/img/logo-768.webp" width="768" height="768" alt=""></div>
-<header class="bar">
-  <div class="bar-in">
-    <a class="brand" href="/" aria-label="{{ nav.brand }}"><img class="brand-mark" src="/static/img/logo-sm-144.png?v=1" width="44" height="44" alt="">{% if nav.split() %}<span class="brand-t"><span class="b1">{{ nav.left() }}</span> <span class="b2">{{ nav.right() }}</span></span>{% else %}<span class="brand-t"><span class="b2">{{ nav.brand }}</span></span>{% endif %}</a>
-    <details class="menu-dd"{% if nav.menu.is_empty() %} hidden{% endif %}>
-      <summary class="bar-trainers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 7h8M8 11h8"/></svg>Binders<svg class="menu-dd-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
-      <nav class="menu" aria-label="Binders">
-        {% for c in nav.menu %}<a href="/collections/{{ c.handle }}">{{ c.title }}</a>{% endfor %}
-        <a class="menu-all" href="/all">All cards</a>
-      </nav>
-    </details>
-    <form class="search" action="/search" role="search">
-      <input type="search" name="q" placeholder="Search cards, sets, binders" aria-label="Search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" data-suggest>
-    </form>
-    <a class="bar-trainers" href="/ask" data-float><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>Ask</a>
-    <a class="bar-trainers" href="/chat" data-float><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>Chat</a>
-    <a class="bar-trainers" href="/stores"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>Stores</a>
-    <a class="bar-trainers" href="/trainers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>Trainers</a>
-    <a class="bar-me" id="barMe" href="/me" hidden aria-label="My profile"><span class="av bar-me-av" id="barMeAv"></span><span class="bar-me-t" id="barMeT">My profile</span></a>
-    <a class="bar-login" id="barLogin" href="/login"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg><span>Log in</span></a>
-    <a class="bar-dm" id="barDm" href="/me/messages" hidden aria-label="Messages" title="Messages"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg><span class="notif-badge" id="dmBadge" hidden>0</span></a>
-    <div class="bar-notif" id="notifDropdown" hidden>
-      <button type="button" class="bar-notif-btn" id="notifBtn" aria-label="Notifications"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg><span class="notif-badge" id="notifBadge" hidden>0</span></button>
-      <div class="notif-menu" id="notifMenu" hidden>
-        <div class="notif-head"><b>Notifications</b><button type="button" id="notifRead" class="btn ghost">Mark all read</button></div>
-        <ul class="notif-list" id="notifList"></ul>
-      </div>
-    </div>
-  </div>
-</header>
-{% endif %}<main id="main" tabindex="-1">{% block content %}{% endblock %}</main>
+{% include "fb_top.html" %}<main id="main" tabindex="-1">{% block content %}{% endblock %}</main>
 <aside class="fb-right" id="fbRight" aria-label="More">{% block right %}{% endblock %}</aside>
-{% if crate::look::is_new() %}{% include "fb_bottom.html" %}{% else %}<footer class="foot">
-  <div class="foot-legal">
-    <p>© {{ nav.years }} {{ nav.brand }}. All rights reserved.</p>
-    <p>Pokémon and all related names are trademarks of Nintendo, Creatures and GAME FREAK. {{ nav.brand }} is a private collection and isn’t affiliated with them.</p>
-  </div>
-</footer>
-<button type="button" class="cart-fab" id="cartFab" hidden aria-label="Your cart" aria-expanded="false" aria-controls="cartDrawer"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg><span class="cart-n" id="cartN">0</span></button>
-{% endif %}<aside class="cart" id="cartDrawer" hidden aria-label="Your cart">
+{% include "fb_bottom.html" %}<aside class="cart" id="cartDrawer" hidden aria-label="Your cart">
   <div class="cart-head"><b>Your cart</b><button type="button" class="ibtn" data-cart-close aria-label="Close">✕</button></div>
   <p class="cart-empty" id="cartEmpty">Nothing in your cart yet. Tap <b>Add to cart</b> on any card for sale.</p>
   <ul class="cart-list" id="cartList"></ul>
@@ -150,12 +95,5 @@
     <small>No payment here. The vault or the seller accepts your order and shows you how to pay them directly.</small>
   </div>
 </aside>
-{% if !crate::look::is_new() %}<nav class="tabs" aria-label="Primary">
-  <a href="/"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Home</a>
-  <a href="/stores"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>Stores</a>
-  <a class="tab-ask" href="/ask" data-float aria-label="Ask the Vault"><img src="/static/img/logo-sm-144.png?v=1" width="52" height="52" alt=""><span>Ask</span></a>
-  <a href="/chat" data-float><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg>Chat</a>
-  <a href="/trainers"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>Trainers</a>
-</nav>
-{% endif %}</body>
+</body>
 </html>

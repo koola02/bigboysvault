@@ -1,6 +1,6 @@
 /* The new look's frame: who is signed in, the tabs that show where you are, the menu, the account menu,
    notifications, the phone's search bar, and the switches for the look itself.
-   (Today's look uses vault-core.js for the same jobs; a page loads one or the other.) */
+   */
 
 // Who's here: asked once per page, shared by every script that needs it.
 window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who', { credentials: 'same-origin', headers: { Accept: 'application/json' } })
@@ -305,7 +305,7 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     });
   }
 
-  /* ---------- a card's picture, up close (today's look does this inside its floating window) ---------- */
+  /* ---------- a card's picture, up close ---------- */
   document.addEventListener('click', (e) => {
     const z = e.target.closest('[data-zoom]'); if (!z) return;
     e.preventDefault();
@@ -338,21 +338,15 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
   new MutationObserver(openFilters).observe(root, { attributes: true, attributeFilter: ['data-finder'] });
   openFilters();
 
-  /* ---------- the look itself: this device, and (full admins) everyone ---------- */
+  /* ---------- saved-and-reloaded notes, and the switches for the feed's automatic posts ---------- */
   // A page that saved something and reloaded says so once it is back.
   addEventListener('DOMContentLoaded', () => { try { const m = sessionStorage.getItem('bbv:toast'); if (m) { sessionStorage.removeItem('bbv:toast'); setTimeout(() => window.bbvToast(m), 250); } } catch (_) {} });
   const post = (url, body) => fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json().then((j) => (r.ok ? j : Promise.reject(new Error(j.error || 'That didn’t work.')))));
   const toast = window.bbvToast = (msg, bad) => { let t = document.querySelector('.cart-toast'); if (!t) { t = document.createElement('div'); t.className = 'cart-toast'; t.setAttribute('role', 'status'); document.body.append(t); } t.textContent = msg; t.classList.toggle('bad', !!bad); t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), 3200); };
   document.addEventListener('click', async (e) => {
-    const mine = e.target.closest('[data-look-set]'), all = e.target.closest('[data-look-all]'), auto = e.target.closest('[data-auto]');
+    const auto = e.target.closest('[data-auto]');
     try {
       if (auto) { await post('/admin/feed/auto', { kind: auto.dataset.auto, on: auto.dataset.on === '1' }); location.reload(); }
-      if (mine) { await post('/me/look', { look: mine.dataset.lookSet }); location.reload(); }
-      if (all) {
-        const on = all.dataset.lookAll === 'on';
-        if (!confirm(on ? 'Show the new look to every visitor? Pages that aren’t converted yet stay as they are.' : 'Go back to today’s look for every visitor?')) return;
-        await post('/admin/look/all', { on }); location.reload();
-      }
     } catch (err) { toast(err.message, true); }
   });
 })();

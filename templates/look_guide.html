@@ -3,16 +3,8 @@
 {% block content %}
 <div class="stack" data-no-float>
   <section class="box box-p stack">
-    <h1 class="h1">The new look</h1>
-    <p class="lg-note">Every piece of the redesign on one page, in the frame it will live in. Try it on a phone, a tablet and a computer. Pages move to this look in groups; a page that hasn't moved yet keeps today's look.</p>
-    <div class="lg-row">
-      {% if mine %}<button type="button" class="btn ghost" data-look-set="classic">Use today's look on this device</button><span class="tag gold">New look is on for you</span>
-      {% else %}<button type="button" class="btn" data-look-set="new">Use the new look on this device</button><span class="tag">New look is off for you</span>{% endif %}
-    </div>
-    {% if full %}<div class="lg-row">
-      {% if all %}<button type="button" class="btn bad" data-look-all="off">Switch everyone back to today's look</button><span class="tag gold">Everyone sees the new look</span>
-      {% else %}<button type="button" class="btn ghost" data-look-all="on">Show the new look to everyone</button><span class="lg-note">Only when every page is ready.</span>{% endif %}
-    </div>{% endif %}
+    <h1 class="h1">The look</h1>
+    <p class="lg-note">Every piece of the site's look on one page, in the frame it lives in. Try it on a phone, a tablet and a computer.</p>
   </section>
 
   <section class="box box-p stack" id="auto">

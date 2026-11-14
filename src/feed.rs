@@ -1,4 +1,4 @@
-//! The home feed (new look): posts from marcuru_rs::social, drawn with live cards and prices, ten or so at a time.
+//! The home feed: posts from marcuru_rs::social, drawn with live cards and prices, ten or so at a time.
 //! It never ends: when the posts run out, the feed goes on with sets of cards from the vault, binder after binder,
 //! round and round. Between posts sit the stores carousel and, at the very top, the showcase as a row of stories.
 //!
@@ -7,12 +7,11 @@
 //! POST /posts     a trainer's post (words, up to four photos, maybe a card)
 //! POST /posts/{id}/react · GET|POST /posts/{id}/comments · POST /posts/{id}/delete|hide · POST /comments/{id}/delete
 use crate::community::{acting, current, fail, gated, html, ok, photo_cap_mb, render, same_site, store_photo, TOO_BIG};
-use crate::{admin, cached, look, messages, page, with_db, App, Chrome, Res, Seo};
+use crate::{admin, cached, messages, page, with_db, App, Chrome, Res, Seo};
 use askama::Template;
 use axum::{
     extract::{Multipart, Path, Query, State},
     http::{HeaderMap, StatusCode},
-    response::{IntoResponse, Redirect},
     Json,
 };
 use marcuru_rs::{blocks, db, dm, members, sellers, social};
@@ -487,10 +486,10 @@ async fn feed_html(app: &App, viewer: i64, only: Option<i64>) -> Result<String, 
 
 /// A like or a comment changes only the kept copy of the feed (the one signed-out visitors get).
 fn stale(app: &App) {
-    app.cache.invalidate("fb|feed");
+    app.cache.invalidate("feed");
 }
 
-/// GET / in the new look.
+/// GET /: the feed.
 pub async fn home(app: App, h: HeaderMap) -> Res {
     sync_if_due(&app).await;
     match current(&app, &h).await? {
@@ -523,9 +522,6 @@ pub async fn more(State(app): State<App>, h: HeaderMap, Query(q): Query<MoreQs>)
 
 /// GET /posts/{id}: one post on its own page (what a shared link opens).
 pub async fn one(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -> Res {
-    if !look::is_new() {
-        return Ok(Redirect::to("/").into_response());
-    }
     let viewer = current(&app, &h).await?.map(|m| m.id).unwrap_or(0);
     Ok(page(feed_html(&app, viewer, Some(id)).await?))
 }
