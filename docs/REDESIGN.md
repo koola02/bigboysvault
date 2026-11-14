@@ -320,6 +320,10 @@ As of 12 November 2026, behind the new-look switch:
   say about two looks is history. The site's name moved to the Manager's Showcase page, beside the welcome line.
   The Overview counts visitors (`src/visits.rs`), and `tests/browser/smoke.mjs` checks a buyer's path on a phone, a tablet
   and a computer before every release (`docs/HANDOFF.md` §6).
+- **A phone's buy bar (14 November 2026).** On a phone, Add to cart and Message stay in a bar just above the bottom
+  tabs on a card's page (the vault's and a store's), and at the foot of the card window (`.buy-bar` in `fb.css`,
+  section 3's "sticky action bar"). Before, they sat under the bottom tabs until the page was scrolled. Tablets and
+  computers keep them under the price. The release check fails if Add to cart is hidden on a phone.
 - **Not built:** stories viewer and trainers' stories, follow, share to feed. A review on 14 November 2026 advised
   holding new features until real buyers and sellers are using what is here, and watching the Overview's visitor
   and order counts; what comes next is the owner's to decide.

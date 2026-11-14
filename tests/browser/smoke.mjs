@@ -121,8 +121,18 @@ for (const [size, viewport] of Object.entries(SIZES)) {
   // 4. Searching finds cards.
   if (word) await open('/search?q=' + encodeURIComponent(word), `Search for “${word}”`, async () => ((await until(() => count('.fd-grid a.card'))) ? '' : 'the search found nothing'));
 
-  // 5. A card's own page: its name and its price.
-  if (cards.length) await open(cards[0], 'A card’s page', async () => (!/₱/.test(await text('main .price')) ? 'no price' : (await count('main h1')) ? '' : 'no name'));
+  // 5. A card's own page: its name, its price, and Add to cart where a thumb can reach it.
+  if (cards.length) await open(cards[0], 'A card’s page', async () => {
+    if (!/₱/.test(await text('main .price'))) return 'no price';
+    if (!(await count('main h1'))) return 'no name';
+    if (!(await count('main button.cart-add'))) return '';
+    // Is the button on screen, with nothing lying over it? A phone must show it before any scrolling.
+    const onTop = () => page.evaluate(() => { const b = document.querySelector('main button.cart-add'), r = b.getBoundingClientRect(); const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return r.top >= 0 && r.bottom <= innerHeight && !!hit && b.contains(hit); });
+    if (size === 'phone') return (await onTop()) ? '' : 'Add to cart is hidden until you scroll';
+    await page.$eval('main button.cart-add', (b) => b.scrollIntoView({ block: 'center' }));
+    await sleep(250);
+    return (await onTop()) ? '' : 'something lies over Add to cart';
+  });
 
   // 6. The cart. The first card that can really be bought is used: a copy held by someone's open order can't be.
   let bought = '', why = 'none of them has an Add to cart button';

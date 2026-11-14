@@ -202,6 +202,6 @@ A small Google VM runs the backups, prices, picture formats and an uptime check 
 
 | When | What changed |
 |---|---|
-| 14 Nov 2026 | Visitors counted on the Overview; My trainer in the Manager's frame; the old look removed (one stylesheet, one frame); the phone, tablet and computer check (`tests/browser/smoke.mjs`) |
+| 14 Nov 2026 | On a phone, Add to cart stays in a bar above the bottom tabs; visitors counted on the Overview; My trainer in the Manager's frame; the old look removed (one stylesheet, one frame); the phone, tablet and computer check (`tests/browser/smoke.mjs`) |
 | 10–14 Nov 2026 | The Facebook-style redesign (`docs/REDESIGN.md`): feed, The Vault, stores and their binders, the Managers, private messages and calls, alerts with the site closed, suggested prices by condition |
 | to 10 Nov 2026 | Card finder, binders, vintage printings, Japanese sets in English, lite mode, SEO, trainers, vouches, chat, Ask the Vault |
