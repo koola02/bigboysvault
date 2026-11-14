@@ -2,7 +2,7 @@
   "name": "bbv-browser-checks",
   "private": true,
   "type": "module",
-  "description": "The phone-and-computer check run before every release (smoke.mjs).",
+  "description": "The phone, tablet and computer check run before every release (smoke.mjs).",
   "scripts": {
     "smoke": "node smoke.mjs"
   },

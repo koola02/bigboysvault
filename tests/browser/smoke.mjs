@@ -1,6 +1,6 @@
-// The check before every release: does the site work on a phone and on a computer?
+// The check before every release: does the site work on a phone, a tablet and a computer?
 //
-// It opens the site in a real browser at two sizes and walks the path a buyer takes: home, The Vault, a search,
+// It opens the site in a real browser at three sizes and walks the path a buyer takes: home, The Vault, a search,
 // a card (in its window and on its own page), the cart, and "Send order". Then it looks at the other main pages.
 // On every page it checks: the page opened, nothing sticks out sideways, no script broke, nothing failed to load.
 //
@@ -39,6 +39,7 @@ const chrome = () => {
 
 const SIZES = {
   phone: { width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
+  tablet: { width: 820, height: 1180, deviceScaleFactor: 2, isMobile: true, hasTouch: true },
   computer: { width: 1440, height: 900 },
 };
 /** How many cards from The Vault to try before saying none can be bought. */
@@ -49,7 +50,7 @@ const say = (ok, size, what, more = '') => { ok ? passed++ : failed++; console.l
 const note = (size, what) => console.log(`  --  ${size.padEnd(8)} ${what}`);
 
 const browser = await puppeteer.launch({ executablePath: chrome(), headless: 'new', args: ['--no-sandbox'] });
-const hardStop = setTimeout(() => { console.log('FAIL  the whole check took too long (10 minutes)'); process.exit(1); }, 600000);
+const hardStop = setTimeout(() => { console.log('FAIL  the whole check took too long (15 minutes)'); process.exit(1); }, 900000);
 
 for (const [size, viewport] of Object.entries(SIZES)) {
   const ctx = await browser.createBrowserContext();

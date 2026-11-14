@@ -318,7 +318,7 @@ As of 12 November 2026, behind the new-look switch:
   the binder-ring home page, its editor and the binder window), with `look::is_new()`, the `bbv_look` cookie, the
   `site_look` setting's switch and the two-look tests. Sections 6 and 7 below describe how it was built; what they
   say about two looks is history. The site's name moved to the Manager's Showcase page, beside the welcome line.
-  The Overview counts visitors (`src/visits.rs`), and `tests/browser/smoke.mjs` checks a buyer's path on a phone
+  The Overview counts visitors (`src/visits.rs`), and `tests/browser/smoke.mjs` checks a buyer's path on a phone, a tablet
   and a computer before every release (`docs/HANDOFF.md` §6).
 - **Not built:** stories viewer and trainers' stories, follow, share to feed. A review on 14 November 2026 advised
   holding new features until real buyers and sellers are using what is here, and watching the Overview's visitor

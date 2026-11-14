@@ -156,8 +156,8 @@ For real data, point `DATABASE` at a copy of a backup (never at the only copy).
 
 ### Tests
 - **Rust:** `cargo test` (116 in the library, 43 in the binary) and `cargo test -p vault-search` (21).
-- **The phone-and-computer check:** `tests/browser/smoke.mjs` opens the site in Chrome at phone and computer
-  size and walks a buyer's path: home, The Vault, a search, a card in its window and on its page, the cart, "Send
+- **The phone, tablet and computer check:** `tests/browser/smoke.mjs` opens the site in Chrome at phone, tablet and
+  computer size and walks a buyer's path: home, The Vault, a search, a card in its window and on its page, the cart, "Send
   order", then the other main pages. On each it checks that the page opened, nothing sticks out sideways, no
   script broke and nothing failed to load.
   ```
@@ -202,6 +202,6 @@ A small Google VM runs the backups, prices, picture formats and an uptime check 
 
 | When | What changed |
 |---|---|
-| 14 Nov 2026 | Visitors counted on the Overview; My trainer in the Manager's frame; the old look removed (one stylesheet, one frame); the phone-and-computer check (`tests/browser/smoke.mjs`) |
+| 14 Nov 2026 | Visitors counted on the Overview; My trainer in the Manager's frame; the old look removed (one stylesheet, one frame); the phone, tablet and computer check (`tests/browser/smoke.mjs`) |
 | 10–14 Nov 2026 | The Facebook-style redesign (`docs/REDESIGN.md`): feed, The Vault, stores and their binders, the Managers, private messages and calls, alerts with the site closed, suggested prices by condition |
 | to 10 Nov 2026 | Card finder, binders, vintage printings, Japanese sets in English, lite mode, SEO, trainers, vouches, chat, Ask the Vault |

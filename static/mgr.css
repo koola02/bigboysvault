@@ -68,6 +68,9 @@ body:has(.mgr-rail) .fb-foot { padding-left: calc(var(--mgr-rail) + 16px); }
 
 /* ---------- 2. Overview: the numbers first, then what needs you, then the detail ---------- */
 .dash-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+/* Four numbers side by side, or two and two on a narrower screen: never three and one left over. */
+.dash-kpis.kpis-4 { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+@media (max-width: 1099px) { .dash-kpis.kpis-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .kpi { display: flex; flex-direction: column; gap: 4px; min-width: 0; padding: 14px 16px; border-radius: var(--r); background: var(--surface); box-shadow: inset 0 0 0 1px var(--mgr-line); }
 .kpi span { color: var(--muted); font: 600 .8125rem/1.2 var(--font); }
 .kpi b { color: var(--text); font: 700 1.75rem/1.15 var(--font); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }

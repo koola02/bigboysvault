@@ -21,7 +21,7 @@
     <article class="dash-panel dash-wide" id="visitors">
       <h2 class="dash-h">Visitors</h2>
       <p class="dash-sub">People who opened the site. Each person counts once a day. Search engines and staff aren't counted.{% if !visit_since.is_empty() %} Counting started on {{ visit_since }}.{% endif %}</p>
-      <div class="dash-kpis dash-kpis-s">
+      <div class="dash-kpis dash-kpis-s kpis-4">
         <div class="kpi"><span>Today</span><b>{{ visit_today }}</b><small>{{ visit_pages_today }} page{% if visit_pages_today != 1 %}s{% endif %} opened</small></div>
         <div class="kpi"><span>Last 7 days</span><b>{{ visit_week }}</b><small>{{ visit_week_signed }} of them logged in</small></div>
         <div class="kpi"><span>Last 30 days</span><b>{{ visit_month }}</b><small>different people</small></div>
@@ -136,7 +136,7 @@
 
     <article class="dash-panel dash-wide">
       <h2 class="dash-h">Community</h2>
-      <div class="dash-kpis dash-kpis-s">
+      <div class="dash-kpis dash-kpis-s kpis-4">
         <a class="kpi" href="/admin/trainers"><span>Trainers</span><b>{{ trainers }}</b><small>with a live page</small></a>
         <a class="kpi{% if pending > 0 %} kpi-alert{% endif %}" href="/admin/trainers"><span>Waiting for you</span><b>{{ pending }}</b><small>page{% if pending != 1 %}s{% endif %} to approve</small></a>
         <a class="kpi" href="/admin/trainers?view=vouches"><span>Vouches this week</span><b>{{ vouches_week }}</b><small>and replies</small></a>
