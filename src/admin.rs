@@ -2093,6 +2093,18 @@ struct DashboardPage {
     ops: Vec<OpsRow>,
     /// Prices typed by hand whose market moved 15% or more this month: worth a look.
     movers: Vec<marcuru_rs::history::Mover>,
+    /// Visitors (visits.rs): different people today, over 7 days (and how many of those were logged in) and over 30 days.
+    visit_today: i64,
+    visit_pages_today: i64,
+    visit_week: i64,
+    visit_week_signed: i64,
+    visit_month: i64,
+    /// (day, visitors, bar height in %) for the last 30 days, and the first day anything was counted.
+    visit_days: Vec<(String, i64, u32)>,
+    visit_days_first: String,
+    visit_since: String,
+    /// Orders sent in the last 30 days: the vault's and the stores' together.
+    orders_month: i64,
 }
 
 /// For bar widths: never under 2%, so a short bar still shows.
@@ -2260,10 +2272,26 @@ pub async fn dashboard(State(app): State<App>, h: HeaderMap) -> Res {
         }
         let ops = ops_rows(c, now)?;
         let movers = marcuru_rs::history::movers(c, 15, 8)?;
+        let seen = marcuru_rs::visits::per_day(c, now, 30)?;
+        let (visit_today, visit_pages_today) = seen.last().map_or((0, 0), |d| (d.visitors, d.views));
+        let fullest = seen.iter().map(|d| d.visitors).max().unwrap_or(0).max(1) as f64;
+        let visit_days_first = seen.first().map(|d| d.day.clone()).unwrap_or_default();
+        let visit_days = seen.into_iter().map(|d| { let h = if d.visitors == 0 { 0 } else { ((d.visitors as f64 / fullest) * 100.0).max(6.0) as u32 }; (d.day, d.visitors, h) }).collect();
+        let visit_week = marcuru_rs::visits::people(c, now, 7, false)?;
+        let visit_week_signed = marcuru_rs::visits::people(c, now, 7, true)?;
+        let visit_month = marcuru_rs::visits::people(c, now, 30, false)?;
+        let visit_since = marcuru_rs::visits::first_day(c)?.unwrap_or_default();
+        let month_ago = now - 30 * 86_400;
+        let orders_month: i64 = c.query_row(
+            "SELECT (SELECT COUNT(*) FROM vault_orders WHERE created_at>=?1) + (SELECT COUNT(*) FROM reservations WHERE created_at>=?1)",
+            [month_ago],
+            |r| r.get(0),
+        )?;
         Ok(DashboardPage {
             nav, tab: "dash", value: db::peso(total_value), copies: db::thousands(i64::from(copies)), distinct: db::thousands(cards.len() as i64), average, median, top10,
             week_n, week_value: db::peso(week_v), month_n, month_value: db::peso(month_v), insights, days, days_first, binders, viewed, searches, missing_searches,
             no_photo_n, no_photo, no_price_n, no_price, cond_notes_n, cond_notes, trainers, pending, vouches_week, chat_week, top_trainers, condition_shares, ops, movers,
+            visit_today, visit_pages_today, visit_week, visit_week_signed, visit_month, visit_days, visit_days_first, visit_since, orders_month,
         })
     })
     .await?;

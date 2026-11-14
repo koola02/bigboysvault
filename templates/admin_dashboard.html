@@ -18,6 +18,19 @@
   </div>
 
   <div class="dash-grid">
+    <article class="dash-panel dash-wide" id="visitors">
+      <h2 class="dash-h">Visitors</h2>
+      <p class="dash-sub">People who opened the site. Each person counts once a day. Search engines and staff aren't counted.{% if !visit_since.is_empty() %} Counting started on {{ visit_since }}.{% endif %}</p>
+      <div class="dash-kpis dash-kpis-s">
+        <div class="kpi"><span>Today</span><b>{{ visit_today }}</b><small>{{ visit_pages_today }} page{% if visit_pages_today != 1 %}s{% endif %} opened</small></div>
+        <div class="kpi"><span>Last 7 days</span><b>{{ visit_week }}</b><small>{{ visit_week_signed }} of them logged in</small></div>
+        <div class="kpi"><span>Last 30 days</span><b>{{ visit_month }}</b><small>different people</small></div>
+        <a class="kpi" href="/admin/orders"><span>Orders, last 30 days</span><b>{{ orders_month }}</b><small>the vault's and the stores'</small></a>
+      </div>
+      <div class="dash-days" role="img" aria-label="Visitors each day for the last 30 days">{% for d in visit_days %}<span style="--h:{{ d.2 }}%" title="{{ d.0 }}: {{ d.1 }} visitor{% if d.1 != 1 %}s{% endif %}"><i></i></span>{% endfor %}</div>
+      <p class="dash-foot"><span>{{ visit_days_first }}</span><span>Today</span></p>
+    </article>
+
     {% if let Some(i) = insights %}
     <article class="dash-panel dash-wide iv">
       <h2 class="dash-h">How prices spread out</h2>

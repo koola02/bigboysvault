@@ -14,4 +14,5 @@ pub mod social;
 pub mod stamp;
 pub mod suggest;
 pub mod translate;
+pub mod visits;
 pub mod wishes;

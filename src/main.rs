@@ -19,7 +19,7 @@ use axum::{
 };
 use marcuru_rs::blocks::{self, Block};
 use marcuru_rs::db::{self, Collection, Product, Query, PAGE_SIZE};
-use marcuru_rs::{market, members, suggest};
+use marcuru_rs::{market, members, suggest, visits};
 use moka::sync::Cache;
 use serde::Deserialize;
 use serde_json::Value;
@@ -974,6 +974,38 @@ async fn sitemap(State(app): State<App>) -> Res {
 }
 
 /// Window pieces, data and private pages aren't for search engines: the header asks them to leave these out.
+/// Counts a person opening a page (visits.rs). The count is written after the page is sent, so nobody waits for it.
+/// Not counted: the owner, staff, search engines and scripts, and anything that isn't a whole page that opened fine.
+async fn count_visit(State(app): State<App>, req: axum::extract::Request, next: axum::middleware::Next) -> Response {
+    let h = req.headers();
+    let get = |k: &str| h.get(k).and_then(|v| v.to_str().ok());
+    let cookie = |name: &str| get("cookie")?.split(';').find_map(|p| p.trim().strip_prefix(&format!("{name}=")).map(str::to_owned));
+    let open = req.method() == axum::http::Method::GET
+        && visits::is_page_open(req.uri().path(), get("sec-fetch-dest"), get("sec-purpose").or(get("purpose")), get("accept").unwrap_or(""), get("user-agent").unwrap_or(""));
+    let owner = !app.admin_token.is_empty() && cookie("marcuru_admin").is_some_and(|t| admin::eq(&t, &app.admin_token));
+    let seen = (open && !owner).then(|| (store::viewer_hash(h), cookie("bbv_trainer")));
+    let res = next.run(req).await;
+    let Some((who, session)) = seen else { return res };
+    let page = res.status() == StatusCode::OK && res.headers().get(header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).is_some_and(|t| t.starts_with("text/html"));
+    if page {
+        let at = unix_now();
+        tokio::spawn(async move {
+            let _ = with_db(&app, move |c| {
+                let (signed, staff) = match &session {
+                    Some(raw) => (members::from_session(c, raw)?.is_some(), members::staff_from_session(c, raw)?.is_some()),
+                    None => (false, false),
+                };
+                if staff {
+                    return Ok(());
+                }
+                visits::count(c, at, &who, signed)
+            })
+            .await;
+        });
+    }
+    res
+}
+
 async fn robots_header(req: axum::extract::Request, next: axum::middleware::Next) -> Response {
     let path = req.uri().path().to_string();
     let part = req.uri().query().is_some_and(|q| q.split('&').any(|kv| kv == "part" || kv.starts_with("part=")));
@@ -1327,6 +1359,8 @@ async fn main() {
                 let _ = with_db(&app, move |c| ops::ops_watchdog(c, now)).await;
                 // Wishlist alerts: a wanted card that is for sale somewhere new rings its trainer's bell once.
                 let _ = with_db(&app, move |c| marcuru_rs::wishes::run(c, now)).await;
+                // Visitor counts older than about a year are forgotten.
+                let _ = with_db(&app, move |c| visits::prune(c, now)).await;
                 tokio::time::sleep(Duration::from_secs(3600)).await;
             }
         });
@@ -1577,6 +1611,7 @@ async fn main() {
         .layer(SetResponseHeaderLayer::if_not_present(header::X_FRAME_OPTIONS, HeaderValue::from_static("SAMEORIGIN")))
         // Browsers that have seen the site once only ever ask for it over https (they ignore this on plain http).
         .layer(SetResponseHeaderLayer::if_not_present(header::STRICT_TRANSPORT_SECURITY, HeaderValue::from_static("max-age=15552000")))
+        .layer(axum::middleware::from_fn_with_state(app.clone(), count_visit))
         .layer(axum::middleware::from_fn(look::layer))
         .layer(axum::middleware::from_fn(robots_header))
         .layer(CompressionLayer::new())
