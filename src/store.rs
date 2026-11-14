@@ -38,7 +38,7 @@ pub struct Panel {
     pub unread: i64,
 }
 
-fn panel(c: &rusqlite::Connection, m: Member, tab: &'static str) -> rusqlite::Result<Panel> {
+pub(crate) fn panel(c: &rusqlite::Connection, m: Member, tab: &'static str) -> rusqlite::Result<Panel> {
     let (r, o, q) = sellers::pending(c, m.id)?;
     let unread = members::unread_notification_count(c, m.id)?;
     Ok(Panel { m, tab, todo: r + o + q, unread })

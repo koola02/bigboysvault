@@ -1,26 +1,28 @@
 {% extends "base.html" %}
+{% block head %}{% include "mgr_head.html" %}{% endblock %}
+{% block layout %}wide{% endblock %}
 {% block content %}
-<section class="wrap me" id="me" data-max="{{ max }}" data-seller="{{ m.seller }}" data-highlight="{% if let Some(h) = m.highlight %}{{ h }}{% endif %}">
+<section class="wrap admin st me" id="me" data-max="{{ max }}" data-seller="{{ p.m.seller }}" data-highlight="{% if let Some(h) = p.m.highlight %}{{ h }}{% endif %}">
+  {% include "store_tabs.html" %}
   <div class="me-top">
-    <h1 class="h1">My trainer</h1>
+    <p class="me-status {% if p.m.profile_ok %}ok{% endif %}" id="meStatus">{% if p.m.profile_ok %}✓ Your page is live.{% else %}The vault owner still has to approve your picture, description and binder. Your vouches go up straight away.{% endif %}</p>
     <div class="me-top-acts">
-      <a class="linkbtn" href="/trainers/{{ m.id }}">See my page</a>
-      <form method="post" action="/signout"><button class="linkbtn" type="submit">Log out</button></form>
+      <a class="btn ghost sm" href="/trainers/{{ p.m.id }}">See my page</a>
+      <form method="post" action="/signout"><button class="btn ghost sm" type="submit">Log out</button></form>
     </div>
   </div>
-  <p class="me-status {% if m.profile_ok %}ok{% endif %}" id="meStatus">{% if m.profile_ok %}✓ Your page is live.{% else %}⏳ The vault owner still has to approve your picture, description and binder. Your vouches go up straight away.{% endif %}</p>
-  {% if m.is_staff() %}<p class="me-staff-toggle"><button type="button" class="btn ghost" data-staff-toggle aria-pressed="true"><span data-staff-word>Hide admin buttons</span></button><small>Admin buttons on the site's pages (edit, take down, delete). Hidden only on this device.</small></p><p class="me-staff"><span class="role" data-role="{{ m.role }}">{{ m.role_text() }}</span><span>{% if m.role == "admin" %}You can do everything the vault owner can, including editing the site.{% else %}You can hide or delete vouches, and block or remove trainers.{% endif %}</span><a class="btn ghost" href="{% if m.role == "admin" %}/admin{% else %}/admin/trainers{% endif %}">Open admin</a></p>{% endif %}
-  {% if m.locked() %}<p class="me-locked">🔒 Your trainer is locked for another {{ m.lock_left() }}. You can't post or change anything until then.</p>{% endif %}
-  <p class="tp-stars">{% if m.stars > 0 %}<span class="stars stars-lg">★ {{ m.stars }}</span>{% endif %}<span class="worth worth-lg" id="meWorth"{% if m.worth <= 0.0 %} hidden{% endif %}>{{ m.worth_text() }}</span></p>
+  {% if p.m.is_staff() %}<p class="me-staff"><span class="role" data-role="{{ p.m.role }}">{{ p.m.role_text() }}</span><span>{% if p.m.role == "admin" %}You can do everything the vault owner can, including editing the site.{% else %}You can hide or delete vouches, and block or remove trainers.{% endif %}</span><a class="btn ghost sm" href="{% if p.m.role == "admin" %}/admin{% else %}/admin/trainers{% endif %}">Open admin</a></p>{% endif %}
+  {% if p.m.locked() %}<p class="mgr-note">Your trainer is locked for another {{ p.m.lock_left() }}. You can't post or change anything until then.</p>{% endif %}
+  <p class="tp-stars me-worth">{% if p.m.stars > 0 %}<span class="stars stars-lg">★ {{ p.m.stars }}</span>{% endif %}<span class="worth worth-lg" id="meWorth"{% if p.m.worth <= 0.0 %} hidden{% endif %}>{{ p.m.worth_text() }}</span></p>
 
-  {% if m.seller %}
+  {% if p.m.seller %}
   <section class="me-card me-store">
     <div>
       <h2 class="h2">My store</h2>
       <p class="me-how">Sell your cards: stock, prices, binders, orders and reviews, all in one place.</p>
       <p class="me-store-n"><span><b>{{ stats.active_listings }}</b> on sale</span><span><b>{{ stats.items_sold }}</b> sold</span><span><b>{{ stats.binder_count }}</b> binder{% if stats.binder_count != 1 %}s{% endif %}</span>{% if stats.pending_offers + stats.pending_inquiries > 0 %}<span><b>{{ stats.pending_offers + stats.pending_inquiries }}</b> waiting</span>{% endif %}</p>
     </div>
-    <div class="me-top-acts"><a class="btn" href="/me/store">Open my store</a><a class="linkbtn" href="{{ m.store_url() }}" target="_blank" rel="noopener">See it ↗</a></div>
+    <div class="me-top-acts"><a class="btn" href="/me/store">Open my store</a><a class="btn ghost" href="{{ p.m.store_url() }}">See it</a></div>
   </section>
   {% else %}
   <section class="me-card me-store">
@@ -34,23 +36,23 @@
 
   <form class="me-card me-profile" id="meProfile">
     <label class="me-av" title="Change your picture">
-      {% if m.has_avatar() %}<img class="av av-xl" id="meAvatar" src="{{ m.avatar }}" width="160" height="160" alt="">{% else %}<span class="av av-xl" id="meAvatar">{{ m.initial() }}</span>{% endif %}
-      <span class="me-av-btn">📷 Change picture</span>
+      {% if p.m.has_avatar() %}<img class="av av-xl" id="meAvatar" src="{{ p.m.avatar }}" width="160" height="160" alt="">{% else %}<span class="av av-xl" id="meAvatar">{{ p.m.initial() }}</span>{% endif %}
+      <span class="me-av-btn">Change picture</span>
       <input class="sr" type="file" accept="image/*" id="meFile" aria-label="Change your picture">
     </label>
     <div class="me-fields">
-      <label>Trainer name<input name="name" value="{{ m.name }}" maxlength="24" autocomplete="off" required></label>
-      <label>About you <small><span id="bioCount">0</span> of 300</small><textarea name="bio" maxlength="300" rows="3" placeholder="What do you collect? Who's your favorite Pokémon?">{{ m.bio }}</textarea></label>
+      <label>Trainer name<input name="name" value="{{ p.m.name }}" maxlength="24" autocomplete="off" required></label>
+      <label>About you <small><span id="bioCount">0</span> of 300</small><textarea name="bio" maxlength="300" rows="3" placeholder="What do you collect? Who's your favorite Pokémon?">{{ p.m.bio }}</textarea></label>
       <div class="me-save-row">
         <button class="btn" type="submit">Save</button>
-        <a class="linkbtn" href="/me/settings">Links, location and how to pay are in Store settings →</a>
+        {% if p.m.seller %}<a class="linkbtn" href="/me/settings">Links, location and how to pay are in Store settings</a>{% endif %}
       </div>
     </div>
   </form>
 
   <section class="me-card">
-    <h2 class="h2">My binder <small><span id="meCount">{{ m.cards }}</span> of {{ max }}</small></h2>
-    <p class="me-how">Each card is a <b>Highlight</b> (one you have and show off){% if m.seller %}, <b>For sale</b> (in your store){% endif %} or on your <b>Wishlist</b> (one you're after). ★ picks the card shown on the home page. Drag to change the order. Values come from today's market prices; type your own if you know better.</p>
+    <h2 class="h2">My binder <small><span id="meCount">{{ p.m.cards }}</span> of {{ max }}</small></h2>
+    <p class="me-how">Each card is a <b>Highlight</b> (one you have and show off){% if p.m.seller %}, <b>For sale</b> (in your store){% endif %} or on your <b>Wishlist</b> (one you're after). ★ picks the card shown at the top of your page. Drag to change the order. Values come from today's market prices; type your own if you know better.</p>
     <ul class="me-binder" id="meBinder">
       {% for c in cards %}
       <li class="me-c" data-id="{{ c.id }}">
@@ -60,7 +62,7 @@
         </span>
         <b class="me-c-t">{{ c.title }}</b>
         <small class="me-c-s">{{ c.card_set }}{% if !c.number.is_empty() %} · {{ c.number }}{% endif %}</small>
-        <select data-nodrag data-kind aria-label="What {{ c.title }} is"><option value="own"{% if c.is_own() %} selected{% endif %}>Highlight</option>{% if m.seller %}<option value="sale"{% if c.is_sale() %} selected{% endif %}>For sale</option>{% endif %}<option value="wish"{% if c.is_wish() %} selected{% endif %}>Wishlist</option></select>
+        <select data-nodrag data-kind aria-label="What {{ c.title }} is"><option value="own"{% if c.is_own() %} selected{% endif %}>Highlight</option>{% if p.m.seller %}<option value="sale"{% if c.is_sale() %} selected{% endif %}>For sale</option>{% endif %}<option value="wish"{% if c.is_wish() %} selected{% endif %}>Wishlist</option></select>
         <select data-nodrag data-cond aria-label="Condition of {{ c.title }}">{% for o in conditions %}<option{% if *o == c.cond %} selected{% endif %}>{{ o }}</option>{% endfor %}</select>
         <label class="me-val" data-nodrag><span>Value ₱</span><input data-value type="number" min="0" step="1" inputmode="numeric" value="{{ c.own_text() }}" placeholder="{% if c.value > 0.0 %}{{ c.market_text() }}{% else %}Not known yet{% endif %}" aria-label="Value of {{ c.title }} in pesos"></label>
         <p class="me-c-sug" data-market="{{ c.value }}" data-own="{{ c.value_own }}" data-cond="{{ c.cond }}"{% if c.own_photo() %} data-own-photo{% endif %}></p>
@@ -68,7 +70,7 @@
       </li>
       {% endfor %}
     </ul>
-    <p class="me-empty" id="meEmpty"{% if !cards.is_empty() %} hidden{% endif %}>Your binder is empty. Find your first card below.</p>
+    <p class="me-none" id="meEmpty"{% if !cards.is_empty() %} hidden{% endif %}>Your binder is empty. Find your first card below.</p>
 
     <h3 class="me-add-h">Add a card you own</h3>
     <div class="me-find">
@@ -83,7 +85,7 @@
     <div class="me-results" id="meResults"></div>
 
     <details class="me-own" id="meOwn">
-      <summary><span>📷</span> Not in the list? Add your own photo of a card</summary>
+      <summary>Not in the list? Add your own photo of a card</summary>
       <form id="meUpload" class="me-up">
         <label class="me-up-pic"><input type="file" name="photo" accept="image/*" required class="sr" id="meUpPhoto" data-card-cam><img id="meUpShot" alt="" hidden><span id="meUpHint"><b>Add a photo</b><small>Take one or choose one</small></span></label>
         <div class="me-fields">
@@ -100,8 +102,8 @@
 
   <section class="me-card">
     <h2 class="h2">My vouches</h2>
-    <p class="me-how">Tap the gold Vouch button on Home, Trainers or Vouches. Your words and photos go up straight away, and you can delete them any time.</p>
-    <div style="display:flex;flex-wrap:wrap;gap:10px"><a class="btn" href="/vouches">Write a vouch</a><a class="btn ghost" href="/trainers/{{ m.id }}">See my vouches</a></div>
+    <p class="me-how">A vouch tells other trainers the vault can be trusted. Your words and photos go up straight away, and you can delete them any time.</p>
+    <div class="me-acts"><a class="btn" href="/vouches">Write a vouch</a><a class="btn ghost" href="/trainers/{{ p.m.id }}">See my vouches</a></div>
   </section>
 
   <details class="me-card me-account">
@@ -116,5 +118,5 @@
 </section>
 <script src="/static/dragsort.js?v=5" defer></script>
 <script src="/static/pricing.js?v=2" defer></script>
-<script src="/static/me.js?v=10" defer></script>
+<script src="/static/me.js?v=11" defer></script>
 {% endblock %}

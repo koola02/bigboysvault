@@ -54,7 +54,7 @@
   counter(form.elements.bio, $('bioCount'));
   const status = (live) => {
     const s = $('meStatus'); s.classList.toggle('ok', live);
-    s.textContent = live ? '✓ Your page is live.' : '⏳ The vault owner still has to approve your picture, description and binder. Your vouches go up straight away.';
+    s.textContent = live ? '✓ Your page is live.' : 'The vault owner still has to approve your picture, description and binder. Your vouches go up straight away.';
   };
   async function saveProfile() {
     const fd = new FormData(form);

@@ -10,20 +10,20 @@
   <i class="mgr-rail-gap" aria-hidden="true"></i>
   <a href="/me/notifications"{% if p.tab == "notifications" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg><span>Notifications</span>{% if p.unread > 0 %}<i class="mgr-n">{{ p.unread }}</i>{% endif %}</a>
   <a href="/me/messages"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg><span>Messages</span></a>
-  <a href="/me"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>My trainer</span></a>
+  <a href="/me"{% if p.tab == "me" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>My trainer</span></a>
   <a href="{{ p.m.store_url() }}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg><span>See my store</span></a>
 </nav>
 <script>{ const r = document.querySelector('.mgr-rail'), a = r && r.querySelector('[aria-current="page"]'); if (a && r.scrollWidth > r.clientWidth) r.scrollLeft = a.offsetLeft - (r.clientWidth - a.offsetWidth) / 2; }</script>
 <header class="mgr-bar">
-  <div class="mgr-bar-l"><h1 class="mgr-title">{% if p.tab == "dash" %}Overview{% else if p.tab == "listings" %}Listings{% else if p.tab == "binders" %}Binders{% else if p.tab == "orders" %}Orders{% else if p.tab == "notifications" %}Notifications{% else if p.tab == "settings" %}Store settings{% else %}Store Manager{% endif %}</h1><span class="mgr-acct">{% if p.m.has_avatar() %}<img src="{{ p.m.avatar }}" width="24" height="24" alt="">{% endif %}<b>{{ p.m.store_title() }}</b></span></div>
+  <div class="mgr-bar-l"><h1 class="mgr-title">{% if p.tab == "dash" %}Overview{% else if p.tab == "listings" %}Listings{% else if p.tab == "binders" %}Binders{% else if p.tab == "orders" %}Orders{% else if p.tab == "notifications" %}Notifications{% else if p.tab == "settings" %}Store settings{% else if p.tab == "me" %}My trainer{% else %}Store Manager{% endif %}</h1><span class="mgr-acct">{% if p.m.has_avatar() %}<img src="{{ p.m.avatar }}" width="24" height="24" alt="">{% endif %}<b>{{ p.m.store_title() }}</b></span></div>
   <div class="mgr-bar-r">{% if p.tab != "listings" %}<a class="btn mgr-create" href="/me/listings#add"><span aria-hidden="true">+</span> Add cards</a>{% endif %}</div>
 </header>
-{% if !p.m.profile_ok %}<p class="mgr-note">The vault owner still has to approve your page. Until then only you can see your store.</p>{% endif %}
+{% if !p.m.profile_ok && p.tab != "me" %}<p class="mgr-note">The vault owner still has to approve your page. Until then only you can see your store.</p>{% endif %}
 {% if p.m.on_vacation() %}<p class="mgr-note">Your store is on vacation: nobody can reserve or make offers. Change it in <a href="/me/settings">Store settings</a>.</p>{% endif %}
 {% else %}
 <header class="mgr-bar mgr-bar-solo">
-  <div class="mgr-bar-l"><h1 class="mgr-title">{% if p.tab == "notifications" %}Notifications{% else %}My orders{% endif %}</h1></div>
-  <div class="mgr-bar-r"><a class="btn ghost sm" href="/me/orders?tab=buying"{% if p.tab == "orders" %} aria-current="page"{% endif %}>My orders</a><a class="btn ghost sm" href="/me/notifications"{% if p.tab == "notifications" %} aria-current="page"{% endif %}>Notifications</a><a class="btn ghost sm" href="/me">My trainer</a></div>
+  <div class="mgr-bar-l"><h1 class="mgr-title">{% if p.tab == "notifications" %}Notifications{% else if p.tab == "me" %}My trainer{% else %}My orders{% endif %}</h1></div>
+  <div class="mgr-bar-r"><a class="btn ghost sm" href="/me/orders?tab=buying"{% if p.tab == "orders" %} aria-current="page"{% endif %}>My orders</a><a class="btn ghost sm" href="/me/notifications"{% if p.tab == "notifications" %} aria-current="page"{% endif %}>Notifications</a><a class="btn ghost sm" href="/me"{% if p.tab == "me" %} aria-current="page"{% endif %}>My trainer</a></div>
 </header>
 {% endif %}
 {% else %}

@@ -31,7 +31,7 @@ pub const COOKIE: &str = "bbv_look";
 pub const GUIDE: &str = "/admin/look";
 
 /// Pages already converted. "/x" covers "/x" and everything under it; "=/x" covers only "/x" itself.
-const READY: &[&str] = &[GUIDE, "=/", "/feed", "/posts", "/all", "/search", "/collections", "/products", "/trainers", "/stores", "/store", "/vouches", "=/ask", "=/chat", "=/login", "=/join", "=/signin", "=/me/messages", "=/admin/messages", "=/me/notifications", "=/admin", "=/admin/dashboard", "=/me/store", "=/me/listings",
+const READY: &[&str] = &[GUIDE, "=/", "/feed", "/posts", "/all", "/search", "/collections", "/products", "/trainers", "/stores", "/store", "/vouches", "=/ask", "=/chat", "=/login", "=/join", "=/signin", "=/me", "=/me/messages", "=/admin/messages", "=/me/notifications", "=/admin", "=/admin/dashboard", "=/me/store", "=/me/listings",
     "=/admin/quick", "=/admin/sets", "=/admin/binders", "=/admin/showcase", "=/admin/orders", "=/admin/trainers", "=/admin/sellers", "=/admin/new", "/admin/edit", "=/me/binders", "=/me/orders", "=/me/settings"];
 
 /// Is this request (or the page being rendered for it) in the new look?
@@ -164,7 +164,7 @@ mod tests {
         assert!(ready("/admin/showcase"));
         assert!(ready("/admin/new") && ready("/admin/edit/12") && ready("/me/binders") && ready("/me/orders") && ready("/me/settings"));
         // The home page editor is today's home page itself, so it stays in today's look. So does what only answers with data.
-        assert!(!ready("/me") && !ready("/storefront") && !ready("/admin/page") && !ready("/admin/page/list") && !ready("/admin/save"));
+        assert!(ready("/me") && !ready("/storefront") && !ready("/admin/page") && !ready("/admin/page/list") && !ready("/admin/save"));
         assert!(!ready("/admin/quick-edit") && !ready("/admin/sets/search") && !ready("/admin/binders/pikachu-set/covers") && !ready("/admin/editor"));
     }
 

@@ -265,7 +265,8 @@ struct MemberCardPart {
 #[template(path = "me.html")]
 struct MePage {
     nav: Chrome,
-    m: Member,
+    /// The trainer, inside the Manager's frame (store_tabs.html).
+    p: crate::store::Panel,
     cards: Vec<MemberCard>,
     binders: Vec<members::MemberBinder>,
     stats: members::SellerStats,
@@ -694,11 +695,11 @@ pub async fn me(State(app): State<App>, h: HeaderMap) -> Res {
     // Signed out (or the sign-in ran out): log in again, not "Become a trainer".
     let Some(m) = current(&app, &h).await? else { return Ok(Redirect::to("/login").into_response()) };
     let id = m.id;
-    let (nav, cards, binders, stats, max) = with_db(&app, move |c| {
-        Ok((chrome(c)?, members::cards_of(c, id)?, members::binders_of(c, id)?, members::seller_stats(c, id)?, marcuru_rs::sellers::max_cards(c)))
+    let (nav, p, cards, binders, stats, max) = with_db(&app, move |c| {
+        Ok((chrome(c)?, crate::store::panel(c, m, "me")?, members::cards_of(c, id)?, members::binders_of(c, id)?, members::seller_stats(c, id)?, marcuru_rs::sellers::max_cards(c)))
     })
     .await?;
-    Ok(html(render(MePage { nav: titled(nav, "My trainer"), m, cards, binders, stats, max, conditions: members::CONDITIONS })?))
+    Ok(html(render(MePage { nav: titled(nav, "My trainer"), p, cards, binders, stats, max, conditions: members::CONDITIONS })?))
 }
 
 /// Signed in and really from this site, whatever their lock says. For things a locked trainer may still do: their password, deleting what's theirs.
