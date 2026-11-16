@@ -216,6 +216,9 @@ Each phase is deployed with the usual steps: live database backup, `fly deploy`,
 - **Photo space.** Post and story photos use the same capped space as other uploads; expired stories are deleted hourly.
 - **Voice calls, Gemini, the VM jobs** are untouched by this work.
 - **Not copied:** Facebook's logo, name, blue, icon set or text.
+- **Left for later (16 Nov review):** the finder's "Confirm" button wording (needs the finder rebuilt, and
+  `wasm-opt` is not on this PC); a 1200×630 share picture; the empty space beside the showcase on very wide
+  screens; loading The Vault's 3.4 MB card list in parts.
 
 ## Status
 

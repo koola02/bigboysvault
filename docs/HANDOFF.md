@@ -195,6 +195,11 @@ A small Google VM runs the backups, prices, picture formats and an uptime check 
   email are dropped (`store.rs`). There is no "forgot my password" page: an admin gives a locked-out trainer a
   new password from Trainers.
 - **Rate limits:** log in, join, search, Ask and orders use `app.limits` (per address or account).
+- **Confirm boxes:** ask with `await window.bbvConfirm(question, { yes, no })` (a Promise of true/false), not
+  `confirm()`. Only a check that must answer at once (leaving a page with unsaved changes) keeps `confirm()`. The
+  smoke check answers the box when it cancels its test order.
+- **Why you were sent to log in:** set `sessionStorage['bbv:login-why']` to `order`, `message`, `react`, `post` or
+  `offer` before sending someone to `/login`; the page says why, and Join carries it on.
 - **Old addresses:** `/admin/page` (the old home page editor) goes to `/admin/showcase`, where the site's name,
   the welcome line and the showcase's cards are set.
 
@@ -202,6 +207,7 @@ A small Google VM runs the backups, prices, picture formats and an uptime check 
 
 | When | What changed |
 |---|---|
+| 16 Nov 2026 | From a click-through review (logged out, buyer, seller, admin; four screen sizes): the cart's + on a tile takes the card out on a second tap, the cart's + stops at the copies there are, a tap outside the cart closes it; log in and join say why you were sent there; the site's own "are you sure?" box (`window.bbvConfirm` in `fb-shell.js`) replaces `confirm()` everywhere a choice can wait; a trainer not yet approved is told so in the post box; the finder's counts in the site's words and a "Show N cards" button in the phone filters (both from `fb-shell.js`, since the finder is not rebuilt); a card's language and how meetup/shipping works on its page; one name (the store name) per seller in orders, offers and alerts; messages survive an unreadable poll reply |
 | 14 Nov 2026 | On a phone, Add to cart stays in a bar above the bottom tabs; visitors counted on the Overview; My trainer in the Manager's frame; the old look removed (one stylesheet, one frame); the phone, tablet and computer check (`tests/browser/smoke.mjs`) |
 | 10–14 Nov 2026 | The Facebook-style redesign (`docs/REDESIGN.md`): feed, The Vault, stores and their binders, the Managers, private messages and calls, alerts with the site closed, suggested prices by condition |
 | to 10 Nov 2026 | Card finder, binders, vintage printings, Japanese sets in English, lite mode, SEO, trainers, vouches, chat, Ask the Vault |
