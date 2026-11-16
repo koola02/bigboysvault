@@ -5,6 +5,7 @@
   <div class="join-brand"><img src="/static/img/logo-768.webp" width="144" height="144" alt=""><b>{{ nav.brand }}</b><p>Pokémon cards and collectibles in one vault. Browse, ask, message a seller, and trade with trainers you can trust.</p></div>
   <div class="join-card">
     <img class="join-mark" src="/static/img/logo-sm-144.png?v=1" width="88" height="88" alt="">
+    <p class="join-why" id="loginWhy" role="status" hidden></p>
     <h1 class="h1">Welcome back</h1>
     <p class="join-sub">Your binder, your store and your orders.</p>
     {% if !error.is_empty() %}<p class="join-err" role="alert">{{ error }}</p>{% endif %}
@@ -15,7 +16,7 @@
       <label class="chk login-remember"><input type="checkbox" class="sr" name="remember" value="1" checked><span class="chk-box"></span> Remember me on this device</label>
       <button class="btn" type="submit">Log in</button>
     </form>
-    <p class="join-switch">New here? <a href="/join{% if !next.is_empty() %}?next={{ next|urlencode }}{% endif %}" id="joinLink">Become a trainer</a> — a profile and a binder, no email needed.</p>
+    <div class="join-or"><span>New here?</span><a class="btn ghost" href="/join{% if !next.is_empty() %}?next={{ next|urlencode }}{% endif %}" id="joinLink">Join free</a><small>A trainer profile and a binder, no email needed.</small></div>
     <p class="join-note">Forgot your password? Ask the vault owner for a new one.</p>
   </div>
 </section>
@@ -30,6 +31,22 @@
   // Sent here from the cart: after logging in (or joining), go back to it. Only a path on this site counts,
   // the same test the server's safe_next makes: starts with one '/', no backslash, plain visible letters, 300 at most.
   const safe = (n) => n.length <= 300 && n[0] === '/' && n[1] !== '/' && /^[!-~]+$/.test(n) && n.indexOf('\\') < 0;
+  // Why they were sent here (the cart, a message, a like…), said at the top so they know their place is kept.
+  const WHY = {
+    order: 'Log in or join free to send your order. Your cart is saved and opens again right after.',
+    message: 'Log in or join free to send your message. You come straight back here after.',
+    react: 'Log in or join free to react and comment. You come straight back here after.',
+    post: 'Log in or join free to post. You come straight back here after.',
+    offer: 'Log in or join free to reserve a card or make an offer. You come straight back here after.',
+  };
+  try {
+    const why = sessionStorage.getItem('bbv:login-why');
+    if (why) {
+      sessionStorage.removeItem('bbv:login-why');
+      const box = document.getElementById('loginWhy');
+      if (WHY[why]) { box.textContent = WHY[why]; box.hidden = false; try { sessionStorage.setItem('bbv:join-why', why); } catch (_) {} }
+    }
+  } catch (_) {}
   try {
     const n = (sessionStorage.getItem('bbv:after-login') || '').trim();
     if (n) {

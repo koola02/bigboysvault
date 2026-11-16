@@ -24,18 +24,31 @@
     fab.classList.toggle('has', c > 0);
     document.querySelectorAll('[data-cart-vault], [data-cart-card]').forEach((b) => {
       const kind = b.dataset.cartVault != null ? 'vault' : 'card', id = Number(b.dataset.cartVault ?? b.dataset.cartCard);
-      b.classList.toggle('in', lines.some((l) => l.kind === kind && l.id === id));
+      const inCart = lines.some((l) => l.kind === kind && l.id === id);
+      if (b.classList.contains('in') === inCart) return;
+      b.classList.toggle('in', inCart);
+      // The small round button says what pressing it does now (screen readers and the tooltip).
+      if (b.classList.contains('cart-mini')) {
+        const t = b.dataset.title || 'this card';
+        b.setAttribute('aria-label', inCart ? `Take ${t} out of your cart` : `Add ${t} to your cart`); b.title = inCart ? 'In your cart: tap to take it out' : 'Add to cart';
+      }
     });
   }
 
   /* ----- adding ----- */
+  // A button adds one copy. Once the card is in the cart the button says so, and pressing it again does what it
+  // shows: the small round one (drawn as "−") takes the card out, the big "In cart ✓" one opens the cart. How many
+  // copies is changed in the cart itself, where '+' stops at the copies there are.
   function add(kind, id, snap) {
-    const have = lines.find((l) => l.kind === kind && l.id === id);
-    if (have) { have.qty = Math.min(99, (have.qty || 1) + 1); }
-    else lines.push({ kind, id, qty: 1, ...snap });
+    lines.push({ kind, id, qty: 1, ...snap });
     save();
     toast(`${snap.title || 'Card'} is in your cart`);
     fab.classList.remove('bump'); void fab.offsetWidth; fab.classList.add('bump');
+  }
+  function takeOut(kind, id) {
+    const l = lines.find((x) => x.kind === kind && x.id === id);
+    lines = lines.filter((x) => x !== l); save(); if (!drawer.hidden) paint();
+    toast(`${(l && l.title) || 'Card'} is out of your cart`);
   }
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-cart-vault], [data-cart-card]'); if (!b) return;
@@ -43,6 +56,10 @@
     const kind = b.dataset.cartVault != null ? 'vault' : 'card';
     const id = Number(b.dataset.cartVault ?? b.dataset.cartCard);
     if (!id) return;
+    if (lines.some((l) => l.kind === kind && l.id === id)) {
+      if (b.classList.contains('cart-mini')) takeOut(kind, id); else { opener = b; open(); }
+      return;
+    }
     add(kind, id, { title: b.dataset.title || '', price: Number(b.dataset.price) || 0, image: b.dataset.image || '', url: b.dataset.url || '', seller_name: b.dataset.seller || '', seller_slug: b.dataset.sellerSlug || '' });
   }, true);
   document.addEventListener('keydown', (e) => {
@@ -52,18 +69,25 @@
   });
 
   /* ----- the drawer ----- */
-  // Opening moves focus into the drawer; closing brings it back to the cart button, so keyboard users don't get lost.
+  // Opening moves focus into the drawer; closing brings it back to what opened it (the cart button, or the
+  // "In cart ✓" button), so keyboard users don't get lost.
+  // A see-through layer behind the drawer: a tap beside the cart closes it and does nothing else (before, the tap
+  // went through to the page and could open a card behind the open cart).
+  const scrim = el('div', 'cart-scrim'); scrim.hidden = true; drawer.before(scrim);
+  scrim.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); close(); });
+  let opener = null;
   const open = async () => {
-    drawer.hidden = false; fab.hidden = false; fab.setAttribute('aria-expanded', 'true'); document.body.classList.add('cart-open'); paint();
+    drawer.hidden = false; scrim.hidden = false; fab.hidden = false; fab.setAttribute('aria-expanded', 'true'); document.body.classList.add('cart-open'); paint();
     const x = drawer.querySelector('[data-cart-close]'); if (x) x.focus();
     await refresh();
   };
   const close = () => {
     const inside = drawer.contains(document.activeElement);
-    drawer.hidden = true; fab.setAttribute('aria-expanded', 'false'); document.body.classList.remove('cart-open'); badge();
-    if (inside && !fab.hidden) fab.focus();
+    drawer.hidden = true; scrim.hidden = true; fab.setAttribute('aria-expanded', 'false'); document.body.classList.remove('cart-open'); badge();
+    const back = opener && opener.isConnected ? opener : fab; opener = null;
+    if (inside && !back.hidden) back.focus();
   };
-  fab.addEventListener('click', () => (drawer.hidden ? open() : close()));
+  fab.addEventListener('click', () => { if (drawer.hidden) { opener = fab; open(); } else close(); });
   drawer.querySelectorAll('[data-cart-close]').forEach((b) => b.addEventListener('click', close));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !drawer.hidden) close(); });
 
@@ -100,7 +124,7 @@
         const body = el('div', 'cart-body');
         body.append(el('b', null, l.title || 'Card'));
         if (l.ok === false) body.append(el('small', 'cart-why', l.why || 'Not available'));
-        else body.append(el('small', null, `${peso(l.price)} each`));
+        else body.append(el('small', null, `${peso(l.price)} each` + (l.left > 0 && (l.qty || 1) >= l.left ? ` · ${l.left === 1 ? 'only 1 there' : `all ${l.left} there`}` : '')));
         const qty = el('div', 'cart-qty');
         const minus = el('button', null, '−'); minus.type = 'button'; minus.setAttribute('aria-label', 'One fewer');
         const num = el('span', null, String(l.qty || 1));
@@ -109,6 +133,9 @@
         minus.onclick = () => { l.qty = (l.qty || 1) - 1; if (l.qty <= 0) lines = lines.filter((x) => x !== l); unmark(l); save(); paint(); };
         // '+' never lowers the count, even when fewer are left than asked for (the line then stays as it is).
         plus.onclick = () => { const q = l.qty || 1; l.qty = Math.min(99, l.left ? Math.max(q, Math.min(l.left, q + 1)) : q + 1); unmark(l); save(); paint(); };
+        // Every copy there is is already in the cart: '+' is switched off and the line says so.
+        const atMost = l.left > 0 && (l.qty || 1) >= l.left;
+        if (atMost) { plus.disabled = true; plus.setAttribute('aria-label', `Only ${l.left} there`); plus.title = `Only ${l.left} there`; }
         qty.append(minus, num, plus);
         const line = el('b', 'cart-sum', peso((l.price || 0) * (l.qty || 1)));
         const x = el('button', 'cart-x', '✕'); x.type = 'button'; x.setAttribute('aria-label', `Take ${l.title} out`); x.onclick = () => { lines = lines.filter((y) => y !== l); save(); paint(); };
@@ -134,7 +161,7 @@
       if (r.status === 401) {
         // After signing in, the sign-in page brings the buyer back here with the cart open.
         const back = /[?&]cart=1(&|$)/.test(location.search) ? location.pathname + location.search : location.pathname + (location.search ? location.search + '&' : '?') + 'cart=1';
-        try { sessionStorage.setItem('bbv:after-login', back); } catch (_) {}
+        try { sessionStorage.setItem('bbv:after-login', back); sessionStorage.setItem('bbv:login-why', 'order'); } catch (_) {}
         location.href = '/login'; return;
       }
       const j = await r.json();

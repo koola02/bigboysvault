@@ -303,7 +303,7 @@
       del.removeAttribute('onsubmit');
       del.addEventListener('submit', async (e) => {
         e.preventDefault();
-        if (!confirm('Delete this card? This can’t be undone.')) return;
+        if (!(await (window.bbvConfirm ? window.bbvConfirm('Delete this card? This can’t be undone.', { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm('Delete this card? This can’t be undone.'))))) return;
         try { await A.post(del.getAttribute('action')); finish('Card deleted'); }
         catch (err) { A.toast(err.message, { kind: 'err' }); }
       });

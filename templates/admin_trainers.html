@@ -137,9 +137,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if (setRole) {
         const row = setRole.closest('.at-row'), role = setRole.dataset.roleSet, name = row.dataset.name;
         if (setRole.classList.contains('on')) return;
-        if (role === 'admin' && !confirm(`Make ${name} an admin? They can do everything you can: edit the site, change or delete cards, and make more staff.`)) return;
-        if (role === 'mod' && !confirm(`Make ${name} a moderator? They can hide or delete vouches, and block or remove trainers. Nothing else.`)) return;
-        if (role === '' && !confirm(`Take ${name}'s powers away? This works straight away.`)) return;
+        if (role === 'admin' && !(await (window.bbvConfirm ? window.bbvConfirm(`Make ${name} an admin? They can do everything you can: edit the site, change or delete cards, and make more staff.`, { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm(`Make ${name} an admin? They can do everything you can: edit the site, change or delete cards, and make more staff.`))))) return;
+        if (role === 'mod' && !(await (window.bbvConfirm ? window.bbvConfirm(`Make ${name} a moderator? They can hide or delete vouches, and block or remove trainers. Nothing else.`, { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm(`Make ${name} a moderator? They can hide or delete vouches, and block or remove trainers. Nothing else.`))))) return;
+        if (role === '' && !(await (window.bbvConfirm ? window.bbvConfirm(`Take ${name}'s powers away? This works straight away.`, { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm(`Take ${name}'s powers away? This works straight away.`))))) return;
         await send(row, { action: 'role', role });
         return;
       }
@@ -147,29 +147,29 @@ document.addEventListener('DOMContentLoaded', () => {
       if (setSeller) {
         const row = setSeller.closest('.at-row'), on = setSeller.dataset.sellerSet === '1', name = row.dataset.name;
         if (setSeller.classList.contains('on')) return;
-        if (on && !confirm(`Let ${name} sell cards? They get a store page, listings with stock and prices, and orders.`)) return;
-        if (!on && !confirm(`Switch ${name}'s store off? Their cards stay in their binder; nothing is for sale. Open orders on their store are cancelled and the buyers are told.`)) return;
+        if (on && !(await (window.bbvConfirm ? window.bbvConfirm(`Let ${name} sell cards? They get a store page, listings with stock and prices, and orders.`, { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm(`Let ${name} sell cards? They get a store page, listings with stock and prices, and orders.`))))) return;
+        if (!on && !(await (window.bbvConfirm ? window.bbvConfirm(`Switch ${name}'s store off? Their cards stay in their binder; nothing is for sale. Open orders on their store are cancelled and the buyers are told.`, { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm(`Switch ${name}'s store off? Their cards stay in their binder; nothing is for sale. Open orders on their store are cancelled and the buyers are told.`))))) return;
         await send(row, { action: 'seller', seller: on });
         return;
       }
       const amt = e.target.closest('[data-amt]');
       if (amt) { amt.closest('form').elements.points.value = amt.dataset.amt; return; }
       const undo = e.target.closest('[data-undo]');
-      if (undo) { if (confirm('Take these star points back?')) await send(undo.closest('.at-row'), { action: 'stars-undo', award: Number(undo.dataset.undo) }); return; }
+      if (undo) { if ((await (window.bbvConfirm ? window.bbvConfirm('Take these star points back?', { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm('Take these star points back?'))))) await send(undo.closest('.at-row'), { action: 'stars-undo', award: Number(undo.dataset.undo) }); return; }
       const photo = e.target.closest('[data-photo]');
-      if (photo) { if (confirm('Delete this photo for good?')) { await A.postJSON(`/admin/vouch-photos/${photo.dataset.photo}/delete`, {}); location.reload(); } return; }
+      if (photo) { if ((await (window.bbvConfirm ? window.bbvConfirm('Delete this photo for good?', { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm('Delete this photo for good?'))))) { await A.postJSON(`/admin/vouch-photos/${photo.dataset.photo}/delete`, {}); location.reload(); } return; }
       const post = e.target.closest('[data-post]');
       if (post) {
-        if (post.dataset.post === 'delete' && !confirm('Delete this for good? Replies under it go too.')) return;
+        if (post.dataset.post === 'delete' && !(await (window.bbvConfirm ? window.bbvConfirm('Delete this for good? Replies under it go too.', { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm('Delete this for good? Replies under it go too.'))))) return;
         await A.postJSON(`/vouches/${post.closest('[data-vouch]').dataset.vouch}/act`, { action: post.dataset.post });
         location.reload();
         return;
       }
       const b = e.target.closest('[data-act]'); if (!b) return;
       const row = b.closest('.at-row'), act = b.dataset.act, name = row.dataset.name;
-      if (act === 'delete' && !confirm(`Remove ${name}, with their binder, vouches, replies and photos? Their open orders are cancelled. This can't be undone.`)) return;
-      if (act === 'block' && !confirm(`Block ${name}? They're signed out, can't sign in, and everything of theirs comes off the site until you unblock them. Their open orders, buying and selling, are cancelled and the other side is told.`)) return;
-      if (act === 'password' && !confirm(`Make a new password for ${name}? Their old one stops working.`)) return;
+      if (act === 'delete' && !(await (window.bbvConfirm ? window.bbvConfirm(`Remove ${name}, with their binder, vouches, replies and photos? Their open orders are cancelled. This can't be undone.`, { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm(`Remove ${name}, with their binder, vouches, replies and photos? Their open orders are cancelled. This can't be undone.`))))) return;
+      if (act === 'block' && !(await (window.bbvConfirm ? window.bbvConfirm(`Block ${name}? They're signed out, can't sign in, and everything of theirs comes off the site until you unblock them. Their open orders, buying and selling, are cancelled and the other side is told.`, { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm(`Block ${name}? They're signed out, can't sign in, and everything of theirs comes off the site until you unblock them. Their open orders, buying and selling, are cancelled and the other side is told.`))))) return;
+      if (act === 'password' && !(await (window.bbvConfirm ? window.bbvConfirm(`Make a new password for ${name}? Their old one stops working.`, { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm(`Make a new password for ${name}? Their old one stops working.`))))) return;
       await send(row, { action: act });
     } catch (err) { A.toast(err.message, { kind: 'err' }); }
   });

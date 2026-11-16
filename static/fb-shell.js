@@ -212,7 +212,7 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
 
   /* ---------- a card opens in a window over the page, with "More like this" under it ----------
      (Its own page stays for shared links, search engines and the admin's editor; the window needs no button to it.) */
-  let cw = null, cwStop = null, cwBase = null, cwTools = null, cwSeq = 0, cwTalk = null;
+  let cw = null, cwStop = null, cwBase = null, cwTools = null, cwSeq = 0, cwTalk = null, cwFrom = null;
   // A vault card, or a card a store has for sale (its ?part=1 is the same .detail).
   const cardPath = (a) => (a && a.origin === location.origin && /^\/(products\/[^/]+|trainers\/\d+\/cards\/\d+)$/.test(a.pathname) && !a.hash && !a.target ? a.pathname : '');
   const cwDepth = () => (history.state && history.state.cw ? history.state.depth || 1 : 0);
@@ -232,6 +232,8 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     const mine = ++cwSeq, body = cw.querySelector('.cardwin-b'), box = cw.querySelector('.cardwin-in');
     if (cw.hidden) {
       cwBase = { title: document.title };
+      // Where the person was (the card they opened): focus goes back there when the window closes.
+      cwFrom = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
       // On a phone a chat window fills the screen: it steps aside for the card and comes back afterwards.
       if (matchMedia('(max-width: 699px)').matches) { cwTalk = Object.keys(talks).find((k) => !talks[k].win.hidden) || null; if (cwTalk) talks[cwTalk].win.hidden = true; }
     }
@@ -269,7 +271,11 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     if (cwBase) document.title = cwBase.title;
     if (cwTalk && talks[cwTalk]) { talks[cwTalk].win.hidden = false; root.classList.add('ask-open'); }
     cwTalk = null;
+    if (cwFrom && cwFrom.isConnected) cwFrom.focus({ preventScroll: true });
+    cwFrom = null;
   }
+  // The card window remembers the tile that opened it (a click doesn't always focus a link, so note it here).
+  document.addEventListener('pointerdown', (e) => { const a = e.target.closest && e.target.closest('a.card, a.story, a.attach, a[href^="/products/"]'); if (a && (!cw || cw.hidden)) cwFrom = a; }, true);
   document.addEventListener('click', (e) => {
     if (e.defaultPrevented || e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
     const a = e.target.closest && e.target.closest('a[href]'), href = cardPath(a);
@@ -306,13 +312,25 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
   }
 
   /* ---------- a card's picture, up close ---------- */
+  // Tapping the big picture itself does what "Inspect up close" does: people expect a tap on a picture to bring it closer.
+  document.addEventListener('click', (e) => {
+    const pic = e.target.closest && e.target.closest('.detail-img img'); if (!pic) return;
+    const z = pic.closest('.detail')?.querySelector('[data-zoom]'); if (z) { e.preventDefault(); z.click(); }
+  });
+  // "‹ The Vault" on a card's own page goes back to where you were in it (the same search, filters and place),
+  // when that is where you came from; otherwise to the top of The Vault.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a[data-back]'); if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
+    let from = null; try { from = document.referrer ? new URL(document.referrer) : null; } catch (_) {}
+    if (from && from.origin === location.origin && /^\/(all|search|collections)(\/|$)/.test(from.pathname) && history.length > 1) { e.preventDefault(); history.back(); }
+  });
   document.addEventListener('click', (e) => {
     const z = e.target.closest('[data-zoom]'); if (!z) return;
     e.preventDefault();
     const o = document.createElement('div'); o.className = 'dm-lightbox zoomable'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', 'The card, up close');
     const img = document.createElement('img'); img.src = z.dataset.zoom; img.alt = ''; o.append(img);
     const x = document.createElement('button'); x.type = 'button'; x.className = 'dm-ib dm-lb-x'; x.textContent = '✕'; x.setAttribute('aria-label', 'Close'); o.append(x);
-    const close = () => { o.remove(); document.removeEventListener('keydown', esc); };
+    const close = () => { o.remove(); document.removeEventListener('keydown', esc); if (z.isConnected) z.focus({ preventScroll: true }); };
     const esc = (ev) => { if (ev.key === 'Escape') close(); };
     // A tap on the picture brings it closer, where the tap was; another tap steps back.
     img.addEventListener('click', (ev) => { const r = img.getBoundingClientRect(), fx = (ev.clientX - r.left) / r.width, fy = (ev.clientY - r.top) / r.height; const big = o.classList.toggle('in'); if (big) requestAnimationFrame(() => { o.scrollLeft = img.offsetWidth * fx - o.clientWidth / 2; o.scrollTop = img.offsetHeight * fy - o.clientHeight / 2; }); });
@@ -334,6 +352,41 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     new MutationObserver(rename).observe(vaultH, { childList: true, characterData: true, subtree: true });
     rename();
   }
+  // The finder counts "1,296 cards · 2,218 copies"; everywhere else on the site "cards" means copies ("2,213 cards for
+  // sale"). Said the site's way: "2,218 cards (1,296 different)", and "187 cards match (179 different)" when filtered.
+  // Both are drawn by the finder once it has loaded (root gets data-finder then), so they are set up from there.
+  const finderBits = () => {
+    const countEl = document.querySelector('.fd-count');
+    if (!countEl || countEl.dataset.said) return;
+    countEl.dataset.said = '1';
+    {
+      const say = () => {
+        for (const n of countEl.childNodes) {
+          if (n.nodeType !== 3 || /different|match/.test(n.data)) continue;
+          let m = n.data.match(/^\s*([\d,]+) of [\d,]+ cards? · ([\d,]+) cop(?:y|ies)\s*$/);
+          if (m) { n.data = `${m[2]} card${m[2] === '1' ? '' : 's'} match (${m[1]} different)`; continue; }
+          m = n.data.match(/^\s*([\d,]+) cards? · ([\d,]+) cop(?:y|ies)\s*$/);
+          if (m) { n.data = `${m[2]} cards (${m[1]} different)`; continue; }
+          m = n.data.match(/^\s*([\d,]+) of [\d,]+ cards?\s*$/);
+          if (m) n.data = `${m[1]} card${m[1] === '1' ? '' : 's'} match`;
+        }
+      };
+      new MutationObserver(say).observe(countEl, { childList: true, characterData: true, subtree: true });
+      say();
+    }
+    // On a phone the filters open as a panel above the cards: a button at its foot shows how many cards match right
+    // now, and takes you to them (before, a tap on a filter changed the count somewhere below, out of sight).
+    const fdf = document.querySelector('.fd-filters');
+    if (fdf && countEl) {
+      const go = document.createElement('button'); go.type = 'button'; go.className = 'btn fd-show';
+      const paint = () => { const m = (countEl.textContent || '').match(/([\d,]+) cards?/); go.textContent = m ? (m[1] === '0' ? 'No cards match' : `Show ${m[1]} card${m[1] === '1' ? '' : 's'}`) : 'Show the cards'; go.disabled = !!m && m[1] === '0'; };
+      go.addEventListener('click', () => { fdf.open = false; countEl.scrollIntoView({ block: 'start', behavior: 'smooth' }); });
+      fdf.append(go); paint();
+      new MutationObserver(paint).observe(countEl, { childList: true, characterData: true, subtree: true });
+    }
+  };
+  new MutationObserver(finderBits).observe(root, { attributes: true, attributeFilter: ['data-finder'] });
+  finderBits();
   const openFilters = () => { const d = document.querySelector('.fd-filters'); if (d && matchMedia('(min-width: 900px)').matches) d.open = true; };
   new MutationObserver(openFilters).observe(root, { attributes: true, attributeFilter: ['data-finder'] });
   openFilters();
@@ -342,6 +395,28 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
   // A page that saved something and reloaded says so once it is back.
   addEventListener('DOMContentLoaded', () => { try { const m = sessionStorage.getItem('bbv:toast'); if (m) { sessionStorage.removeItem('bbv:toast'); setTimeout(() => window.bbvToast(m), 250); } } catch (_) {} });
   const post = (url, body) => fetch(url, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify(body) }).then((r) => r.json().then((j) => (r.ok ? j : Promise.reject(new Error(j.error || 'That didn’t work.')))));
+  /* ---------- "Are you sure?" in the site's own look ----------
+     window.bbvConfirm(question, { yes, no, danger }) answers true or false. It replaces the browser's own box, which
+     looks like a system warning (on a phone it says the site's address over it) and stops the page until answered. */
+  window.bbvConfirm = (question, opt = {}) => new Promise((done) => {
+    const back = document.activeElement;
+    const o = document.createElement('div'); o.className = 'bbv-ask'; o.setAttribute('role', 'alertdialog'); o.setAttribute('aria-modal', 'true');
+    const box = document.createElement('div'); box.className = 'bbv-ask-in';
+    const p = document.createElement('p'); p.className = 'bbv-ask-q'; p.id = 'bbvAskQ' + Date.now(); p.textContent = question; o.setAttribute('aria-labelledby', p.id);
+    const row = document.createElement('div'); row.className = 'bbv-ask-acts';
+    const no = document.createElement('button'); no.type = 'button'; no.className = 'btn ghost'; no.textContent = opt.no || 'Keep it';
+    const yes = document.createElement('button'); yes.type = 'button'; yes.className = 'btn' + (opt.danger === false ? '' : ' bbv-ask-danger'); yes.textContent = opt.yes || 'Yes';
+    // Inside an open modal dialog when there is one (the vouch form): the rest of the page can't be clicked then.
+    const host = [...document.querySelectorAll('dialog[open]')].pop() || document.body;
+    row.append(no, yes); box.append(p, row); o.append(box); host.append(o);
+    const end = (v) => { o.remove(); document.removeEventListener('keydown', key, true); if (back && back.isConnected) back.focus({ preventScroll: true }); done(v); };
+    // Escape says no, and stops there (a window under it stays open); Tab stays between the two buttons.
+    const key = (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopImmediatePropagation(); end(false); } else if (ev.key === 'Tab') { ev.preventDefault(); (document.activeElement === no ? yes : no).focus(); } };
+    document.addEventListener('keydown', key, true);
+    no.addEventListener('click', () => end(false)); yes.addEventListener('click', () => end(true));
+    o.addEventListener('click', (ev) => { if (ev.target === o) end(false); });
+    (opt.danger === false ? yes : no).focus();
+  });
   const toast = window.bbvToast = (msg, bad) => { let t = document.querySelector('.cart-toast'); if (!t) { t = document.createElement('div'); t.className = 'cart-toast'; t.setAttribute('role', 'status'); document.body.append(t); } t.textContent = msg; t.classList.toggle('bad', !!bad); t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), 3200); };
   document.addEventListener('click', async (e) => {
     const auto = e.target.closest('[data-auto]');

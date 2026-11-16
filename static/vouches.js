@@ -55,7 +55,7 @@
   }
   const gone = (id) => document.querySelectorAll(`[data-vouch="${CSS.escape(id)}"]`).forEach((n) => n.remove());
   async function act(id, action) {
-    if (action === 'delete' && !confirm('Delete this for good? Replies under it go too.')) return;
+    if (action === 'delete' && !(await (window.bbvConfirm ? window.bbvConfirm('Delete this for good? Replies under it go too.', { yes: 'Delete', no: 'Keep it' }) : Promise.resolve(confirm('Delete this for good? Replies under it go too.'))))) return;
     try {
       await send(`/vouches/${id}/act`, { action });
       gone(id);
@@ -152,9 +152,9 @@
 
     const touched = () => text.value.trim() || items.length;
     const close = () => { dialog.close(); dialog.remove(); };
-    const discard = () => {
+    const discard = async () => {
       if (busy) return;
-      if (touched() && !confirm(parent ? 'Discard your reply?' : 'Discard your vouch?')) return;
+      if (touched() && !(await (window.bbvConfirm ? window.bbvConfirm(parent ? 'Discard your reply?' : 'Discard your vouch?', { yes: 'Discard', no: 'Keep writing' }) : Promise.resolve(confirm(parent ? 'Discard your reply?' : 'Discard your vouch?'))))) return;
       items.forEach((it) => { it.gone = true; if (it.id) send(`/me/photos/${it.id}/drop`).catch(() => {}); });
       close();
     };

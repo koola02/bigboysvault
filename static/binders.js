@@ -132,7 +132,7 @@
   });
   f.del.addEventListener('click', async () => {
     const b = binders.find((x) => x.handle === editing); if (!b) return;
-    if (!confirm(`Delete “${b.title}”?\n\nThe ${b.count} card${b.count === 1 ? '' : 's'} in it stay in your collection. Only the binder goes away.`)) return;
+    if (!(await (window.bbvConfirm ? window.bbvConfirm(`Delete “${b.title}”? The ${b.count} card${b.count === 1 ? '' : 's'} in it stay in your collection. Only the binder goes away.`, { yes: 'Delete binder', no: 'Keep it' }) : Promise.resolve(confirm(`Delete “${b.title}”? The ${b.count} card${b.count === 1 ? '' : 's'} in it stay in your collection. Only the binder goes away.`))))) return;
     try { await send(editing, { delete: true }); A.toast(`“${b.title}” deleted`, { kind: 'ok' }); closeEdit(); }
     catch (err) { A.toast(err.message, { kind: 'err' }); }
   });

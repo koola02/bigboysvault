@@ -40,9 +40,13 @@
     else if (body !== undefined) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
     if (opts.signal) init.signal = opts.signal;
     const r = await fetch(url, init);
-    const j = await r.json().catch(() => ({}));
+    // A reply that can't be read (the request was stopped halfway, or the connection dropped) is a failure, not an
+    // empty answer: an empty answer used to wipe the live listener's place (v), and it then asked with "undefined"
+    // every 3 seconds and stopped hearing new messages, the unread count and calls until the page was reloaded.
+    let j, unreadable = false;
+    try { j = await r.json(); } catch (_) { j = {}; unreadable = true; }
     if (r.status === 401) { const e = new Error(j.error || 'Log in to send messages.'); e.login = true; throw e; }
-    if (!r.ok) throw new Error(j.error || 'That didn\'t work. Please try again.');
+    if (!r.ok || unreadable) throw new Error(j.error || 'That didn\'t work. Please try again.');
     return j;
   }
   const toast = (msg, bad) => {
@@ -51,7 +55,7 @@
     t.textContent = msg; t.classList.toggle('bad', !!bad); t.classList.add('on');
     clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), bad ? 5000 : 2600);
   };
-  const toLogin = () => { try { sessionStorage.setItem('bbv:after-login', location.pathname + location.search); } catch (_) {} location.href = '/login'; };
+  const toLogin = () => { try { sessionStorage.setItem('bbv:after-login', location.pathname + location.search); sessionStorage.setItem('bbv:login-why', 'message'); } catch (_) {} location.href = '/login'; };
 
   const clock = (s) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`;
   const when = (t) => {
@@ -94,7 +98,7 @@
       try { j = await api(`/dm/poll?${q}`, undefined, { signal: live.ctrl.signal }); } catch (e) { if (e.login) { live.running = false; return; } }
       clearTimeout(stop);
       if (!j) { await new Promise((ok) => setTimeout(ok, live.kick ? 0 : 3000)); live.kick = false; continue; }
-      live.v = j.v; if (j.s != null) live.s = j.s;
+      if (Number.isFinite(j.v)) live.v = j.v; if (j.s != null) live.s = j.s;
       setUnread(j.unread);
       for (const s of j.signals || []) call.signal(s);
       if (j.open && j.open.id === win.thread) win.take(j.open);
@@ -841,13 +845,14 @@
     dropSetup();
     startLive();
     const page = $('[data-dm-page]'); if (page) inboxPage(page);
-    // The chat that was open on the last page comes back (as a bubble on a phone, or when it was minimised).
+    // The chat that was open on the last page comes back as its bubble in the corner, one tap from open. Before, on a
+    // computer or tablet it came back as the whole window, which sat over the new page's own buttons (a store's Follow,
+    // a card's details, the chat box).
     // Only the chat this person had open: someone else may have used this tab before them.
     let saved = store.get('bbv:dm');
     if (saved && saved.m !== me.id) { store.set('bbv:dm', null); saved = null; }
     if (saved && saved.t && !page) {
-      if (saved.min || phone()) { win.thread = saved.t; try { const j = await api(`/dm/${saved.t}`); win.other = j.other; chatHead(j.other); win.build().hidden = true; win.node.classList.add('min'); } catch (_) { store.set('bbv:dm', null); } }
-      else win.open(saved.t, { quiet: true });
+      { win.thread = saved.t; try { const j = await api(`/dm/${saved.t}`); win.other = j.other; chatHead(j.other); win.build().hidden = true; win.node.classList.add('min'); } catch (_) { store.set('bbv:dm', null); } }
     }
     // Opened from a call's alert: that call, answered if "Answer" was tapped. The address loses the call's part.
     const q = new URLSearchParams(location.search);

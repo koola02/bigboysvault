@@ -1590,3 +1590,43 @@ html.bt-modal { overflow: hidden; }
   body:has(main .buy-bar) .staff-off { bottom: calc(var(--bt-h) + 120px + var(--sab)); }
   html[data-look="fb"] body:has(main .buy-bar) .dm-head-bubble { bottom: calc(var(--bt-h) + 76px + var(--sab)); }
 }
+
+/* ---------- 99. Review fixes, 16 Nov 2026 ---------- */
+/* The cart: a dim layer behind it, so a tap outside closes it and never lands on the page underneath. */
+.cart-scrim { position: fixed; inset: 0; z-index: 969; background: rgba(0,0,0,.35); }
+.cart-qty button:disabled { color: var(--faint); cursor: not-allowed; opacity: .5; }
+/* Log in and Join: why you were sent here, and the way to join. */
+.join-why { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--gold-tint); box-shadow: inset 0 0 0 1px var(--gold-edge); color: var(--gold-hi); font-weight: 600; }
+.join-or { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.join-or span { font-weight: 600; }
+.join-or small { flex: 1 1 100%; color: var(--muted); }
+/* The site's own "are you sure?" box (instead of the browser's). */
+.bbv-ask { position: fixed; inset: 0; z-index: 2147483600; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.55); }
+.bbv-ask-in { width: min(400px, 100%); padding: 20px; border-radius: var(--r-lg); background: var(--surface); box-shadow: 0 0 0 1px var(--line-2), var(--shadow-pop); }
+.bbv-ask-q { margin: 0 0 16px; font-size: 1.0625rem; line-height: 1.45; white-space: pre-line; }
+.bbv-ask-acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.bbv-ask-acts .btn { min-height: 44px; }
+.btn.bbv-ask-danger { background: var(--red); color: #fff; }
+/* Posting waits until the owner approves your trainer. */
+.sheet-wait { margin: 0 0 10px; padding: 10px 12px; border-radius: var(--r-sm); background: var(--fill); color: var(--muted); font-size: .9375rem; }
+/* The welcome box says what the site is before anything else. */
+.welcome .welcome-what { margin: 4px 0 0; color: var(--text); font-weight: 600; }
+/* The finder's filters on a phone: a button at the foot shows the matching cards. */
+.fd-show { width: 100%; min-height: 44px; margin-top: 12px; }
+.fd-show:disabled { background: var(--surface-3); color: var(--muted); }
+@media (min-width: 900px) { .fd-show { display: none; } }
+/* Feed names are easier to hit. */
+.post-who b a { display: inline-block; padding: 2px 0; }
+/* Messages: a shorter window on a computer, so it covers less of the page. */
+@media (min-width: 700px) and (min-height: 521px) { html[data-look="fb"] .dm-win { height: min(520px, calc(100dvh - 120px)); } }
+/* Bigger tap areas on a phone and tablet: the + and chat buttons on cards, the image tap. */
+@media (max-width: 1023px) {
+  .cart-mini, html[data-look="fb"] .dm-mini { width: 36px; height: 36px; }
+  .cart-mini::after, .cart-mini::before { pointer-events: none; }
+  .cart-mini { box-shadow: 0 0 0 4px transparent; }
+}
+@media (max-width: 699px) {
+  .fd-adv-h small { display: none; }
+  .cart-qty button { width: 36px; height: 36px; }
+  .cart-x { width: 36px; height: 36px; }
+}

@@ -50,7 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('click', async (e) => {
     const b = e.target.closest('[data-ans]'); if (!b) return;
     const li = b.closest('.ao-order'), status = b.dataset.ans;
-    if (status === 'Declined' && !confirm('Decline this order?')) return;
+    if (status === 'Declined' && !(await (window.bbvConfirm ? window.bbvConfirm('Decline this order?', { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm('Decline this order?'))))) return;
     b.disabled = true;
     try { await A.postJSON(`/admin/orders/${li.dataset.id}`, { status, paid_via: li.querySelector('[data-via]')?.value || '' }); A.toast(status === 'Paid' ? 'Marked paid ✓ Those copies are sold.' : 'Saved ✓', { kind: 'ok' }); setTimeout(() => location.reload(), 500); }
     catch (err) { b.disabled = false; A.toast(err.message, { kind: 'err' }); }

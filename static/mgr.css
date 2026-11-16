@@ -1065,3 +1065,12 @@ body.qa-has-tray .toast { bottom: calc(84px + var(--sab)); }
   #me .me-binder { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .me-top-acts .btn, .me-acts .btn { flex: 1 1 auto; }
 }
+
+/* Review fixes, 16 Nov 2026: on a phone "Paid by … / Mark paid" takes its own line and stays inside the box, and the
+   swipe row of tools fades at its edge so it is clear there is more to swipe to. */
+@media (max-width: 699px) {
+  .st-paidvia { flex: 1 1 100%; flex-wrap: wrap; }
+  .st-paidvia select { flex: 1 1 140px; min-width: 0; }
+  .st-paidvia .btn { flex: 1 1 auto; }
+  .mgr-rail { -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); }
+}

@@ -72,7 +72,7 @@
     if (btn.parentNode !== host) host.append(btn, hide, off);
   }
   off.addEventListener('click', async () => {
-    if (!off.dataset.id || !confirm('Take this card off the trainer\u2019s page? This can\u2019t be undone.')) return;
+    if (!off.dataset.id || !(await (window.bbvConfirm ? window.bbvConfirm('Take this card off the trainer\u2019s page? This can\u2019t be undone.', { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm('Take this card off the trainer\u2019s page? This can\u2019t be undone.'))))) return;
     const r = await fetch(`/admin/member-cards/${off.dataset.id}/delete`, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' } });
     if (r.ok) { off.hidden = true; history.back(); setTimeout(() => location.reload(), 350); }
     else alert((await r.json().catch(() => ({}))).error || 'That didn\u2019t work.');

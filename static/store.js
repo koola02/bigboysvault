@@ -379,7 +379,7 @@
         try { await navigator.clipboard.writeText(url); A.toast('Link copied ✓', { kind: 'ok' }); } catch (_) { prompt('Copy this link', url); }
       }
       if (e.target.closest('[data-del-binder]') && b) {
-        if (!confirm('Delete this binder? The cards stay in your store.')) return;
+        if (!(await (window.bbvConfirm ? window.bbvConfirm('Delete this binder? The cards stay in your store.', { yes: 'Delete binder', no: 'Keep it' }) : Promise.resolve(confirm('Delete this binder? The cards stay in your store.'))))) return;
         try { await send(`/me/binders/${b.dataset.id}/delete`, {}); location.reload(); } catch (err) { A.toast(err.message, { kind: 'err' }); }
       }
       const cover = e.target.closest('[data-cover-btn]');
@@ -412,8 +412,8 @@
       const res = e.target.closest('[data-res]');
       if (res) {
         const status = res.dataset.res;
-        if (status === 'Declined' && !confirm('Decline this reservation?')) return;
-        if (status === 'Cancelled' && !confirm('Cancel your reservation?')) return;
+        if (status === 'Declined' && !(await (window.bbvConfirm ? window.bbvConfirm('Decline this reservation? The buyer is told.', { yes: 'Decline', no: 'Keep it' }) : Promise.resolve(confirm('Decline this reservation? The buyer is told.'))))) return;
+        if (status === 'Cancelled' && !(await (window.bbvConfirm ? window.bbvConfirm('Cancel this reservation?', { yes: 'Cancel it', no: 'Keep it' }) : Promise.resolve(confirm('Cancel this reservation?'))))) return;
         const via = li.querySelector('[data-via]')?.value || '';
         res.disabled = true;
         try { await send(`/me/orders/reservations/${li.dataset.id}`, { status, paid_via: via }); A.toast(status === 'Paid' ? 'Marked paid ✓ The sale is done.' : 'Saved ✓', { kind: 'ok' }); location.reload(); }
@@ -429,7 +429,7 @@
       }
       const vc = e.target.closest('[data-vcancel]');
       if (vc) {
-        if (!confirm('Cancel this order?')) return;
+        if (!(await (window.bbvConfirm ? window.bbvConfirm('Cancel this order?', { yes: 'Cancel order', no: 'Keep it' }) : Promise.resolve(confirm('Cancel this order?'))))) return;
         vc.disabled = true;
         try { await send(`/me/orders/vault/${li.dataset.id}`, { status: 'Cancelled' }); location.reload(); } catch (err) { vc.disabled = false; A.toast(err.message, { kind: 'err' }); }
         return;

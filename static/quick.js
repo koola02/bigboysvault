@@ -324,9 +324,9 @@
   function openSheet() { lastFocus = document.activeElement; paintDefaults(); paintList(); el.prog.textContent = ''; el.sheet.hidden = false; requestAnimationFrame(() => el.sheet.classList.add('open')); document.body.style.overflow = 'hidden'; el.save.focus({ preventScroll: true }); }
   function closeSheet() { el.sheet.classList.remove('open'); document.body.style.overflow = ''; setTimeout(() => { el.sheet.hidden = true; }, 220); if (lastFocus) lastFocus.focus({ preventScroll: true }); }
   el.open.addEventListener('click', openSheet);
-  $('qaClear').addEventListener('click', () => {
+  $('qaClear').addEventListener('click', async () => {
     const n = count();
-    if (!n || !confirm(`Remove all ${n} card${n === 1 ? '' : 's'} from your tray?`)) return;
+    if (!n || !(await (window.bbvConfirm ? window.bbvConfirm(`Remove all ${n} card${n === 1 ? '' : 's'} from your tray?`, { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm(`Remove all ${n} card${n === 1 ? '' : 's'} from your tray?`))))) return;
     st.tray = []; afterChange(); A.toast('Tray emptied', { kind: 'ok' });
   });
   el.sheet.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeSheet(); });

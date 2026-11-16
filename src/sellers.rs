@@ -881,9 +881,9 @@ impl Order {
     }
 }
 
-const ORDER_RES: &str = "r.id, r.buyer_id, COALESCE(b.name, 'A member who left'), r.seller_id, COALESCE(s.name, 'A store that closed'), COALESCE(s.slug, ''), r.card_id, c.title, c.image, c.cond, r.qty, r.price, 0.0, r.status, r.message, r.paid_via, r.expires_at, r.created_at, r.updated_at
+const ORDER_RES: &str = "r.id, r.buyer_id, COALESCE(b.name, 'A member who left'), r.seller_id, COALESCE(NULLIF(TRIM(s.store_name), ''), s.name, 'A store that closed'), COALESCE(s.slug, ''), r.card_id, c.title, c.image, c.cond, r.qty, r.price, 0.0, r.status, r.message, r.paid_via, r.expires_at, r.created_at, r.updated_at
     FROM reservations r LEFT JOIN members b ON b.id=r.buyer_id LEFT JOIN members s ON s.id=r.seller_id LEFT JOIN member_cards c ON c.id=r.card_id";
-const ORDER_OFF: &str = "o.id, o.sender_id, COALESCE(b.name, 'A member who left'), o.seller_id, COALESCE(s.name, 'A store that closed'), COALESCE(s.slug, ''), o.card_id, c.title, c.image, c.cond, o.qty, o.amount, o.counter, o.status, o.message, '', 0, o.created_at, o.updated_at
+const ORDER_OFF: &str = "o.id, o.sender_id, COALESCE(b.name, 'A member who left'), o.seller_id, COALESCE(NULLIF(TRIM(s.store_name), ''), s.name, 'A store that closed'), COALESCE(s.slug, ''), o.card_id, c.title, c.image, c.cond, o.qty, o.amount, o.counter, o.status, o.message, '', 0, o.created_at, o.updated_at
     FROM offers o LEFT JOIN members b ON b.id=o.sender_id LEFT JOIN members s ON s.id=o.seller_id LEFT JOIN member_cards c ON c.id=o.card_id";
 
 fn map_order(kind: &'static str) -> impl Fn(&Row) -> rusqlite::Result<Order> {
@@ -1147,7 +1147,9 @@ pub fn close_open_orders(c: &Connection, seller_id: i64, card_id: i64) -> rusqli
     let t = now();
     let n = c.execute("UPDATE reservations SET status='Cancelled', updated_at=?3 WHERE seller_id=?1 AND card_id=?2 AND status IN ('Pending','Confirmed')", rusqlite::params![seller_id, card_id, t])?
         + c.execute("UPDATE offers SET status='Declined', updated_at=?3 WHERE seller_id=?1 AND card_id=?2 AND status IN ('Pending','Countered')", rusqlite::params![seller_id, card_id, t])?;
-    let (seller_name, title) = names(c, seller_id, card_id)?;
+    let (_, title) = names(c, seller_id, card_id)?;
+    // Buyers know the seller by the store's name (the trainer's own name when the store has none).
+    let seller_name: String = c.query_row("SELECT COALESCE(NULLIF(TRIM(store_name), ''), name) FROM members WHERE id=?1", [seller_id], |r| r.get(0)).optional()?.unwrap_or_else(|| "The seller".into());
     let mut told: Vec<i64> = vec![];
     for buyer in res.iter().chain(offs.iter()).copied() {
         if told.contains(&buyer) {
@@ -1279,7 +1281,7 @@ impl Inquiry {
     }
 }
 
-const INQ: &str = "i.id, i.sender_id, b.name, i.seller_id, s.name, i.card_id, c.title, c.image, i.message, i.reply, i.replied_at, i.created_at
+const INQ: &str = "i.id, i.sender_id, b.name, i.seller_id, COALESCE(NULLIF(TRIM(s.store_name), ''), s.name), i.card_id, c.title, c.image, i.message, i.reply, i.replied_at, i.created_at
     FROM inquiries i JOIN members b ON b.id=i.sender_id JOIN members s ON s.id=i.seller_id LEFT JOIN member_cards c ON c.id=i.card_id";
 
 fn map_inq(r: &Row) -> rusqlite::Result<Inquiry> {
@@ -1399,7 +1401,7 @@ impl Sale {
     }
 }
 
-const SALE: &str = "t.id, t.buyer_id, b.name, t.seller_id, s.name, t.card_id, COALESCE(NULLIF(t.title,''), c.title, 'A card'), COALESCE(c.image,''), t.qty, t.amount, t.paid_via, t.created_at,
+const SALE: &str = "t.id, t.buyer_id, b.name, t.seller_id, COALESCE(NULLIF(TRIM(s.store_name), ''), s.name), t.card_id, COALESCE(NULLIF(t.title,''), c.title, 'A card'), COALESCE(c.image,''), t.qty, t.amount, t.paid_via, t.created_at,
     EXISTS(SELECT 1 FROM reviews v WHERE v.transaction_id=t.id)
     FROM transactions t JOIN members b ON b.id=t.buyer_id JOIN members s ON s.id=t.seller_id LEFT JOIN member_cards c ON c.id=t.card_id";
 
@@ -2382,7 +2384,7 @@ pub fn cart_lines(c: &Connection, vault_ids: &[i64], card_ids: &[i64]) -> rusqli
     }
     for id in card_ids.iter().take(60) {
         let row = c
-            .query_row(&format!("SELECT {}, m.name, m.slug, m.status, m.seller, m.blocked, m.profile_ok FROM member_cards c JOIN members m ON m.id=c.member_id WHERE c.id=?1", members::CARD_COLS), [id], |r| {
+            .query_row(&format!("SELECT {}, COALESCE(NULLIF(TRIM(m.store_name), ''), m.name), m.slug, m.status, m.seller, m.blocked, m.profile_ok FROM member_cards c JOIN members m ON m.id=c.member_id WHERE c.id=?1", members::CARD_COLS), [id], |r| {
                 Ok((members::map_card(r, 0)?, r.get::<_, String>(members::CARD_N)?, r.get::<_, String>(members::CARD_N + 1)?, r.get::<_, String>(members::CARD_N + 2)?, r.get::<_, i64>(members::CARD_N + 3)?, r.get::<_, i64>(members::CARD_N + 4)? != 0 || r.get::<_, i64>(members::CARD_N + 5)? == 0))
             })
             .optional()?;

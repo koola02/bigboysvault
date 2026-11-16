@@ -180,7 +180,11 @@ for (const [size, viewport] of Object.entries(SIZES)) {
       say(sent && listed, size, `A new trainer (${name}) sends the order`, !again ? 'the cart did not come back after joining' : !sent ? 'the order was not sent' : !listed ? 'the order is not under My orders' : '');
       // Hand the card back, so the next run (and the next buyer on this copy) can order it.
       if (listed && (await count('[data-vcancel]'))) {
-        await Promise.all([page.waitForNavigation({ timeout: 15000 }).catch(() => null), tap('[data-vcancel]')]);
+        // The site asks "Cancel this order?" in its own box (the browser's own box is only the fallback).
+        await tap('[data-vcancel]');
+        const sure = await page.waitForSelector('.bbv-ask .bbv-ask-acts .btn:last-child', { timeout: 4000 }).catch(() => null);
+        if (sure) await Promise.all([page.waitForNavigation({ timeout: 15000 }).catch(() => null), sure.click()]);
+        else await page.waitForNavigation({ timeout: 15000 }).catch(() => null);
         if (await count('[data-vcancel]')) note(size, 'The test order could not be cancelled; cancel it under My orders');
       }
     }

@@ -48,7 +48,7 @@
       if (mine || who.full || (who.admin && !m.role)) {
         const x = make('button', mine ? 'msg-x' : 'msg-x staff-only', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Delete this message');
         x.addEventListener('click', async () => {
-          if (!confirm('Delete this message?')) return;
+          if (!(await (window.bbvConfirm ? window.bbvConfirm('Delete this message?', { yes: 'Delete', no: 'Keep it' }) : Promise.resolve(confirm('Delete this message?'))))) return;
           try { await jsonPost(`/chat/messages/${m.id}/delete`, {}); n.remove(); tidy(); } catch (e) { say(e.message); }
         });
         body.append(x);

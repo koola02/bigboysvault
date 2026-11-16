@@ -5,8 +5,9 @@
   <div class="join-brand"><img src="/static/img/logo-768.webp" width="144" height="144" alt=""><b>{{ nav.brand }}</b><p>Pokémon cards and collectibles in one vault. Browse, ask, message a seller, and trade with trainers you can trust.</p></div>
   <div class="join-card">
     <img class="join-mark" src="/static/img/logo-sm-144.png?v=1" width="88" height="88" alt="">
-    <h1 class="h1">Become a trainer</h1>
-    <p class="join-sub">Get a profile and a binder for your favorite cards. No email needed.</p>
+    <p class="join-why" id="joinWhy" role="status" hidden></p>
+    <h1 class="h1">Join free</h1>
+    <p class="join-sub">Become a trainer: a profile and a binder for your favorite cards. No email needed.</p>
     {% if !error.is_empty() %}<p class="join-err" role="alert">{{ error }}</p>{% endif %}
     <form class="join-form" method="post" action="/join">
       <input type="hidden" name="next" value="{{ next }}">
@@ -19,4 +20,11 @@
     <p class="join-note">Write down your password. There's no email, so only the vault owner can reset it.</p>
   </div>
 </section>
+<script>
+(() => {
+  // Came here from the log-in page that said why (sending an order, a message…): keep saying it.
+  const WHY = { order: 'Join free to send your order. Your cart is saved and opens again right after.', message: 'Join free to send your message. You come straight back after.', react: 'Join free to react and comment. You come straight back after.', post: 'Join free to post. You come straight back after.', offer: 'Join free to reserve a card or make an offer. You come straight back after.' };
+  try { const w = sessionStorage.getItem('bbv:join-why'); if (w && WHY[w]) { const b = document.getElementById('joinWhy'); b.textContent = WHY[w]; b.hidden = false; } } catch (_) {}
+})();
+</script>
 {% endblock %}

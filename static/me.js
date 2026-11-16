@@ -255,7 +255,7 @@
     try { await send('/me/password', { current: pass.elements.current.value, new: pass.elements.new.value }); pass.reset(); say('Password changed ✓'); } catch (err) { say(err.message, true); }
   });
   $('meDelete').addEventListener('click', async () => {
-    if (!confirm('Delete your trainer, binder and vouch for good? This can’t be undone.')) return;
+    if (!(await (window.bbvConfirm ? window.bbvConfirm('Delete your trainer, binder and vouch for good? This can’t be undone.', { yes: 'Delete my trainer', no: 'Keep it' }) : Promise.resolve(confirm('Delete your trainer, binder and vouch for good? This can’t be undone.'))))) return;
     try { await send('/me/delete'); location.href = '/trainers'; } catch (err) { say(err.message, true); }
   });
 

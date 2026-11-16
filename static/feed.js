@@ -16,7 +16,9 @@
   });
   const face = (n, m) => { n.replaceChildren(); if (m && m.avatar) { const i = el('img'); i.src = m.avatar; i.alt = ''; n.append(i); } else n.textContent = m ? (m.initial || m.name[0].toUpperCase()) : ''; };
   const toast = (msg, bad) => { let t = document.querySelector('.cart-toast'); if (!t) { t = el('div', 'cart-toast'); t.setAttribute('role', 'status'); document.body.append(t); } t.textContent = msg; t.classList.toggle('bad', !!bad); t.classList.add('on'); clearTimeout(toast.t); toast.t = setTimeout(() => t.classList.remove('on'), bad ? 5000 : 2600); };
-  const toLogin = () => { try { sessionStorage.setItem('bbv:after-login', location.pathname + location.search); } catch (_) {} location.href = '/login'; };
+  const toLogin = (why) => { try { sessionStorage.setItem('bbv:after-login', location.pathname + location.search); sessionStorage.setItem('bbv:login-why', why || 'react'); } catch (_) {} location.href = '/login'; };
+  // "Are you sure?" in the site's own look (fb-shell.js), with the browser's box only if that script is missing.
+  const sure = (q, opt) => (window.bbvConfirm ? window.bbvConfirm(q, opt) : Promise.resolve(confirm(q)));
   async function api(url, body) {
     const init = { method: body === undefined ? 'GET' : 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' } };
     if (body instanceof FormData) init.body = body; else if (body !== undefined) { init.headers['Content-Type'] = 'application/json'; init.body = JSON.stringify(body); }
@@ -133,25 +135,30 @@
     else if (staff) item(post.dataset.kind === 'post' || post.dataset.kind === 'share' ? 'Delete post (staff)' : 'Hide from the feed (staff)', () => remove(post, 'Take this post out of the feed?'), 'staff-only');
     // Full admins can stop a whole kind of automatic post from here (and switch it back on at /admin/look).
     if (full && !['post', 'share'].includes(post.dataset.kind)) item('Turn off automatic posts like this', async () => {
-      if (!confirm('Stop showing this kind of automatic post in the feed? You can switch it back on at Admin \u203a The look.')) return;
+      if (!(await sure('Stop showing this kind of automatic post in the feed? You can switch it back on at Admin \u203a The look.', { yes: 'Stop showing them', no: 'Keep them' }))) return;
       try { await api('/admin/feed/auto', { kind: post.dataset.kind, on: false }); location.reload(); } catch (e) { toast(e.message, true); }
     }, 'staff-only');
     btn.parentElement.append(menu);
   }
   async function remove(post, ask) {
-    if (!confirm(ask)) return;
+    if (!(await sure(ask, { yes: 'Delete', no: 'Keep it' }))) return;
     try { await api(`/posts/${post.dataset.post}/delete`, {}); post.remove(); toast('Removed.'); } catch (e) { toast(e.message, true); }
   }
   async function share(post, copyOnly) {
     const url = `${location.origin}/posts/${post.dataset.post}`;
-    if (!copyOnly && navigator.share) { try { await navigator.share({ url, title: document.title }); } catch (_) {} return; }
-    try { await navigator.clipboard.writeText(url); toast('Link copied.'); } catch (_) { prompt('Copy this link:', url); }
+    // The phone's own share menu where there is one. Closing it is fine; if it can't open, the link is copied instead.
+    if (!copyOnly && navigator.share) { try { await navigator.share({ url, title: document.title }); return; } catch (err) { if (err && err.name === 'AbortError') return; } }
+    try { await navigator.clipboard.writeText(url); toast('Link copied.'); } catch (_) { toast(`Copy this link: ${url}`); }
   }
   function lightbox(src) {
     const o = el('div', 'dm-lightbox'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', 'Photo');
     const img = el('img'); img.src = src; img.alt = 'Photo'; o.append(img);
     const x = el('button', 'dm-ib dm-lb-x'); x.type = 'button'; x.textContent = '✕'; x.setAttribute('aria-label', 'Close'); o.append(x);
-    o.addEventListener('click', (e) => { if (e.target === o || e.target === x) o.remove(); });
+    const back = document.activeElement;
+    const close = () => { o.remove(); document.removeEventListener('keydown', esc); if (back && back.isConnected) back.focus({ preventScroll: true }); };
+    const esc = (ev) => { if (ev.key === 'Escape') close(); };
+    o.addEventListener('click', (e) => { if (e.target === o || e.target === x) close(); });
+    document.addEventListener('keydown', esc);
     document.body.append(o); x.focus();
   }
 
@@ -183,9 +190,8 @@
     }
     const del = t.closest('[data-cm-del]');
     if (del) {
-      if (!confirm('Delete this comment?')) return;
       const post = postOf(del), id = del.dataset.cmDel;
-      api(`/comments/${id}/delete`, {}).then((j) => { post.querySelectorAll(`[data-cm="${id}"]`).forEach((n) => { let nx = n.nextElementSibling; while (nx && nx.classList.contains('reply') && !n.classList.contains('reply')) { const rm = nx; nx = nx.nextElementSibling; rm.remove(); } n.remove(); }); setCount(post, j.n); }).catch((err) => toast(err.message, true));
+      sure('Delete this comment?', { yes: 'Delete', no: 'Keep it' }).then((yes) => yes && api(`/comments/${id}/delete`, {}).then((j) => { post.querySelectorAll(`[data-cm="${id}"]`).forEach((n) => { let nx = n.nextElementSibling; while (nx && nx.classList.contains('reply') && !n.classList.contains('reply')) { const rm = nx; nx = nx.nextElementSibling; rm.remove(); } n.remove(); }); setCount(post, j.n); }).catch((err) => toast(err.message, true)));
       return;
     }
     const ph = t.closest('[data-photo]');
@@ -199,7 +205,7 @@
   /* ---------- the post sheet: writing a new post, or editing one ---------- */
   let sheet = null, files = [], kept = [], editing = null;
   function compose(start, post) {
-    if (!me) { toLogin(); return; }
+    if (!me) { toLogin('post'); return; }
     if (!sheet) {
       // Not a <dialog>: the camera opens above it, and a modal dialog would cover the camera.
       sheet = el('div', 'sheet'); sheet.hidden = true; sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true');
@@ -274,10 +280,17 @@
       sheet.querySelectorAll('[data-pic-btn]').forEach((b) => { b.hidden = false; });
       as.hidden = !(full && me.role === 'admin'); as.value = 'me';
     }
+    // A trainer the vault owner hasn't approved yet can't post: say so before they write anything, not after.
+    const waiting = !editing && me.approved === false && !staff;
+    let wait = sheet.querySelector('[data-wait]');
+    if (!wait) { wait = el('p', 'sheet-wait', 'You can post once the vault owner approves your trainer. Until then you can react, comment and message.'); wait.dataset.wait = ''; sheet.querySelector('.row').after(wait); }
+    wait.hidden = !waiting; ta.disabled = waiting; sheet.querySelector('[data-go]').disabled = waiting;
+    sheet.querySelectorAll('[data-pic-btn]').forEach((b) => { if (waiting) b.hidden = true; });
     sheet.setAttribute('aria-label', sheet.querySelector('[data-title]').textContent);
     sheet.who(); sheet.paint();
     sheet.hidden = false; document.documentElement.classList.add('sheet-open');
-    if (start === 'photo') sheet.querySelector('input[multiple]').click();
+    if (waiting) sheet.querySelector('[data-x]').focus();
+    else if (start === 'photo') sheet.querySelector('input[multiple]').click();
     else if (start === 'camera') sheet.querySelector('input[data-card-cam]').click();
     else ta.focus();
   }
