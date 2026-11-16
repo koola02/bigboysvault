@@ -109,9 +109,9 @@ for (const [size, viewport] of Object.entries(SIZES)) {
     });
   });
 
-  // 2. The Vault: the card finder loads and shows cards.
+  // 2. Every card for sale (/all, once The Vault): the card finder loads and shows cards.
   let cards = [], word = '';
-  await open('/all', 'The Vault', async () => {
+  await open('/all', 'Every card for sale', async () => {
     if (!(await until(() => count('.fd-grid a.card')))) return 'no cards showed (the card finder did not load)';
     cards = await page.evaluate((n) => [...document.querySelectorAll('.fd-grid a.card')].slice(0, n).map((a) => a.getAttribute('href')).filter(Boolean), TRIES);
     word = (await text('.fd-grid a.card .card-t')).split(/[^A-Za-z]+/).find((w) => w.length > 3) || '';

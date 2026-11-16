@@ -7,7 +7,7 @@
     <h1 class="h1">Stores</h1>
     {% if vault.is_some() %}<p class="tr-sub">{{ nav.brand }}'s official store first, then the stores of its trainers. Open a store to see its binders, reserve a card, and leave a review when it arrives.</p>
     {% else %}<p class="tr-sub">Cards for sale by the trainers of {{ nav.brand }}. Reserve a card, pay the seller directly, and leave a review when it arrives.</p>{% endif %}
-    {% if let Some(u) = me %}<a class="btn" href="/me/store">My store</a>{% else %}<a class="btn" href="/join">Open a store</a><a class="linkbtn" href="/login">Sign in</a>{% endif %}
+    {% if let Some(u) = me %}<a class="btn" href="/me/store">My store</a>{% else %}<a class="btn" href="/join">Open a store</a><a class="linkbtn" href="/login">Log in</a>{% endif %}
   </div>
   {% if let Some(v) = vault %}
   {#- The new look: the vault's own store always comes first, even before any trainer has one. -#}

@@ -6,7 +6,7 @@
   <section class="box welcome" data-guest-only>
     <img src="/static/img/logo-sm-144.png?v=1" width="72" height="72" alt="">
     <div><h1 class="h1">{{ nav.brand }}</h1><p class="welcome-what">Pokémon cards for sale in the Philippines, priced in pesos. Real photos; pay by GCash, Maya or bank.</p><p>{% if tagline.is_empty() %}Pokémon cards and collectibles in one vault. Browse, ask, message a seller, and trade with trainers you can trust.{% else %}{{ tagline }}{% endif %}</p>
-    <div class="lg-row"><a class="btn" href="/all">Browse the vault</a><a class="btn ghost" href="/join">Register</a></div></div>
+    <div class="lg-row"><a class="btn" href="/stores">Browse stores</a><a class="btn ghost" href="/join">Register</a></div></div>
   </section>
   {# The showcase: the admin's hand-picked cards. With no cards the row is there for admins only, to pick some. #}
   <section class="stories" aria-label="The showcase"{% if stories.is_empty() %} data-full-only{% endif %}>

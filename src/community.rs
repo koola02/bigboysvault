@@ -692,7 +692,7 @@ pub async fn member_card(State(app): State<App>, h: HeaderMap, Path((id, cid)): 
 
 // ---------- my trainer ----------
 pub async fn me(State(app): State<App>, h: HeaderMap) -> Res {
-    // Signed out (or the sign-in ran out): log in again, not "Become a trainer".
+    // Signed out (or the sign-in ran out): log in again, not Register.
     let Some(m) = current(&app, &h).await? else { return Ok(Redirect::to("/login").into_response()) };
     let id = m.id;
     let (nav, p, cards, binders, stats, max) = with_db(&app, move |c| {

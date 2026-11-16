@@ -69,7 +69,7 @@ button { cursor: pointer; }
 .hd .hd-search input[type="search"] { text-overflow: ellipsis; }
 .hd-search:focus-within { box-shadow: inset 0 0 0 1px var(--gold-edge); }
 .hd-search-x { display: none; }
-/* The five places, each with its word. They share the width of the feed's column, so the bar grew when the feed did. */
+/* The four places, each with its word. They share the width of the feed's column, so the bar grew when the feed did. */
 .hd-tabs { display: flex; align-items: stretch; justify-self: center; width: 100%; max-width: var(--feed); min-width: 0; height: var(--hd-h); gap: 4px; }
 .hd-tabs a { position: relative; flex: 1 1 0; display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; margin: 4px 0; padding: 0 6px; border-radius: var(--r); color: var(--muted); font: 600 .9375rem/1 var(--font); white-space: nowrap; }
 .hd-tabs a span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -79,6 +79,9 @@ button { cursor: pointer; }
 .hd-tabs a[aria-current="page"] { color: var(--gold); border-radius: var(--r) var(--r) 0 0; }
 .hd-tabs a[aria-current="page"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -4px; height: 3px; border-radius: 3px 3px 0 0; background: var(--gold); }
 .hd-tabs a[aria-current="page"]:hover { background: none; }
+/* Stores is the highlighted place on every screen: the vault's logo in a gold ring stands where its icon would. */
+.tab-logo { flex: none; width: 26px; height: 26px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--gold-edge); }
+[aria-current="page"] .tab-logo { box-shadow: 0 0 0 2px var(--gold); }
 .hd-r { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
 .hd-ib { position: relative; flex: none; display: inline-grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 50%; background: var(--surface-3); color: var(--text); }
 .hd-ib:hover { background: #30364b; text-decoration: none; }
@@ -89,7 +92,7 @@ button { cursor: pointer; }
 #cartFab:not(.has) .hd-badge { display: none; }
 .hd-pop { position: relative; display: flex; }
 .hd-me { flex: none; display: block; padding: 0; border: 0; border-radius: 50%; background: none; }
-.hd-login { flex: none; }
+.hd-login, .hd-reg { flex: none; }
 .hd-menu-btn, .hd-search-btn { display: none; }
 html[data-me] .hd-login { display: none; }
 
@@ -129,9 +132,9 @@ body[data-layout="plain"] main { max-width: 1568px; }
 .mn .mn-i > .av { width: 36px; height: 36px; } /* your face lines up with the icons under it */
 .mn-i > svg { width: 36px; height: 36px; padding: 7px; border-radius: 50%; background: var(--surface-3); color: var(--gold); }
 .mn-i > img { width: 36px; height: 36px; border-radius: var(--r); object-fit: cover; background: var(--surface-2); }
-/* The menu lists a place only where the screen has no other button for it. Stores and The Vault are header tabs from
-   a tablet up; Stores and Ask are in the phone's bottom bar. Trainers and Vault chat are header tabs from a tablet
-   up; Ask the Vault is also in the column beside the feed on wide screens. */
+/* The menu lists a place only where the screen has no other button for it. Stores is a header tab from a tablet up
+   and in the phone's bottom bar, with Ask. Trainers and Vault chat are header tabs from a tablet up; Ask the Vault is
+   also in the column beside the feed on wide screens. The Vault has no button anywhere. */
 @media (min-width: 700px) { .mn-i[data-mn="tab"] { display: none; } }
 @media (max-width: 699px) { .mn-i[data-mn="ask"] { display: none; } }
 @media (min-width: 1100px) { body[data-layout="feed"] .mn-i[data-mn="ask"] { display: none; } }
@@ -207,6 +210,7 @@ body:is([data-layout="wide"], [data-layout="plain"]) .hd-menu-btn { display: inl
   .hd-tabs { gap: 2px; }
   .hd-tabs a { flex-direction: column; gap: 3px; padding: 0 2px; font-size: .6875rem; }
   .hd-tabs svg { width: 22px; height: 22px; }
+  .hd-tabs .tab-logo { width: 24px; height: 24px; }
 }
 @media (max-width: 699px) {
   body { padding-bottom: calc(var(--bt-h) + var(--sab)); }
@@ -221,14 +225,13 @@ body:is([data-layout="wide"], [data-layout="plain"]) .hd-menu-btn { display: inl
   .bt > :focus-visible { outline-offset: -4px; border-radius: var(--r-lg); }
   .bt-pill { display: grid; place-items: center; width: min(64px, 100%); height: 32px; border-radius: var(--pill); transition: background .15s; }
   .bt > :active .bt-pill { background: var(--fill); }
-  .bt-logo { width: 30px; height: 30px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--gold-edge); }
+  .bt .tab-logo { width: 30px; height: 30px; }
   .bt > [aria-current="page"], html.menu-open #btMenu { color: var(--gold); }
   .bt > [aria-current="page"] .bt-pill, html.menu-open #btMenu .bt-pill { background: var(--gold-tint); }
-  .bt > [aria-current="page"] .bt-logo { box-shadow: 0 0 0 2px var(--gold); }
   /* With the menu open, only Menu is lit. */
   html.menu-open .bt > [aria-current="page"] { color: var(--muted); }
   html.menu-open .bt > [aria-current="page"] .bt-pill { background: none; }
-  html.menu-open .bt > [aria-current="page"] .bt-logo { box-shadow: 0 0 0 1.5px var(--gold-edge); }
+  html.menu-open .bt > [aria-current="page"] .tab-logo { box-shadow: 0 0 0 1.5px var(--gold-edge); }
   html.menu-open .fb-left { top: calc(var(--hd-h) + var(--sat)); bottom: calc(var(--bt-h) + var(--sab)); width: 100%; box-shadow: none; }
   html.menu-open::after { display: none; }
   .mn-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 8px 10px; }
@@ -1309,6 +1312,7 @@ a.card:hover .card-pen, .card-pen:focus-visible { opacity: 1; }
 @media (max-width: 699px) {
   html:not([data-me]) .hd-word { font-size: clamp(.6875rem, 3.9vw, 1.125rem); }
   #barLogin { min-height: 36px; padding: 0 12px; font-size: .875rem; }
+  .hd-reg { display: none; }
 }
 /* Phones have Menu in the bottom bar, so the header never needs a second menu button there (it only crowded the name). */
 @media (max-width: 699px) { .hd-menu-btn { display: none !important; } }

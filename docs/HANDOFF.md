@@ -14,7 +14,8 @@ owner has approved, shown and sold in pesos (₱). It is laid out the way a soci
 **Visitors:**
 - read the **feed** at `/` (new cards, listings, vouches, price moves, trainers' posts), with the showcase's cards
   as the row at the top;
-- browse **The Vault** (`/all`): every card for sale, the vault's and the stores', with search and filters;
+- search **every card for sale** (`/all`, the page once called The Vault; since 17 Nov 2026 it has no tab and is
+  reached through the search and Stores), the vault's and the stores', with filters;
 - open a card in a **window over the page**; its own page (`/products/…`) is for shared links and search engines;
 - visit **Stores** (`/stores`, `/store/{name}`, the vault's own at `/store/vault`) and their **binders**;
 - meet **Trainers**, read vouches, use the vault chat and **Ask the Vault** (the shop's assistant);
@@ -207,6 +208,7 @@ A small Google VM runs the backups, prices, picture formats and an uptime check 
 
 | When | What changed |
 |---|---|
+| 17 Nov 2026 (later) | The Vault's tab is gone on every screen and Stores is the highlighted place (the logo in a gold ring, in the header and the phone's bar; lit wherever cards are shopped); "Browse stores" on the home banner and the 404 page, "‹ Back" on a card's page; Register beside Log in at the top from 700px; one word per action: Register (Trainers, Vouches, Vault chat, Ask's answers and its AI's instructions) and Log in (Stores); the name boxes on log in and register match the password box |
 | 17 Nov 2026 | "Register" replaces "Join free" everywhere a visitor reads it; the phone's bottom bar is four equal tabs (Home, Stores, Ask, Menu) with a gold pill for where you are; Log out at the foot of the Menu on every screen (phones had no way to log out); the release check fails if the phone's tabs leave a gap. Lesson: the 16 Nov bar went live with `fb.css` still at `?v=22`, so Cloudflare kept serving the old five-slot stylesheet and the bar showed an empty slot. Raise the number every time |
 | 16 Nov 2026 | From a click-through review (logged out, buyer, seller, admin; four screen sizes): the cart's + on a tile takes the card out on a second tap, the cart's + stops at the copies there are, a tap outside the cart closes it; log in and join say why you were sent there; the site's own "are you sure?" box (`window.bbvConfirm` in `fb-shell.js`) replaces `confirm()` everywhere a choice can wait; a trainer not yet approved is told so in the post box; the finder's counts in the site's words and a "Show N cards" button in the phone filters (both from `fb-shell.js`, since the finder is not rebuilt); a card's language and how meetup/shipping works on its page; one name (the store name) per seller in orders, offers and alerts; messages survive an unreadable poll reply |
 | 14 Nov 2026 | On a phone, Add to cart stays in a bar above the bottom tabs; visitors counted on the Overview; My trainer in the Manager's frame; the old look removed (one stylesheet, one frame); the phone, tablet and computer check (`tests/browser/smoke.mjs`) |

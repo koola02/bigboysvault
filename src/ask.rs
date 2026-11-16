@@ -196,7 +196,7 @@ fn answer_in(question: &str, prev_ctx: Option<&str>, cards: &[&Card], binders: &
         return Answer { say: "Sign in as a trainer, then tap the Vouch button on any page. Your words and photos go up straight away.".into(), link: Some(("Read the vouches".into(), "/vouches".into())), ..Default::default() };
     }
     if has(&text, &["join", "sign up", "signup", "account", "become", "register"]) {
-        return Answer { say: "Pick a trainer name and a password. There's no email to give. You get a page and a binder for your favorite cards.".into(), link: Some(("Become a trainer".into(), "/join".into())), ..Default::default() };
+        return Answer { say: "Pick a trainer name and a password. There's no email to give. You get a page and a binder for your favorite cards.".into(), link: Some(("Register".into(), "/join".into())), ..Default::default() };
     }
     if has(&text, &["chat", "talk", "message"]) {
         return Answer { say: "The chat is open to everyone to read. Sign in as a trainer to join in.".into(), link: Some(("Open the chat".into(), "/chat".into())), ..Default::default() };
@@ -222,7 +222,7 @@ fn answer_in(question: &str, prev_ctx: Option<&str>, cards: &[&Card], binders: &
     let value: f64 = cards.iter().map(|c| c.price * f64::from(c.qty.max(1))).sum();
     if has(&text, &["trainer", "trainers", "collector", "collectors", "members"]) {
         if trainers.is_empty() {
-            return Answer { say: "No trainers yet. You could be the first.".into(), link: Some(("Become a trainer".into(), "/join".into())), ..Default::default() };
+            return Answer { say: "No trainers yet. You could be the first.".into(), link: Some(("Register".into(), "/join".into())), ..Default::default() };
         }
         let mut by_stars = trainers.to_vec();
         by_stars.sort_by(|a, b| b.stars.cmp(&a.stars));

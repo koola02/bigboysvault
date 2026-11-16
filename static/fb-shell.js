@@ -12,11 +12,10 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
 
   /* ---------- where you are ---------- */
   const here = location.pathname;
-  // Stores is lit on every store and on the vault's binders (they belong to the vault's own store); The Vault on
-  // searches and on a card's page.
+  // Stores is lit wherever cards are shopped: every store, the vault's binders (they belong to the vault's own store),
+  // a card's page, and the search's list of cards (The Vault has no tab of its own).
   const match = (h) => h === here || (h !== '/' && here.startsWith(h + '/'))
-    || (h === '/stores' && /^\/(store|collections)\//.test(here))
-    || (h === '/all' && /^\/(search|products)(\/|$)/.test(here));
+    || (h === '/stores' && (/^\/(store|collections)\//.test(here) || /^\/(all|search|products)(\/|$)/.test(here)));
   document.querySelectorAll('.hd-tabs a, .bt a, .fb-left .mn-i').forEach((a) => { if (match(a.getAttribute('href'))) a.setAttribute('aria-current', 'page'); });
 
   /* ---------- who is signed in ---------- */
@@ -328,12 +327,12 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     const pic = e.target.closest && e.target.closest('.detail-img img'); if (!pic) return;
     const z = pic.closest('.detail')?.querySelector('[data-zoom]'); if (z) { e.preventDefault(); z.click(); }
   });
-  // "‹ The Vault" on a card's own page goes back to where you were in it (the same search, filters and place),
-  // when that is where you came from; otherwise to the top of The Vault.
+  // "‹ Back" on a card's own page goes back to where you were (the same store, binder or search, at the same place),
+  // when that is where you came from; otherwise to Stores.
   document.addEventListener('click', (e) => {
     const a = e.target.closest && e.target.closest('a[data-back]'); if (!a || e.ctrlKey || e.metaKey || e.shiftKey || e.button) return;
     let from = null; try { from = document.referrer ? new URL(document.referrer) : null; } catch (_) {}
-    if (from && from.origin === location.origin && /^\/(all|search|collections)(\/|$)/.test(from.pathname) && history.length > 1) { e.preventDefault(); history.back(); }
+    if (from && from.origin === location.origin && /^\/(all|search|collections|stores?)(\/|$)/.test(from.pathname) && history.length > 1) { e.preventDefault(); history.back(); }
   });
   document.addEventListener('click', (e) => {
     const z = e.target.closest('[data-zoom]'); if (!z) return;

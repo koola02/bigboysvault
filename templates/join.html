@@ -7,11 +7,11 @@
     <img class="join-mark" src="/static/img/logo-sm-144.png?v=1" width="88" height="88" alt="">
     <p class="join-why" id="joinWhy" role="status" hidden></p>
     <h1 class="h1">Register</h1>
-    <p class="join-sub">Become a trainer: a profile and a binder for your favorite cards. No email needed.</p>
+    <p class="join-sub">Get a trainer profile and a binder for your favorite cards. No email needed.</p>
     {% if !error.is_empty() %}<p class="join-err" role="alert">{{ error }}</p>{% endif %}
     <form class="join-form" method="post" action="/join">
       <input type="hidden" name="next" value="{{ next }}">
-      <label>Trainer name<input name="name" value="{{ name }}" maxlength="24" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
+      <label>Trainer name<input type="text" name="name" value="{{ name }}" maxlength="24" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
       <label>Password <small>at least 8 characters</small><input name="password" type="password" minlength="8" autocomplete="new-password" required></label>
       <label class="join-trap" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
       <button class="btn" type="submit">Create my trainer</button>

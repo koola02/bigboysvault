@@ -264,7 +264,15 @@ As of 12 November 2026, behind the new-look switch:
   the empty space perfectly"). Log out ends the menu on every screen for anyone signed in (a phone has no account
   button; from 700px it is also in the account menu under your picture). Phones up to 411px get 36px
   header buttons so the site's name keeps its size. Tab highlighting (fb-shell.js match()): Stores on /stores,
-  /store/... and /collections/...; The Vault on /all, /search, /products/....
+  /store/..., /collections/..., /all, /search and /products/... (everywhere cards are shopped).
+- **The Vault has no button on any screen, and Stores is the highlighted place** (17 Nov 2026; the owner: "remove the
+  vault from all devices obviously and highlight Stores across all devices"). The header's places are Home, Stores,
+  Trainers, Vault chat; Stores carries the vault's logo in a gold ring (`.tab-logo`, the same as the phone's bar).
+  `/all` is still there as the search's list of cards (the header search, Ask's links, the feed's "See what's new");
+  the home banner and the 404 page say "Browse stores", and a card's page says "‹ Back" (to where you came from,
+  else Stores). Visitors not signed in get Register beside Log in at the top from 700px (phones: Log in only, and
+  "Log in or register" in the Menu). One word per action: Register (never "Join" or "Become a trainer"), Log in
+  (never "Sign in").
 - **Binders belong to stores.** The vault's binders are its collections (Legendary Collections, Pikachu Set, Mew &
   Mewtwo, Japanese, Playables, Favorites, Trainers, Vintage, Affordable Common/Uncommon, E X Cards). Big Boys Vault
   is a store: `/store/vault` (store::vault_store, templates/store_vault.html; the address is reserved, and a trainer
@@ -339,7 +347,7 @@ opens as a chat, not a page; pages are 60% wider (phones unchanged, tablets fill
 called The Vault; the stories row shows only the showcase's cards; a card tapped in The Vault opens in a floating
 window with More like this; everyone can message everyone (30 new conversations a day for trainers who aren't
 staff); the admin's and the seller's dashboards should feel like home, the way an ads manager does; the header's
-five places carry their words and are as wide as the feed (on a three-column screen they sit exactly over the feed's
+places (four since 17 Nov 2026) carry their words and are as wide as the feed (on a three-column screen they sit exactly over the feed's
 column; on smaller screens they fill what is left between the search and the buttons, with the word under the icon
 below 1280px; phones keep the worded tabs at the bottom); the showcase is edited from the Manager's sidebar; the
 new look has no "Show admin buttons" switch (admin buttons are simply there for admins, and a device that hid them in

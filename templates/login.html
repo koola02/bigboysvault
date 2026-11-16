@@ -11,7 +11,7 @@
     {% if !error.is_empty() %}<p class="join-err" role="alert">{{ error }}</p>{% endif %}
     <form class="join-form" method="post" action="/signin">
       <input type="hidden" name="next" value="{{ next }}" id="loginNext">
-      <label>Name<input name="name" value="{{ name }}" autocomplete="username" autocapitalize="off" spellcheck="false" required autofocus></label>
+      <label>Name<input type="text" name="name" value="{{ name }}" autocomplete="username" autocapitalize="off" spellcheck="false" required autofocus></label>
       <label>Password<span class="pw-wrap"><input name="password" type="password" autocomplete="current-password" required id="pw"><button type="button" class="pw-eye" id="pwEye" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
       <label class="chk login-remember"><input type="checkbox" class="sr" name="remember" value="1" checked><span class="chk-box"></span> Remember me on this device</label>
       <button class="btn" type="submit">Log in</button>
