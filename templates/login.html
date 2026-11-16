@@ -16,7 +16,7 @@
       <label class="chk login-remember"><input type="checkbox" class="sr" name="remember" value="1" checked><span class="chk-box"></span> Remember me on this device</label>
       <button class="btn" type="submit">Log in</button>
     </form>
-    <div class="join-or"><span>New here?</span><a class="btn ghost" href="/join{% if !next.is_empty() %}?next={{ next|urlencode }}{% endif %}" id="joinLink">Join free</a><small>A trainer profile and a binder, no email needed.</small></div>
+    <div class="join-or"><span>New here?</span><a class="btn ghost" href="/join{% if !next.is_empty() %}?next={{ next|urlencode }}{% endif %}" id="joinLink">Register</a><small>A trainer profile and a binder, no email needed.</small></div>
     <p class="join-note">Forgot your password? Ask the vault owner for a new one.</p>
   </div>
 </section>
@@ -28,16 +28,16 @@
 </script>
 <script>
 (() => {
-  // Sent here from the cart: after logging in (or joining), go back to it. Only a path on this site counts,
+  // Sent here from the cart: after logging in (or registering), go back to it. Only a path on this site counts,
   // the same test the server's safe_next makes: starts with one '/', no backslash, plain visible letters, 300 at most.
   const safe = (n) => n.length <= 300 && n[0] === '/' && n[1] !== '/' && /^[!-~]+$/.test(n) && n.indexOf('\\') < 0;
   // Why they were sent here (the cart, a message, a like…), said at the top so they know their place is kept.
   const WHY = {
-    order: 'Log in or join free to send your order. Your cart is saved and opens again right after.',
-    message: 'Log in or join free to send your message. You come straight back here after.',
-    react: 'Log in or join free to react and comment. You come straight back here after.',
-    post: 'Log in or join free to post. You come straight back here after.',
-    offer: 'Log in or join free to reserve a card or make an offer. You come straight back here after.',
+    order: 'Log in or register to send your order. Your cart is saved and opens again right after.',
+    message: 'Log in or register to send your message. You come straight back here after.',
+    react: 'Log in or register to react and comment. You come straight back here after.',
+    post: 'Log in or register to post. You come straight back here after.',
+    offer: 'Log in or register to reserve a card or make an offer. You come straight back here after.',
   };
   try {
     const why = sessionStorage.getItem('bbv:login-why');

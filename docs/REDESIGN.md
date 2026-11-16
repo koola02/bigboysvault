@@ -259,7 +259,10 @@ As of 12 November 2026, behind the new-look switch:
   stores from the menu ... "the vault" from the menu as well"). Trainers and Vault chat show there on phones only
   (from 700px they are header tabs); Ask the Vault is a gold line, hidden on phones (the Ask tab) and beside the feed
   from 1100px (the right column's gold card). The phone's header has the bell (a link to /me/notifications; from
-  700px it opens the drop-down), and the bottom bar is Home, Vault, Ask, Stores, Menu. Phones up to 411px get 36px
+  700px it opens the drop-down), and the bottom bar is Home, Stores (with the logo), Ask, Menu: four equal quarters,
+  60px tall, a gold pill behind the icon of the page you are on (17 Nov 2026; the owner: "make the 4 buttons fill out
+  the empty space perfectly"). Log out ends the menu on every screen for anyone signed in (a phone has no account
+  button; from 700px it is also in the account menu under your picture). Phones up to 411px get 36px
   header buttons so the site's name keeps its size. Tab highlighting (fb-shell.js match()): Stores on /stores,
   /store/... and /collections/...; The Vault on /all, /search, /products/....
 - **Binders belong to stores.** The vault's binders are its collections (Legendary Collections, Pikachu Set, Mew &

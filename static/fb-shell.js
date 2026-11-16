@@ -72,11 +72,18 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
   /* ---------- things that open: the menu, the account menu, the phone's search ---------- */
   const menuBtns = () => document.querySelectorAll('[data-menu-toggle]');
   const setMenu = (open) => { root.classList.toggle('menu-open', open); menuBtns().forEach((b) => b.setAttribute('aria-expanded', String(open))); };
+  const seen = (sel) => [...document.querySelectorAll(sel)].find((n) => n.getClientRects().length > 0);
   const mePop = $('meMenu'), meBtn = $('barMe');
   const setMe = (open) => { if (!mePop) return; mePop.hidden = !open; meBtn?.setAttribute('aria-expanded', String(open)); };
   document.addEventListener('click', (e) => {
     const t = e.target;
-    if (t.closest('[data-menu-toggle]')) { setMenu(!root.classList.contains('menu-open')); setMe(false); return; }
+    if (t.closest('[data-menu-toggle]')) {
+      const open = !root.classList.contains('menu-open');
+      setMenu(open); setMe(false);
+      // Opened from the keyboard (a click with no pointer behind it): start on the menu's first line.
+      if (open && e.detail === 0) seen('#fbMenu .mn-i')?.focus();
+      return;
+    }
     if (root.classList.contains('menu-open') && (!t.closest('#fbMenu') || t.closest('#fbMenu a'))) setMenu(false);
     if (t.closest('#barMe')) { setMe(mePop.hidden); return; }
     if (mePop && !mePop.hidden && !t.closest('#meMenu')) setMe(false);
@@ -85,7 +92,11 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
   });
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (root.classList.contains('menu-open')) setMenu(false);
+    if (root.classList.contains('menu-open')) {
+      const inside = $('fbMenu')?.contains(document.activeElement);
+      setMenu(false);
+      if (inside || document.activeElement === document.body) seen('[data-menu-toggle]')?.focus();
+    }
     if (mePop && !mePop.hidden) { setMe(false); meBtn?.focus(); }
     root.classList.remove('search-open');
   });

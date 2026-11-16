@@ -50,10 +50,10 @@
     {% for (m, s, binders, cards) in stores %}{% include "stores_seller.html" %}{% endfor %}
   </div>
   {% if stores.is_empty() %}
-  <p class="empty">No trainer has a store with cards on sale yet. {% if me.is_some() %}<a href="/me/listings">Be the first.</a>{% else %}<a href="/join">Join</a> and be the first.{% endif %}</p>
+  <p class="empty">No trainer has a store with cards on sale yet. {% if me.is_some() %}<a href="/me/listings">Be the first.</a>{% else %}<a href="/join">Register</a> and be the first.{% endif %}</p>
   {% endif %}
   {% else if stores.is_empty() %}
-  <p class="empty">No store has cards on sale yet. {% if me.is_some() %}<a href="/me/listings">Be the first.</a>{% else %}<a href="/join">Join</a> and be the first.{% endif %}</p>
+  <p class="empty">No store has cards on sale yet. {% if me.is_some() %}<a href="/me/listings">Be the first.</a>{% else %}<a href="/join">Register</a> and be the first.{% endif %}</p>
   {% else %}
   <div class="sellers-list">
     {% for (m, s, binders, cards) in stores %}{% include "stores_seller.html" %}{% endfor %}

@@ -331,7 +331,7 @@ pub async fn join_page(State(app): State<App>, h: HeaderMap, Query(q): Query<Joi
     }
     let nav = with_db(&app, chrome).await?;
     let next = safe_next(&q.next).unwrap_or("").to_string();
-    Ok(html(render(JoinPage { nav: titled(nav, "Join"), error: String::new(), name: String::new(), next })?))
+    Ok(html(render(JoinPage { nav: titled(nav, "Register"), error: String::new(), name: String::new(), next })?))
 }
 
 /// `GET /login`: where trainers log in. The vault owner's own way in is /admin.
@@ -362,7 +362,7 @@ async fn join_again(app: &App, code: StatusCode, mode: &'static str, name: Strin
     if mode == "signin" {
         return Ok((code, html(render(LoginPage { nav: titled(nav, "Log in"), error: error.to_string(), name, next })?)).into_response());
     }
-    Ok((code, html(render(JoinPage { nav: titled(nav, "Join"), error: error.to_string(), name, next })?)).into_response())
+    Ok((code, html(render(JoinPage { nav: titled(nav, "Register"), error: error.to_string(), name, next })?)).into_response())
 }
 
 #[derive(Deserialize)]

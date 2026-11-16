@@ -96,8 +96,18 @@ for (const [size, viewport] of Object.entries(SIZES)) {
   const tap = async (sel) => { await page.$eval(sel, (e) => e.scrollIntoView({ block: 'center' })); await sleep(250); await page.click(sel); };
   const until = async (fn, ms = 20000) => { const end = Date.now() + ms; while (Date.now() < end) { if (await fn()) return true; await sleep(250); } return false; };
 
-  // 1. Home: the feed.
-  await open('/', 'Home', async () => ((await count('main .post, main .stories, main .box')) ? '' : 'the feed is empty'));
+  // 1. Home: the feed. On a phone the tabs at the bottom share the bar evenly, with no empty slot (the stylesheet's
+  // version number not being raised once left a gap where an old tab had been).
+  await open('/', 'Home', async () => {
+    if (!(await count('main .post, main .stories, main .box'))) return 'the feed is empty';
+    return page.evaluate(() => {
+      const bar = document.querySelector('nav.bt');
+      if (!bar || innerWidth >= 700) return '';
+      const w = bar.getBoundingClientRect().width, tabs = [...bar.children].map((t) => t.getBoundingClientRect().width);
+      const used = tabs.reduce((a, b) => a + b, 0);
+      return used >= w - 12 && tabs.every((t) => Math.abs(t - tabs[0]) < 2) ? '' : `the tabs at the bottom leave a gap (${Math.round(used)} of ${Math.round(w)}px used)`;
+    });
+  });
 
   // 2. The Vault: the card finder loads and shows cards.
   let cards = [], word = '';
@@ -191,7 +201,7 @@ for (const [size, viewport] of Object.entries(SIZES)) {
   }
 
   // 7. The other places a visitor goes.
-  for (const [path, name] of [['/stores', 'Stores'], ['/store/vault', 'The vault’s store'], ['/trainers', 'Trainers'], ['/vouches', 'Vouches'], ['/ask', 'Ask the Vault'], ['/chat', 'Vault chat'], ['/login', 'Log in'], ['/join', 'Join']]) {
+  for (const [path, name] of [['/stores', 'Stores'], ['/store/vault', 'The vault’s store'], ['/trainers', 'Trainers'], ['/vouches', 'Vouches'], ['/ask', 'Ask the Vault'], ['/chat', 'Vault chat'], ['/login', 'Log in'], ['/join', 'Register']]) {
     await open(path, name);
   }
   await ctx.close();
