@@ -8,7 +8,7 @@
       <p class="eyebrow">Trainer</p>
       <h1 class="h1">{{ t.name }}</h1>
       {% if !t.role_text().is_empty() %}<span class="role" data-role="{{ t.role }}">{{ t.role_text() }}</span>{% endif %}{% for g in t.tag_list() %}<span class="tag-hl mtag">{{ g }}</span>{% endfor %}
-      {% if t.stars > 0 || t.worth > 0.0 %}<p class="tp-stars">{% if t.stars > 0 %}<span class="stars stars-lg">★ {{ t.stars }}</span>{% endif %}{% if t.worth > 0.0 %}<span class="worth worth-lg">{{ t.worth_text() }}</span>{% endif %}</p>{% endif %}
+      
       {% if !t.bio.is_empty() %}<p class="tp-bio">{{ t.bio }}</p>{% endif %}
       {% if !t.fb_url.is_empty() || !t.tiktok_url.is_empty() || !t.link_list().is_empty() %}
       <div class="svh-links">
@@ -22,11 +22,6 @@
     </div>
   </header>
   <nav class="fb-tabs pf-tabs" aria-label="On this page">{% if !vouches.is_empty() || is_me %}<a href="#vouches">Vouches</a>{% endif %}{% if full && !selling.is_empty() && t.seller %}<a href="#for-sale">For sale</a>{% endif %}{% if full %}<a href="#highlights">Highlights</a>{% endif %}{% if full && !wishes.is_empty() %}<a href="#wishlist">Wishlist</a>{% endif %}</nav>
-  {% if !awards.is_empty() %}
-  <ul class="tp-awards">
-    {% for a in awards %}<li><span class="stars">★ +{{ a.points }}</span><span>{{ a.reason }}</span><time data-at="{{ a.created_at }}">{{ a.when() }}</time></li>{% endfor %}
-  </ul>
-  {% endif %}
   {% if let Some(c) = highlight %}
   <div class="tp-hl">
     <p class="eyebrow plate">Highlighted card</p>

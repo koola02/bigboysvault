@@ -39,8 +39,6 @@
       const name = make('a', 'msg-name', m.name); name.href = `/trainers/${m.member}`;
       head.append(name);
       if (m.role) { const r = make('span', 'role', m.role === 'admin' ? 'Admin' : 'Moderator'); r.dataset.role = m.role; head.append(r); }
-      if (m.stars > 0) head.append(make('span', 'stars', `★ ${m.stars}`));
-      if (m.worth) head.append(make('span', 'worth', m.worth));
       (m.tags || []).forEach((g) => head.append(make('span', 'tag-hl mtag', g)));
       const t = make('time', 'msg-time', clock(m.at)); head.append(t);
       const words = make('p', 'msg-text', m.text);

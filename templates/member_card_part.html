@@ -16,7 +16,7 @@
     <a class="mc-owner" data-role="{{ t.role }}" href="/trainers/{{ t.id }}">
       {% if t.has_avatar() %}<img class="av" src="{{ t.avatar }}" width="56" height="56" alt="">{% else %}<span class="av">{{ t.initial() }}</span>{% endif %}
       <span class="mco-t"><small>In the binder of</small><b class="mco-name">{{ t.name }}</b>
-        <span class="mco-chips">{% if !t.role_text().is_empty() %}<span class="role" data-role="{{ t.role }}">{{ t.role_text() }}</span>{% endif %}{% if t.stars > 0 %}<span class="stars">★ {{ t.stars }}</span>{% endif %}{% if t.worth > 0.0 %}<span class="worth">{{ t.worth_text() }}</span>{% endif %}{% for g in t.tag_list() %}<span class="tag-hl mtag">{{ g }}</span>{% endfor %}</span>
+        <span class="mco-chips">{% if !t.role_text().is_empty() %}<span class="role" data-role="{{ t.role }}">{{ t.role_text() }}</span>{% endif %}{% for g in t.tag_list() %}<span class="tag-hl mtag">{{ g }}</span>{% endfor %}</span>
       </span>
       <span class="mco-go" aria-hidden="true">›</span>
     </a>

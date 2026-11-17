@@ -13,7 +13,7 @@
   </div>
   {% if p.m.is_staff() %}<p class="me-staff"><span class="role" data-role="{{ p.m.role }}">{{ p.m.role_text() }}</span><span>{% if p.m.role == "admin" %}You can do everything the vault owner can, including editing the site.{% else %}You can hide or delete vouches, and block or remove trainers.{% endif %}</span><a class="btn ghost sm" href="{% if p.m.role == "admin" %}/admin{% else %}/admin/trainers{% endif %}">Open admin</a></p>{% endif %}
   {% if p.m.locked() %}<p class="mgr-note">Your trainer is locked for another {{ p.m.lock_left() }}. You can't post or change anything until then.</p>{% endif %}
-  <p class="tp-stars me-worth">{% if p.m.stars > 0 %}<span class="stars stars-lg">★ {{ p.m.stars }}</span>{% endif %}<span class="worth worth-lg" id="meWorth"{% if p.m.worth <= 0.0 %} hidden{% endif %}>{{ p.m.worth_text() }}</span></p>
+  <p class="tp-stars me-worth"><span class="worth worth-lg" id="meWorth"{% if p.m.worth <= 0.0 %} hidden{% endif %}>{{ p.m.worth_text() }}</span></p>
 
   {% if p.m.seller %}
   <section class="me-card me-store">
