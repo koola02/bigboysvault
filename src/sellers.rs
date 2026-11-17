@@ -723,34 +723,109 @@ pub fn set_featured(c: &Connection, store: i64, f: &Featured) -> rusqlite::Resul
     r
 }
 
+/// What makes a seller's card buyable right now, the same for The Vault page and Ask the Vault: for sale and Active, in
+/// stock, not past its end date (`?1` is the time now), in a store that is approved, not blocked, selling and not on
+/// vacation (the same checks as `can_sell`). Copies an open reservation holds are not for sale: `LEFT` counts the rest.
+const OPEN_FOR_SALE: &str = "c.kind='sale' AND c.status='Active' AND c.qty>0 AND (c.expires_at<=0 OR c.expires_at>=?1)
+           AND m.seller=1 AND m.profile_ok=1 AND m.blocked=0 AND m.status<>'Vacation'";
+/// A listing's copies that no open reservation holds.
+const LEFT: &str = "c.qty - COALESCE((SELECT SUM(r.qty) FROM reservations r WHERE r.card_id=c.id AND r.status IN ('Pending','Confirmed')),0)";
+
+/// The open listings, with their store and copies left (`open_row` reads a row), and `more` after the checks.
+fn open_sql(more: &str) -> String {
+    format!("SELECT {}, m.slug, m.store_name, m.name, m.avatar, {LEFT} FROM member_cards c JOIN members m ON m.id=c.member_id WHERE {OPEN_FOR_SALE}{more}", members::CARD_COLS)
+}
+
+/// A seller's card that can be bought right now (`OPEN_FOR_SALE`), with its store.
+pub struct OpenListing {
+    pub card: MemberCard,
+    /// The store: its seller's number, address, name (the store's own, or the seller's) and the seller's picture.
+    pub store: vault_search::Store,
+    /// Copies no open reservation holds.
+    pub left: i64,
+}
+
+fn open_row(r: &Row) -> rusqlite::Result<OpenListing> {
+    let n = members::CARD_N;
+    let card = members::map_card(r, 0)?;
+    let (slug, store_name, name, avatar): (String, String, String, String) = (r.get(n)?, r.get(n + 1)?, r.get(n + 2)?, r.get(n + 3)?);
+    let title = if store_name.trim().is_empty() { name } else { store_name };
+    Ok(OpenListing { store: vault_search::Store { id: card.member_id, slug, title, img: avatar, count: 0 }, left: r.get(n + 4)?, card })
+}
+
+/// A listing's condition with its finish, the way tiles show it ("Near Mint · Reverse Holo"), and the finish's group.
+fn variant_of(k: &MemberCard) -> (String, &'static str) {
+    let label = if k.finish.trim().is_empty() { String::new() } else { crate::market::label(k.finish.trim()) };
+    let finish = vault_search::finish_group(&label, "");
+    let variant = if label.is_empty() || finish == "Normal" { k.cond.clone() } else { format!("{} · {label}", k.cond) };
+    (variant, finish)
+}
+
+/// The seller's notes on one line, at most 160 letters, for a tile.
+fn tile_notes(notes: &str) -> String {
+    let one_line = notes.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" · ");
+    let mut out: String = one_line.chars().take(160).collect();
+    if one_line.chars().count() > 160 {
+        out.push('…');
+    }
+    out
+}
+
+impl OpenListing {
+    /// Its condition with its finish ("Near Mint · Reverse Holo").
+    pub fn variant(&self) -> String {
+        variant_of(&self.card).0
+    }
+    /// Its own page, which opens as the card window over the page.
+    pub fn url(&self) -> String {
+        format!("/trainers/{}/cards/{}", self.card.member_id, self.card.id)
+    }
+    /// The card as an Ask the Vault tile (static/vault-talk.js), built from the listing itself: picture, title,
+    /// condition, the seller's price and the store's name. `lid` and `amount` give the tile its "+", which puts it in the
+    /// cart as this seller's card (static/cart.js), like the "+" on The Vault page.
+    pub fn tile(&self) -> serde_json::Value {
+        let k = &self.card;
+        let (variant, _) = variant_of(k);
+        let price = k.worth();
+        let grade = if vault_search::cond_class(&k.cond) == "gr" { k.cond.as_str() } else { "" };
+        serde_json::json!({
+            "lid": k.id, "url": self.url(),
+            "title": vault_search::title_and_set(&k.title, &k.card_set).0, "full": k.title, "img": k.image,
+            "price": vault_search::peso(price), "amount": price,
+            "c": vault_search::cond_class(&variant), "cond": vault_search::tile_condition(&variant),
+            "set": k.card_set, "sym": k.symbol(), "foil": vault_search::foil_class(&format!("{} {variant}", k.title)),
+            "grade": grade,
+            "notes": tile_notes(&k.notes), "tags": [],
+            "seller": self.store.title, "seller_slug": self.store.slug, "seller_id": self.store.id, "seller_img": self.store.img,
+        })
+    }
+}
+
+/// One seller's card, while it can be bought right now: the same checks as The Vault page (`market_lines`).
+pub fn open_listing(c: &Connection, id: i64) -> rusqlite::Result<Option<OpenListing>> {
+    let l = c.query_row(&open_sql(" AND c.id=?2"), rusqlite::params![now(), id], open_row).optional()?;
+    Ok(l.filter(|l| l.left > 0))
+}
+
+/// A seller's card as an Ask the Vault tile, only while it can be bought right now and has a price.
+pub fn ask_tile(c: &Connection, id: i64) -> rusqlite::Result<Option<serde_json::Value>> {
+    Ok(open_listing(c, id)?.filter(|l| l.card.has_price()).map(|l| l.tile()))
+}
+
 /// Every seller's card that can be bought right now, for The Vault page's card finder (`/vault.tsv`, after the vault's
-/// own catalogue): one `S` line per store, the stores with the most cards first, then one `M` line per listing, newest
-/// first. A card is in when it is for sale and Active, has a copy left that no open reservation holds, and hasn't passed
-/// its end date, in a store that is approved, not blocked, selling and not on vacation (the same checks as `can_sell`).
+/// own catalogue) and Ask the Vault: one `S` line per store, the stores with the most cards first, then one `M` line per
+/// listing, newest first. A card is in when it is open for sale (`OPEN_FOR_SALE`) and has a copy left that no open
+/// reservation holds.
 pub fn market_lines(c: &Connection) -> rusqlite::Result<String> {
     use std::collections::HashMap;
-    let mut st = c.prepare(&format!(
-        "SELECT {}, m.slug, m.store_name, m.name, m.avatar,
-           c.qty - COALESCE((SELECT SUM(r.qty) FROM reservations r WHERE r.card_id=c.id AND r.status IN ('Pending','Confirmed')),0)
-         FROM member_cards c JOIN members m ON m.id=c.member_id
-         WHERE c.kind='sale' AND c.status='Active' AND c.qty>0 AND (c.expires_at<=0 OR c.expires_at>=?1)
-           AND m.seller=1 AND m.profile_ok=1 AND m.blocked=0 AND m.status<>'Vacation'
-         ORDER BY c.id DESC",
-        members::CARD_COLS
-    ))?;
-    let n = members::CARD_N;
-    let rows = st.query_map([now()], |r| {
-        let (slug, store_name, name, avatar): (String, String, String, String) = (r.get(n)?, r.get(n + 1)?, r.get(n + 2)?, r.get(n + 3)?);
-        let title = if store_name.trim().is_empty() { name } else { store_name };
-        Ok((members::map_card(r, 0)?, vault_search::Store { id: 0, slug, title, img: avatar, count: 0 }, r.get::<_, i64>(n + 4)?))
-    })?;
+    let mut st = c.prepare(&open_sql(" ORDER BY c.id DESC"))?;
+    let rows = st.query_map([now()], open_row)?;
     let (mut cards, mut stores): (Vec<(MemberCard, i64)>, HashMap<i64, vault_search::Store>) = (vec![], HashMap::new());
     for row in rows {
-        let (k, mut s, left) = row?;
+        let OpenListing { card: k, store: s, left } = row?;
         if left <= 0 {
             continue;
         }
-        s.id = k.member_id;
         stores.entry(k.member_id).or_insert(s).count += 1;
         cards.push((k, left));
     }
@@ -760,14 +835,7 @@ pub fn market_lines(c: &Connection) -> rusqlite::Result<String> {
     let mut out: String = order.iter().enumerate().map(|(i, s)| vault_search::store_line(i as u16 + 1, s)).collect();
     for (k, left) in cards {
         let key = catalogue_key(&k.card_id);
-        let label = if k.finish.trim().is_empty() { String::new() } else { crate::market::label(k.finish.trim()) };
-        let finish = vault_search::finish_group(&label, "");
-        let variant = if label.is_empty() || finish == "Normal" { k.cond.clone() } else { format!("{} · {label}", k.cond) };
-        let one_line = k.notes.lines().map(str::trim).filter(|l| !l.is_empty()).collect::<Vec<_>>().join(" · ");
-        let mut notes: String = one_line.chars().take(160).collect();
-        if one_line.chars().count() > 160 {
-            notes.push('…');
-        }
+        let (variant, finish) = variant_of(&k);
         out += &vault_search::market_line(&vault_search::Card {
             handle: String::new(),
             title: k.title.clone(),
@@ -783,7 +851,7 @@ pub fn market_lines(c: &Connection) -> rusqlite::Result<String> {
             sym: k.symbol(),
             finish: finish.to_string(),
             lang: crate::translate::language_of(&k.title, key, "").to_string(),
-            notes,
+            notes: tile_notes(&k.notes),
             text: String::new(),
             order: 0,
             store: at.get(&k.member_id).copied().unwrap_or(0),
@@ -2793,6 +2861,56 @@ mod tests {
         assert_eq!(lids(), vec![gym, unpriced, photo, later]);
         // The vault's own catalogue reader never sees any of it.
         assert!(vault_search::parse(&market_lines(&c).unwrap()).1.is_empty());
+    }
+
+    #[test]
+    fn ask_shows_a_store_card_as_a_tile_only_while_it_can_be_bought_with_a_price() {
+        let c = db();
+        let (s, b, card) = seller_with_card(&c);
+        c.execute("UPDATE member_cards SET value_own=120, notes='Straight from the pack' WHERE id=?1", [card]).unwrap();
+        // Ask the Vault's plain answer finds it in the same list The Vault page shows.
+        let (binders, _, cards) = vault_search::parse_market(&market_lines(&c).unwrap());
+        let a = crate::ask::answer("pikachu", None, &cards, &binders, &[]);
+        assert_eq!(a.picks.iter().map(|&i| cards[i].lid).collect::<Vec<_>>(), vec![card], "{a:?}");
+        // The tile is built from the listing itself.
+        let t = ask_tile(&c, card).unwrap().expect("open, Active and priced: a tile");
+        assert_eq!(t["lid"], card);
+        assert_eq!(t["url"], format!("/trainers/{s}/cards/{card}"), "it opens in the card window");
+        assert_eq!(t["title"], vault_search::title_and_set("Pikachu - 058/102 - Base Set", "Base Set").0);
+        assert_eq!(t["full"], "Pikachu - 058/102 - Base Set");
+        assert_eq!((t["price"].as_str(), t["amount"].as_f64()), (Some("₱120"), Some(120.0)), "the seller's own price");
+        assert_eq!((t["seller"].as_str(), t["seller_slug"].as_str(), t["seller_id"].as_i64()), (Some("Shop"), Some("shop"), Some(s)), "whose card it is");
+        assert_eq!(t["notes"], "Straight from the pack");
+        assert!(t.get("id").is_none() && t.get("handle").is_none(), "nothing that reads as a vault card");
+        // Every way of not being buyable right now leaves the tile out: the same checks as The Vault page.
+        let gone = |set: &str, back: &str, why: &str| {
+            c.execute(&format!("UPDATE member_cards SET {set} WHERE id=?1"), [card]).unwrap();
+            assert_eq!(ask_tile(&c, card).unwrap(), None, "{why}");
+            c.execute(&format!("UPDATE member_cards SET {back} WHERE id=?1"), [card]).unwrap();
+            assert!(ask_tile(&c, card).unwrap().is_some(), "{why}: and back again");
+        };
+        gone("value=0, value_own=0", "value=100, value_own=120", "no price yet");
+        gone("status='Hidden'", "status='Active'", "hidden by the seller");
+        gone("status='Out of stock'", "status='Active'", "out of stock");
+        gone("status='Reserved'", "status='Active'", "reserved");
+        gone("status='Sold'", "status='Active'", "sold");
+        gone("kind='own'", "kind='sale'", "only shown off");
+        gone("kind='wish'", "kind='sale'", "on a wishlist");
+        gone("qty=0", "qty=2", "no copies left");
+        gone(&format!("expires_at={}", now() - 60), "expires_at=0", "past its end date");
+        for (shut, open) in [("status='Vacation'", "status='Active'"), ("blocked=1", "blocked=0"), ("profile_ok=0", "profile_ok=1"), ("seller=0", "seller=1")] {
+            c.execute(&format!("UPDATE members SET {shut} WHERE id=?1"), [s]).unwrap();
+            assert_eq!(ask_tile(&c, card).unwrap(), None, "{shut}: the store is closed");
+            c.execute(&format!("UPDATE members SET {open} WHERE id=?1"), [s]).unwrap();
+        }
+        assert!(ask_tile(&c, card).unwrap().is_some());
+        assert_eq!(ask_tile(&c, 999_999).unwrap(), None, "no such listing");
+        // Copies held by open reservations aren't for sale.
+        reserve(&c, b, s, card, 1, "").unwrap().unwrap();
+        assert_eq!(open_listing(&c, card).unwrap().map(|l| l.left), Some(1), "one copy left");
+        let b2 = create(&c, "Buyer Two", "h").unwrap().unwrap();
+        reserve(&c, b2, s, card, 1, "").unwrap().unwrap();
+        assert_eq!(ask_tile(&c, card).unwrap(), None, "every copy is spoken for");
     }
 
     #[test]

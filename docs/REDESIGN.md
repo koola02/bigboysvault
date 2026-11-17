@@ -291,7 +291,7 @@ As of 12 November 2026, behind the new-look switch:
   binders, add/remove binders, select the cover of the binders and the ability to reposition their binders."
 - **The Vault shows every card for sale:** the vault's cards and every store card that can be bought now (Active,
   copies left after reservations, store approved, selling, not on vacation), from `/vault.tsv` (the catalogue plus
-  `S`/`M` lines; `/cards.tsv` is unchanged for Ask the Vault and the AI tools). By default one store card follows
+  `S`/`M` lines; `/cards.tsv` is unchanged; since 18 Nov Ask the Vault answers from this same list). By default one store card follows
   every three of the vault's; each tile says whose card it is; "Sold by" buttons filter by store; a store's name finds
   its cards only when no card has that word; an old binder link shows a removable chip.
 - **Stores shows each store's binders, then the cards its owner highlights** (the owner: "In the stores tab, the binders

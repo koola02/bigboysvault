@@ -162,11 +162,14 @@ Try a restore now and then on staging (`ops/staging.sh`) so it's familiar before
 
 ## 4b. Ask the Vault with Google Gemini
 
-`src/vault_ai.rs`. When the Fly secret `GEMINI_API_KEY` is set, Gemini answers Ask questions: it searches the vault
-(`search_cards`), opens a card (`card_details`: price, stock, market price, trend), finds look-alikes
-(`similar_cards`) and searches the trainers' stores (`store_listings`), all read-only. It may only quote what those
-return; the cards it recommends come back as tiles built from the real products. Without a key, or when anything goes
-wrong (timeout, Google's free quota used up: a 429 pauses it for a minute), Ask answers the old way (`src/ask.rs`).
+`src/vault_ai.rs`. When the Fly secret `GEMINI_API_KEY` is set, Gemini answers Ask questions: it searches every card
+for sale, the vault's and every open store's, the same list The Vault page shows (`search_cards`, each card with its
+seller), opens a card (`card_details`: seller, price, copies left, market price, and the trend for the vault's cards) and
+finds the vault's look-alikes (`similar_cards`), all read-only. It may only quote what those return, and treats every
+seller alike. The cards it recommends come back as tiles built from the real products and listings: a store's card shows
+its store's name, opens in the card window (`/trainers/{id}/cards/{card}`) and has its own "+", and only while it can be
+bought now and has a price (`sellers::ask_tile`). Without a key, or when anything goes wrong (timeout, Google's free quota
+used up: a 429 pauses it for a minute), Ask answers the old way (`src/ask.rs`), from the same list and with the same tiles.
 
 - Key: aistudio.google.com/apikey → Create API key, then `fly secrets set GEMINI_API_KEY=... -a bigboysvault`.
 - `GEMINI_MODEL` (default `gemini-3.6-flash`), `GEMINI_DAILY_MAX` (answers per Philippine day, default 900; each

@@ -1,7 +1,7 @@
-//! Ask the Vault's AI answers. Google Gemini reads the question, looks things up through a few read-only tools (the
-//! vault's cards, one card's details and price trend, look-alikes, the trainers' stores) and writes a short reply.
-//! It may only quote prices and stock that a tool gave it. Cards it recommends come back as tiles, built here from the
-//! real products, so a tile's price and "+" are always the site's own.
+//! Ask the Vault's AI answers. Google Gemini reads the question, looks things up through a few read-only tools (every
+//! card for sale, the vault's and every open store's; one card's details and price trend; look-alikes) and writes a short
+//! reply. It may only quote prices and stock that a tool gave it. Cards it recommends come back as tiles, built here from
+//! the real products and listings, so a tile's price and "+" are always the site's own, whichever store sells it.
 //!
 //! Anything that goes wrong (no key, a timeout, Google's free quota used up, an odd reply) gives `None`, and Ask
 //! answers the old way (marcuru_rs::ask), so it never breaks. Settings: GEMINI_API_KEY (a Fly secret), GEMINI_MODEL
@@ -11,7 +11,7 @@ use marcuru_rs::{blocks, db, history, sellers};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
-use vault_search::{parse, peso, read_words, search, Sort};
+use vault_search::{parse_market, peso, read_words, search_market, Sort};
 
 const DEFAULT_MODEL: &str = "gemini-3.6-flash";
 const ROUNDS: usize = 6;
@@ -55,34 +55,44 @@ fn chrono_day(t: i64) -> String {
     format!("{:04}-{:02}-{:02}", if m <= 2 { y + 1 } else { y }, m, d)
 }
 
+/// A card the model has seen: one of the vault's (its handle) or a store's (its listing number).
+#[derive(Clone, Debug, PartialEq)]
+enum Pick {
+    Vault(String),
+    Store(i64),
+}
+
 /// The cards the model has seen in this conversation turn, numbered from 1, so it can name them as [[3]].
 #[derive(Default)]
-struct Refs(Vec<String>);
+struct Refs(Vec<Pick>);
 
 impl Refs {
-    fn add(&mut self, handle: &str) -> usize {
-        match self.0.iter().position(|h| h == handle) {
+    fn add(&mut self, pick: Pick) -> usize {
+        match self.0.iter().position(|p| *p == pick) {
             Some(i) => i + 1,
             None => {
-                self.0.push(handle.to_string());
+                self.0.push(pick);
                 self.0.len()
             }
         }
     }
-    fn get(&self, r: usize) -> Option<&String> {
+    fn get(&self, r: usize) -> Option<&Pick> {
         r.checked_sub(1).and_then(|i| self.0.get(i))
     }
 }
+
+/// Who sells a card, as the model is told.
+const THE_VAULT: &str = "the vault";
 
 fn tools() -> Value {
     json!([{ "functionDeclarations": [
         {
             "name": "search_cards",
-            "description": "Search the vault's cards for sale. Use it for any question about which cards the vault has, prices or stock. Returns at most 8 cards, each with a ref number.",
+            "description": "Search every card for sale on the site: the vault's own and every trainer's store. Use it for any question about which cards are for sale, prices or stock. Returns at most 8 cards, each with a ref number and its seller (the vault or a store's name).",
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": { "type": "string", "description": "Words to search for: a Pokémon or card name, a set, a card number, and words like holo, reverse holo, 1st edition, graded, PSA, near mint, japanese. Leave empty to search everything (with a sort). Types (fire, water, psychic…) are not searchable: search Pokémon of that type by name instead, one name per search." },
+                    "query": { "type": "string", "description": "Words to search for: a Pokémon or card name, a set, a card number, and words like holo, reverse holo, 1st edition, graded, PSA, near mint, japanese. A store's name finds that store's cards. Leave empty to search everything (with a sort). Types (fire, water, psychic…) are not searchable: search Pokémon of that type by name instead, one name per search." },
                     "min_price": { "type": "number", "description": "Lowest price in pesos." },
                     "max_price": { "type": "number", "description": "Highest price in pesos." },
                     "sort": { "type": "string", "enum": ["best_match", "cheapest", "priciest", "newest"] }
@@ -91,18 +101,13 @@ fn tools() -> Value {
         },
         {
             "name": "card_details",
-            "description": "Everything about one card from search_cards or similar_cards: price, condition, copies in stock, rarity, the market price and how it moved lately.",
+            "description": "Everything about one card from search_cards or similar_cards: its seller, price, condition, copies left, the market price, and for the vault's cards the rarity and how the market price moved lately.",
             "parameters": { "type": "object", "properties": { "ref": { "type": "integer" } }, "required": ["ref"] }
         },
         {
             "name": "similar_cards",
-            "description": "Cards in the vault most like one card (same type, evolution line, artist, rarity or set). Use for 'cards like X' or when a card is gone.",
+            "description": "The vault's own cards most like one of the vault's cards (same type, evolution line, artist, rarity or set). Use for 'cards like X' or when a card is gone. For a store's card, search_cards by the Pokémon's name instead.",
             "parameters": { "type": "object", "properties": { "ref": { "type": "integer" } }, "required": ["ref"] }
-        },
-        {
-            "name": "store_listings",
-            "description": "Search the trainers' own stores on the site (other sellers, not the vault). Returns the store, the card, its price and a link.",
-            "parameters": { "type": "object", "properties": { "query": { "type": "string", "description": "A card or Pokémon name." } }, "required": ["query"] }
         }
     ]}])
 }
@@ -111,17 +116,17 @@ fn instructions(pay_methods: &str, pay_info: &str) -> String {
     let pay = if pay_methods.trim().is_empty() { "the ways the vault shows when it accepts the order".to_string() } else { pay_methods.replace(',', ", ") };
     let info = pay_info.trim();
     format!(
-        "You are Ask the Vault, the shop assistant of Big Boys Vault, a Pokémon card shop in the Philippines (bigboysvault.com).\n\
+        "You are Ask the Vault, the shop assistant of Big Boys Vault, a Pokémon card marketplace in the Philippines (bigboysvault.com). The vault sells its own cards, and trainers sell theirs in their own stores on the site.\n\
 Rules:\n\
-- For anything about cards, prices, stock or stores, use the tools first. Never state a price, stock or a card the vault has unless a tool just gave it to you. If the tools find nothing, say so plainly and suggest something close that they did find.\n\
+- For anything about cards, prices, stock or stores, use the tools first. Never state a price, stock or a card for sale unless a tool just gave it to you. If the tools find nothing, say so plainly and suggest something close that they did find.\n\
+- Every card comes with its seller: the vault or a trainer's store. Treat every seller alike: recommend the cards that best fit the question, whoever sells them, and say the store's name for a store's card.\n\
 - Prices are in pesos; write them exactly as the tools give them (like ₱1,250).\n\
-- When you recommend vault cards, write each card's ref in double brackets right after its name, like: Pikachu ex [[2]]. The site shows those cards as tiles under your answer with their price and an add-to-cart button. Recommend at most 6.\n\
-- Store cards (from store_listings) have no ref: name the store instead.\n\
+- When you recommend cards, write each card's ref in double brackets right after its name, like: Pikachu ex [[2]]. The site shows those cards as tiles under your answer with their picture, price, seller and an add-to-cart button. Recommend at most 6.\n\
 - Keep it short: one to four sentences, plain text, no markdown, no lists, no emoji.\n\
 - Answer in the customer's language (English, Tagalog or Taglish).\n\
 - Only talk about Pokémon cards and this shop. Don't give investment advice: you may say how a card's market price moved, nothing more.\n\
 - You can't see orders, accounts or messages, and you can't change anything. For shipping, meetups, returns, orders or anything else you can't look up, tell them to message the vault in Chat.\n\
-How buying works: add vault cards to the cart and send the order; nothing is paid on the site. The vault accepts the order and shows how to pay: {pay}.{} Trainers' stores work the same way, paying that seller directly. \
+How buying works: add cards to the cart, the vault's and any store's, and send the order; nothing is paid on the site. The vault accepts the order for its cards and shows how to pay: {pay}.{} A store's cards work the same way: that seller accepts and is paid directly. \
 Sending an order needs an account. To get one, tap Register: beside Log in at the top on a tablet or computer; on a phone, tap Menu at the bottom, then Log in or register. It takes a trainer name and a password, no email.",
         if info.is_empty() { String::new() } else { format!(" The vault's note on paying: {info}") }
     )
@@ -267,7 +272,8 @@ async fn tool(app: &App, name: &str, args: &Value, refs: &mut Refs) -> Result<Va
     let fail = |e: (axum::http::StatusCode, String)| e.1;
     match name {
         "search_cards" => {
-            let body = api::catalogue(app).await.map_err(fail)?;
+            // Every card for sale, the way The Vault page lists them: the vault's, then every open store's.
+            let all = api::market(app).await.map_err(fail)?;
             let query: String = args["query"].as_str().unwrap_or("").chars().take(120).collect();
             let sort = match args["sort"].as_str().unwrap_or("") {
                 "cheapest" => Sort::PriceAsc,
@@ -277,19 +283,24 @@ async fn tool(app: &App, name: &str, args: &Value, refs: &mut Refs) -> Result<Va
             };
             let (min, max) = (args["min_price"].as_f64(), args["max_price"].as_f64());
             let rows = tokio::task::spawn_blocking(move || {
-                let (_, cards) = parse(&body);
+                let (_, stores, cards) = parse_market(api::market_text(&all));
                 let mut f = read_words(&query);
                 f.min_price = f.min_price.or(min);
                 f.max_price = f.max_price.or(max);
-                let found = search(&cards, &f, sort);
-                let hits: Vec<usize> = found.hits.into_iter().filter(|&i| cards[i].qty > 0).collect();
+                let found = search_market(&cards, &stores, &f, sort);
+                // What can be bought: a copy left, and for a store's card a price (one with none yet can't go in the cart).
+                let hits: Vec<usize> = found.hits.into_iter().filter(|&i| cards[i].qty > 0 && (cards[i].store == 0 || cards[i].price > 0.0)).collect();
                 let total = hits.len();
-                let rows: Vec<(String, Value)> = hits
+                let rows: Vec<(Pick, Value)> = hits
                     .iter()
                     .take(8)
                     .map(|&i| {
                         let c = &cards[i];
-                        (c.handle.clone(), json!({ "title": c.title, "set": c.set, "number": c.no, "condition": c.variant, "grade": c.grade, "finish": c.finish, "price": peso(c.price), "copies": c.qty }))
+                        let (pick, seller) = match c.store {
+                            0 => (Pick::Vault(c.handle.clone()), THE_VAULT.to_string()),
+                            s => (Pick::Store(c.lid), stores.get(usize::from(s) - 1).map_or_else(|| "a store".to_string(), |s| s.title.clone())),
+                        };
+                        (pick, json!({ "title": c.title, "seller": seller, "set": c.set, "number": c.no, "condition": c.variant, "grade": c.grade, "finish": c.finish, "price": peso(c.price), "copies": c.qty }))
                     })
                     .collect();
                 (total, found.typo, rows)
@@ -299,8 +310,8 @@ async fn tool(app: &App, name: &str, args: &Value, refs: &mut Refs) -> Result<Va
             let (total, typo, rows) = rows;
             let cards: Vec<Value> = rows
                 .into_iter()
-                .map(|(h, mut v)| {
-                    v["ref"] = json!(refs.add(&h));
+                .map(|(p, mut v)| {
+                    v["ref"] = json!(refs.add(p));
                     v
                 })
                 .collect();
@@ -312,7 +323,28 @@ async fn tool(app: &App, name: &str, args: &Value, refs: &mut Refs) -> Result<Va
         }
         "card_details" | "similar_cards" => {
             let r = num(&args["ref"]).ok_or("ref is missing")?;
-            let handle = refs.get(r).cloned().ok_or("unknown ref: use one from search_cards")?;
+            let handle = match refs.get(r).cloned().ok_or("unknown ref: use one from search_cards")? {
+                Pick::Vault(h) => h,
+                Pick::Store(id) if name == "card_details" => {
+                    // A store's card, read from the listing itself, while it can be bought now and has a price.
+                    let l = with_db(app, move |c| sellers::open_listing(c, id)).await.map_err(fail)?;
+                    let Some(l) = l.filter(|l| l.card.has_price()) else { return Err("that card is no longer for sale".into()) };
+                    let k = &l.card;
+                    let mut out = json!({
+                        "title": k.title, "seller": l.store.title, "set": k.card_set, "number": k.number, "condition": l.variant(),
+                        "price": peso(k.worth()), "for_sale": true, "copies": l.left,
+                    });
+                    if k.value > 0.0 {
+                        out["market_price_near_mint"] = json!(peso(k.value));
+                    }
+                    let about: String = k.notes.chars().take(300).collect();
+                    if !about.trim().is_empty() {
+                        out["about"] = json!(about);
+                    }
+                    return Ok(out);
+                }
+                Pick::Store(_) => return Err("similar_cards works for the vault's own cards: search_cards for the Pokémon's name instead".into()),
+            };
             if name == "card_details" {
                 let p = with_db(app, move |c| {
                     let Some(p) = db::product(c, &handle)? else { return Ok(None) };
@@ -323,7 +355,7 @@ async fn tool(app: &App, name: &str, args: &Value, refs: &mut Refs) -> Result<Va
                 .map_err(fail)?;
                 let Some((p, t)) = p else { return Err("that card is gone".into()) };
                 let mut out = json!({
-                    "title": p.title, "set": p.set_text(), "number": p.card_no, "rarity": p.rarity, "condition": p.variant,
+                    "title": p.title, "seller": THE_VAULT, "set": p.set_text(), "number": p.card_no, "rarity": p.rarity, "condition": p.variant,
                     "finish": p.finish, "price": peso(p.price), "for_sale": p.available && p.price > 0.0, "copies": p.qty,
                 });
                 if p.market_php > 0.0 {
@@ -346,40 +378,10 @@ async fn tool(app: &App, name: &str, args: &Value, refs: &mut Refs) -> Result<Va
                 .map_err(fail)?;
                 let cards: Vec<Value> = rel
                     .iter()
-                    .map(|p| json!({ "ref": refs.add(&p.handle), "title": p.title, "set": p.set_text(), "condition": p.variant, "price": peso(p.price) }))
+                    .map(|p| json!({ "ref": refs.add(Pick::Vault(p.handle.clone())), "title": p.title, "seller": THE_VAULT, "set": p.set_text(), "condition": p.variant, "price": peso(p.price) }))
                     .collect();
                 Ok(json!({ "cards": cards }))
             }
-        }
-        "store_listings" => {
-            let query: String = args["query"].as_str().unwrap_or("").chars().take(80).collect();
-            let words: Vec<String> = query.split_whitespace().take(5).map(|w| w.to_lowercase().replace(['%', '_'], "")).filter(|w| !w.is_empty()).collect();
-            if words.is_empty() {
-                return Err("say which card".into());
-            }
-            let rows = with_db(app, move |c| {
-                let mut sql = String::from(
-                    "SELECT CASE WHEN m.store_name<>'' THEN m.store_name ELSE m.name END, c.title, c.cond, c.value, c.member_id, c.id
-                     FROM member_cards c JOIN members m ON m.id=c.member_id
-                     WHERE c.kind='sale' AND c.status='Active' AND c.qty>0
-                       AND m.seller=1 AND m.blocked=0 AND m.profile_ok=1 AND m.status<>'Vacation'",
-                );
-                for i in 0..words.len() {
-                    sql.push_str(&format!(" AND lower(c.title) LIKE '%' || ?{} || '%'", i + 1));
-                }
-                sql.push_str(" ORDER BY c.value LIMIT 8");
-                let mut st = c.prepare(&sql)?;
-                let rows = st
-                    .query_map(rusqlite::params_from_iter(words.iter()), |r| {
-                        let price: f64 = r.get(3)?;
-                        Ok(json!({ "store": r.get::<_, String>(0)?, "title": r.get::<_, String>(1)?, "condition": r.get::<_, String>(2)?, "price": if price > 0.0 { peso(price) } else { "ask the seller".into() }, "link": format!("/trainers/{}/cards/{}", r.get::<_, i64>(4)?, r.get::<_, i64>(5)?) }))
-                    })?
-                    .collect::<Result<Vec<_>, _>>()?;
-                Ok(rows)
-            })
-            .await
-            .map_err(fail)?;
-            Ok(json!({ "listings": rows }))
         }
         _ => Err(format!("no tool called {name}")),
     }
@@ -421,16 +423,26 @@ pub fn tidy(said: &str) -> (String, Vec<usize>) {
     (text.trim().to_string(), picks)
 }
 
+/// The tiles for the cards the reply names, in its order, built from the real products and listings: a vault card while
+/// it is in the catalogue (its "+" only while it is for sale), a store's card only while it can be bought now and has a price.
+fn tiles(c: &rusqlite::Connection, picks: &[Pick]) -> rusqlite::Result<Vec<Value>> {
+    let mut out = vec![];
+    for p in picks {
+        match p {
+            Pick::Vault(h) => out.extend(db::product(c, h)?.map(|p| api::product_tile(&p))),
+            Pick::Store(id) => out.extend(sellers::ask_tile(c, *id)?),
+        }
+    }
+    Ok(out)
+}
+
 async fn finish(app: &App, said: &str, refs: &Refs, q: &str) -> Result<Value, String> {
     let (text, picks) = tidy(said);
     if text.is_empty() {
         return Err("empty answer".into());
     }
-    let handles: Vec<String> = picks.iter().filter_map(|r| refs.get(*r).cloned()).take(8).collect();
-    let products = with_db(app, move |c| handles.iter().map(|h| db::product(c, h)).collect::<rusqlite::Result<Vec<_>>>())
-        .await
-        .map_err(|e| e.1)?;
-    let cards: Vec<Value> = products.into_iter().flatten().map(|p| api::product_tile(&p)).collect();
+    let picks: Vec<Pick> = picks.iter().filter_map(|r| refs.get(*r).cloned()).take(8).collect();
+    let cards = with_db(app, move |c| tiles(c, &picks)).await.map_err(|e| e.1)?;
     let ctx: String = q.chars().take(190).collect();
     Ok(json!({ "say": text, "cards": cards, "chips": [], "ctx": ctx, "ai": true }))
 }
@@ -462,6 +474,18 @@ mod tests {
 Charizard ex [[1]] for ₱300
 Moltres [[2]] for ₱50
 Want more?").0, "Under ₱500: Charizard ex for ₱300. Moltres for ₱50. Want more?");
+    }
+
+    #[test]
+    fn vault_and_store_cards_get_their_own_numbers() {
+        let mut r = Refs::default();
+        assert_eq!(r.add(Pick::Vault("pikachu-1".into())), 1);
+        assert_eq!(r.add(Pick::Store(1)), 2, "a store's listing 1 is not the vault's card");
+        assert_eq!(r.add(Pick::Vault("pikachu-1".into())), 1, "seen before: the same number");
+        assert_eq!(r.add(Pick::Store(1)), 2);
+        assert_eq!(r.get(2), Some(&Pick::Store(1)));
+        assert_eq!(r.get(0), None);
+        assert_eq!(r.get(3), None);
     }
 
     #[test]
