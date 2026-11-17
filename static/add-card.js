@@ -35,11 +35,16 @@
     return prices.get(id);
   };
 
-  function open({ card, binderId = null, onAdded = null }) {
+  // `listing`: a card already in the store (GET /me/listings/{id}): the window opens filled in with it, and saving puts
+  // it in the binder too (POST /me/listings/{id}/place). Without it, `card` is a new card from the card list.
+  function open({ card, listing = null, binderId = null, onAdded = null }) {
+    const old = !!listing;
+    if (old) card = { id: '', name: listing.title, set: listing.set, number: listing.number, image: listing.image };
+    const goWord = old ? (binderId ? 'Save and add to this binder' : 'Save') : 'Add to my store';
     const d = make('dialog', 'float ac');
     const form = make('form', 'float-panel'); form.noValidate = true;
     const head = make('header', 'sv-h');
-    const titles = make('div', 'sv-t'); titles.append(make('h2', null, 'Add to your store'), make('p', null, card.name || 'This card'));
+    const titles = make('div', 'sv-t'); titles.append(make('h2', null, old ? (binderId ? 'Add to this binder' : 'Check this card') : 'Add to your store'), make('p', null, card.name || 'This card'));
     const x = make('button', 'sv-x'); x.type = 'button'; x.setAttribute('aria-label', 'Close');
     x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
     head.append(titles, x);
@@ -54,7 +59,7 @@
     // Which picture: the card list's, or a photo of the seller's own card.
     const picBox = make('fieldset', 'ac-f ac-pics');
     picBox.append(make('legend', null, 'Picture'));
-    const useList = make('button', 'ac-opt', 'Use this picture'); useList.type = 'button'; useList.setAttribute('aria-pressed', 'true');
+    const useList = make('button', 'ac-opt', old ? 'Keep this picture' : 'Use this picture'); useList.type = 'button'; useList.setAttribute('aria-pressed', 'true');
     const upLabel = make('label', 'ac-opt'); upLabel.append(make('span', null, 'Upload a photo of my card'));
     const file = make('input', 'sr'); file.type = 'file'; file.accept = 'image/*'; upLabel.append(file);
     const row = make('div', 'ac-opts'); row.append(useList, upLabel);
@@ -67,13 +72,14 @@
       const f = file.files && file.files[0]; if (!f) return;
       preparing = true; go.disabled = true; go.textContent = 'Getting the photo ready…';
       photo = await shrink(f); img.src = URL.createObjectURL(photo); showChoice(); file.value = '';
-      preparing = false; go.disabled = false; go.textContent = 'Add to my store';
+      preparing = false; go.disabled = false; go.textContent = goWord;
     });
 
     // Condition: chosen by the seller (none picked for them).
     const condL = make('label', 'ac-f'); condL.append(make('b', null, 'Condition'));
-    const cond = make('select'); cond.append(new Option('Choose its condition', '', true, true));
-    CONDS.forEach((c) => cond.append(new Option(c, c)));
+    const cond = make('select'); cond.append(new Option('Choose its condition', '', !old, !old));
+    const conds = old && listing.cond && !CONDS.includes(listing.cond) ? [listing.cond, ...CONDS] : CONDS;
+    conds.forEach((c) => cond.append(new Option(c, c, false, old && c === listing.cond)));
     condL.append(cond);
 
     // Price: typed by the seller. The market price shows as a hint only.
@@ -93,26 +99,30 @@
       use.addEventListener('click', () => { price.value = String(Math.round(v)); price.focus(); });
       hint.append(use);
     };
-    nearMint(card.id).then((v) => { nm = v; paintHint(); });
+    // A card already in the store: its own price stays as it is; one that followed the market waits for the seller's price.
+    if (old) { if (Number(listing.value_own) > 0) price.value = String(Math.round(listing.value_own)); nm = Number(listing.market) || 0; paintHint(); }
+    else nearMint(card.id).then((v) => { nm = v; paintHint(); });
     cond.addEventListener('change', paintHint);
 
     const qtyL = make('label', 'ac-f ac-half'); qtyL.append(make('b', null, 'How many'));
-    const qty = make('input'); qty.type = 'number'; qty.min = '1'; qty.max = '99'; qty.value = '1'; qty.inputMode = 'numeric';
+    const qty = make('input'); qty.type = 'number'; qty.min = old ? '0' : '1'; qty.max = '99'; qty.value = old ? String(listing.qty ?? 1) : '1'; qty.inputMode = 'numeric';
     qtyL.append(qty);
     const binderL = make('label', 'ac-f ac-half'); binderL.append(make('b', null, 'Binder'));
     const binder = make('select'); binder.append(new Option('Not in a binder', ''));
     binderL.append(binder);
-    loadBinders().then((list) => { list.forEach((b) => binder.append(new Option(b.title, String(b.id), false, String(b.id) === String(binderId)))); });
+    const pickBinder = binderId ?? (old ? listing.binder_id : null);
+    loadBinders().then((list) => { list.forEach((b) => binder.append(new Option(b.title, String(b.id), false, String(b.id) === String(pickBinder)))); });
     const pair = make('div', 'ac-pair'); pair.append(qtyL, binderL);
 
     const notesL = make('label', 'ac-f'); notesL.append(make('b', null, 'A note for buyers '), make('small', null, '(optional)'));
     const notes = make('textarea'); notes.rows = 2; notes.maxLength = 300; notes.placeholder = 'Centering, a tiny whitening on the back, comes in a sleeve…';
+    if (old) notes.value = listing.notes || '';
     notesL.append(notes);
 
     const err = make('p', 'vc-err'); err.setAttribute('role', 'alert');
     const acts = make('div', 'ac-acts');
     const cancel = make('button', 'btn ghost', 'Cancel'); cancel.type = 'button';
-    const go = make('button', 'btn', 'Add to my store'); go.type = 'submit';
+    const go = make('button', 'btn', goWord); go.type = 'submit';
     acts.append(cancel, go);
     body.append(top, picBox, condL, priceL, pair, notesL, err);
     form.append(head, body, acts); d.append(form);
@@ -135,20 +145,21 @@
       const p = Number(price.value);
       if (!(p >= 1)) { err.textContent = 'Type your price for one card.'; price.focus(); return; }
       const n = Math.round(Number(qty.value));
-      if (!(n >= 1 && n <= 99)) { err.textContent = 'How many: from 1 to 99.'; qty.focus(); return; }
-      go.disabled = true; go.textContent = photo ? 'Sending the photo…' : 'Adding…';
+      if (!(n >= (old ? 0 : 1) && n <= 99)) { err.textContent = old ? 'How many: from 0 to 99 (0 means sold out).' : 'How many: from 1 to 99.'; qty.focus(); return; }
+      go.disabled = true; go.textContent = photo ? 'Sending the photo…' : old ? 'Saving…' : 'Adding…';
       const fd = new FormData();
-      fd.append('id', card.id); fd.append('image', card.image || ''); fd.append('image_large', card.image_large || ''); fd.append('en', card.en || '');
+      if (!old) { fd.append('id', card.id); fd.append('image', card.image || ''); fd.append('image_large', card.image_large || ''); fd.append('en', card.en || ''); }
       fd.append('cond', cond.value); fd.append('price', String(Math.round(p))); fd.append('qty', String(n)); fd.append('notes', notes.value); fd.append('binder_id', binder.value);
       if (photo) fd.append('photo', photo, 'card.jpg');
       try {
-        const r = await fetch('/me/cards/new', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' }, body: fd });
+        const r = await fetch(old ? `/me/listings/${listing.id}/place` : '/me/cards/new', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' }, body: fd });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || 'That didn’t work. Please try again.');
         close();
-        say(`${card.name || 'Card'} is in your store at ${j.card && j.card.price ? j.card.price : peso(p)} ✓`);
+        const shown = (j.card && (j.card.price_text || j.card.price)) || peso(p);
+        say(old ? (binder.value ? `${card.name || 'Card'} is in the binder at ${shown} ✓` : `${card.name || 'Card'} saved at ${shown} ✓`) : `${card.name || 'Card'} is in your store at ${shown} ✓`);
         if (onAdded) onAdded(j.card);
-      } catch (x2) { err.textContent = x2.message; go.disabled = false; go.textContent = 'Add to my store'; }
+      } catch (x2) { err.textContent = x2.message; go.disabled = false; go.textContent = goWord; }
     });
     d.showModal();
     cond.focus();

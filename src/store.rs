@@ -160,6 +160,114 @@ pub async fn listings(State(app): State<App>, h: HeaderMap, Query(q): Query<List
     Ok(html(render(ListingsPage { nav, p, cards, binders, f, conditions: members::CONDITIONS, statuses: sellers::STATUSES, max, total, focus: q.id.unwrap_or(0) })?))
 }
 
+/// GET /me/listings/{id}: one of the seller's cards, for the "Add to your store" window to open filled in with it.
+pub async fn listing_one(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -> Res {
+    let m = match acting_any(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let mid = m.id;
+    let Some(card) = with_db(&app, move |c| members::card(c, mid, id)).await? else { return Ok(fail(StatusCode::NOT_FOUND, "That card isn't in your store.")) };
+    let mut j = card_json(&card);
+    j["image_large"] = json!(card.image_large);
+    Ok(ok(json!({ "ok": true, "card": j })))
+}
+
+/// POST /me/listings/{id}/place (a form, with an optional photo): a card already in the store goes into a binder through
+/// the same window as a new one (the owner, 18 Nov 2026: the window applies to every card added, new or old). The seller
+/// checks or changes its condition, their own price, how many, the note and the picture, and only then is it saved and
+/// put in the binder.
+pub async fn place_listing(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, mut mp: Multipart) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = seller_only(&m) {
+        return Ok(r);
+    }
+    let mid = m.id;
+    let Some(before) = with_db(&app, move |c| members::card(c, mid, id)).await? else { return Ok(fail(StatusCode::NOT_FOUND, "That card isn't in your store.")) };
+    let (mut cond, mut price, mut qty, mut notes, mut binder, mut photo) = (String::new(), String::new(), String::from("1"), String::new(), String::new(), None::<Vec<u8>>);
+    while let Some(f) = mp.next_field().await.map_err(|_| (StatusCode::BAD_REQUEST, "That didn't upload. Please try again.".to_string()))? {
+        let key = f.name().unwrap_or("").to_string();
+        if key == "photo" {
+            let b = f.bytes().await.map_err(|_| (StatusCode::BAD_REQUEST, "The photo didn't upload. Please try again.".to_string()))?;
+            if !b.is_empty() {
+                photo = Some(b.to_vec());
+            }
+            continue;
+        }
+        let text = f.text().await.unwrap_or_default();
+        match key.as_str() {
+            "cond" => cond = text.trim().to_string(),
+            "price" => price = text.trim().to_string(),
+            "qty" => qty = text.trim().to_string(),
+            "notes" => notes = text,
+            "binder_id" => binder = text.trim().to_string(),
+            _ => {}
+        }
+    }
+    // The same checks as a new card. A graded card keeps its grade (it isn't one of the plain conditions).
+    if !members::CONDITIONS.contains(&cond.as_str()) && cond != before.cond {
+        return Ok(fail(StatusCode::BAD_REQUEST, "Choose the card's condition."));
+    }
+    let Some(price) = price.replace(',', "").parse::<f64>().ok().filter(|p| p.is_finite() && *p >= 1.0 && *p <= 100_000_000.0) else {
+        return Ok(fail(StatusCode::BAD_REQUEST, "Type your price for one card, in pesos."));
+    };
+    let Some(qty) = qty.parse::<i64>().ok().filter(|q| (0..=99).contains(q)) else {
+        return Ok(fail(StatusCode::BAD_REQUEST, "How many: from 0 to 99 (0 means sold out)."));
+    };
+    let notes = members::clean_text(&notes, 300);
+    let binder_id = match binder.parse::<i64>().ok().filter(|b| *b > 0) {
+        Some(b) => {
+            if !with_db(&app, move |c| Ok(members::binders_of(c, mid)?.iter().any(|x| x.id == b))).await? {
+                return Ok(fail(StatusCode::BAD_REQUEST, "That binder isn't yours."));
+            }
+            Some(b)
+        }
+        None if binder.is_empty() => None,
+        None => return Ok(fail(StatusCode::BAD_REQUEST, "Pick the binder again.")),
+    };
+    let mut new_pic = None;
+    if let Some(bytes) = photo {
+        if with_db(&app, |c| Ok(members::photo_bytes(c)?)).await? >= crate::community::photo_cap_mb() * 1024 * 1024 {
+            return Ok(fail(StatusCode::INSUFFICIENT_STORAGE, "The vault's photo space is full right now. Keep the card's picture for now."));
+        }
+        let dir = PathBuf::from(&*app.uploads);
+        let stem = format!("m{mid}-{}", members::temp_password());
+        match gated(move || store_photo(bytes, dir, stem)).await? {
+            Ok((large, small, _, _, size)) => new_pic = Some((small, large, size.max(1))),
+            Err(e) if e == crate::community::TOO_BIG => return Ok(fail(StatusCode::BAD_REQUEST, "That photo is too big. Please use a smaller one.")),
+            Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "That photo couldn't be read. Try a JPEG or PNG.")),
+        }
+    }
+    let pic = new_pic.clone();
+    let card = with_db(&app, move |c| {
+        let patch = sellers::Patch { price: Some(price), cond: Some(cond), qty: Some(qty), notes: Some(notes), binder_id: Some(binder_id), ..Default::default() };
+        let card = sellers::update_listing(c, mid, id, &patch)?;
+        if let Some((small, large, size)) = &pic {
+            c.execute("UPDATE member_cards SET image=?3, image_large=?4, photo_bytes=?5 WHERE member_id=?1 AND id=?2", rusqlite::params![mid, id, small, large, size])?;
+        }
+        Ok(card)
+    })
+    .await?;
+    if card.is_none() {
+        if let Some((small, large, _)) = &new_pic {
+            admin::remove_upload(&app.uploads, small);
+            admin::remove_upload(&app.uploads, large);
+        }
+        return Ok(fail(StatusCode::NOT_FOUND, "That card isn't in your store."));
+    }
+    // A photo they uploaded before, now replaced, goes.
+    if new_pic.is_some() && before.uploaded_photo() {
+        admin::remove_upload(&app.uploads, &before.image);
+        admin::remove_upload(&app.uploads, &before.image_large);
+    }
+    app.forget();
+    let now = with_db(&app, move |c| members::card(c, mid, id)).await?;
+    Ok(ok(json!({ "ok": true, "card": now.as_ref().map(card_json) })))
+}
+
 /// One listing's JSON, for the page to repaint a tile.
 fn card_json(c: &MemberCard) -> serde_json::Value {
     json!({
@@ -2947,7 +3055,7 @@ mod tests {
         let slug = members::get(&c, s).unwrap().unwrap().slug;
         // No binders yet: the owner still gets the heading, the button and a word on what binders are for.
         let own = page_as(&c, &slug, None, true);
-        assert!(own.contains("data-bt-edit=\"seller\"") && own.contains("class=\"bt-none\"") && own.contains("/static/binder-tools.js?v=4"), "{own}");
+        assert!(own.contains("data-bt-edit=\"seller\"") && own.contains("class=\"bt-none\"") && own.contains("/static/binder-tools.js?v=5"), "{own}");
         let visitor = page(&c, &slug, None);
         assert!(!visitor.contains("data-bt-edit") && !visitor.contains("binder-tools.js") && !visitor.contains(">Binders<"));
         let b = members::create_member_binder(&c, s, "Fire").unwrap();

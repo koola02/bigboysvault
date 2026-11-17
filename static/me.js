@@ -209,6 +209,13 @@
     b.append(pic, t, s);
     b.addEventListener('click', async () => {
       if (b.classList.contains('in') || b.disabled) return;
+      // A seller puts a card up for sale through "Add to your store" (add-card.js): they choose its condition, their
+      // price and its picture first. A collector's card simply joins their binder.
+      const who = window.bbvWho ? await window.bbvWho().catch(() => ({})) : {};
+      if (who && who.member && who.member.seller && window.bbvAddCard) {
+        window.bbvAddCard.open({ card: c, onAdded: () => { b.classList.add('in'); } });
+        return;
+      }
       b.classList.add('busy');
       try {
         const j = await send('/me/cards', { id: c.id, image: c.image, image_large: c.image_large, en: c.en }); worth(j);

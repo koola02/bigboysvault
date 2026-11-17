@@ -617,9 +617,12 @@
       const sync = () => {
         const n = chosen.size, moving = [...chosen.values()].filter((c) => c.inside).length;
         go.disabled = !n; go.textContent = n ? `Add ${plural(n, 'card')}` : 'Add';
+        if (kind === 'seller') return;
         tally.textContent = !n ? 'Tap the cards to add.' : moving ? `${plural(moving, 'card')} will move here from ${moving === 1 ? 'another binder' : 'other binders'}.` : `${plural(n, 'card')} chosen`;
       };
       sync();
+      // A seller adds each card through its own window, so this window just closes when they are done.
+      if (kind === 'seller') { go.hidden = true; no.textContent = 'Done'; tally.textContent = 'Tap a card to check its condition, price and picture, then add it.'; }
       function row(c) {
         const li = el('li');
         const b = button('bt-pc bt-pick', null);
@@ -632,7 +635,22 @@
         t.append(el('small', 'bt-price', c.note ? `${c.price} · ${c.note}` : c.price));
         if (c.inside) t.append(el('small', 'bt-moves', `In “${c.inside}” · moves here`));
         b.append(pic, t);
-        b.addEventListener('click', () => {
+        b.addEventListener('click', async () => {
+          // A seller checks a card's condition, price and picture in the "Add to this binder" window before it goes in
+          // (add-card.js), as with a new card. The vault's binders pick several cards at once.
+          if (kind === 'seller' && window.bbvAddCard) {
+            if (b.getAttribute('aria-pressed') === 'true') return;
+            b.disabled = true;
+            try {
+              const j = await req(`/me/listings/${enc(c.id)}`);
+              window.bbvAddCard.open({ listing: j.card, binderId: key, onAdded: async () => {
+                dirty = true; b.setAttribute('aria-pressed', 'true');
+                await load(); draw();
+              } });
+            } catch (e) { state.textContent = e.message; }
+            b.disabled = false;
+            return;
+          }
           if (chosen.has(c.id)) chosen.delete(c.id); else chosen.set(c.id, c);
           b.setAttribute('aria-pressed', String(chosen.has(c.id))); sync();
         });

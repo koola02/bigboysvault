@@ -853,7 +853,7 @@ mod tests {
         assert!(binder.contains("class=\"wrap mk mk-bpage\"") && binder.contains("<form class=\"filters\"") && binder.contains("id=\"grid\""), "its search and cards stay");
         assert!(!binder.contains("<p class=\"sub\">"));
         // Full admins arrange its cards right there: the button is in every visitor's page (it is kept), hidden unless they are signed in.
-        assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=4"));
+        assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=5"));
         // The Vault (all cards) and a search: no bar.
         for (base, title) in [("/search", "All cards"), ("/search", "Results for “pika”")] {
             let other = page(base, title, 3);
@@ -1098,7 +1098,8 @@ async fn main() {
         .route("/me/listings", get(store::listings))
         .route("/me/listings/bulk", post(store::bulk_listings))
         .route("/me/listings/move", post(store::move_cards))
-        .route("/me/listings/{id}", post(store::edit_listing))
+        .route("/me/listings/{id}", get(store::listing_one).post(store::edit_listing))
+        .route("/me/listings/{id}/place", post(store::place_listing).layer(axum::extract::DefaultBodyLimit::max(12 * 1024 * 1024)))
         .route("/me/listings/{id}/renew", post(store::renew_listing))
         .route("/me/featured", get(store::featured_me).post(store::featured_me_save))
         .route("/me/featured/choices", get(store::featured_me_choices))
