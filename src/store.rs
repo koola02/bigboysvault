@@ -1726,8 +1726,9 @@ fn seller_card(c: &rusqlite::Connection, m: Member, s: StoreStats) -> rusqlite::
     })
 }
 
-/// Every store with cards for sale, the vault's among them, the most recently active first.
-fn store_cards(c: &rusqlite::Connection, brand: &str) -> rusqlite::Result<Vec<StoreCard>> {
+/// Every store with cards for sale, the vault's among them, the most recently active first. The home feed's stores
+/// carousel, its list of stores and its sets of cards follow the same order (feed.rs).
+pub(crate) fn store_cards(c: &rusqlite::Connection, brand: &str) -> rusqlite::Result<Vec<StoreCard>> {
     let mut out = vec![];
     let vault = vault_card(c, brand)?;
     if vault.on_sale > 0 {

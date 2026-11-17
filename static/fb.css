@@ -1834,3 +1834,8 @@ dialog.of .sheet-acts { display: flex; justify-content: flex-end; gap: 8px; }
 .rail .card-by { order: 6; display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 6px; color: var(--muted); font-size: .75rem; }
 /* ---------- 40-ask. Ask the Vault: a store's card says whose it is, like on The Vault page ---------- */
 .ask-cards .card-by { order: 6; display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 6px; color: var(--muted); font-size: .75rem; }
+/* ---------- 40-feed. The sets of cards after the posts come from every store ("From {store} · {binder}") ---------- */
+/* A store's name makes the heading longer: it wraps by itself, and "See all" stays on one line beside it. */
+.caro-h { gap: 12px; }
+.caro-h .h2 { min-width: 0; overflow-wrap: anywhere; }
+.caro-h > a { flex: none; white-space: nowrap; }
