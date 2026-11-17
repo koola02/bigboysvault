@@ -7,6 +7,7 @@
   {% include "admin_tabs.html" %}
   <h1 class="h1 a-title">Dashboard</h1>
   <p class="mc-how">How the vault is doing, worked out from your cards, your visitors and your trainers. Everything here is live.</p>
+  {% if nav.applications > 0 %}<a class="ap-banner" href="/admin/sellers#applications"><b>{{ nav.applications }} trainer{% if nav.applications != 1 %}s{% endif %} applied to sell</b><span>See the applications →</span></a>{% endif %}
 
   <div class="dash-kpis">
     <div class="kpi kpi-hero"><span>Total value</span><b>{{ value }}</b>{% if !top10.is_empty() %}<small>{{ top10 }} of it is in your 10 most valuable cards</small>{% endif %}</div>

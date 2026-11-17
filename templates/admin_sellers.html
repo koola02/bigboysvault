@@ -9,6 +9,42 @@
   <p class="mc-how">{{ sellers_n }} trainer{% if sellers_n != 1 %}s{% endif %} may sell (switch it on per trainer under <a href="/admin/trainers">Trainers</a>). {{ stores.len() }} have cards on sale right now.</p>
 
   <div class="dash-grid">
+    {#- Trainers asking to sell: first on the page, with a number on the Sellers tab and the Overview. The whole application
+        is also a chat with the vault (Open the chat); approving or declining writes the answer into that chat. -#}
+    <article class="dash-panel dash-wide ap-panel" id="applications">
+      <h2 class="dash-h">Applications to sell{% if !waiting.is_empty() %} <span class="seg-n">{{ waiting.len() }}</span>{% endif %}</h2>
+      {% if waiting.is_empty() %}<p class="dash-sub">None waiting. When a trainer applies, it shows here first, with a number on the Sellers tab.</p>{% else %}
+      <p class="dash-sub">Oldest first. Approving opens their store straight away. Your answer goes into their chat with the vault.</p>
+      <ul class="ap-list">
+        {% for a in waiting %}
+        <li class="ap-item" data-app="{{ a.id }}">
+          <div class="ap-who">
+            <a href="/trainers/{{ a.member_id }}" data-float>{% if !a.avatar.is_empty() %}<img class="av" src="{{ a.avatar }}" width="48" height="48" alt="">{% else %}<span class="av">{{ a.initial() }}</span>{% endif %}<b>{{ a.name }}</b></a>
+            <small>applied {{ a.when() }}</small>
+          </div>
+          {% if a.note.is_empty() %}<p class="ap-note ap-none">No note.</p>{% else %}<p class="ap-note">{{ a.note }}</p>{% endif %}
+          {% if !a.photos.is_empty() %}<div class="ap-proof">{% for (big, small) in a.pics() %}<a href="{{ big }}" target="_blank" rel="noopener" aria-label="See this photo bigger"><img src="{{ small }}" width="120" height="120" alt="" loading="lazy"></a>{% endfor %}</div>{% endif %}
+          <div class="ap-acts">
+            <button type="button" class="btn" data-apply="approve" data-id="{{ a.id }}" data-name="{{ a.name }}" data-full-only>Approve: open their store</button>
+            <button type="button" class="btn ghost" data-apply="decline" data-id="{{ a.id }}" data-full-only>Decline</button>
+            <a class="btn ghost" href="/admin/messages?t={{ a.thread_id }}">Open the chat</a>
+          </div>
+          <form class="ap-why" data-why="{{ a.id }}" hidden>
+            <input maxlength="300" placeholder="Why? (optional, they see it)" aria-label="Why it isn't approved">
+            <button class="btn" type="submit">Send decline</button>
+          </form>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if !answered.is_empty() %}
+      <details class="ap-done">
+        <summary>Answered lately ({{ answered.len() }})</summary>
+        <ul class="dash-list">{% for a in answered %}<li><a href="/admin/messages?t={{ a.thread_id }}"><span class="db-t">{{ a.name }} <small>({% if a.status == "Approved" %}approved{% else %}declined{% endif %})</small></span><span class="db-n">{{ a.decided_when() }}{% if !a.reason.is_empty() %} · {{ a.reason }}{% endif %}</span></a></li>{% endfor %}</ul>
+      </details>
+      {% endif %}
+    </article>
+
     <article class="dash-panel dash-wide">
       <h2 class="dash-h">Tell every seller something</h2>
       <p class="dash-sub">Goes to everyone's bell and notifications page (and email, for those who turned it on).</p>
@@ -49,6 +85,23 @@ document.addEventListener('DOMContentLoaded', () => {
     try { const j = await A.postJSON('/admin/sellers/announce', { message: f.message.value, link: f.link.value }); A.toast(`Sent to ${j.n} trainers ✓`, { kind: 'ok' }); f.reset(); }
     catch (err) { A.toast(err.message, { kind: 'err' }); }
     btn.disabled = false;
+  });
+  // Applications to sell: approve straight away; decline asks why (optional) first.
+  document.addEventListener('click', async (e) => {
+    const b = e.target.closest('[data-apply]'); if (!b) return;
+    const li = b.closest('.ap-item');
+    if (b.dataset.apply === 'decline') { const f = li.querySelector('.ap-why'); f.hidden = !f.hidden; if (!f.hidden) f.querySelector('input').focus(); return; }
+    if (!(await window.bbvConfirm(`Open a store for ${b.dataset.name}? They can sell straight away.`, { yes: 'Approve', no: 'Not yet' }))) return;
+    b.disabled = true;
+    try { await A.postJSON(`/admin/applications/${b.dataset.id}`, { action: 'approve' }); li.remove(); A.toast('Approved ✓ They were told in their chat.', { kind: 'ok' }); }
+    catch (err) { A.toast(err.message, { kind: 'err' }); b.disabled = false; }
+  });
+  document.addEventListener('submit', async (e) => {
+    const f = e.target.closest('[data-why]'); if (!f) return;
+    e.preventDefault();
+    const go = f.querySelector('button'); go.disabled = true;
+    try { await A.postJSON(`/admin/applications/${f.dataset.why}`, { action: 'decline', reason: f.querySelector('input').value }); f.closest('.ap-item').remove(); A.toast('Declined. They were told in their chat.', { kind: 'ok' }); }
+    catch (err) { A.toast(err.message, { kind: 'err' }); go.disabled = false; }
   });
   document.addEventListener('click', async (e) => {
     const c = e.target.closest('[data-clear-flag]');

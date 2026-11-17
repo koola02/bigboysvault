@@ -434,7 +434,7 @@ pub async fn open(State(app): State<App>, h: HeaderMap, Json(req): Json<OpenReq>
 
 /// Who to wake and tell about a new message, and the admins who watch. `quiet`: wake pages, tell nobody (a call
 /// that was answered is only written in the chat).
-async fn after_post(app: &App, t: dm::Thread, side: i64, author: i64, preview: String, quiet: bool, push: bool) {
+pub(crate) async fn after_post(app: &App, t: dm::Thread, side: i64, author: i64, preview: String, quiet: bool, push: bool) {
     let hub = app.dm.clone();
     let now = crate::unix_now();
     let tid = t.id;

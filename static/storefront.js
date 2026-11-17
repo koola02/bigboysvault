@@ -42,23 +42,9 @@
     ['sfQ', 'sfCond', 'sfSort'].forEach((id) => $(id).addEventListener('input', paint));
   }
 
-  /* ----- follow ----- */
-  $('followBtn')?.addEventListener('click', async (e) => {
-    if (!me) return signIn();
-    const b = e.currentTarget; b.disabled = true;
-    try { const j = await send(`/store/${slug}/follow`); b.textContent = j.following ? 'Following ✓' : 'Follow'; b.classList.toggle('ghost', j.following); b.setAttribute('aria-pressed', String(j.following)); $('followerN').textContent = j.followers; toast(j.following ? 'You follow this store now ✓' : 'Unfollowed'); }
-    catch (err) { toast(err.message, true); }
-    b.disabled = false;
-  });
+  /* (Follow and Vouches are store-head.js's, the same on the vault's store page.) */
 
-  /* ----- save a card ----- */
-  root.addEventListener('click', async (e) => {
-    const b = e.target.closest('[data-save]'); if (!b) return;
-    if (!me) return signIn();
-    const card = b.closest('.sf-card');
-    try { const j = await send(`/api/cards/${card.dataset.id}/save`); b.setAttribute('aria-pressed', String(j.saved)); card.toggleAttribute('data-saved', j.saved); toast(j.saved ? 'Saved ♥' : 'Unsaved'); }
-    catch (err) { toast(err.message, true); }
-  });
+  /* (Bookmarking a card is bookmarks.js's, the same on every page.) */
 
   /* ----- reserve or make an offer ----- */
   const sheet = $('buySheet'), form = $('buyForm');
@@ -136,12 +122,7 @@
     catch (err) { toast(err.message, true); }
   });
 
-  /* ----- the seller replies to a review ----- */
-  root.addEventListener('submit', async (e) => {
-    const f = e.target.closest('[data-review-reply]'); if (!f) return;
-    e.preventDefault();
-    try { await send(`/me/reviews/${f.dataset.reviewReply}/reply`, { text: f.querySelector('input').value }); location.reload(); } catch (err) { toast(err.message, true); }
-  });
+  /* (Replies to reviews are written in the Vouches window: store-head.js.) */
 
   /* (A binder on its own page, new look: its X and Escape are fb-shell.js's, the same for the vault's binders.) */
 })();

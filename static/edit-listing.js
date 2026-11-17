@@ -182,18 +182,23 @@
         const ll = el('label', 'f ls-f'); ll.append('Where you are');
         const loc = el('input'); loc.type = 'text'; loc.maxLength = 60; loc.value = d.location || ''; loc.placeholder = 'Quezon City, meetups at SM North';
         ll.append(loc, el('small', '', 'Helps buyers know if a meetup is possible.'));
+        // The border colour around the store (store-head.js draws the choices and shows them on the header as you pick).
+        const bp = window.bbvBorder ? window.bbvBorder.picker(d.border || '') : null;
         const err = el('p', 'ce-err'); err.hidden = true; err.setAttribute('role', 'alert');
         const acts = el('div', 'sheet-acts ls-acts');
         const more = el('a', 'linkbtn ls-stop', 'All store settings'); more.href = '/me/settings';
-        const cancel = el('button', 'btn ghost', 'Cancel'); cancel.type = 'button'; cancel.addEventListener('click', api.close);
+        const cancel = el('button', 'btn ghost', 'Cancel'); cancel.type = 'button'; cancel.addEventListener('click', () => { if (bp) bp.undo(); api.close(); });
         const save = el('button', 'btn', 'Save'); save.type = 'submit';
         acts.append(more, cancel, save);
-        f.append(nl, ll, err, acts);
+        f.append(nl, ll);
+        if (bp) f.append(bp.node);
+        f.append(err, acts);
         f.addEventListener('submit', async (ev) => {
           ev.preventDefault();
-          if (name.value.trim() === (d.name || '') && loc.value.trim() === (d.location || '')) { api.close(); return; }
+          const border = bp ? bp.value() : (d.border || '');
+          if (name.value.trim() === (d.name || '') && loc.value.trim() === (d.location || '') && border === (d.border || '')) { api.close(); return; }
           save.disabled = true; save.textContent = 'Saving…';
-          const fd = new FormData(); fd.append('store_name', name.value.trim()); fd.append('location', loc.value.trim());
+          const fd = new FormData(); fd.append('store_name', name.value.trim()); fd.append('location', loc.value.trim()); fd.append('store_border', border);
           try { await send('/me/settings', fd); later('Saved. This is how your store looks now.'); }
           catch (e2) { save.disabled = false; save.textContent = 'Save'; err.textContent = e2.message; err.hidden = false; }
         });

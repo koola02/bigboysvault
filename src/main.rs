@@ -82,6 +82,8 @@ struct Chrome {
     pending: i64,
     /// Orders of the vault's cards waiting for an answer (shown on the admin tab).
     orders: i64,
+    /// Trainers' applications to sell waiting for an answer (shown on the Sellers tab and the Overview).
+    applications: i64,
     /// The site's public address, for links that leave the page (search engines, link previews).
     site: String,
     /// What search engines and link previews read about this page. A page without a canonical path isn't indexed.
@@ -168,6 +170,7 @@ fn chrome(c: &rusqlite::Connection) -> rusqlite::Result<Chrome> {
         menu: vec![],
         pending: members::pending_count(c)?,
         orders: marcuru_rs::sellers::vault_orders_open(c).unwrap_or(0),
+        applications: marcuru_rs::sellers::applications_waiting(c).unwrap_or(0),
         trials: std::env::var("ORIGIN_TRIALS").unwrap_or_default().split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect(),
         site: site(),
         seo: Seo::default(),
@@ -1117,6 +1120,7 @@ async fn main() {
         .route("/me/reviews", post(store::add_review))
         .route("/me/reviews/{id}/reply", post(store::reply_review))
         .route("/me/settings", get(store::settings).post(store::save_settings).layer(axum::extract::DefaultBodyLimit::max(12 * 1024 * 1024)))
+        .route("/me/sell", get(store::apply_page).post(store::apply_send).layer(axum::extract::DefaultBodyLimit::max(40 * 1024 * 1024)))
         .route("/me/settings/slug", post(store::save_slug))
         .route("/me/notifications", get(store::notifications))
         .route("/me/notifications/prefs", post(store::save_pref))
@@ -1134,7 +1138,8 @@ async fn main() {
         .route("/store/vault/binders/{handle}", get(store::vault_binder))
         .route("/store/{slug}", get(store::storefront))
         .route("/store/{slug}/binders/{binder_slug}", get(store::store_binder))
-        .route("/store/{slug}/follow", post(store::follow))
+        .route("/store/{slug}/follow", get(store::follow_state).post(store::follow))
+        .route("/store/{slug}/vouches", get(store::store_vouches))
         .route("/store/{slug}/reserve", post(store::reserve))
         .route("/store/{slug}/offer", post(store::make_offer))
         .route("/store/{slug}/ask", post(store::ask_seller))
@@ -1232,6 +1237,10 @@ async fn main() {
         .route("/admin/sellers", get(store::admin_sellers))
         .route("/admin/orders", get(store::admin_orders))
         .route("/admin/orders/pay", post(store::admin_vault_pay))
+        .route("/admin/store/border", post(store::vault_border_save))
+        .route("/admin/applications/{id}", post(store::apply_decide))
+        .route("/me/bookmarks", get(store::bookmarks_page).post(store::bookmark))
+        .route("/me/bookmarks/ids", get(store::bookmark_ids))
         .route("/admin/orders/{id}", post(store::admin_answer_order))
         .route("/admin/sellers/announce", post(store::announce))
         .route("/admin/sellers/reviews/{id}", post(store::admin_review))

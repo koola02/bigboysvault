@@ -89,17 +89,18 @@
     } finally { URL.revokeObjectURL(url); }
   }
 
-  function compose(parent) {
+  // `to` is the store a new vouch is for, from its Vouches window: { store, name, grid }. Without it, the vault's.
+  function compose(parent, to) {
     const dialog = make('dialog', 'float vc');
     const form = make('form', 'float-panel'); form.tabIndex = -1; form.noValidate = true;
     const name = parent?.dataset.name;
-    const head = make('h2', 'vc-h', parent ? `Reply to ${name}` : 'Write a vouch');
+    const head = make('h2', 'vc-h', parent ? `Reply to ${name}` : to ? `Vouch for ${to.name}` : 'Write a vouch');
     form.append(head);
     if (parent) {
       const said = parent.querySelector(':scope > blockquote')?.textContent;
       if (said) form.append(make('p', 'vc-to', said));
     }
-    const text = make('textarea'); text.maxLength = 1000; text.rows = 4; text.placeholder = parent ? 'Write your reply' : 'Tell people about the vault, or show them with photos';
+    const text = make('textarea'); text.maxLength = 1000; text.rows = 4; text.placeholder = parent ? 'Write your reply' : to ? `Tell people how it went with ${to.name}, or show them with photos` : 'Tell people about the vault, or show them with photos';
     text.setAttribute('aria-label', parent ? 'Your reply' : 'Your vouch');
     const pics = make('div', 'vc-pics');
     const add = make('label', 'vc-add');
@@ -171,10 +172,10 @@
       try {
         await queue; // the post waits for any photos still going up
         post.textContent = 'Posting…';
-        const j = await send('/vouches', { text: text.value, parent: parent ? Number(parent.dataset.vouch) : null, photos: items.map((i) => i.id).filter(Boolean) });
+        const j = await send('/vouches', { text: text.value, parent: parent ? Number(parent.dataset.vouch) : null, photos: items.map((i) => i.id).filter(Boolean), store: to ? to.store : 0 });
         const html = await (await fetch(`/vouches/${j.id}`, { credentials: 'same-origin' })).text();
         close();
-        place(html, parent);
+        place(html, parent, to);
         say(parent ? 'Reply posted ✓' : 'Vouch posted ✓');
       } catch (ex) {
         err.textContent = ex.message;
@@ -187,7 +188,14 @@
   }
 
   const parse = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content; };
-  function place(html, parent) {
+  function place(html, parent, to) {
+    if (to && to.grid) {
+      // Into the store's Vouches window, and one more on the store's Vouches count.
+      to.grid.prepend(parse(html)); scan(to.grid);
+      to.grid.parentElement?.querySelector('[data-sv-empty]')?.remove();
+      document.querySelectorAll('[data-vouch-n]').forEach((n) => { n.textContent = String((Number(n.textContent) || 0) + 1); });
+      return;
+    }
     if (parent) {
       // The same vouch can be on the page and in a window above it.
       document.querySelectorAll(`[data-vouch="${CSS.escape(parent.dataset.vouch)}"] > [data-replies]`).forEach((box) => { box.append(parse(html)); scan(box); });
@@ -213,6 +221,16 @@
       if (next) { b.dataset.before = next.dataset.before; b.disabled = false; } else b.closest('.v-load-row').remove();
     } catch (_) { b.disabled = false; say('Couldn’t load more just now.', true); }
   });
+
+  // A store's Vouches window (store-head.js) writes a vouch for that store. Returns false when nobody is signed in.
+  window.bbvVouch = {
+    write(to) {
+      if (!me) return false;
+      if (me.locked) { say(`Your trainer is locked for another ${me.lock_left}.`, true); return true; }
+      compose(null, to);
+      return true;
+    },
+  };
 
   // Anything new in the floating window gets its buttons too.
   document.addEventListener('float:filled', (e) => scan(e.detail));

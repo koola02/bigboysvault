@@ -10,6 +10,7 @@ use axum::{
     Json,
 };
 use marcuru_rs::db::{self, Collection, Product};
+use marcuru_rs::dm;
 use marcuru_rs::members::{self, Member, MemberBinder, MemberCard, Notification};
 use marcuru_rs::sellers::{self, Dashboard, ListFilter, Order, Orders, Patch, Pref, Review, Sale, StoreStats};
 use std::collections::HashMap;
@@ -791,7 +792,7 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
         notify_views: m.notify_views,
         pay_public: m.pay_public,
     };
-    let (mut cover, mut methods, mut drop_cover) = (None::<Vec<u8>>, Vec::<String>::new(), false);
+    let (mut cover, mut methods, mut drop_cover, mut border) = (None::<Vec<u8>>, Vec::<String>::new(), false, None::<String>);
     // An unticked box isn't sent at all. The pay_methods_sent marker says "the whole form came in",
     // so a missing box then means "off"; without the marker it means "leave it as it is".
     // The boxes are applied after the loop, so the order the fields arrive in doesn't matter.
@@ -825,6 +826,7 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
             "notify_views" => notify_views = Some(v == "1" || v == "on"),
             "pay_public" => pay_public = Some(v == "1" || v == "on"),
             "drop_cover" => drop_cover = v == "1" || v == "on",
+            "store_border" => border = Some(v),
             _ => {}
         }
     }
@@ -834,6 +836,11 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
     if sent || !methods.is_empty() {
         s.pay_methods = methods.join(",");
     }
+    let border = match border.map(|b| sellers::border_ok(&b)) {
+        Some(None) => return Ok(fail(StatusCode::BAD_REQUEST, BORDER_BAD)),
+        Some(Some(b)) => Some(b),
+        None => None,
+    };
     let mut new_cover = None;
     if let Some(bytes) = cover {
         let dir = PathBuf::from(&*app.uploads);
@@ -863,6 +870,9 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
     let cover_now = new_cover.clone();
     with_db(&app, move |c| {
         sellers::save_store(c, id, &s)?;
+        if let Some(b) = &border {
+            sellers::set_border(c, id, b)?;
+        }
         if let Some(p) = &cover_now {
             c.execute("UPDATE members SET cover_photo=?2 WHERE id=?1", rusqlite::params![id, p])?;
         } else if drop_cover {
@@ -1049,8 +1059,11 @@ struct StorePage {
     cards: Vec<(MemberCard, bool)>,
     /// The binders as tiles (`seller_tiles`); empty on a binder's own page.
     tiles: Vec<BinderTile>,
+    /// How many of them visitors see (its owner also sees the ones that are off).
+    binders_n: usize,
     binder: Option<MemberBinder>,
-    reviews: Vec<Review>,
+    /// Its Vouches count: vouches written for it plus the reviews from its finished sales (the Vouches window lists both).
+    vouches: i64,
     me: Option<Member>,
     following: bool,
     is_me: bool,
@@ -1073,7 +1086,7 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
     }
     let (id, viewer) = (m.id, me.as_ref().map(|u| u.id));
     let bslug = binder_slug.clone();
-    let (nav, stats, binders, binder, reviews, following, saved) = with_db(app, move |c| {
+    let (nav, stats, binders, binder, vouches, following, saved) = with_db(app, move |c| {
         sellers::expire_due(c)?;
         let all = members::binders_of(c, id)?;
         let binder = match &bslug {
@@ -1089,7 +1102,9 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
             Some(v) => sellers::saved_ids(c, v)?,
             None => vec![],
         };
-        Ok((chrome(c)?, sellers::store_stats(c, id)?, binders, binder, sellers::reviews_of(c, id, false)?, following, saved))
+        let stats = sellers::store_stats(c, id)?;
+        let vouches = members::store_vouch_count(c, id)? + stats.reviews;
+        Ok((chrome(c)?, stats, binders, binder, vouches, following, saved))
     })
     .await?;
     let binder = match binder {
@@ -1136,7 +1151,8 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
         nav.seo.path.clear();
     }
     let links = m.social_links();
-    Ok(html(render(StorePage { nav, m, stats, cards, tiles, binder, reviews, me, following, is_me, links, conditions: members::CONDITIONS })?))
+    let binders_n = tiles.iter().filter(|t| !t.off).count();
+    Ok(html(render(StorePage { nav, m, stats, cards, tiles, binders_n, binder, vouches, me, following, is_me, links, conditions: members::CONDITIONS })?))
 }
 
 /// One binder on a store page: two or three to a row, each with its pictures, its name and how many
@@ -1253,11 +1269,12 @@ pub(crate) fn vault_tiles_json(c: &rusqlite::Connection) -> rusqlite::Result<ser
     Ok(json!({ "ok": true, "binders": tiles.iter().map(BinderTile::json).collect::<Vec<_>>() }))
 }
 
-/// Copies of the vault's cards for sale, binders with cards for sale, and vouches: the numbers the vault's store shows.
-/// Never what the cards are worth: the owner keeps that off the public pages.
+/// The numbers the vault's store shows, the same four every store shows: copies of its cards for sale, binders with cards
+/// for sale, followers and vouches. Never what the cards are worth: the owner keeps that off the public pages.
 struct VaultNumbers {
     for_sale: i64,
     binders: usize,
+    followers: i64,
     vouches: i64,
 }
 
@@ -1269,7 +1286,16 @@ impl VaultNumbers {
 
 fn vault_numbers(c: &rusqlite::Connection, tiles: &[BinderTile]) -> rusqlite::Result<VaultNumbers> {
     let (for_sale, _, _) = admin::in_vault(c)?;
-    Ok(VaultNumbers { for_sale, binders: tiles.len(), vouches: members::public_vouch_count(c)? })
+    Ok(VaultNumbers { for_sale, binders: tiles.len(), followers: sellers::followers(c, 0)?, vouches: members::store_vouch_count(c, 0)? })
+}
+
+/// "Nov 2026": the month the vault put up its first card, as a seller's store says when it opened.
+fn vault_since(c: &rusqlite::Connection) -> rusqlite::Result<String> {
+    const M: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    let first: Option<String> = c.query_row("SELECT MIN(created_at) FROM products WHERE created_at<>''", [], |r| r.get(0))?;
+    let first = first.unwrap_or_default();
+    let (y, m) = (first.get(..4).unwrap_or(""), first.get(5..7).and_then(|m| m.parse::<usize>().ok()).unwrap_or(0));
+    Ok(if y.len() == 4 && (1..=12).contains(&m) { format!("{} {y}", M[m - 1]) } else { String::new() })
 }
 
 #[derive(Template)]
@@ -1278,6 +1304,11 @@ struct VaultStorePage {
     nav: Chrome,
     tiles: Vec<BinderTile>,
     n: VaultNumbers,
+    /// What a seller's store header shows too: when it opened, its words, how to pay it and its border colour.
+    since: String,
+    bio: &'static str,
+    pay: Vec<String>,
+    border: String,
     /// "Everything in the vault": its cards for sale, as `grid.html` draws them.
     base: String,
     q: String,
@@ -1287,7 +1318,7 @@ struct VaultStorePage {
     next: Option<usize>,
 }
 
-/// GET /store/vault: Big Boys Vault's own store, listed first on /stores. Its header, its binders as tiles
+/// GET /store/vault: Big Boys Vault's own store, one of the stores on /stores. Its header, its binders as tiles
 /// (each opens its page at /collections/{handle}, the address everything else links to), then every card for sale.
 /// Every visitor gets the same page (the staff's "Manage binders" shows in the browser), so it is kept like the binders.
 pub async fn vault_store(State(app): State<App>, h: HeaderMap, Query(p): Query<crate::Params>) -> Res {
@@ -1320,15 +1351,17 @@ fn vault_page(c: &rusqlite::Connection, q: db::Query) -> rusqlite::Result<VaultS
     let (items, found) = db::list(c, &q)?;
     let tiles = vault_tiles(&nav.links, &db::binder_peeks(c, PEEK_CHOICES)?, false);
     let n = vault_numbers(c, &tiles)?;
+    let (since, border) = (vault_since(c)?, sellers::vault_border(c)?);
+    let pay: Vec<String> = sellers::vault_pay(c)?.0.split(',').map(str::trim).filter(|m| !m.is_empty()).map(String::from).collect();
     let next = next_page(&q, found);
     let site = nav.site.clone();
     let url = format!("{site}{VAULT_STORE}");
-    let title = format!("{} · Official store", nav.brand);
+    let title = format!("{} · Store", nav.brand);
     let names = tiles.iter().take(4).map(|t| t.title.as_str()).collect::<Vec<_>>().join(", ");
     let binders = if tiles.is_empty() { String::new() } else { format!(" in {} binder{} ({names})", tiles.len(), if tiles.len() == 1 { "" } else { "s" }) };
     let list: Vec<serde_json::Value> = tiles.iter().enumerate().map(|(i, t)| json!({ "@type": "ListItem", "position": i + 1, "url": format!("{site}{}", t.href), "name": t.title })).collect();
     nav.seo = crate::Seo {
-        desc: crate::clip(&format!("{}'s own store: {} Pokémon cards for sale{binders}. Real photos, condition and prices in pesos.", nav.brand, db::thousands(n.for_sale)), 165),
+        desc: crate::clip(&format!("{}'s store: {} Pokémon cards for sale{binders}. Real photos, condition and prices in pesos.", nav.brand, db::thousands(n.for_sale)), 165),
         // A typed search here isn't a page of its own.
         path: if q.q.is_empty() { VAULT_STORE.into() } else { String::new() },
         kind: "website",
@@ -1339,12 +1372,12 @@ fn vault_page(c: &rusqlite::Connection, q: db::Query) -> rusqlite::Result<VaultS
             { "@type": "BreadcrumbList", "itemListElement": [
                 { "@type": "ListItem", "position": 1, "name": nav.brand, "item": format!("{site}/") },
                 { "@type": "ListItem", "position": 2, "name": "Stores", "item": format!("{site}/stores") },
-                { "@type": "ListItem", "position": 3, "name": "Official store", "item": url } ] }
+                { "@type": "ListItem", "position": 3, "name": nav.brand, "item": url } ] }
         ] })),
         title,
         ..Default::default()
     };
-    Ok(VaultStorePage { nav, tiles, n, base: VAULT_STORE.into(), q: q.q, sort: q.sort, in_stock: true, items, next })
+    Ok(VaultStorePage { nav, tiles, n, since, bio: VAULT_BIO, pay, border, base: VAULT_STORE.into(), q: q.q, sort: q.sort, in_stock: true, items, next })
 }
 
 /// GET /store/vault/binders/{handle}: a vault binder's address, should anyone write it like a seller's. Its page is /collections/{handle}.
@@ -1409,26 +1442,65 @@ pub async fn store_binder(State(app): State<App>, h: HeaderMap, Path((slug, bslu
     store_for(&app, &h, slug, Some(bslug)).await
 }
 
-/// One trainer's store on the Stores page: its numbers, then what it features: its binders and the cards its owner
-/// highlighted (`featured_row`).
-type StoreRow = (Member, StoreStats, Vec<BinderTile>, Vec<MemberCard>);
+/// One store on the Stores page, the vault's or a trainer's. Both are worked out the same way and drawn by the same card
+/// (`stores_card.html`): the same numbers, the same gold Visit button, the binders and cards its owner chose to show.
+/// Every store is listed by one rule: the one that last put up or changed a card for sale comes first.
+pub(crate) struct StoreCard {
+    pub name: String,
+    pub url: String,
+    /// Its picture (empty: `initial` shows instead).
+    pub avatar: String,
+    pub initial: String,
+    /// The vault's picture is its round logo, shown whole rather than cropped to fill the circle.
+    pub logo: bool,
+    pub cover: String,
+    pub bio: String,
+    pub on_sale: i64,
+    pub sold: i64,
+    pub followers: i64,
+    pub location: String,
+    pub pay: Vec<String>,
+    /// "On vacation", "Away", or nothing.
+    pub badge: &'static str,
+    /// Its border colour: '' is gold (`sellers::border_ok`).
+    pub border: String,
+    /// Who chooses what it shows here: the seller's id, or 0 for the vault (its full admins).
+    pub owner: i64,
+    pub binders: Vec<BinderTile>,
+    pub cards: Vec<Highlight>,
+    /// When it last put up or changed a card for sale (`sellers::last_active`): the order on the page.
+    pub last: i64,
+}
+
+impl StoreCard {
+    pub fn on_sale_text(&self) -> String {
+        db::thousands(self.on_sale)
+    }
+}
+
+/// A card a store highlights on Stores, the vault's and a seller's drawn alike. It opens in the card window.
+pub(crate) struct Highlight {
+    pub href: String,
+    pub image: String,
+    pub title: String,
+    pub set: String,
+    pub symbol: String,
+    pub cond: String,
+    pub cond_class: &'static str,
+    /// Empty when the seller asks for offers instead of naming a price.
+    pub price: String,
+}
 
 #[derive(Template)]
 #[template(path = "stores.html")]
 struct StoresPage {
     nav: Chrome,
-    stores: Vec<StoreRow>,
+    stores: Vec<StoreCard>,
     me: Option<Member>,
-    /// The vault's own store, always first.
-    vault: Option<VaultCard>,
 }
 
-/// The vault's card at the top of /stores: its numbers, then the binders and highlighted cards it features.
-struct VaultCard {
-    n: VaultNumbers,
-    binders: Vec<BinderTile>,
-    cards: Vec<Product>,
-}
+/// The vault's own words under its name, where a trainer's store shows its owner's.
+pub(crate) const VAULT_BIO: &str = "The vault's own cards, sorted into binders. Real photos, prices in pesos, and Ask the Vault for anything else.";
 
 /// Keeps the binders the owner chose to feature, in the store's own order (Edit binders arranges that order).
 fn chosen_binders(tiles: Vec<BinderTile>, keys: &[String]) -> Vec<BinderTile> {
@@ -1446,16 +1518,49 @@ fn vault_highlights(c: &rusqlite::Connection, keys: &[String]) -> rusqlite::Resu
     Ok(out)
 }
 
-/// The vault is not a seller: it stays out of sellers::directory (the feed and the admin's Sellers use that) and comes first here.
-/// What it features: the binders and cards a full admin chose; nothing chosen yet, every binder with cards for sale.
-fn vault_card(c: &rusqlite::Connection) -> rusqlite::Result<VaultCard> {
+/// The vault's card on Stores. It shows what a full admin chose; nothing chosen yet, every binder with cards for sale
+/// and no highlighted cards: the same rule as a trainer's store.
+fn vault_card(c: &rusqlite::Connection, brand: &str) -> rusqlite::Result<StoreCard> {
     let tiles = vault_tiles(&db::collections(c)?, &db::binder_peeks(c, PEEK_CHOICES)?, false);
-    let n = vault_numbers(c, &tiles)?;
     let (binders, cards) = match sellers::featured(c, 0)? {
         None => (tiles, vec![]),
         Some(f) => (chosen_binders(tiles, &f.binders), vault_highlights(c, &f.cards)?),
     };
-    Ok(VaultCard { n, binders, cards })
+    let (on_sale, _, _) = admin::in_vault(c)?;
+    let (methods, _) = sellers::vault_pay(c)?;
+    let cards = cards
+        .iter()
+        .map(|p| Highlight {
+            href: format!("/products/{}", p.handle),
+            image: if p.has_image() { p.img(360) } else { String::new() },
+            title: p.short_title(),
+            set: p.set_text(),
+            symbol: p.symbol(),
+            cond: p.tile_cond(),
+            cond_class: p.cond_class(),
+            price: p.price_text(),
+        })
+        .collect();
+    Ok(StoreCard {
+        name: brand.to_string(),
+        url: VAULT_STORE.into(),
+        avatar: "/static/img/logo-sm-144.png?v=1".into(),
+        initial: String::new(),
+        logo: true,
+        cover: String::new(),
+        bio: VAULT_BIO.into(),
+        on_sale,
+        sold: sellers::vault_sold(c)?,
+        followers: sellers::followers(c, 0)?,
+        location: String::new(),
+        pay: methods.split(',').map(str::trim).filter(|m| !m.is_empty()).map(String::from).collect(),
+        badge: "",
+        border: sellers::vault_border(c)?,
+        owner: 0,
+        binders,
+        cards,
+        last: sellers::last_active(c, 0)?,
+    })
 }
 
 /// A seller's binders that may show off their store: public ones with cards for sale, in the store's order.
@@ -1469,34 +1574,80 @@ fn seller_highlights(keys: &[String], listings: &[MemberCard]) -> Vec<MemberCard
     keys.iter().filter_map(|k| listings.iter().find(|x| x.id.to_string() == *k && x.status == "Active")).cloned().collect()
 }
 
-/// A trainer's store on the Stores page: its binders, then its highlighted cards, as its owner chose.
+/// A trainer's card on Stores: its binders, then its highlighted cards, as its owner chose.
 /// Nothing chosen yet: every public binder with cards for sale, and no highlighted cards.
-fn featured_row(c: &rusqlite::Connection, m: Member, s: StoreStats) -> rusqlite::Result<StoreRow> {
+fn seller_card(c: &rusqlite::Connection, m: Member, s: StoreStats) -> rusqlite::Result<StoreCard> {
     let listings = sellers::storefront_listings(c, m.id)?;
     let tiles = public_tiles(c, &m, &listings)?;
     let (binders, cards) = match sellers::featured(c, m.id)? {
         None => (tiles, vec![]),
         Some(f) => (chosen_binders(tiles, &f.binders), seller_highlights(&f.cards, &listings)),
     };
-    Ok((m, s, binders, cards))
+    let cards = cards
+        .iter()
+        .map(|k| Highlight {
+            href: format!("/trainers/{}/cards/{}", m.id, k.id),
+            image: k.image.clone(),
+            title: k.title.clone(),
+            set: k.card_set.clone(),
+            symbol: k.symbol(),
+            cond: k.cond.clone(),
+            cond_class: k.cond_class(),
+            price: if k.has_price() { k.price_text() } else { String::new() },
+        })
+        .collect();
+    Ok(StoreCard {
+        name: m.store_title(),
+        url: m.store_url(),
+        avatar: if m.has_avatar() { m.avatar.clone() } else { String::new() },
+        initial: m.initial(),
+        logo: false,
+        cover: if m.has_cover() { m.cover_photo.clone() } else { String::new() },
+        bio: m.bio.clone(),
+        on_sale: s.on_sale,
+        sold: s.sold,
+        followers: s.followers,
+        location: m.location.clone(),
+        pay: m.pay_list(),
+        badge: if m.on_vacation() { "On vacation" } else if m.is_away() { "Away" } else { "" },
+        border: sellers::border_ok(&m.store_border).unwrap_or_default(),
+        owner: m.id,
+        binders,
+        cards,
+        last: sellers::last_active(c, m.id)?,
+    })
 }
 
-/// The trainers' stores on the Stores page, best sellers first, each with what it features.
-fn store_rows(c: &rusqlite::Connection) -> rusqlite::Result<Vec<StoreRow>> {
-    sellers::directory(c)?.into_iter().map(|(m, s, _)| featured_row(c, m, s)).collect()
+/// Every store with cards for sale, the vault's among them, the most recently active first.
+fn store_cards(c: &rusqlite::Connection, brand: &str) -> rusqlite::Result<Vec<StoreCard>> {
+    let mut out = vec![];
+    let vault = vault_card(c, brand)?;
+    if vault.on_sale > 0 {
+        out.push(vault);
+    }
+    for (m, s, _) in sellers::directory(c)? {
+        out.push(seller_card(c, m, s)?);
+    }
+    out.sort_by(|a, b| b.last.cmp(&a.last).then_with(|| a.name.cmp(&b.name)));
+    Ok(out)
 }
 
 pub async fn directory(State(app): State<App>, h: HeaderMap) -> Res {
     let me = crate::community::current(&app, &h).await?;
-    let (mut nav, stores, vault) = with_db(&app, move |c| Ok((chrome(c)?, store_rows(c)?, Some(vault_card(c)?)))).await?;
+    let (mut nav, stores) = with_db(&app, move |c| {
+        let nav = chrome(c)?;
+        let stores = store_cards(c, &nav.brand)?;
+        Ok((nav, stores))
+    })
+    .await?;
     nav.seo = crate::Seo {
         title: format!("Stores · {}", nav.brand),
-        desc: format!("{}'s official store and the Pokémon card stores of its trainers: browse their binders and cards for sale, then reserve a card or add it to your cart.", nav.brand),
+        desc: format!("The Pokémon card stores on {}: browse each store's binders and cards for sale, then reserve a card or add it to your cart.", nav.brand),
         path: "/stores".into(),
         kind: "website",
         ..Default::default()
     };
-    Ok(html(render(StoresPage { nav, stores, me, vault })?))
+    Ok(html(render(StoresPage { nav, stores, me })?))
 }
 
 // ---------- what a store features on the Stores page: chosen where it shows (static/binder-tools.js) ----------
@@ -1694,17 +1845,103 @@ fn closed(seller: &Member) -> bool {
     seller.blocked || !seller.profile_ok
 }
 
+/// The store a `/store/{slug}/...` address names, as the number its follows and vouches are kept under: 0 for the
+/// vault's ("vault"), otherwise the seller's member id. None when there is no such open store.
+async fn store_id(app: &App, slug: String) -> Result<Option<i64>, (StatusCode, String)> {
+    if slug == sellers::VAULT_SLUG {
+        return Ok(Some(0));
+    }
+    Ok(seller_by_slug(app, slug).await?.map(|m| m.id))
+}
+
+/// POST /store/{slug}/follow: follow the store, or stop. The vault's store ("vault") is followed like any other.
 pub async fn follow(State(app): State<App>, h: HeaderMap, Path(slug): Path<String>) -> Res {
     let m = match acting(&app, &h).await? {
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
-    let Some(seller) = seller_by_slug(&app, slug).await? else { return Ok(fail(StatusCode::NOT_FOUND, "No such store.")) };
-    let (me, sid) = (m.id, seller.id);
+    let Some(sid) = store_id(&app, slug).await? else { return Ok(fail(StatusCode::NOT_FOUND, "No such store.")) };
+    let me = m.id;
     let following = with_db(&app, move |c| sellers::toggle_follow(c, me, sid)).await?;
     let n = with_db(&app, move |c| sellers::followers(c, sid)).await?;
+    // The vault's store page is kept for everyone, with its follower count on it.
+    app.forget();
     Ok(ok(json!({ "ok": true, "following": following, "followers": n })))
 }
+
+/// GET /store/{slug}/follow: whether the visitor follows the store, and how many do. The vault's store page is the same
+/// for every visitor, so its Follow button asks this once the page is open (static/store-head.js).
+pub async fn follow_state(State(app): State<App>, h: HeaderMap, Path(slug): Path<String>) -> Res {
+    let Some(sid) = store_id(&app, slug).await? else { return Ok(fail(StatusCode::NOT_FOUND, "No such store.")) };
+    let me = crate::community::current(&app, &h).await?.map(|m| m.id);
+    let (following, n) = with_db(&app, move |c| Ok((match me { Some(v) => sellers::is_following(c, v, sid)?, None => false }, sellers::followers(c, sid)?))).await?;
+    Ok(ok(json!({ "ok": true, "following": following, "followers": n })))
+}
+
+/// One entry in a store's Vouches window: a vouch someone wrote for the store, or a review from one of its finished sales.
+pub(crate) enum VouchItem {
+    Vouch(members::Vouch),
+    Review(Review),
+}
+
+impl VouchItem {
+    fn at(&self) -> i64 {
+        match self {
+            VouchItem::Vouch(v) => v.created_at,
+            VouchItem::Review(r) => r.created_at,
+        }
+    }
+}
+
+#[derive(Template)]
+#[template(path = "store_vouches.html")]
+struct StoreVouchesPart {
+    /// The store: 0 for the vault's, otherwise the seller's member id.
+    store: i64,
+    name: String,
+    items: Vec<VouchItem>,
+    /// The visitor runs this store: they may answer its reviews here.
+    is_me: bool,
+}
+
+/// GET /store/{slug}/vouches: a store's Vouches window, newest first (static/store-head.js opens it over the page).
+/// The vault's store lists the vouches written for it; a seller's, those and the reviews from its finished sales.
+pub async fn store_vouches(State(app): State<App>, h: HeaderMap, Path(slug): Path<String>) -> Res {
+    let me = crate::community::current(&app, &h).await?;
+    let Some(store) = store_id(&app, slug).await? else { return not_found(&app).await };
+    let is_me = me.as_ref().is_some_and(|u| u.id == store && store != 0);
+    let (name, items) = with_db(&app, move |c| {
+        let name = if store == 0 { chrome(c)?.brand } else { members::get(c, store)?.map(|m| m.store_title()).unwrap_or_default() };
+        let mut items: Vec<VouchItem> = members::store_vouches(c, store, 100)?.into_iter().map(VouchItem::Vouch).collect();
+        if store != 0 {
+            items.extend(sellers::reviews_of(c, store, false)?.into_iter().map(VouchItem::Review));
+        }
+        items.sort_by_key(|i| std::cmp::Reverse(i.at()));
+        Ok((name, items))
+    })
+    .await?;
+    Ok(html(render(StoreVouchesPart { store, name, items, is_me })?))
+}
+
+#[derive(Deserialize)]
+pub struct BorderReq {
+    border: String,
+}
+
+/// POST /admin/store/border: the vault's store border colour (a full admin, from "Edit store" on the vault's page).
+/// Sellers set theirs in their own "Edit store" (`save_settings`, field store_border).
+pub async fn vault_border_save(State(app): State<App>, h: HeaderMap, Json(req): Json<BorderReq>) -> Res {
+    if !matches!(admin::power(&app, &h), admin::Power::Admin(_)) {
+        return Ok(fail(StatusCode::FORBIDDEN, "Only the vault's admins can change its store."));
+    }
+    let Some(border) = sellers::border_ok(&req.border) else { return Ok(fail(StatusCode::BAD_REQUEST, BORDER_BAD)) };
+    let b = border.clone();
+    with_db(&app, move |c| sellers::set_vault_border(c, &b)).await?;
+    app.forget();
+    Ok(ok(json!({ "ok": true, "border": border })))
+}
+
+const BORDER_BAD: &str = "That colour is too dark to see on the page. Pick a lighter one.";
 
 #[derive(Deserialize)]
 pub struct BuyReq {
@@ -1995,18 +2232,21 @@ struct AdminSellersPage {
     flagged: Vec<(MemberCard, String)>,
     reviews: Vec<Review>,
     sellers_n: i64,
+    /// Trainers asking to sell: every one still waiting, then the latest answered.
+    waiting: Vec<sellers::Application>,
+    answered: Vec<sellers::Application>,
 }
 
 pub async fn admin_sellers(State(app): State<App>, h: HeaderMap) -> Res {
     if !admin::can_moderate(&app, &h) {
         return Ok(Redirect::to("/admin").into_response());
     }
-    let (nav, stores, flagged, reviews, sellers_n) = with_db(&app, |c| {
+    let (nav, stores, flagged, reviews, sellers_n, (waiting, answered)) = with_db(&app, |c| {
         let n: i64 = c.query_row("SELECT COUNT(*) FROM members WHERE blocked=0 AND seller=1", [], |r| r.get(0))?;
-        Ok((chrome(c)?, sellers::directory(c)?, sellers::flagged_cards(c)?, sellers::all_reviews(c, 50)?, n))
+        Ok((chrome(c)?, sellers::directory(c)?, sellers::flagged_cards(c)?, sellers::all_reviews(c, 50)?, n, sellers::applications(c, 20)?))
     })
     .await?;
-    Ok(html(render(AdminSellersPage { nav, tab: "sellers", stores, flagged, reviews, sellers_n })?))
+    Ok(html(render(AdminSellersPage { nav, tab: "sellers", stores, flagged, reviews, sellers_n, waiting, answered })?))
 }
 
 #[derive(Deserialize)]
@@ -2127,6 +2367,380 @@ pub fn start_housekeeping(app: App) {
     });
 }
 
+// ---------- applying to sell ----------
+
+/// How many photos an application can carry (screenshots of past sales, buyers' feedback, a selling group).
+const PROOF_MAX: usize = 8;
+
+#[derive(Template)]
+#[template(path = "apply.html")]
+struct ApplyPage {
+    nav: Chrome,
+    me: Member,
+    /// Their newest application, if they sent one: waiting, approved or declined.
+    sent: Option<sellers::Application>,
+    /// It is still waiting for an answer: no form, just where the answer will come.
+    waiting: bool,
+}
+
+/// GET /me/sell: "Apply as a seller" (the account menu). A trainer who sells already goes to their store.
+pub async fn apply_page(State(app): State<App>, h: HeaderMap) -> Res {
+    let Some(me) = crate::community::current(&app, &h).await? else { return Ok(Redirect::to("/login").into_response()) };
+    if me.seller {
+        return Ok(Redirect::to("/me/store").into_response());
+    }
+    let id = me.id;
+    let (mut nav, sent) = with_db(&app, move |c| Ok((chrome(c)?, sellers::application_of(c, id)?))).await?;
+    nav.seo.title = format!("Apply as a seller · {}", nav.brand);
+    let waiting = sent.as_ref().is_some_and(|a| a.waiting());
+    Ok(html(render(ApplyPage { nav, me, sent, waiting })?))
+}
+
+/// POST /me/sell: a trainer applies to sell. Their words and photos (both may be left out) open the chat between them
+/// and the vault's team, and the whole application goes on there: the admins' questions, then their answer. The admins
+/// also see it under Admin › Sellers, with a number on the tab.
+pub async fn apply_send(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    if m.seller {
+        return Ok(fail(StatusCode::BAD_REQUEST, "You can sell already: open My store."));
+    }
+    let id = m.id;
+    if with_db(&app, move |c| sellers::application_of(c, id)).await?.is_some_and(|a| a.waiting()) {
+        return Ok(fail(StatusCode::CONFLICT, "Your application is with the admins already. Their answer comes in your messages."));
+    }
+    if over_limit(&app, format!("apply|{id}"), 3) {
+        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a few tries already. Please try again tomorrow."));
+    }
+    let (mut note, mut files) = (String::new(), Vec::<Vec<u8>>::new());
+    while let Some(f) = mp.next_field().await.map_err(|_| (StatusCode::BAD_REQUEST, "That didn't upload. Please try again.".to_string()))? {
+        match f.name().unwrap_or("") {
+            "note" => note = f.text().await.unwrap_or_default(),
+            "proof" => {
+                let b = f.bytes().await.map_err(|_| (StatusCode::BAD_REQUEST, "A photo didn't upload. Please try again.".to_string()))?;
+                if !b.is_empty() && files.len() < PROOF_MAX {
+                    files.push(b.to_vec());
+                }
+            }
+            _ => {}
+        }
+    }
+    let note = members::clean_text(&note, 1000);
+    if !files.is_empty() {
+        let room = with_db(&app, |c| Ok(members::photo_bytes(c)? + dm::media_bytes(c)?)).await?;
+        if room >= crate::community::photo_cap_mb() * 1024 * 1024 {
+            return Ok(fail(StatusCode::INSUFFICIENT_STORAGE, "The vault's photo space is full right now. Send your application without photos, and share them in the chat later."));
+        }
+    }
+    let now = crate::unix_now();
+    // The chat first: its photos are named after it, like every photo sent in a chat.
+    let t = with_db(&app, move |c| dm::thread_between(c, id, dm::VAULT, now)).await?;
+    let mut pics: Vec<(String, String, i64)> = vec![];
+    for bytes in files {
+        let dir = PathBuf::from(&*app.uploads);
+        let stem = format!("dm{}-{}{}", t.id, members::temp_password(), members::temp_password());
+        match gated(move || store_photo(bytes, dir, stem)).await? {
+            Ok((large, small, _, _, size)) => pics.push((large, small, size)),
+            Err(e) => {
+                for (l, s, _) in &pics {
+                    admin::remove_upload(&app.uploads, l);
+                    admin::remove_upload(&app.uploads, s);
+                }
+                let why = if e == crate::community::TOO_BIG { "One of the photos is too big. Please use a smaller one." } else { "One of the photos couldn't be read. Try a JPEG or PNG." };
+                return Ok(fail(StatusCode::BAD_REQUEST, why));
+            }
+        }
+    }
+    let t2 = t.clone();
+    let words = if note.is_empty() { "No note.".to_string() } else { note.clone() };
+    let n = pics.len();
+    let text = format!("📝 Seller application\n\n{words}{}", if n > 0 { format!("\n\n📷 {n} photo{} below.", if n == 1 { "" } else { "s" }) } else { String::new() });
+    let preview = with_db(&app, move |c| {
+        let first = dm::New { kind: "text".into(), text, ..Default::default() };
+        dm::post(c, &t2, id, id, &first, now)?;
+        for (large, small, size) in &pics {
+            dm::post(c, &t2, id, id, &dm::New { kind: "photo".into(), media: large.clone(), media_thumb: small.clone(), bytes: *size, ..Default::default() }, now)?;
+        }
+        let kept: Vec<(String, String)> = pics.iter().map(|(l, s, _)| (l.clone(), s.clone())).collect();
+        sellers::add_application(c, id, &note, &kept, t2.id, now)?;
+        Ok(dm::preview(&first))
+    })
+    .await?;
+    crate::messages::after_post(&app, t.clone(), id, id, preview, false, true).await;
+    app.forget();
+    Ok(ok(json!({ "ok": true, "thread": t.id })))
+}
+
+#[derive(Deserialize)]
+pub struct DecideReq {
+    action: String,
+    #[serde(default)]
+    reason: String,
+}
+
+/// POST /admin/applications/{id} with `{"action": "approve" | "decline", "reason": "..."}`: a full admin answers. The
+/// answer is written into the application's chat, from the vault, so the trainer reads it where they applied.
+pub async fn apply_decide(State(app): State<App>, h: HeaderMap, Path(aid): Path<i64>, Json(req): Json<DecideReq>) -> Res {
+    let by = match admin::power(&app, &h) {
+        admin::Power::Admin(me) => me.unwrap_or(0),
+        _ => return Ok(fail(StatusCode::FORBIDDEN, "Only an admin can answer applications.")),
+    };
+    let approve = match req.action.as_str() {
+        "approve" => true,
+        "decline" => false,
+        _ => return Ok(fail(StatusCode::BAD_REQUEST, "Approve or decline?")),
+    };
+    let reason = members::clean_line(&req.reason, 300);
+    let now = crate::unix_now();
+    let done = with_db(&app, move |c| {
+        let Some(a) = sellers::decide_application(c, aid, approve, &reason, by, now)? else { return Ok(None) };
+        let text = if approve {
+            "✅ Your seller application is approved! Your store is open: tap your picture at the top, then My store, to put up your first cards.".to_string()
+        } else if reason.is_empty() {
+            "Your seller application wasn't approved this time. You can apply again later from your menu.".to_string()
+        } else {
+            format!("Your seller application wasn't approved this time: {reason} You can apply again later from your menu.")
+        };
+        let t = match dm::thread(c, a.thread_id)? {
+            Some(t) => t,
+            None => dm::thread_between(c, a.member_id, dm::VAULT, now)?,
+        };
+        let msg = dm::New { kind: "text".into(), text, ..Default::default() };
+        dm::post(c, &t, dm::VAULT, by, &msg, now)?;
+        Ok(Some((a, t, dm::preview(&msg))))
+    })
+    .await?;
+    let Some((a, t, preview)) = done else { return Ok(fail(StatusCode::CONFLICT, "Another admin answered this one already. Reload to see it.")) };
+    crate::messages::after_post(&app, t, dm::VAULT, by, preview, false, true).await;
+    app.forget();
+    Ok(ok(json!({ "ok": true, "status": a.status })))
+}
+
+// ---------- bookmarks ----------
+
+#[derive(Deserialize)]
+pub struct BookmarkReq {
+    /// "store" (a seller's id, 0 for the vault's), "product" (one of the vault's cards) or "card" (a seller's card).
+    kind: String,
+    id: i64,
+}
+
+/// POST /me/bookmarks: bookmark a store or a card, or take the bookmark off (static/bookmarks.js). A seller's card is a
+/// saved listing, so the seller still sees how many saved it.
+pub async fn bookmark(State(app): State<App>, h: HeaderMap, Json(req): Json<BookmarkReq>) -> Res {
+    let m = match acting_any(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let (me, kind, id) = (m.id, req.kind, req.id);
+    let on = with_db(&app, move |c| match kind.as_str() {
+        "card" => {
+            let there: i64 = c.query_row("SELECT COUNT(*) FROM member_cards WHERE id=?1 AND kind='sale'", [id], |r| r.get(0))?;
+            if there == 0 && !sellers::saved_ids(c, me)?.contains(&id) {
+                return Ok(None);
+            }
+            sellers::toggle_save(c, me, id).map(Some)
+        }
+        "store" if id == me => Ok(None),
+        "store" => {
+            if !members::vouchable_store(c, id)? && !sellers::bookmarks_of(c, me)?.iter().any(|(k, r, _)| k == "store" && *r == id) {
+                return Ok(None);
+            }
+            sellers::toggle_bookmark(c, me, "store", id).map(Some)
+        }
+        "product" => {
+            if db::product_by_id(c, id)?.is_none() && !sellers::bookmarks_of(c, me)?.iter().any(|(k, r, _)| k == "product" && *r == id) {
+                return Ok(None);
+            }
+            sellers::toggle_bookmark(c, me, "product", id).map(Some)
+        }
+        _ => Ok(None),
+    })
+    .await?;
+    let Some(on) = on else { return Ok(fail(StatusCode::NOT_FOUND, "That can't be bookmarked.")) };
+    let n = with_db(&app, move |c| sellers::bookmark_count(c, me)).await?;
+    Ok(ok(json!({ "ok": true, "on": on, "count": n })))
+}
+
+/// GET /me/bookmarks/ids: what the visitor bookmarked, so the bookmark buttons on pages kept for everyone light up
+/// (static/bookmarks.js). Empty for a visitor who isn't signed in.
+pub async fn bookmark_ids(State(app): State<App>, h: HeaderMap) -> Res {
+    let Some(m) = crate::community::current(&app, &h).await? else { return Ok(ok(json!({ "stores": [], "products": [], "cards": [], "count": 0 }))) };
+    let id = m.id;
+    let all = with_db(&app, move |c| sellers::bookmarks_of(c, id)).await?;
+    let pick = |k: &str| all.iter().filter(|(kind, _, _)| kind == k).map(|(_, r, _)| *r).collect::<Vec<i64>>();
+    Ok(ok(json!({ "stores": pick("store"), "products": pick("product"), "cards": pick("card"), "count": all.len() })))
+}
+
+/// A bookmarked store on the Bookmarks page.
+pub(crate) struct BmStore {
+    pub id: i64,
+    pub name: String,
+    pub url: String,
+    pub avatar: String,
+    pub initial: String,
+    pub logo: bool,
+    /// "2,213 cards for sale", or why it is closed.
+    pub sub: String,
+}
+
+/// A bookmarked card, the vault's or a seller's, with what the cart needs to take it.
+pub(crate) struct BmCard {
+    /// "product" (the vault's) or "card" (a seller's): what its bookmark button and its cart button say.
+    pub kind: &'static str,
+    pub id: i64,
+    pub title: String,
+    pub image: String,
+    pub set: String,
+    pub cond: String,
+    pub cond_class: &'static str,
+    pub price: String,
+    pub worth: f64,
+    pub url: String,
+    /// It can go in the cart now; otherwise `note` says why not.
+    pub buyable: bool,
+    pub note: &'static str,
+    pub seller_name: String,
+    pub seller_slug: String,
+}
+
+/// The bookmarked cards of one store, under that store's name: where each card was bookmarked.
+pub(crate) struct BmGroup {
+    pub store: BmStore,
+    pub cards: Vec<BmCard>,
+}
+
+impl BmGroup {
+    /// How many of its cards can go in the cart now (the "Add all to cart" button shows when there are two or more).
+    pub fn buyable_n(&self) -> usize {
+        self.cards.iter().filter(|c| c.buyable).count()
+    }
+}
+
+#[derive(Template)]
+#[template(path = "bookmarks.html")]
+struct BookmarksPage {
+    nav: Chrome,
+    stores: Vec<BmStore>,
+    groups: Vec<BmGroup>,
+}
+
+/// A store as the Bookmarks page shows it: the vault's (0) or a seller's. None when it is gone.
+fn bm_store(c: &rusqlite::Connection, id: i64, brand: &str) -> rusqlite::Result<Option<BmStore>> {
+    if id == 0 {
+        let (n, _, _) = admin::in_vault(c)?;
+        return Ok(Some(BmStore { id: 0, name: brand.to_string(), url: VAULT_STORE.into(), avatar: "/static/img/logo-sm-144.png?v=1".into(), initial: String::new(), logo: true, sub: format!("{} card{} for sale", db::thousands(n), if n == 1 { "" } else { "s" }) }));
+    }
+    let Some(m) = members::get(c, id)? else { return Ok(None) };
+    let open = m.seller && m.profile_ok && !m.blocked;
+    let sub = if !open {
+        "This store is closed for now".to_string()
+    } else if m.on_vacation() {
+        "On vacation".to_string()
+    } else {
+        let n = sellers::store_stats(c, id)?.on_sale;
+        format!("{n} card{} for sale", if n == 1 { "" } else { "s" })
+    };
+    Ok(Some(BmStore { id, name: m.store_title(), url: m.store_url(), avatar: if m.has_avatar() { m.avatar.clone() } else { String::new() }, initial: m.initial(), logo: false, sub }))
+}
+
+/// Puts a card under its store's heading, making the heading the first time that store comes up.
+fn bm_into(c: &rusqlite::Connection, groups: &mut Vec<BmGroup>, store: i64, brand: &str, card: BmCard) -> rusqlite::Result<()> {
+    if let Some(g) = groups.iter_mut().find(|g| g.store.id == store) {
+        g.cards.push(card);
+        return Ok(());
+    }
+    if let Some(s) = bm_store(c, store, brand)? {
+        groups.push(BmGroup { store: s, cards: vec![card] });
+    }
+    Ok(())
+}
+
+/// GET /me/bookmarks: everything the visitor bookmarked: the stores, then the cards under the store each came from,
+/// each ready for the cart ("Add all to cart" per store). The account menu and the menu lead here, with the number.
+pub async fn bookmarks_page(State(app): State<App>, h: HeaderMap) -> Res {
+    let Some(me) = crate::community::current(&app, &h).await? else { return Ok(Redirect::to("/login").into_response()) };
+    let id = me.id;
+    let (mut nav, stores, groups) = with_db(&app, move |c| {
+        let nav = chrome(c)?;
+        let brand = nav.brand.clone();
+        let (mut stores, mut groups) = (vec![], Vec::<BmGroup>::new());
+        for (kind, r, _) in sellers::bookmarks_of(c, id)? {
+            match kind.as_str() {
+                "store" => {
+                    if let Some(s) = bm_store(c, r, &brand)? {
+                        stores.push(s);
+                    }
+                }
+                "product" => {
+                    let Some(p) = db::product_by_id(c, r)? else { continue };
+                    let card = BmCard {
+                        kind: "product",
+                        id: p.id,
+                        title: p.short_title(),
+                        image: if p.has_image() { p.img(360) } else { String::new() },
+                        set: p.set_text(),
+                        cond: p.tile_cond(),
+                        cond_class: p.cond_class(),
+                        price: p.price_text(),
+                        worth: p.price,
+                        url: format!("/products/{}", p.handle),
+                        buyable: p.available && p.price > 0.0,
+                        note: if p.available { "Ask for a price" } else { "Sold" },
+                        seller_name: String::new(),
+                        seller_slug: String::new(),
+                    };
+                    bm_into(c, &mut groups, 0, &brand, card)?;
+                }
+                "card" => {
+                    let owner: Option<i64> = c.query_row("SELECT member_id FROM member_cards WHERE id=?1", [r], |x| x.get(0)).optional()?;
+                    let Some(owner) = owner else { continue };
+                    let (Some(k), Some(m)) = (members::card(c, owner, r)?, members::get(c, owner)?) else { continue };
+                    if m.blocked {
+                        continue;
+                    }
+                    let open = m.seller && m.profile_ok && !m.on_vacation();
+                    let buyable = open && k.buyable() && k.has_price();
+                    let note = match k.status.as_str() {
+                        _ if buyable => "",
+                        "Sold" => "Sold",
+                        "Reserved" => "Reserved for someone",
+                        "Out of stock" => "Out of stock",
+                        _ if m.on_vacation() => "The store is on vacation",
+                        _ if !open => "The store is closed for now",
+                        _ if !k.has_price() => "Ask the store for a price",
+                        _ => "Not for sale right now",
+                    };
+                    let card = BmCard {
+                        kind: "card",
+                        id: k.id,
+                        title: k.title.clone(),
+                        image: k.image.clone(),
+                        set: k.card_set.clone(),
+                        cond: k.cond.clone(),
+                        cond_class: k.cond_class(),
+                        price: if k.has_price() { k.price_text() } else { String::new() },
+                        worth: k.worth(),
+                        url: format!("/trainers/{}/cards/{}", m.id, k.id),
+                        buyable,
+                        note,
+                        seller_name: m.store_title(),
+                        seller_slug: m.slug.clone(),
+                    };
+                    bm_into(c, &mut groups, owner, &brand, card)?;
+                }
+                _ => {}
+            }
+        }
+        Ok((nav, stores, groups))
+    })
+    .await?;
+    nav.seo.title = format!("Bookmarks · {}", nav.brand);
+    Ok(html(render(BookmarksPage { nav, stores, groups })?))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2158,13 +2772,15 @@ mod tests {
         };
         let binders: Vec<MemberBinder> = members::binders_of(c, m.id).unwrap().into_iter().filter(|b| b.visibility == "Public" || owner).collect();
         let tiles = if binder.is_none() { seller_tiles(&m, &binders, &cards, owner) } else { vec![] };
+        let binders_n = tiles.iter().filter(|t| !t.off).count();
         let html = render(StorePage {
             nav: chrome(c).unwrap(),
             stats: sellers::store_stats(c, m.id).unwrap(),
             cards: cards.into_iter().map(|k| (k, false)).collect(),
             tiles,
+            binders_n,
             binder,
-            reviews: vec![],
+            vouches: members::store_vouch_count(c, m.id).unwrap(),
             me: None,
             following: false,
             is_me: owner,
@@ -2207,7 +2823,9 @@ mod tests {
         assert!(store.contains("<b class=\"sf-bname\">Fire</b><small>3 cards</small>"), "the cards its page shows, not the hidden one");
         assert!(store.contains("<b class=\"sf-bname\">Grass</b><small>1 card</small>"));
         assert!(!store.contains(" data-off>"), "a visitor sees nothing marked for the owner");
-        assert!(store.contains("class=\"sf-head") && store.contains("id=\"reviews\""), "the store page keeps its header and reviews");
+        assert!(store.contains("class=\"sf-head") && store.contains(&format!("data-vouches=\"{slug}\"")), "the store page keeps its header, with the Vouches button");
+        // The same four numbers as every store, the vault's included.
+        assert!(store.contains("<li><b>3</b><span>binders</span></li>") && store.contains("<span>followers</span>") && store.contains(">Vouches <svg"), "{store}");
         // The owner sees every binder; the ones visitors don't see are marked and faded.
         let own = page_as(&c, &slug, None, true);
         assert_eq!(own.matches("class=\"sf-btile\"").count(), 5);
@@ -2219,7 +2837,7 @@ mod tests {
         let fire = page(&c, &slug, Some(&binders[0].slug));
         assert!(fire.contains(&format!("<a class=\"sf-bx\" href=\"/store/{slug}\" aria-label=\"Close\"")), "{fire}");
         assert!(fire.contains("<h1 class=\"sf-bh\">Fire</h1>") && fire.contains("3 cards · by"));
-        assert!(!fire.contains("class=\"sf-head") && !fire.contains("id=\"reviews\"") && !fire.contains("← All of"));
+        assert!(!fire.contains("class=\"sf-head") && !fire.contains("data-vouches") && !fire.contains("← All of"));
         assert_eq!(fire.matches("class=\"sf-card\"").count(), 3, "the binder's cards, with their buttons");
         assert!(fire.contains("id=\"buySheet\"") && fire.contains("storefront.js"));
     }
@@ -2258,10 +2876,13 @@ mod tests {
         vault(&c);
         assert_eq!(VAULT_STORE, format!("/store/{}", sellers::VAULT_SLUG));
         let html = vault_html(&c, "");
-        assert!(html.contains("<title>Big Boys Vault · Official store</title>"), "{html}");
+        assert!(html.contains("<title>Big Boys Vault · Store</title>"), "{html}");
         assert!(html.contains("<link rel=\"canonical\" href=\"https://www.bigboysvault.com/store/vault\">"));
-        assert!(html.contains("<h1 class=\"h1\">Big Boys Vault</h1>") && html.contains("Official store</span>"));
-        assert!(html.contains("<a class=\"btn\" href=\"/ask\">") && html.contains("href=\"/chat\">"));
+        // A store like every other: no "official" badge anywhere, and the same buttons as a trainer's store.
+        assert!(html.contains("<h1 class=\"h1\">Big Boys Vault</h1>") && !html.to_lowercase().contains("official"));
+        assert!(html.contains("id=\"followBtn\"") && html.contains("data-dm-to=\"0\"") && html.contains("data-bm=\"store\" data-id=\"0\""));
+        assert!(!html.contains("href=\"/ask\"><svg") && !html.contains("<a class=\"btn ghost\" href=\"/chat\">"), "Ask the Vault and Vault chat live in the menu, not on a store");
+        assert!(html.contains("data-vouches=\"vault\"") && html.contains("<b id=\"followerN\">0</b>") && html.contains("since Jan 2026"));
         // The staff's link is in every visitor's page, hidden unless a full admin is signed in: the page can be kept.
         assert!(html.contains("<a class=\"btn ghost\" href=\"/admin/binders\" data-staff-only data-full-only>"));
         // Every binder with cards for sale, in the owner's order, menu or not, home page or not; no other.
@@ -2283,7 +2904,7 @@ mod tests {
         assert!(html.contains("<li><b>3</b><span>cards for sale</span></li>") && html.contains("<li><b>2</b><span>binders</span></li>"));
         assert!(!html.contains("10,400"), "the vault's total value stays off the public page");
         // Everything in the vault: its cards for sale, as everywhere else.
-        assert!(html.contains("Everything in the vault"));
+        assert!(html.contains("Everything on sale"));
         for id in [1, 2, 5] {
             assert!(html.contains(&format!("<a class=\"card\" href=\"/products/c{id}\"")), "card {id}");
         }
@@ -2422,18 +3043,20 @@ mod tests {
     }
 
     fn stores_html(c: &rusqlite::Connection) -> String {
-        let html = render(StoresPage { nav: chrome(c).unwrap(), stores: store_rows(c).unwrap(), me: None, vault: Some(vault_card(c).unwrap()) });
+        let html = render(StoresPage { nav: chrome(c).unwrap(), stores: store_cards(c, "Big Boys Vault").unwrap(), me: None });
         html.unwrap()
     }
 
     #[test]
-    fn stores_list_the_vault_first_in_the_new_look() {
+    fn every_store_is_listed_alike_the_most_recently_active_first() {
         let c = db();
         vault(&c);
-        // No trainer has a store yet: the vault is still there.
+        // No trainer has a store yet: the vault's is there, drawn like any store (no badge, no special frame).
         let html = stores_html(&c);
-        assert!(html.contains("<article class=\"seller-card vault-card\">") && html.contains("href=\"/store/vault\""));
-        assert!(html.contains("3 cards for sale · 2 binders · 0 vouches"), "{html}");
+        assert!(!html.to_lowercase().contains("official") && !html.contains("vault-card") && !html.contains("The vault and its trainers"));
+        assert_eq!(html.matches("<article class=\"seller-card").count(), 1);
+        assert!(html.contains("href=\"/store/vault\"") && html.contains("3 on sale · 0 sold · 0 followers"), "{html}");
+        assert!(html.contains("<a class=\"btn\" href=\"/store/vault\">Visit store →</a>"));
         assert_eq!(html.matches("class=\"sf-btile\" href=\"/collections/").count(), 2, "its binders with cards for sale, not a row of cards");
         assert_eq!(html.matches("<a class=\"card\" href=\"/products/").count(), 0, "no highlighted cards until an admin picks some");
         // A full admin chooses: one binder, and cards (one has sold: it doesn't show).
@@ -2443,20 +3066,107 @@ mod tests {
         assert!(html.contains("class=\"sf-btile\" href=\"/collections/graded-cards\""));
         assert_eq!(html.matches("<a class=\"card\" href=\"/products/").count(), 1);
         assert!(html.contains("<a class=\"card\" href=\"/products/c2\"") && html.contains(">Highlights<"));
-        assert!(html.contains("No trainer has a store with cards on sale yet."));
-        // A trainer opens one: after the vault.
+        // A trainer opens one and puts up a card today: theirs is the most recently active store, so it comes first,
+        // with the same gold Visit button. A seller who picked nothing gets no cards picked for them.
         let s = members::create(&c, "Shop", "h").unwrap().unwrap();
         members::set_seller(&c, s, true).unwrap();
         members::set_profile_ok(&c, s, true).unwrap();
         let Added::Yes(_) = sellers::add_listing(&c, s, "tcgdex:x-1", "Mew", "1", "Set", "/p/mew.webp", "").unwrap() else { panic!() };
         let html = stores_html(&c);
         let shop = members::get(&c, s).unwrap().unwrap();
-        let (v, t) = (html.find("vault-card").unwrap(), html.find(&format!("href=\"{}\"", shop.store_url())).unwrap());
-        assert!(v < t, "the vault first");
-        assert!(!html.contains("No trainer has a store"));
-        // A store with no binders and nothing highlighted says where its cards are.
+        let (t, v) = (html.find(&format!("href=\"{}\"", shop.store_url())).unwrap(), html.find("href=\"/store/vault\"").unwrap());
+        assert!(t < v, "the store that last put up a card first");
+        assert!(html.contains(&format!("<a class=\"btn\" href=\"{}\">Visit store →</a>", shop.store_url())));
         assert!(html.contains("Visit the store to see its 1 card for sale."), "{html}");
-        // The vault is never one of the sellers (the feed and the admin's Sellers list those).
-        assert!(sellers::directory(&c).unwrap().iter().all(|(m, _, _)| m.id == s));
+        // The vault puts up a card later still: it is first again. Same rule for everyone.
+        c.execute("UPDATE products SET created_at='2099-01-01T00:00:00' WHERE id=1", []).unwrap();
+        let html = stores_html(&c);
+        assert!(html.find("href=\"/store/vault\"").unwrap() < html.find(&format!("href=\"{}\"", shop.store_url())).unwrap());
+        // Each store's border colour (gold until its owner picks one).
+        sellers::set_border(&c, s, "#4c8dff").unwrap();
+        assert!(stores_html(&c).contains("--sborder:#4c8dff;"));
+    }
+
+    #[test]
+    fn a_border_colour_must_show_on_the_page() {
+        assert_eq!(sellers::border_ok("").as_deref(), Some(""));
+        assert_eq!(sellers::border_ok("Gold").as_deref(), Some(""));
+        assert_eq!(sellers::border_ok(" #4C8DFF ").as_deref(), Some("#4c8dff"));
+        assert_eq!(sellers::border_ok("#111111"), None, "too dark to see on the page");
+        assert_eq!(sellers::border_ok("red"), None);
+        assert_eq!(sellers::border_ok("#12345"), None);
+        assert_eq!(sellers::border_ok("url(x)"), None);
+        for (_, hex) in sellers::BORDERS {
+            assert_eq!(sellers::border_ok(hex).as_deref(), Some(hex), "every colour on offer shows");
+        }
+    }
+
+    #[test]
+    fn vouches_belong_to_a_store_and_its_window_lists_its_reviews_too() {
+        let c = db();
+        let s = members::create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        let b = members::create(&c, "Buyer", "h").unwrap().unwrap();
+        members::set_profile_ok(&c, b, true).unwrap();
+        // One for the vault (the floating Vouch button), one for the shop; a reply joins its vouch's store.
+        let members::Posted::Yes(v0) = members::post_vouch(&c, b, None, 0, "Great vault", &[]).unwrap() else { panic!() };
+        let members::Posted::Yes(v1) = members::post_vouch(&c, b, None, s, "Fast meetup", &[]).unwrap() else { panic!() };
+        let members::Posted::Yes(_) = members::post_vouch(&c, s, Some(v1), 0, "Thanks!", &[]).unwrap() else { panic!() };
+        assert_eq!((members::store_vouch_count(&c, 0).unwrap(), members::store_vouch_count(&c, s).unwrap()), (1, 1), "replies don't count");
+        let shop = members::store_vouches(&c, s, 10).unwrap();
+        assert_eq!(shop.len(), 1);
+        assert_eq!((shop[0].id, shop[0].replies.len(), shop[0].replies[0].store_id), (v1, 1, s));
+        assert_eq!(members::store_vouches(&c, 0, 10).unwrap()[0].id, v0);
+        assert!(members::vouchable_store(&c, 0).unwrap() && members::vouchable_store(&c, s).unwrap() && !members::vouchable_store(&c, b).unwrap());
+        // The window: its vouches, with the store's name on each in the Vouches page (hidden in the window itself).
+        let items = members::store_vouches(&c, s, 10).unwrap().into_iter().map(VouchItem::Vouch).collect();
+        let html = render(StoreVouchesPart { store: s, name: "Shop".into(), items, is_me: false }).unwrap();
+        assert!(html.contains("Fast meetup") && html.contains("Thanks!") && html.contains("data-store=\"") && !html.contains("No vouches yet."));
+        let empty = render(StoreVouchesPart { store: 0, name: "Big Boys Vault".into(), items: vec![], is_me: false }).unwrap();
+        assert!(empty.contains("No vouches yet."));
+    }
+
+    #[test]
+    fn a_trainer_applies_to_sell_and_an_admin_answers() {
+        let c = db();
+        let t = members::create(&c, "Newbie", "h").unwrap().unwrap();
+        let a = members::create(&c, "Boss", "h").unwrap().unwrap();
+        members::set_role(&c, a, "admin").unwrap();
+        c.execute_batch(dm::SCHEMA).unwrap();
+        let th = dm::thread_between(&c, t, dm::VAULT, 100).unwrap();
+        let id = sellers::add_application(&c, t, "Selling since 2019", &[("/uploads/dm1-a_l.jpg".into(), "/uploads/dm1-a_s.jpg".into())], th.id, 100).unwrap();
+        assert_eq!(sellers::applications_waiting(&c).unwrap(), 1);
+        let got = sellers::application_of(&c, t).unwrap().unwrap();
+        assert!(got.waiting() && got.thread_id == th.id);
+        assert_eq!(got.pics(), vec![("/uploads/dm1-a_l.jpg".to_string(), "/uploads/dm1-a_s.jpg".to_string())]);
+        let (waiting, done) = sellers::applications(&c, 20).unwrap();
+        assert_eq!((waiting.len(), done.len()), (1, 0));
+        // Approving opens the store; it can't be answered twice.
+        let ok = sellers::decide_application(&c, id, true, "", a, 200).unwrap().unwrap();
+        assert_eq!(ok.status, "Approved");
+        let m = members::get(&c, t).unwrap().unwrap();
+        assert!(m.seller && m.profile_ok);
+        assert!(sellers::decide_application(&c, id, false, "late", a, 300).unwrap().is_none());
+        assert_eq!(sellers::applications_waiting(&c).unwrap(), 0);
+    }
+
+    #[test]
+    fn bookmarks_keep_stores_and_cards_under_the_store_they_came_from() {
+        let c = db();
+        vault(&c);
+        let s = members::create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        let Added::Yes(k) = sellers::add_listing(&c, s, "tcgdex:x-1", "Mew", "1", "Set", "/p/mew.webp", "").unwrap() else { panic!() };
+        let b = members::create(&c, "Buyer", "h").unwrap().unwrap();
+        assert!(sellers::toggle_bookmark(&c, b, "store", 0).unwrap());
+        assert!(sellers::toggle_bookmark(&c, b, "product", 2).unwrap());
+        assert!(sellers::toggle_save(&c, b, k).unwrap(), "a seller's card: the saved listing");
+        assert_eq!(sellers::bookmark_count(&c, b).unwrap(), 3);
+        let kinds: Vec<String> = sellers::bookmarks_of(&c, b).unwrap().into_iter().map(|(k, _, _)| k).collect();
+        assert!(kinds.contains(&"store".to_string()) && kinds.contains(&"product".to_string()) && kinds.contains(&"card".to_string()));
+        assert!(!sellers::toggle_bookmark(&c, b, "store", 0).unwrap(), "the same button takes it off");
+        assert_eq!(sellers::bookmark_count(&c, b).unwrap(), 2);
     }
 }

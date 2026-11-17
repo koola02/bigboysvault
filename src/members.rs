@@ -116,6 +116,8 @@ pub struct Member {
     pub pay_public: bool,
     /// An admin switched selling on for this trainer. Everyone else is a collector with a binder.
     pub seller: bool,
+    /// The colour of the store's border on Stores and on its page: '' for gold, or "#rrggbb" (`sellers::border_ok`).
+    pub store_border: String,
 }
 
 /// An admin's tags for a trainer, as a list.
@@ -280,6 +282,11 @@ pub struct Vouch {
     pub replies: Vec<Vouch>,
     pub worth: f64,
     pub tags: String,
+    /// The store it vouches for: 0 is the vault's, otherwise the seller's member id. Replies share their vouch's.
+    pub store_id: i64,
+    /// That store's name and address part (`/store/{slug}`), for the line under the vouch.
+    pub store_name: String,
+    pub store_slug: String,
 }
 
 impl Vouch {
@@ -348,6 +355,8 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         ("contact_info", "TEXT NOT NULL DEFAULT ''"),
         ("contact_public", "INTEGER NOT NULL DEFAULT 0"),
         ("status", "TEXT NOT NULL DEFAULT 'Active'"),
+        // The colour of the store's border on Stores and on its page: '' is gold (everyone's to start with), or #rrggbb.
+        ("store_border", "TEXT NOT NULL DEFAULT ''"),
     ] {
         let there: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('members') WHERE name=?1", [col], |r| r.get(0))?;
         if there == 0 {
@@ -398,6 +407,14 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
             c.execute_batch(&format!("ALTER TABLE member_binders ADD COLUMN {col} {def}"))?;
         }
     }
+
+    // Every vouch is for one store: 0 is the vault's, otherwise the seller's member id. The vouches written before
+    // stores had their own (17 Nov 2026) were about the vault, so they stay the vault's.
+    let there: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('vouches') WHERE name='store_id'", [], |r| r.get(0))?;
+    if there == 0 {
+        c.execute_batch("ALTER TABLE vouches ADD COLUMN store_id INTEGER NOT NULL DEFAULT 0")?;
+    }
+    c.execute_batch("CREATE INDEX IF NOT EXISTS idx_vouches_store ON vouches(store_id, parent_id, id)")?;
 
     // The store: listings' stock and prices, orders, reviews, followers, views and notifications.
     crate::sellers::migrate(c)?;
@@ -677,8 +694,8 @@ pub struct Highlight {
     pub card: MemberCard,
 }
 
-const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags,m.slug,m.fb_url,m.tiktok_url,m.links,m.cover_photo,m.location,m.contact_info,m.contact_public,m.status,m.email,m.store_name,m.fb_group_url,m.ig_url,m.shopee_url,m.pay_info,m.pay_methods,m.notify_views,m.pay_public,m.seller");
-const MEMBER_COUNT: usize = 32;
+const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags,m.slug,m.fb_url,m.tiktok_url,m.links,m.cover_photo,m.location,m.contact_info,m.contact_public,m.status,m.email,m.store_name,m.fb_group_url,m.ig_url,m.shopee_url,m.pay_info,m.pay_methods,m.notify_views,m.pay_public,m.seller,m.store_border");
+const MEMBER_COUNT: usize = 33;
 
 fn map_member(r: &Row) -> rusqlite::Result<Member> {
     Ok(Member {
@@ -714,6 +731,7 @@ fn map_member(r: &Row) -> rusqlite::Result<Member> {
         notify_views: r.get::<_, i64>(29)? != 0,
         pay_public: r.get::<_, i64>(30)? != 0,
         seller: r.get::<_, i64>(31)? != 0,
+        store_border: r.get(32)?,
     })
 }
 
@@ -1391,7 +1409,14 @@ pub fn awards_of(c: &Connection, member_id: i64, limit: i64) -> rusqlite::Result
 }
 
 // ---------- vouches and replies ----------
-const VOUCH_COLS: &str = concat!("v.id,v.member_id,v.parent_id,m.name,CASE WHEN m.profile_ok=1 THEN m.avatar ELSE '' END,m.stars,v.text,v.hidden,v.created_at,m.role,", worth_sql!(), ",m.tags");
+const VOUCH_COLS: &str = concat!(
+    "v.id,v.member_id,v.parent_id,m.name,CASE WHEN m.profile_ok=1 THEN m.avatar ELSE '' END,m.stars,v.text,v.hidden,v.created_at,m.role,",
+    worth_sql!(),
+    ",m.tags,v.store_id,",
+    // The store's name ("Hayme's store" when it has none) and address part; the vault's (0) are filled in by `name_store`.
+    "COALESCE((SELECT CASE WHEN TRIM(s.store_name)<>'' THEN TRIM(s.store_name) ELSE s.name || '''s store' END FROM members s WHERE s.id=v.store_id),''),",
+    "COALESCE((SELECT s.slug FROM members s WHERE s.id=v.store_id),'')"
+);
 
 fn map_vouch(r: &Row) -> rusqlite::Result<Vouch> {
     Ok(Vouch {
@@ -1409,7 +1434,18 @@ fn map_vouch(r: &Row) -> rusqlite::Result<Vouch> {
         replies: vec![],
         worth: r.get(10)?,
         tags: r.get(11)?,
+        store_id: r.get(12)?,
+        store_name: r.get(13)?,
+        store_slug: r.get(14)?,
     })
+}
+
+/// The vault's store is not a member: its name is the site's, its address /store/vault.
+fn name_store(c: &Connection, v: &mut Vouch) {
+    if v.store_id == 0 {
+        v.store_name = crate::blocks::setting(c, "brand").ok().flatten().map(|b| b.trim().to_string()).filter(|b| !b.is_empty()).unwrap_or_else(|| "Big Boys Vault".into());
+        v.store_slug = "vault".into();
+    }
 }
 
 fn images_of(c: &Connection, vouch_id: i64) -> rusqlite::Result<Vec<VouchImage>> {
@@ -1420,6 +1456,7 @@ fn images_of(c: &Connection, vouch_id: i64) -> rusqlite::Result<Vec<VouchImage>>
 
 fn fill_vouch(c: &Connection, v: &mut Vouch) -> rusqlite::Result<()> {
     v.images = images_of(c, v.id)?;
+    name_store(c, v);
     if v.parent_id.is_none() {
         let mut st = c.prepare_cached(&format!("SELECT {VOUCH_COLS} FROM vouches v JOIN members m ON m.id=v.member_id WHERE v.parent_id=?1 AND v.hidden=0 AND m.blocked=0 ORDER BY v.id"))?;
         let mut replies = st.query_map([v.id], map_vouch)?.collect::<Result<Vec<_>, _>>()?;
@@ -1447,6 +1484,31 @@ pub fn public_vouch_count(c: &Connection) -> rusqlite::Result<i64> {
     c.query_row("SELECT COUNT(*) FROM vouches v JOIN members m ON m.id=v.member_id WHERE v.parent_id IS NULL AND v.hidden=0 AND m.blocked=0", [], |r| r.get(0))
 }
 
+/// One store's vouches (0: the vault's), newest first, with their replies: what its Vouches window shows.
+pub fn store_vouches(c: &Connection, store: i64, limit: i64) -> rusqlite::Result<Vec<Vouch>> {
+    let sql = format!("SELECT {VOUCH_COLS} FROM vouches v JOIN members m ON m.id=v.member_id WHERE v.store_id=?1 AND v.parent_id IS NULL AND v.hidden=0 AND m.blocked=0 ORDER BY v.id DESC LIMIT ?2");
+    let mut st = c.prepare(&sql)?;
+    let mut list = st.query_map(rusqlite::params![store, limit], map_vouch)?.collect::<Result<Vec<_>, _>>()?;
+    for v in &mut list {
+        fill_vouch(c, v)?;
+    }
+    Ok(list)
+}
+
+/// How many vouches one store has (0: the vault), replies not counted.
+pub fn store_vouch_count(c: &Connection, store: i64) -> rusqlite::Result<i64> {
+    c.query_row("SELECT COUNT(*) FROM vouches v JOIN members m ON m.id=v.member_id WHERE v.store_id=?1 AND v.parent_id IS NULL AND v.hidden=0 AND m.blocked=0", [store], |r| r.get(0))
+}
+
+/// A store anyone may vouch for: the vault's (0), or a seller's that is open (approved, not blocked, selling).
+pub fn vouchable_store(c: &Connection, store: i64) -> rusqlite::Result<bool> {
+    if store == 0 {
+        return Ok(true);
+    }
+    let n: i64 = c.query_row("SELECT COUNT(*) FROM members WHERE id=?1 AND seller=1 AND profile_ok=1 AND blocked=0", [store], |r| r.get(0))?;
+    Ok(n > 0)
+}
+
 /// One vouch or reply, if the public may see it.
 pub fn public_vouch(c: &Connection, id: i64) -> rusqlite::Result<Option<Vouch>> {
     let sql = format!("SELECT {VOUCH_COLS} FROM vouches v JOIN members m ON m.id=v.member_id WHERE v.id=?1 AND v.hidden=0 AND m.blocked=0");
@@ -1463,6 +1525,7 @@ pub fn admin_feed(c: &Connection, limit: i64) -> rusqlite::Result<Vec<Vouch>> {
     let mut list = st.query_map([limit], map_vouch)?.collect::<Result<Vec<_>, _>>()?;
     for v in &mut list {
         v.images = images_of(c, v.id)?;
+        name_store(c, v);
     }
     Ok(list)
 }
@@ -1473,22 +1536,23 @@ pub enum Posted {
     NoParent,
 }
 
-/// Posts a vouch or a reply, with the photos this trainer just uploaded. Goes up straight away.
-pub fn post_vouch(c: &Connection, member_id: i64, parent: Option<i64>, text: &str, photos: &[i64]) -> rusqlite::Result<Posted> {
+/// Posts a vouch for a store (0: the vault's) or a reply, with the photos this trainer just uploaded. Goes up straight
+/// away. A reply belongs to the same store as the vouch it answers, whatever `store` says.
+pub fn post_vouch(c: &Connection, member_id: i64, parent: Option<i64>, store: i64, text: &str, photos: &[i64]) -> rusqlite::Result<Posted> {
     c.execute_batch("BEGIN IMMEDIATE")?;
     let r = (|| {
         // A reply to a reply joins the same conversation.
-        let parent = match parent {
+        let (parent, store) = match parent {
             Some(p) => {
-                let found: Option<(Option<i64>, i64)> = c.query_row("SELECT v.parent_id,v.hidden FROM vouches v JOIN members m ON m.id=v.member_id WHERE v.id=?1 AND m.blocked=0", [p], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
+                let found: Option<(Option<i64>, i64, i64)> = c.query_row("SELECT v.parent_id,v.hidden,v.store_id FROM vouches v JOIN members m ON m.id=v.member_id WHERE v.id=?1 AND m.blocked=0", [p], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?;
                 match found {
-                    Some((up, 0)) => Some(up.unwrap_or(p)),
+                    Some((up, 0, s)) => (Some(up.unwrap_or(p)), s),
                     _ => return Ok(Posted::NoParent),
                 }
             }
-            None => None,
+            None => (None, store),
         };
-        c.execute("INSERT INTO vouches(member_id,parent_id,text,created_at) VALUES(?1,?2,?3,?4)", rusqlite::params![member_id, parent, text, now()])?;
+        c.execute("INSERT INTO vouches(member_id,parent_id,store_id,text,created_at) VALUES(?1,?2,?3,?4,?5)", rusqlite::params![member_id, parent, store, text, now()])?;
         let id = c.last_insert_rowid();
         let mut attached = 0;
         for p in photos {
@@ -2058,22 +2122,22 @@ mod tests {
         let a = create(&c, "Ash", "h").unwrap().unwrap();
         let b = create(&c, "Misty", "h").unwrap().unwrap();
         // No approval needed, and a trainer can post as many as they like.
-        let Posted::Yes(v1) = post_vouch(&c, a, None, "Great vault", &[]).unwrap() else { panic!() };
-        let Posted::Yes(v2) = post_vouch(&c, a, None, "Still great", &[]).unwrap() else { panic!() };
+        let Posted::Yes(v1) = post_vouch(&c, a, None, 0, "Great vault", &[]).unwrap() else { panic!() };
+        let Posted::Yes(v2) = post_vouch(&c, a, None, 0, "Still great", &[]).unwrap() else { panic!() };
         assert_eq!(public_vouches(&c, None, None, 10).unwrap().len(), 2);
         assert_eq!(public_vouches(&c, None, Some(v2), 10).unwrap().len(), 1, "Show more starts after the last one");
         // Nothing to say and no photo: nothing is posted.
-        assert!(matches!(post_vouch(&c, a, None, "", &[]).unwrap(), Posted::Empty));
+        assert!(matches!(post_vouch(&c, a, None, 0, "", &[]).unwrap(), Posted::Empty));
         // Photos join the post, but only the trainer's own, and only once.
         let p1 = add_photo(&c, a, "/uploads/p1_l.jpg", "/uploads/p1_s.jpg", 10, 10, 100).unwrap();
         let p2 = add_photo(&c, b, "/uploads/p2_l.jpg", "/uploads/p2_s.jpg", 10, 10, 100).unwrap();
-        let Posted::Yes(v3) = post_vouch(&c, a, None, "", &[p1, p2]).unwrap() else { panic!() };
+        let Posted::Yes(v3) = post_vouch(&c, a, None, 0, "", &[p1, p2]).unwrap() else { panic!() };
         assert_eq!(public_vouch(&c, v3).unwrap().unwrap().images.len(), 1);
         assert!(drop_waiting_photo(&c, b, p1).unwrap().is_none(), "a posted photo isn't waiting any more");
         assert_eq!(drop_waiting_photo(&c, b, p2).unwrap().as_deref(), Some("/uploads/p2_l.jpg"));
         // Replies sit under the vouch, and a reply to a reply joins the same conversation.
-        let Posted::Yes(r1) = post_vouch(&c, b, Some(v1), "Agreed", &[]).unwrap() else { panic!() };
-        let Posted::Yes(r2) = post_vouch(&c, a, Some(r1), "Thanks", &[]).unwrap() else { panic!() };
+        let Posted::Yes(r1) = post_vouch(&c, b, Some(v1), 0, "Agreed", &[]).unwrap() else { panic!() };
+        let Posted::Yes(r2) = post_vouch(&c, a, Some(r1), 0, "Thanks", &[]).unwrap() else { panic!() };
         let thread = public_vouch(&c, v1).unwrap().unwrap();
         assert_eq!(thread.replies.len(), 2);
         assert_eq!(public_vouch(&c, r2).unwrap().unwrap().parent_id, Some(v1));
@@ -2083,7 +2147,7 @@ mod tests {
         // Hidden comes off the site, and can't be replied to.
         set_vouch_hidden(&c, v1, true).unwrap();
         assert!(public_vouch(&c, v1).unwrap().is_none());
-        assert!(matches!(post_vouch(&c, b, Some(v1), "Hello?", &[]).unwrap(), Posted::NoParent));
+        assert!(matches!(post_vouch(&c, b, Some(v1), 0, "Hello?", &[]).unwrap(), Posted::NoParent));
         assert_eq!(admin_feed(&c, 50).unwrap().len(), 5, "the owner still sees it");
         set_vouch_hidden(&c, v1, false).unwrap();
         // Deleting a vouch takes its replies with it.
@@ -2099,7 +2163,7 @@ mod tests {
         let id = create(&c, "Gary", "h").unwrap().unwrap();
         set_profile_ok(&c, id, true).unwrap();
         let raw = new_session(&c, id, SESSION_SECS).unwrap();
-        let Posted::Yes(v) = post_vouch(&c, id, None, "Smell ya later", &[]).unwrap() else { panic!() };
+        let Posted::Yes(v) = post_vouch(&c, id, None, 0, "Smell ya later", &[]).unwrap() else { panic!() };
         // Locked: still here, but marked.
         assert!(!get(&c, id).unwrap().unwrap().locked());
         lock(&c, id, 48).unwrap();
@@ -2130,7 +2194,7 @@ mod tests {
         assert_eq!(get(&c, id).unwrap().unwrap().stars, 5);
         // Removing a trainer removes everything of theirs.
         let other = create(&c, "Oak", "h").unwrap().unwrap();
-        let Posted::Yes(r) = post_vouch(&c, other, Some(v), "Good", &[]).unwrap() else { panic!() };
+        let Posted::Yes(r) = post_vouch(&c, other, Some(v), 0, "Good", &[]).unwrap() else { panic!() };
         delete(&c, id).unwrap();
         assert!(public_vouch(&c, r).unwrap().is_none());
         assert!(awards_of(&c, id, 10).unwrap().is_empty());

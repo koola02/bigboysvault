@@ -114,6 +114,14 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
            id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, card_id INTEGER NOT NULL, kind TEXT NOT NULL, detail TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL);
          CREATE TABLE IF NOT EXISTS store_features(
            store_id INTEGER NOT NULL, kind TEXT NOT NULL, ref TEXT NOT NULL, position INTEGER NOT NULL, PRIMARY KEY(store_id, kind, ref));
+         CREATE TABLE IF NOT EXISTS seller_applications(
+           id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, note TEXT NOT NULL DEFAULT '', photos TEXT NOT NULL DEFAULT '',
+           status TEXT NOT NULL DEFAULT 'Waiting', thread_id INTEGER NOT NULL DEFAULT 0, reason TEXT NOT NULL DEFAULT '',
+           decided_by INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, decided_at INTEGER NOT NULL DEFAULT 0);
+         CREATE INDEX IF NOT EXISTS idx_apply_member ON seller_applications(member_id, id);
+         CREATE TABLE IF NOT EXISTS bookmarks(
+           member_id INTEGER NOT NULL, kind TEXT NOT NULL, ref INTEGER NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(member_id, kind, ref));
+         CREATE INDEX IF NOT EXISTS idx_apply_status ON seller_applications(status, id);
          CREATE UNIQUE INDEX IF NOT EXISTS idx_sf_pair ON store_follows(follower_id, seller_id);
          CREATE INDEX IF NOT EXISTS idx_reviews_seller ON reviews(seller_id, created_at);
          CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_tx ON reviews(transaction_id);
@@ -1568,7 +1576,7 @@ pub fn rating_of(c: &Connection, seller: i64) -> rusqlite::Result<(f64, i64)> {
     Ok(((avg.unwrap_or(0.0) * 10.0).round() / 10.0, n))
 }
 
-/// Follow a store, or stop. Returns whether they're following now.
+/// Follow a store (`seller` 0 is the vault's), or stop. Returns whether they're following now.
 pub fn toggle_follow(c: &Connection, follower: i64, seller: i64) -> rusqlite::Result<bool> {
     if follower == seller {
         return Ok(false);
@@ -1579,8 +1587,81 @@ pub fn toggle_follow(c: &Connection, follower: i64, seller: i64) -> rusqlite::Re
     }
     c.execute("INSERT INTO store_follows(follower_id, seller_id, created_at) VALUES(?1,?2,?3)", rusqlite::params![follower, seller, now()])?;
     let (name, _) = names(c, follower, 0)?;
-    notify(c, seller, "follow", &format!("{name} now follows your store."), "/me/store")?;
+    if seller == 0 {
+        // The vault's store is run by its admins: each of them hears it, as a seller would.
+        let admins: Vec<i64> = c.prepare("SELECT id FROM members WHERE role='admin' AND blocked=0")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+        for a in admins.into_iter().filter(|a| *a != follower) {
+            notify(c, a, "follow", &format!("{name} now follows the vault's store."), "/store/vault")?;
+        }
+    } else {
+        notify(c, seller, "follow", &format!("{name} now follows your store."), "/me/store")?;
+    }
     Ok(true)
+}
+
+/// The border colours "Edit store" offers (any other "#rrggbb" can be picked too): name, colour. '' is gold, the
+/// colour every store starts with, the vault's included.
+pub const BORDERS: [(&str, &str); 10] = [
+    ("Gold", ""),
+    ("Silver", "#c0c6d4"),
+    ("Bronze", "#c98a55"),
+    ("Red", "#e5534b"),
+    ("Orange", "#f0883e"),
+    ("Green", "#46c37b"),
+    ("Teal", "#2bb6a8"),
+    ("Blue", "#4c8dff"),
+    ("Purple", "#a371f7"),
+    ("Pink", "#f778ba"),
+];
+
+/// A border colour as it is kept: '' (gold) or "#rrggbb" in small letters. None when it isn't a colour, or is so dark
+/// it would vanish against the page (less than 2 to 1 against its background, #0b0d14).
+pub fn border_ok(v: &str) -> Option<String> {
+    let v = v.trim().to_ascii_lowercase();
+    if v.is_empty() || v == "gold" {
+        return Some(String::new());
+    }
+    let hex = v.strip_prefix('#')?;
+    if hex.len() != 6 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let lum = |h: &str| {
+        let lin = |i: usize| {
+            let x = u8::from_str_radix(&h[i..i + 2], 16).unwrap_or(0) as f64 / 255.0;
+            if x <= 0.04045 { x / 12.92 } else { ((x + 0.055) / 1.055).powf(2.4) }
+        };
+        0.2126 * lin(0) + 0.7152 * lin(2) + 0.0722 * lin(4)
+    };
+    ((lum(hex) + 0.05) / (lum("0b0d14") + 0.05) >= 2.0).then(|| format!("#{hex}"))
+}
+
+/// The vault's store border, kept like its other store settings ('' is gold).
+pub fn vault_border(c: &Connection) -> rusqlite::Result<String> {
+    Ok(crate::blocks::setting(c, "vault_store_border")?.and_then(|b| border_ok(&b)).unwrap_or_default())
+}
+
+pub fn set_vault_border(c: &Connection, border: &str) -> rusqlite::Result<()> {
+    crate::blocks::set_setting(c, "vault_store_border", border)
+}
+
+/// A seller's store border ('' is gold). Checked with `border_ok` before it gets here.
+pub fn set_border(c: &Connection, seller: i64, border: &str) -> rusqlite::Result<()> {
+    c.execute("UPDATE members SET store_border=?2 WHERE id=?1", rusqlite::params![seller, border]).map(|_| ())
+}
+
+/// Copies the vault has sold: the cards in orders it marked as paid.
+pub fn vault_sold(c: &Connection) -> rusqlite::Result<i64> {
+    c.query_row("SELECT COALESCE(SUM(i.qty),0) FROM vault_order_items i JOIN vault_orders o ON o.id=i.order_id WHERE o.status='Paid'", [], |r| r.get(0))
+}
+
+/// When a store last put a card up or changed one for sale: the vault's newest card, or the seller's latest change to a
+/// listing. The Stores page lists the most recently active store first.
+pub fn last_active(c: &Connection, seller: i64) -> rusqlite::Result<i64> {
+    if seller == 0 {
+        // The vault's cards carry their date as text ("2026-11-09T22:06:16").
+        return c.query_row("SELECT COALESCE(CAST(strftime('%s', MAX(created_at)) AS INTEGER),0) FROM products WHERE available=1 AND created_at<>''", [], |r| r.get(0));
+    }
+    c.query_row("SELECT COALESCE(MAX(updated_at),0) FROM member_cards WHERE member_id=?1 AND kind='sale'", [seller], |r| r.get(0))
 }
 
 pub fn is_following(c: &Connection, follower: i64, seller: i64) -> rusqlite::Result<bool> {
@@ -1645,6 +1726,36 @@ pub fn toggle_save(c: &Connection, member: i64, card_id: i64) -> rusqlite::Resul
         }
     }
     Ok(true)
+}
+
+// ---------- bookmarks ----------
+// What a trainer keeps to come back to: stores ("store", the vault's is 0) and the vault's cards ("product") here; a
+// seller's card is a saved listing (`listing_saves`, so the seller still sees how many saved it). One Bookmarks page
+// shows them all, each card under the store it came from.
+
+/// Bookmark a store ("store": a seller's id, 0 for the vault's) or one of the vault's cards ("product"), or take the
+/// bookmark off. Returns whether it is bookmarked now.
+pub fn toggle_bookmark(c: &Connection, member: i64, kind: &str, id: i64) -> rusqlite::Result<bool> {
+    let gone = c.execute("DELETE FROM bookmarks WHERE member_id=?1 AND kind=?2 AND ref=?3", rusqlite::params![member, kind, id])?;
+    if gone > 0 {
+        return Ok(false);
+    }
+    c.execute("INSERT INTO bookmarks(member_id, kind, ref, created_at) VALUES(?1,?2,?3,?4)", rusqlite::params![member, kind, id, now()])?;
+    Ok(true)
+}
+
+/// Everything one trainer bookmarked, newest first: (kind, id, when). Seller cards come as "card".
+pub fn bookmarks_of(c: &Connection, member: i64) -> rusqlite::Result<Vec<(String, i64, i64)>> {
+    let v = c
+        .prepare("SELECT kind, ref, created_at FROM bookmarks WHERE member_id=?1 UNION ALL SELECT 'card', card_id, created_at FROM listing_saves WHERE member_id=?1 ORDER BY 3 DESC")?
+        .query_map([member], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect::<Result<_, _>>()?;
+    Ok(v)
+}
+
+/// How many things one trainer bookmarked: the number beside Bookmarks in the menu.
+pub fn bookmark_count(c: &Connection, member: i64) -> rusqlite::Result<i64> {
+    c.query_row("SELECT (SELECT COUNT(*) FROM bookmarks WHERE member_id=?1) + (SELECT COUNT(*) FROM listing_saves WHERE member_id=?1)", [member], |r| r.get(0))
 }
 
 pub fn saved_ids(c: &Connection, member: i64) -> rusqlite::Result<Vec<i64>> {
@@ -1999,6 +2110,116 @@ pub fn dashboard(c: &Connection, seller: i64) -> rusqlite::Result<Dashboard> {
         recent,
         recent_sales: sales_of(c, seller, 5)?,
     })
+}
+
+// ---------- applying to sell ----------
+
+/// A trainer asking to open a store: their words and photos (proof they sell honestly), the chat with the vault's team
+/// the whole application happens in, and the answer.
+#[derive(Clone, Debug)]
+pub struct Application {
+    pub id: i64,
+    pub member_id: i64,
+    pub name: String,
+    pub avatar: String,
+    pub note: String,
+    /// "large|small" picture pairs, one per line.
+    pub photos: String,
+    /// "Waiting", "Approved" or "Declined".
+    pub status: String,
+    /// The conversation between the trainer and the vault's team where it was sent, and answered.
+    pub thread_id: i64,
+    /// Why it was declined, when the admin said.
+    pub reason: String,
+    pub created_at: i64,
+    pub decided_at: i64,
+}
+
+impl Application {
+    /// (large, small) for each photo.
+    pub fn pics(&self) -> Vec<(String, String)> {
+        self.photos.lines().filter_map(|l| l.split_once('|')).map(|(a, b)| (a.to_string(), b.to_string())).collect()
+    }
+    pub fn waiting(&self) -> bool {
+        self.status == "Waiting"
+    }
+    pub fn when(&self) -> String {
+        ago(self.created_at)
+    }
+    pub fn decided_when(&self) -> String {
+        ago(self.decided_at)
+    }
+    pub fn initial(&self) -> String {
+        members::initial(&self.name)
+    }
+}
+
+const APPLY_COLS: &str = "a.id,a.member_id,m.name,m.avatar,a.note,a.photos,a.status,a.thread_id,a.reason,a.created_at,a.decided_at FROM seller_applications a JOIN members m ON m.id=a.member_id";
+
+fn map_application(r: &rusqlite::Row) -> rusqlite::Result<Application> {
+    Ok(Application {
+        id: r.get(0)?,
+        member_id: r.get(1)?,
+        name: r.get(2)?,
+        avatar: r.get(3)?,
+        note: r.get(4)?,
+        photos: r.get(5)?,
+        status: r.get(6)?,
+        thread_id: r.get(7)?,
+        reason: r.get(8)?,
+        created_at: r.get(9)?,
+        decided_at: r.get(10)?,
+    })
+}
+
+/// A trainer's newest application, if they ever sent one.
+pub fn application_of(c: &Connection, member: i64) -> rusqlite::Result<Option<Application>> {
+    c.query_row(&format!("SELECT {APPLY_COLS} WHERE a.member_id=?1 ORDER BY a.id DESC LIMIT 1"), [member], map_application).optional()
+}
+
+pub fn application(c: &Connection, id: i64) -> rusqlite::Result<Option<Application>> {
+    c.query_row(&format!("SELECT {APPLY_COLS} WHERE a.id=?1"), [id], map_application).optional()
+}
+
+/// Saves an application. `photos` are (large, small) pictures already on disk.
+pub fn add_application(c: &Connection, member: i64, note: &str, photos: &[(String, String)], thread: i64, at: i64) -> rusqlite::Result<i64> {
+    let list = photos.iter().map(|(a, b)| format!("{a}|{b}")).collect::<Vec<_>>().join("\n");
+    c.execute(
+        "INSERT INTO seller_applications(member_id, note, photos, thread_id, created_at) VALUES(?1,?2,?3,?4,?5)",
+        rusqlite::params![member, note, list, thread, at],
+    )?;
+    Ok(c.last_insert_rowid())
+}
+
+/// The applications for the admins: every one still waiting (oldest first, so nobody is left behind), then the latest answered.
+pub fn applications(c: &Connection, answered: i64) -> rusqlite::Result<(Vec<Application>, Vec<Application>)> {
+    let waiting = c.prepare(&format!("SELECT {APPLY_COLS} WHERE a.status='Waiting' AND m.blocked=0 ORDER BY a.id"))?.query_map([], map_application)?.collect::<Result<_, _>>()?;
+    let done = c.prepare(&format!("SELECT {APPLY_COLS} WHERE a.status<>'Waiting' ORDER BY a.decided_at DESC LIMIT ?1"))?.query_map([answered], map_application)?.collect::<Result<_, _>>()?;
+    Ok((waiting, done))
+}
+
+/// How many applications wait for an answer: the number on the admins' Sellers tab.
+pub fn applications_waiting(c: &Connection) -> rusqlite::Result<i64> {
+    c.query_row("SELECT COUNT(*) FROM seller_applications a JOIN members m ON m.id=a.member_id WHERE a.status='Waiting' AND m.blocked=0", [], |r| r.get(0))
+}
+
+/// An admin answers. Approving switches selling on (and shows their profile, since the admin has looked at them).
+/// Only a waiting application can be answered; returns it as it is now, or None if it was answered already.
+pub fn decide_application(c: &Connection, id: i64, approve: bool, reason: &str, by: i64, at: i64) -> rusqlite::Result<Option<Application>> {
+    let status = if approve { "Approved" } else { "Declined" };
+    let n = c.execute(
+        "UPDATE seller_applications SET status=?2, reason=?3, decided_by=?4, decided_at=?5 WHERE id=?1 AND status='Waiting'",
+        rusqlite::params![id, status, members::clean_line(reason, 300), by, at],
+    )?;
+    if n == 0 {
+        return Ok(None);
+    }
+    let Some(a) = application(c, id)? else { return Ok(None) };
+    if approve {
+        members::set_seller(c, a.member_id, true)?;
+        members::set_profile_ok(c, a.member_id, true)?;
+    }
+    Ok(Some(a))
 }
 
 /// "just now", "5 min ago", "3 h ago", "2 d ago", or the date.

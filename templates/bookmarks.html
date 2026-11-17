@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Bookmarks · {{ nav.brand }}{% endblock %}
+{% block content %}
+{#- Everything the visitor bookmarked (src/store.rs bookmarks_page): the stores, then the cards under the store each came
+    from, each ready for the cart. The bookmark buttons here take a bookmark off (static/bookmarks.js). -#}
+<section class="wrap bm-page">
+  <div class="tr-head">
+    <h1 class="h1">Bookmarks</h1>
+    <p class="tr-sub">The stores and cards you bookmarked. Put cards in your cart right from here.</p>
+  </div>
+  {% if stores.is_empty() && groups.is_empty() %}
+  <div class="me-empty bm-none"><b>Nothing bookmarked yet.</b><span>Tap <b>Bookmark</b> on a store or a card, and it waits for you here.</span><a class="btn" href="/stores">Browse stores</a></div>
+  {% endif %}
+
+  {% if !stores.is_empty() %}
+  <h2 class="h2">Stores</h2>
+  <ul class="bm-stores">
+    {% for s in stores %}
+    <li class="bm-store">
+      <a class="bm-who" href="{{ s.url }}">{% if !s.avatar.is_empty() %}<img class="av{% if s.logo %} av-logo{% endif %}" src="{{ s.avatar }}" width="56" height="56" alt="">{% else %}<span class="av">{{ s.initial }}</span>{% endif %}<span><b>{{ s.name }}</b><small>{{ s.sub }}</small></span></a>
+      <a class="btn" href="{{ s.url }}">Visit store →</a>
+      <button type="button" class="bm-ib" data-bm="store" data-id="{{ s.id }}" aria-pressed="true" aria-label="Take {{ s.name }} out of your bookmarks" title="Take out of bookmarks"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg></button>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  {% if !groups.is_empty() %}
+  <h2 class="h2">Cards</h2>
+  {% for g in groups %}
+  <section class="bm-group">
+    <header class="bm-gh">
+      <a class="bm-who" href="{{ g.store.url }}">{% if !g.store.avatar.is_empty() %}<img class="av{% if g.store.logo %} av-logo{% endif %}" src="{{ g.store.avatar }}" width="40" height="40" alt="">{% else %}<span class="av">{{ g.store.initial }}</span>{% endif %}<span><small>Bookmarked from</small><b>{{ g.store.name }}</b></span></a>
+      {% if g.buyable_n() > 1 %}<button type="button" class="btn ghost sm" data-bm-all>Add all {{ g.buyable_n() }} to cart</button>{% endif %}
+    </header>
+    <ul class="bm-cards">
+      {% for c in g.cards %}
+      <li class="bm-card" data-c="{{ c.cond_class }}">
+        <a class="bm-pic" href="{{ c.url }}" data-float aria-label="See {{ c.title }}">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="">{% endif %}</a>
+        <div class="bm-body">
+          <b class="bm-t">{{ c.title }}</b>
+          <small class="bm-m">{% if !c.set.is_empty() %}{{ c.set }}{% endif %}{% if !c.cond.is_empty() %}<span class="card-cond" data-c="{{ c.cond_class }}">{{ c.cond }}</span>{% endif %}</small>
+          {% if !c.price.is_empty() %}<b class="bm-price">{{ c.price }}</b>{% endif %}
+          <div class="bm-acts">
+            {% if c.buyable %}{% if c.kind == "product" %}<button type="button" class="btn cart-add" data-cart-vault="{{ c.id }}" data-title="{{ c.title }}" data-price="{{ c.worth }}" data-image="{{ c.image }}" data-url="{{ c.url }}">{% else %}<button type="button" class="btn cart-add" data-cart-card="{{ c.id }}" data-title="{{ c.title }}" data-price="{{ c.worth }}" data-image="{{ c.image }}" data-url="{{ c.url }}" data-seller="{{ c.seller_name }}" data-seller-slug="{{ c.seller_slug }}">{% endif %}<span class="cart-add-t">Add to cart</span><span class="cart-add-in">In cart ✓</span></button>
+            {% else %}<span class="sf-held">{{ c.note }}</span>{% endif %}
+            <button type="button" class="bm-ib" data-bm="{{ c.kind }}" data-id="{{ c.id }}" aria-pressed="true" aria-label="Take {{ c.title }} out of your bookmarks" title="Take out of bookmarks"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg></button>
+          </div>
+        </div>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endfor %}
+  {% endif %}
+</section>
+{% endblock %}

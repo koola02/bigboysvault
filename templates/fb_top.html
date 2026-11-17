@@ -24,8 +24,7 @@
   </nav>
   <div class="hd-r">
     <button type="button" class="hd-ib hd-search-btn" data-search-open aria-label="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></button>
-    <button type="button" class="hd-ib hd-menu-btn" data-menu-toggle aria-label="Menu" aria-controls="fbMenu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
-    <button type="button" class="hd-ib" id="cartFab" aria-label="Your cart" title="Your cart" aria-expanded="false" aria-controls="cartDrawer"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg><span class="hd-badge cart-n" id="cartN">0</span></button>
+    <button type="button" class="hd-ib hd-menu-btn" data-menu-toggle aria-label="Menu" aria-controls="fbMenu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span class="hd-badge" data-cart-count hidden></span></button>
     <div class="hd-pop" id="dmDropdown" hidden>
       <a class="hd-ib" id="barDm" href="/me/messages" hidden aria-label="Messages" title="Messages" aria-expanded="false" aria-controls="dmMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg><span class="notif-badge" id="dmBadge" hidden>0</span></a>
       <div class="notif-menu dm-menu" id="dmMenu" hidden>
@@ -59,6 +58,8 @@
     <a class="mn-i" href="/vouches"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.500l6.100-.900z"/></svg><span>Vouches</span></a>
     <a class="mn-i" href="/me/store" data-seller-only><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 7h8M8 11h8M8 15h5"/></svg><span>My store</span></a>
     <a class="mn-i" href="/me/orders" data-me-only><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2zM9 7h6M9 11h6M9 15h4"/></svg><span>Orders</span></a>
+    <button type="button" class="mn-i mn-cart" id="cartFab" aria-label="Cart" aria-expanded="false" aria-controls="cartDrawer"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg><span>Cart</span><span class="mn-n cart-n" id="cartN">0</span></button>
+    <a class="mn-i" href="/me/bookmarks" data-me-only><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg><span>Bookmarks</span><span class="mn-n mn-n-soft" data-bm-count hidden></span></a>
     <a class="mn-i" href="/admin/dashboard" data-staff-only><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l8 4v6c0 5-3.500 8.500-8 10-4.500-1.500-8-5-8-10V6z"/></svg><span>Admin</span></a>
   </nav>
   <form class="mn-out" method="post" action="/signout" data-me-only><button type="submit" class="mn-i"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>Log out</span></button></form>

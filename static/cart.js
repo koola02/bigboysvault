@@ -22,6 +22,8 @@
     const c = count();
     n.textContent = c; fab.hidden = c === 0 && drawer.hidden;
     fab.classList.toggle('has', c > 0);
+    // The cart lives in the menu (under Orders): the menu buttons carry its number on every screen.
+    document.querySelectorAll('[data-cart-count]').forEach((b) => { b.textContent = c; b.hidden = c === 0; });
     document.querySelectorAll('[data-cart-vault], [data-cart-card]').forEach((b) => {
       const kind = b.dataset.cartVault != null ? 'vault' : 'card', id = Number(b.dataset.cartVault ?? b.dataset.cartCard);
       const inCart = lines.some((l) => l.kind === kind && l.id === id);
@@ -77,6 +79,8 @@
   scrim.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); close(); });
   let opener = null;
   const open = async () => {
+    // Opened from the menu on a phone or tablet: the menu steps aside for it.
+    if (document.documentElement.classList.contains('menu-open')) { document.documentElement.classList.remove('menu-open'); document.querySelectorAll('[data-menu-toggle]').forEach((b) => b.setAttribute('aria-expanded', 'false')); }
     drawer.hidden = false; scrim.hidden = false; fab.hidden = false; fab.setAttribute('aria-expanded', 'true'); document.body.classList.add('cart-open'); paint();
     const x = drawer.querySelector('[data-cart-close]'); if (x) x.focus();
     await refresh();

@@ -1,29 +1,39 @@
 {% extends "base.html" %}
 {% block layout %}wide{% endblock %}
 {% block content %}
-{#- Big Boys Vault's own store (new look): the same page as a trainer's store, with the vault's binders.
-    Every visitor gets this same page: what only staff see is hidden by data-staff-only, so it can be kept. -#}
-<section class="wrap storefront vstore" id="storefront">
-  <header class="sf-head vs-head">
-    <div class="sf-cover pf-cover vs-cover" aria-hidden="true"></div>
+{#- Big Boys Vault's own store: laid out like every trainer's store (store.html), with the vault's binders.
+    Every visitor gets this same page: what only staff see is hidden by data-staff-only, so it can be kept, and the
+    Follow button learns who is looking once the page is open (static/store-head.js). -#}
+<section class="wrap storefront vstore" id="storefront" data-slug="vault" data-name="{{ nav.brand }}">
+  <header class="sf-head" style="{% if !border.is_empty() %}--sborder:{{ border }};{% endif %}">
+    <div class="sf-cover pf-cover" aria-hidden="true"></div>
     <div class="sf-id">
-      <img class="av av-xl vs-logo" src="/static/img/logo-768.webp" width="168" height="168" alt="">
+      <img class="av av-xl av-logo" src="/static/img/logo-768.webp" width="168" height="168" alt="">
       <div class="sf-who">
         <p class="eyebrow">Store</p>
         <h1 class="h1">{{ nav.brand }}</h1>
-        <p class="sf-sub"><span class="vs-badge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.6 2.2 3.4-.4.9 3.3 3 1.7-1.3 3.2 1.3 3.2-3 1.7-.9 3.3-3.4-.4L12 22l-2.6-2.2-3.4.4-.9-3.3-3-1.7 1.3-3.2-1.3-3.2 3-1.7.9-3.3 3.4.4z"/><path d="M8.5 12.2l2.4 2.4 4.6-4.8"/></svg>Official store</span> The vault's own cards, sorted into binders · since 2026</p>
+        {% if !since.is_empty() %}<p class="sf-sub">since {{ since }}</p>{% endif %}
+        <p class="sf-bio">{{ bio }}</p>
       </div>
       <div class="sf-acts">
-        <a class="btn" href="/ask"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5v.4"/><path d="M12 16.5h.01"/></svg>Ask the Vault</a>
-        <a class="btn ghost" href="/chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 8h2a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-1v3l-3-3h-4a2 2 0 0 1-2-2v-1"/><path d="M15 3H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h1v3l3-3h6a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z"/></svg>Vault chat</a>
-        <a class="btn ghost" href="/admin/binders" data-staff-only data-full-only><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Manage binders</a>
+        <button type="button" class="btn" id="followBtn" aria-pressed="false">Follow</button>
+        <button type="button" class="btn ghost dm-add" data-dm-to="0"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg><span>Message</span></button>
+        <button type="button" class="btn ghost bm-btn" data-bm="store" data-id="0" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg><span class="bm-l">Bookmark</span></button>
+        <button type="button" class="btn ghost" data-vault-store-edit data-border="{{ border }}" data-staff-only data-full-only><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>Edit store</button>
+        <a class="btn ghost" href="/admin/binders" data-staff-only data-full-only>Manage binders</a>
       </div>
     </div>
     <ul class="sf-stats">
       <li><b>{{ n.for_sale_text() }}</b><span>card{% if n.for_sale != 1 %}s{% endif %} for sale</span></li>
       <li><b>{{ n.binders }}</b><span>binder{% if n.binders != 1 %}s{% endif %}</span></li>
-      <li><a class="vs-stat" href="/vouches"><b>{{ n.vouches }}</b><span>vouch{% if n.vouches != 1 %}es{% endif %}</span></a></li>
+      <li><b id="followerN">{{ n.followers }}</b><span>follower{% if n.followers != 1 %}s{% endif %}</span></li>
+      <li class="sf-vli"><button type="button" class="sf-vouches" data-vouches="vault" aria-haspopup="dialog"><b data-vouch-n>{{ n.vouches }}</b><span>Vouches <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span></button></li>
     </ul>
+    {% if !pay.is_empty() %}
+    <div class="sf-rows">
+      <div class="sf-row"><span class="sf-row-l">Pay with</span>{% for pm in pay %}<span class="sf-pay">{{ pm }}</span>{% endfor %}<small class="sf-note-l">Pay details are shown once {{ nav.brand }} accepts your order.</small></div>
+    </div>
+    {% endif %}
   </header>
 
   {% if !tiles.is_empty() %}
@@ -34,9 +44,9 @@
   </ul>
   {% endif %}
 
-  <h2 class="h2" id="everything">Everything in the vault</h2>
+  <h2 class="h2" id="everything">Everything on sale</h2>
   <form class="filters vs-filters" action="{{ base }}#everything" hx-get="{{ base }}" hx-target="#grid" hx-select="#grid" hx-swap="outerHTML" hx-trigger="change, input from:.q delay:250ms" hx-push-url="true">
-    <input class="q" type="search" name="q" value="{{ q }}" placeholder="Search the vault's cards" aria-label="Search the vault's cards" autocomplete="off" autocapitalize="off" spellcheck="false">
+    <input class="q" type="search" name="q" value="{{ q }}" placeholder="Find a card in this store" aria-label="Find a card in this store" autocomplete="off" autocapitalize="off" spellcheck="false">
     <select name="sort" aria-label="Sort">
       <option value="" {% if sort == "" %}selected{% endif %}>Newest</option>
       <option value="price-asc" {% if sort == "price-asc" %}selected{% endif %}>Price: low to high</option>
@@ -46,8 +56,10 @@
   </form>
   <div id="grid" class="grid">
     {% include "grid.html" %}
-    {% if items.is_empty() %}<p class="empty">{% if q.is_empty() %}Nothing for sale right now. New cards go up here first.{% else %}No card for sale matches “{{ q }}”.{% endif %}</p>{% endif %}
+    {% if items.is_empty() %}<p class="empty">{% if q.is_empty() %}Nothing on sale right now.{% else %}No card for sale matches “{{ q }}”.{% endif %}</p>{% endif %}
   </div>
 </section>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="/static/store-head.js?v=1" defer></script>
 <script src="/static/binder-tools.js?v=2" defer></script>
 {% endblock %}

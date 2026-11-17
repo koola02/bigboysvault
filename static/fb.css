@@ -88,8 +88,15 @@ button { cursor: pointer; }
 .hd-ib[aria-expanded="true"], .hd-ib[aria-current="page"] { background: var(--gold-tint); color: var(--gold); }
 .hd-ib svg { width: 20px; height: 20px; }
 .hd-badge, .notif-badge { position: absolute; top: -4px; right: -4px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px; background: var(--red); color: #fff; font: 700 .6875rem/19px var(--font); text-align: center; pointer-events: none; }
-#cartFab[hidden] { display: inline-grid !important; }
-#cartFab:not(.has) .hd-badge { display: none; }
+/* The cart: a row in the menu under Orders, with its number (cart.js); the menu buttons show the number too. */
+#cartFab[hidden] { display: flex !important; }
+.mn-cart { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
+.mn-n { margin-left: auto; min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px; background: var(--red); color: #fff; font: 700 .75rem/24px var(--font); text-align: center; }
+#cartFab:not(.has) .mn-n { display: none; }
+.hd-menu-btn { position: relative; }
+.bt-n { position: absolute; top: -4px; right: calc(50% - 26px); min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px; background: var(--red); color: #fff; font: 700 .6875rem/19px var(--font); text-align: center; pointer-events: none; }
+.bt-n[hidden], .hd-badge[hidden] { display: none; }
+#btMenu .bt-pill { position: relative; }
 .hd-pop { position: relative; display: flex; }
 .hd-me { flex: none; display: block; padding: 0; border: 0; border-radius: 50%; background: none; }
 .hd-login, .hd-reg { flex: none; }
@@ -864,7 +871,7 @@ img.av { object-fit: cover; }
 .tr-tile > b { flex: 1 1 100%; margin-top: 4px; font-weight: 700; overflow-wrap: anywhere; }
 .tr-tile > small { flex: 1 1 100%; color: var(--muted); }
 .sellers-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 460px), 1fr)); gap: 16px; align-items: start; }
-.seller-card { display: flex; flex-direction: column; min-width: 0; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); overflow: hidden; }
+.seller-card { display: flex; flex-direction: column; min-width: 0; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--sborder, var(--gold-edge)); overflow: hidden; }
 .seller-card::before { content: ""; display: block; height: 88px; background: linear-gradient(120deg, #1b2030, #2a2f45 60%, rgba(239,200,115,.22)) center / cover; }
 .seller-card.has-cover::before { height: 132px; background-image: var(--cover); }
 .seller-vouch-head { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px 12px; padding: 0 16px 12px; }
@@ -917,7 +924,7 @@ img.av { object-fit: cover; }
 .tp-hl-card > img { grid-row: 1 / span 4; width: 112px; height: auto; border-radius: var(--r-sm); }
 .tp-hl-t { align-self: end; font: 700 1.0625rem/1.3 var(--font); }
 .tp-binder-h, .storefront > .h2, .sf-reviews > .h2 { margin-top: 4px; font-size: 1.25rem; }
-.sf-head { display: flex; flex-direction: column; gap: 12px; padding: 0 24px 16px; }
+.sf-head { display: flex; flex-direction: column; gap: 12px; padding: 0 24px 16px; box-shadow: 0 0 0 1px var(--sborder, var(--gold-edge)); }
 .sf-id { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 20px; }
 .sf-id > .av { position: relative; z-index: 1; margin-top: -56px; }
 .sf-who { flex: 1 1 300px; min-width: 0; }
@@ -930,6 +937,21 @@ img.av { object-fit: cover; }
 .sf-stats li { flex: 1 1 96px; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: var(--r); background: var(--surface-2); }
 .sf-stats b { color: var(--gold-hi); font: 800 1.125rem/1.2 var(--display); }
 .sf-stats span { color: var(--muted); font-size: .8125rem; }
+/* Vouches: the one number that opens something (its window, static/store-head.js), so it looks like a button. */
+.sf-stats .sf-vli { padding: 0; background: none; }
+.sf-id > .av.av-xl { width: 128px; height: 128px; margin-top: -44px; font-size: 2.75rem; }
+.sf-who .h1 { font-size: 1.75rem; }
+.sf-acts .btn { min-height: 38px; padding: 0 14px; font-size: .9375rem; }
+.sf-stats { gap: 6px; padding-top: 10px; }
+.sf-stats li { flex: 1 1 0; min-width: 0; padding: 6px 10px; }
+.sf-stats b { font-size: 1rem; }
+.sf-stats span { font-size: .75rem; }
+.sf-vouches { padding: 6px 10px; }
+.sf-vouches { display: flex; flex-direction: column; gap: 2px; width: 100%; height: 100%; min-height: 44px; padding: 8px 12px; border: 0; border-radius: var(--r); background: var(--gold-tint); box-shadow: inset 0 0 0 1px var(--gold-edge); color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.sf-vouches span { display: inline-flex; align-items: center; gap: 2px; color: var(--gold-hi); font-weight: 600; }
+.sf-vouches svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.sf-vouches:hover { background: rgba(239,200,115,.2); }
+.sf-vouches:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
 .sf-rows { display: flex; flex-direction: column; gap: 8px; }
 .sf-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .sf-row-l { flex: none; min-width: 84px; color: var(--muted); font: 600 .8125rem/1 var(--font); }
@@ -998,6 +1020,24 @@ img.av { object-fit: cover; }
   .sf-buy .btn { flex: 1 1 100%; }
   .sf-own .btn { flex: 1 1 0; }
   .sf-filter select { flex: 1 1 140px; }
+  /* The store's header on a phone: the picture small on the left with the name beside it, the buttons in one row,
+     the four numbers in one row. */
+  .sf-head { gap: 10px; }
+  .storefront .sf-cover.pf-cover { height: clamp(104px, 30vw, 160px); }
+  .storefront .sf-cover.pf-cover:not(:has(> img)) { height: 72px; }
+  .sf-id { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: end; gap: 8px 12px; text-align: left; }
+  .sf-id > .av.av-xl { width: 76px; height: 76px; margin-top: -28px; font-size: 1.75rem; box-shadow: 0 0 0 4px var(--surface); }
+  .sf-who { min-width: 0; }
+  .sf-who .h1 { font-size: 1.25rem; }
+  .sf-sub { justify-content: flex-start; margin-top: 2px; font-size: .8125rem; }
+  .sf-bio { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: .875rem; }
+  .sf-acts { grid-column: 1 / -1; width: 100%; gap: 6px; }
+  .sf-acts .btn { flex: 1 1 0; min-width: 0; min-height: 38px; padding: 0 8px; gap: 6px; font-size: .875rem; white-space: nowrap; }
+  .sf-stats { flex-wrap: nowrap; }
+  .sf-stats li { align-items: center; padding: 6px 4px; text-align: center; }
+  .sf-stats b { font-size: .9375rem; }
+  .sf-stats span { font-size: .6875rem; line-height: 1.2; }
+  .sf-vouches { align-items: center; padding: 6px 4px; text-align: center; }
 }
 
 /* ---------- 23. Vouches: each one reads like a post ---------- */
@@ -1382,24 +1422,47 @@ html.cardwin-open { overflow: hidden; }
   .sf-bh { font-size: 1.0625rem; -webkit-line-clamp: 1; }
 }
 
-/* ---------- 34. The vault's own store (/store/vault): its header, its binders, its card on Stores, a vault binder's page ---------- */
-/* The same page as a trainer's store (sections 22 and 33). The band is the vault's colours; the logo is its face. */
-.vs-cover { background: radial-gradient(90% 160% at 88% 0%, rgba(239,200,115,.34), transparent 60%), linear-gradient(135deg, #141826, #1d2236 55%, #2a2f45); }
-.vs-logo { background: var(--bg); object-fit: contain; }
-.vs-badge { display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 10px 0 6px; border-radius: var(--pill); background: var(--gold-tint); color: var(--gold-hi); font: 700 .75rem/1 var(--font); white-space: nowrap; }
-.vs-badge svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.sf-stats .vs-stat { display: flex; flex-direction: column; gap: 2px; color: inherit; }
-.sf-stats .vs-stat:hover { text-decoration: none; }
-.sf-stats .vs-stat:hover span { color: var(--text); }
+/* ---------- 34. The vault's own store (/store/vault), and a vault binder's page ---------- */
+/* Drawn like every trainer's store (sections 22 and 33); a round logo as a store's picture is shown whole. */
+.av-logo { background: var(--bg); object-fit: contain; }
 .vs-filters { margin: 0; }
 /* A binder cover the owner uploaded (not a card): one picture filling the tile. */
 .sf-bcov.sf-bphoto > img:first-child { top: 0; left: 0; width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; box-shadow: none; transform: none; object-fit: cover; }
 /* A binder only its owner sees on the store page (nothing for sale yet, private or unlisted): faded, with the reason. */
 .sf-btile[data-off] .sf-bcov { opacity: .5; }
 .sf-btile[data-off] small { color: var(--gold-hi); }
-/* On Stores, the vault comes first. */
-.vault-card { box-shadow: 0 0 0 1px var(--gold-edge); }
-.vault-card::before { background: radial-gradient(90% 180% at 88% 0%, rgba(239,200,115,.34), transparent 60%), linear-gradient(135deg, #141826, #1d2236 55%, #2a2f45); }
+/* A store's Vouches window (store_vouches.html, static/store-head.js): a header with an X, then the list. */
+dialog.sv .float-panel { width: min(680px, 100%); padding: 0; gap: 0; }
+.sv-h { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 12px; padding: 12px 12px 12px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
+.sv-t { flex: 1; min-width: 0; }
+.sv-t h2 { margin: 0; font: 800 1.25rem/1.2 var(--display); }
+.sv-t p { margin: 2px 0 0; color: var(--muted); font-size: .875rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sv-x { flex: none; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: var(--surface-3); color: var(--text); cursor: pointer; }
+.sv-x svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+.sv-x:hover { background: var(--line-2); }
+.sv-scroll { padding: 12px 16px 16px; }
+.sv-body { display: flex; flex-direction: column; gap: 12px; }
+.sv-write .btn { width: 100%; }
+.sv-write svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sv-empty, .sv-wait { margin: 0; padding: 24px 8px; color: var(--muted); text-align: center; }
+.sv-list { grid-template-columns: 1fr; }
+.sv-list .vouch { background: var(--surface-2); }
+.sv-sale { margin: 0; color: var(--muted); font-size: .8125rem; }
+.sv .v-for { display: none; }
+/* Under a vouch on the Vouches page and trainers' pages: which store it is for. */
+.v-for { margin: -4px 0 0; color: var(--muted); font-size: .8125rem; }
+@media (max-width: 699px) { dialog.sv .float-panel { padding-top: var(--sat); } .sv-scroll { padding: 12px; } }
+/* The border colour picker in Edit store (static/store-head.js). */
+.bp { display: flex; flex-direction: column; gap: 8px; }
+.bp-l { margin: 0; font-weight: 600; }
+.bp-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.bp-sw { position: relative; display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: var(--surface-2); box-shadow: inset 0 0 0 4px var(--c, var(--gold-hi)); cursor: pointer; }
+.bp-sw[aria-checked="true"], .bp-other.on { outline: 2px solid var(--text); outline-offset: 2px; }
+.bp-other { width: auto; padding: 0 12px 0 6px; gap: 6px; grid-auto-flow: column; border-radius: var(--pill); box-shadow: inset 0 0 0 1px var(--line-2); color: var(--muted); font: 600 .8125rem/1 var(--font); }
+.bp-other input { width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer; }
+.bp-note { color: var(--muted); }
+.bp-note.bad { color: #ff9d94; font-weight: 600; }
+.bp-form .sheet-acts { display: flex; justify-content: flex-end; gap: 8px; }
 /* One of the vault's binders opened (/collections/...): the bar hangs under the site's header, as on a trainer's binder. */
 .mk-bpage { padding-top: 0; }
 .mk > .sf-bbar { margin: 0 0 16px; }
@@ -1646,4 +1709,83 @@ html.bt-modal { overflow: hidden; }
   .fd-adv-h small { display: none; }
   .cart-qty button { width: 36px; height: 36px; }
   .cart-x { width: 36px; height: 36px; }
+}
+
+/* ---------- 36. Bookmarks, applying to sell (17 Nov 2026) ---------- */
+/* A Bookmark button: an outline when off, filled gold when on (static/bookmarks.js). */
+.bm-btn svg, .bm-ib svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linejoin: round; }
+.bm-btn[aria-pressed="true"] { color: var(--gold-hi); box-shadow: inset 0 0 0 1px var(--gold-edge); }
+.bm-btn[aria-pressed="true"] svg, .bm-ib[aria-pressed="true"] svg { fill: currentColor; }
+.detail-info > .bm-btn { align-self: flex-start; margin: 2px 0 6px; }
+.bm-ib { display: grid; place-items: center; flex: none; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: var(--surface-3); color: var(--muted); cursor: pointer; }
+.bm-ib[aria-pressed="true"] { color: var(--gold-hi); background: var(--gold-tint); }
+.bm-ib:hover { color: var(--text); }
+.sf-save.bm-ib { width: 40px; height: 40px; }
+.sf-save.bm-ib[aria-pressed="true"] { background: var(--gold-tint); color: var(--gold-hi); }
+.mn-n.mn-n-soft { background: var(--surface-3); color: var(--text); }
+.row .mn-n { margin-left: auto; }
+/* The Bookmarks page: stores, then cards under the store each came from. */
+.bm-page { display: flex; flex-direction: column; gap: 16px; }
+.bm-page > .h2 { margin: 8px 0 0; }
+.bm-none { align-items: flex-start; }
+.bm-stores { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.bm-store { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
+.bm-store .btn { flex: none; min-height: 36px; padding: 0 12px; font-size: .875rem; }
+.bm-who { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; color: var(--text); }
+.bm-who:hover { text-decoration: none; }
+.bm-who .av { flex: none; width: 48px; height: 48px; }
+.bm-who > span { display: flex; flex-direction: column; min-width: 0; }
+.bm-who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bm-who small { color: var(--muted); font-size: .8125rem; }
+.bm-group { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
+.bm-gh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.bm-gh .bm-who .av { width: 40px; height: 40px; }
+.bm-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.bm-card { display: flex; gap: 10px; min-width: 0; padding: 8px; border-radius: var(--r); background: var(--surface-2); }
+.bm-pic { flex: none; width: 76px; }
+.bm-pic img { display: block; width: 100%; height: auto; border-radius: var(--r-sm); }
+.bm-body { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
+.bm-t { overflow-wrap: anywhere; }
+.bm-m { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; color: var(--muted); font-size: .8125rem; }
+.bm-price { color: var(--gold-hi); font: 800 1rem/1.2 var(--display); }
+.bm-acts { display: flex; align-items: center; gap: 8px; margin-top: auto; }
+.bm-acts .cart-add { flex: 1; min-height: 40px; }
+.bm-acts .sf-held { flex: 1; }
+/* Apply as a seller. */
+.apply-page { display: flex; flex-direction: column; gap: 16px; max-width: 720px; }
+.ap-form { display: flex; flex-direction: column; gap: 16px; padding: 16px; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
+.ap-f { display: flex; flex-direction: column; gap: 6px; }
+.ap-f small { color: var(--muted); font-weight: 500; }
+.ap-how { color: var(--muted); font-size: .875rem; }
+.ap-pics { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.ap-acts { display: flex; justify-content: flex-end; gap: 8px; }
+.ap-state { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 16px; border-radius: var(--r); background: var(--gold-tint); box-shadow: inset 0 0 0 1px var(--gold-edge); }
+.ap-state.ap-no { background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
+.ap-state span { color: var(--muted); }
+/* Admin: the applications, first on Sellers; the banner on the Overview. */
+.ap-panel { box-shadow: inset 0 0 0 1px var(--gold-edge); }
+.ap-list { display: flex; flex-direction: column; gap: 12px; margin: 0; padding: 0; list-style: none; }
+.ap-item { display: flex; flex-direction: column; gap: 10px; padding: 12px; border-radius: var(--r); background: var(--surface-2); }
+.ap-who { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.ap-who a { display: flex; align-items: center; gap: 10px; color: var(--text); }
+.ap-who .av { width: 48px; height: 48px; }
+.ap-who small { color: var(--muted); }
+.ap-note { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ap-none { color: var(--muted); font-style: italic; }
+.ap-proof { display: flex; flex-wrap: wrap; gap: 8px; }
+.ap-proof img { display: block; width: 120px; height: 120px; border-radius: var(--r-sm); object-fit: cover; background: var(--surface-3); }
+.ap-acts { flex-wrap: wrap; justify-content: flex-start; }
+.ap-why { display: flex; flex-wrap: wrap; gap: 8px; }
+.ap-why[hidden] { display: none; }
+.ap-why input { flex: 1 1 220px; min-height: 40px; }
+.ap-done summary { cursor: pointer; color: var(--muted); }
+.ap-banner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 16px; padding: 14px 16px; border-radius: var(--r); background: var(--gold-tint); box-shadow: inset 0 0 0 1px var(--gold-edge); color: var(--gold-hi); }
+.ap-banner:hover { text-decoration: none; background: rgba(239,200,115,.2); }
+.ap-banner span { font-weight: 600; }
+@media (max-width: 699px) {
+  .ap-pics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .ap-proof img { width: 96px; height: 96px; }
+  .bm-store { flex-wrap: wrap; }
+  .bm-store .bm-who { flex: 1 1 100%; }
+  .bm-store .btn { flex: 1; }
 }

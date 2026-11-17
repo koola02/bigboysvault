@@ -921,12 +921,19 @@ pub async fn vouch_one(State(app): State<App>, Path(id): Path<i64>) -> Res {
 pub async fn who(State(app): State<App>, h: HeaderMap) -> Res {
     let m = current(&app, &h).await?;
     let p = admin::power(&app, &h);
+    // The number beside Bookmarks in the menus (static/bookmarks.js).
+    let mid = m.as_ref().map(|m| m.id);
+    let bookmarks = match mid {
+        Some(id) => with_db(&app, move |c| marcuru_rs::sellers::bookmark_count(c, id)).await?,
+        None => 0,
+    };
     Ok(ok(json!({
         "admin": p != admin::Power::Nothing,
         "full": matches!(p, admin::Power::Admin(_)),
         "member": m.map(|m| json!({ "id": m.id, "name": m.name, "locked": m.locked(), "lock_left": m.lock_left(), "avatar": m.avatar, "initial": m.initial(), "seller": m.seller, "role": m.role, "approved": m.profile_ok })),
         // The key a browser turns alerts on with (static/alerts.js).
         "push_key": crate::push::public_key(),
+        "bookmarks": bookmarks,
     })))
 }
 
@@ -937,6 +944,9 @@ pub struct PostReq {
     parent: Option<i64>,
     #[serde(default)]
     photos: Vec<i64>,
+    /// The store it vouches for: a seller's id, or 0 / nothing for the vault's (the floating Vouch button).
+    #[serde(default)]
+    store: i64,
 }
 
 pub async fn post_vouch(State(app): State<App>, h: HeaderMap, Json(req): Json<PostReq>) -> Res {
@@ -950,8 +960,17 @@ pub async fn post_vouch(State(app): State<App>, h: HeaderMap, Json(req): Json<Po
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "You've posted a lot this hour. Please take a short break and try again."));
     }
     let text = members::clean_text(&req.text, members::TEXT_MAX);
-    let (parent, photos) = (req.parent, req.photos);
-    match with_db(&app, move |c| members::post_vouch(c, id, parent, &text, &photos)).await? {
+    let (parent, photos, store) = (req.parent, req.photos, req.store);
+    // A vouch is for an open store, and never for your own (a reply may go anywhere: it joins its vouch's store).
+    if parent.is_none() {
+        if store == id {
+            return Ok(fail(StatusCode::BAD_REQUEST, "That's your own store. Vouches come from the people you sold to."));
+        }
+        if !with_db(&app, move |c| members::vouchable_store(c, store)).await? {
+            return Ok(fail(StatusCode::NOT_FOUND, "That store isn't open right now."));
+        }
+    }
+    match with_db(&app, move |c| members::post_vouch(c, id, parent, store, &text, &photos)).await? {
         Posted::Yes(vid) => {
             app.forget();
             Ok(ok(json!({ "ok": true, "id": vid })))

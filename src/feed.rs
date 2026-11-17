@@ -133,7 +133,6 @@ struct FeedPage {
     items: Vec<Item>,
     next: String,
     tagline: String,
-    featured: Option<Tile>,
     moves: Vec<Move>,
     stores: Vec<StoreView>,
     /// Only one post is shown (its own page), with its comments open.
@@ -466,8 +465,6 @@ async fn feed_html(app: &App, viewer: i64, only: Option<i64>) -> Result<String, 
         let stories = if single { vec![] } else { stories(c)? };
         // The welcome line can hold "{count}": the number of cards in the vault.
         let tagline = blocks::welcome(c)?.replace("{count}", &db::thousands(admin::in_vault(c)?.0));
-        let (top, _) = db::list(c, &db::Query { collection: None, q: String::new(), sort: "price-desc".into(), in_stock: true, page: 0 })?;
-        let featured = top.iter().find(|p| p.has_image()).map(product_tile);
         let moves = match c.query_row("SELECT id FROM posts WHERE kind='prices' AND hidden=0 ORDER BY created_at DESC LIMIT 1", [], |r| r.get::<_, i64>(0)) {
             Ok(id) => match social::post(c, 0, id)? {
                 Some(p) => post_view(c, &p, &nav.brand, 0)?.map(|v| v.moves).unwrap_or_default(),
@@ -478,7 +475,7 @@ async fn feed_html(app: &App, viewer: i64, only: Option<i64>) -> Result<String, 
         let stores = store_views(c, 0)?.into_iter().take(6).collect();
         nav.seo = if single { Seo { title: format!("A post · {}", nav.brand), ..Default::default() } } else { seo(&nav) };
         let end = !single && next.is_empty();
-        Ok(FeedPage { nav, stories, items, next, tagline, featured, moves: moves.into_iter().take(4).collect(), stores, single, end })
+        Ok(FeedPage { nav, stories, items, next, tagline, moves: moves.into_iter().take(4).collect(), stores, single, end })
     })
     .await?;
     render(t)
