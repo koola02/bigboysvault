@@ -401,6 +401,18 @@
       const v = $('moveTo').value;
       try { const j = await send('/me/listings/move', { ids: [...picks], binder_id: v ? Number(v) : null }); A.toast(`Moved ${j.n} ✓`, { kind: 'ok' }); location.reload(); } catch (err) { A.toast(err.message, { kind: 'err' }); }
     };
+    // Delete the picked cards for good, the same way My listings does: they go at once, with a few seconds to Undo.
+    $('moveDel').onclick = () => {
+      const ids = [...picks], tiles = ids.map((id) => bRoot.querySelector(`.me-c[data-id="${id}"]`)).filter(Boolean), n = ids.length;
+      if (!n) return;
+      A.undoable({
+        label: `Deleted ${n} card${n === 1 ? '' : 's'}`,
+        hide: () => tiles.forEach((t) => { t.hidden = true; }),
+        show: () => tiles.forEach((t) => { t.hidden = false; }),
+        commit: async () => { await send('/me/listings/bulk', { ids, action: 'delete' }); tiles.forEach((t) => t.remove()); },
+      });
+      $('moveClear').onclick();
+    };
     const loose = bRoot.querySelector('.st-loose .st-sort'); if (loose) $('looseN').textContent = loose.children.length ? `${loose.children.length}` : 'none';
   }
 

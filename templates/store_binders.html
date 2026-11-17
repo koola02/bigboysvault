@@ -65,17 +65,18 @@
     </ul>
   </section>
 </section>
-<div class="selbar" id="moveBar" hidden role="toolbar" aria-label="Move cards">
+<div class="selbar" id="moveBar" hidden role="toolbar" aria-label="Move or delete cards">
   <span class="selbar-n" id="moveCount">0 selected</span>
   <div class="selbar-acts">
     <select id="moveTo" aria-label="Move to"><option value="">Out of its binder</option>{% for b in binders %}<option value="{{ b.id }}">{{ b.title }}</option>{% endfor %}</select>
     <button type="button" class="pbtn" id="moveGo">Move</button>
+    <button type="button" class="pbtn danger" id="moveDel">Delete</button>
     <button type="button" class="ibtn" id="moveClear" aria-label="Clear selection">✕</button>
   </div>
 </div>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/dragsort.js?v=5" defer></script>
 <script src="/static/admin-ui.js?v=10" defer></script>
-<script src="/static/store.js?v=5" defer></script>
-<script src="/static/binder-tools.js?v=2" defer></script>
+<script src="/static/store.js?v=6" defer></script>
+<script src="/static/binder-tools.js?v=3" defer></script>
 {% endblock %}

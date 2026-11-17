@@ -1464,6 +1464,10 @@ dialog.sv .float-panel { width: min(680px, 100%); padding: 0; gap: 0; }
 .bp-note { color: var(--muted); }
 .bp-note.bad { color: #ff9d94; font-weight: 600; }
 .bp-form .sheet-acts { display: flex; justify-content: flex-end; gap: 8px; }
+/* New cards from the card list, under a seller's own in a binder's Add cards window (binder-tools.js). */
+.bt-fresh { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); }
+.bt-fresh[hidden] { display: none; }
+.bt-new-pick[aria-pressed="true"] .bt-price { color: var(--gold-hi); }
 /* One of the vault's binders opened (/collections/...): the bar hangs under the site's header, as on a trainer's binder. */
 .mk-bpage { padding-top: 0; }
 .mk > .sf-bbar { margin: 0 0 16px; }

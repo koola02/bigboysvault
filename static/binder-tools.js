@@ -567,6 +567,49 @@
       const state = el('p', 'bt-state'); state.setAttribute('aria-live', 'polite');
       const results = el('ul', 'bt-picks');
       g.body.append(find, state, results);
+      // A seller can also put up a card they don't have in the store yet: the card list, right here. Tapping one adds it
+      // for sale (at today's market price, like Add cards does) and puts it straight into this binder.
+      const fresh = el('div', 'bt-fresh'); fresh.hidden = true;
+      const freshList = el('ul', 'bt-picks');
+      const freshState = el('p', 'bt-how');
+      fresh.append(el('h3', 'bt-sec', 'New cards'), freshState, freshList);
+      if (kind === 'seller') g.body.append(fresh);
+      let freshSeq = 0;
+      async function catalogue(q) {
+        const my = ++freshSeq;
+        if (kind !== 'seller' || q.length < 2) { fresh.hidden = true; return; }
+        fresh.hidden = false; freshState.textContent = 'Looking in the card list…'; freshList.replaceChildren();
+        try {
+          const j = await req(`/me/search?q=${enc(q)}&lang=en`); if (my !== freshSeq) return;
+          const found = (j.cards || []).slice(0, 24);
+          freshState.textContent = found.length ? 'Cards you don’t have yet. Tap one to put it up for sale in this binder.' : (j.error || `Nothing called “${q}” in the card list. Check the spelling.`);
+          freshList.replaceChildren(...found.map(newRow));
+        } catch (e) { if (my === freshSeq) freshState.textContent = e.message; }
+      }
+      function newRow(c) {
+        const li = el('li');
+        const b = button('bt-pc bt-pick bt-new-pick', null);
+        const pic = el('span', 'bt-pc-pic');
+        if (c.image) { const im = el('img'); im.src = c.image; im.alt = ''; im.loading = 'lazy'; im.onerror = () => im.remove(); pic.append(im); }
+        const tick = el('span', 'bt-tick'); tick.append(icon('check')); pic.append(tick);
+        const t = el('span', 'bt-pc-t'); t.append(el('b', '', c.name));
+        const sub = [c.en, c.set, c.number].filter(Boolean).join(' · ');
+        if (sub) t.append(el('small', '', sub));
+        const how = el('small', 'bt-price', '+ Add to this binder'); t.append(how);
+        b.append(pic, t);
+        b.addEventListener('click', async () => {
+          if (b.disabled || b.getAttribute('aria-pressed') === 'true') return;
+          b.disabled = true; how.textContent = 'Adding…';
+          try {
+            const j = await req('/me/cards', { id: c.id, image: c.image, image_large: c.image_large, en: c.en });
+            await api.change(key, { add: [j.card.id] }); dirty = true;
+            b.setAttribute('aria-pressed', 'true'); how.textContent = `Added for ${j.card.value || 'no price yet'} ✓`;
+            await load(); draw();
+          } catch (e) { how.textContent = e.message; }
+          b.disabled = false;
+        });
+        li.append(b); return li;
+      }
       const chosen = new Map();
       const tally = el('span', 'bt-tally'); tally.setAttribute('aria-live', 'polite');
       const no = button('btn ghost', null, null, 'Cancel'), go = button('btn', null, null, 'Add');
@@ -605,8 +648,9 @@
           const j = await api.choices(key, q); if (my !== seq) return;
           const rows = j.cards || [];
           state.textContent = rows.length ? (kind === 'vault' && !q ? 'The vault’s dearest cards not in this binder yet. Type to find any card.' : '')
-            : q ? `No card outside this binder matches “${q}”.` : api.none;
+            : q ? (kind === 'seller' && q.length >= 2 ? `None of your other cards match “${q}”. New ones are below.` : `No card outside this binder matches “${q}”.`) : api.none;
           results.replaceChildren(...rows.map(row));
+          catalogue(q);
         } catch (e) { if (my === seq) state.textContent = e.message; }
       }
       find.addEventListener('input', () => { clearTimeout(wait); wait = setTimeout(search, 250); });
