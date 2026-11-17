@@ -122,7 +122,7 @@ for (const [size, viewport] of Object.entries(SIZES)) {
   if (cards.length) {
     broke = [];
     await tap('.fd-grid a.card');
-    const opened = await until(async () => (await shown('.cardwin')) && /₱/.test(await text('.cardwin .price')), 15000);
+    const opened = await until(async () => (await shown('.cardwin')) && /₱/.test(await text('.cardwin .price, .cardwin .worth')), 15000);
     let closed = false;
     if (opened) { await page.click('.cardwin [data-cw-x]'); closed = await until(async () => !(await shown('.cardwin')), 8000); }
     say(opened && closed && !broke.length, size, 'A card opens in its window', !opened ? 'the window or its price did not show' : !closed ? 'the window did not close' : broke.slice(0, 3).join(' | '));
@@ -133,7 +133,7 @@ for (const [size, viewport] of Object.entries(SIZES)) {
 
   // 5. A card's own page: its name, its price, and Add to cart where a thumb can reach it.
   if (cards.length) await open(cards[0], 'A card’s page', async () => {
-    if (!/₱/.test(await text('main .price'))) return 'no price';
+    if (!/₱/.test(await text('main .price, main .worth'))) return 'no price'; // a vault card's price, or a store card's
     if (!(await count('main h1'))) return 'no name';
     if (!(await count('main button.cart-add'))) return '';
     // Is the button on screen, with nothing lying over it? A phone must show it before any scrolling.
