@@ -616,6 +616,7 @@
         say(`“${c.title}” is out of this binder. ${api.stays}`, {
           undo: async () => {
             await api.change(key, { add: [c.id] });
+            if (c.hidden && kind === 'vault') await api.hide(key, c, true); // taking it out cleared its "hidden"
             await api.arrange(key, before);
             if (c.cover) await api.cover(key, c.id);
             await load(); draw(); focusCard(c.id, '[data-act="remove"]');
@@ -632,8 +633,9 @@
       const state = el('p', 'bt-state'); state.setAttribute('aria-live', 'polite');
       const results = el('ul', 'bt-picks');
       g.body.append(find, state, results);
-      // A seller can also put up a card they don't have in the store yet: the card list, right here. Tapping one adds it
-      // for sale (at today's market price, like Add cards does) and puts it straight into this binder.
+      // A seller can also put up a card they don't have in the store yet: the card list, right here. Tapping one opens
+      // the "Add to your store" window (add-card.js): the seller chooses its condition, price and picture, and it goes
+      // into this binder. Nothing is priced for them.
       const fresh = el('div', 'bt-fresh'); fresh.hidden = true;
       const freshList = el('ul', 'bt-picks');
       const freshState = el('p', 'bt-how');

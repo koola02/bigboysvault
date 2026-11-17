@@ -28,7 +28,10 @@
     } catch (_) { return file; } finally { URL.revokeObjectURL(url); }
   }
   let binders = null;
-  const loadBinders = () => (binders ||= json('/me/binders').then((j) => (j.binders || []).map((b) => ({ id: b.key ?? b.id, title: b.title }))).catch(() => []));
+  const loadBinders = () => (binders ||= json('/me/binders').then((j) => {
+    if (!j.binders) binders = null; // didn't load: ask again next time
+    return (j.binders || []).map((b) => ({ id: b.key ?? b.id, title: b.title }));
+  }).catch(() => { binders = null; return []; }));
   const prices = new Map();
   const nearMint = (id) => {
     if (!prices.has(id)) prices.set(id, json(`/me/cards/price?id=${encodeURIComponent(id)}`).then((j) => { const f = (j.matches && j.matches[0] && j.matches[0].finishes) || []; return f.length ? Number(f[0].php) || 0 : 0; }));
@@ -105,17 +108,23 @@
     cond.addEventListener('change', paintHint);
 
     const qtyL = make('label', 'ac-f ac-half'); qtyL.append(make('b', null, 'How many'));
-    const qty = make('input'); qty.type = 'number'; qty.min = old ? '0' : '1'; qty.max = '99'; qty.value = old ? String(listing.qty ?? 1) : '1'; qty.inputMode = 'numeric';
+    const qty = make('input'); qty.type = 'number'; qty.min = old ? '0' : '1'; qty.max = old ? '9999' : '99'; qty.value = old ? String(listing.qty ?? 1) : '1'; qty.inputMode = 'numeric';
     qtyL.append(qty);
     const binderL = make('label', 'ac-f ac-half'); binderL.append(make('b', null, 'Binder'));
     const binder = make('select'); binder.append(new Option('Not in a binder', ''));
     binderL.append(binder);
+    // The binder it is meant for is chosen at once (named "This binder" until the list comes), so Save is right even if
+    // it is tapped before the list of binders has loaded, or if loading it failed.
     const pickBinder = binderId ?? (old ? listing.binder_id : null);
-    loadBinders().then((list) => { list.forEach((b) => binder.append(new Option(b.title, String(b.id), false, String(b.id) === String(pickBinder)))); });
+    const picked = pickBinder != null && pickBinder !== '' ? new Option('This binder', String(pickBinder), true, true) : null;
+    if (picked) binder.append(picked);
+    loadBinders().then((list) => {
+      list.forEach((b) => { if (picked && String(b.id) === picked.value) picked.text = b.title; else binder.append(new Option(b.title, String(b.id))); });
+    });
     const pair = make('div', 'ac-pair'); pair.append(qtyL, binderL);
 
     const notesL = make('label', 'ac-f'); notesL.append(make('b', null, 'A note for buyers '), make('small', null, '(optional)'));
-    const notes = make('textarea'); notes.rows = 2; notes.maxLength = 300; notes.placeholder = 'Centering, a tiny whitening on the back, comes in a sleeve…';
+    const notes = make('textarea'); notes.rows = 2; notes.maxLength = old ? 500 : 300; notes.placeholder = 'Centering, a tiny whitening on the back, comes in a sleeve…';
     if (old) notes.value = listing.notes || '';
     notesL.append(notes);
 
@@ -145,7 +154,7 @@
       const p = Number(price.value);
       if (!(p >= 1)) { err.textContent = 'Type your price for one card.'; price.focus(); return; }
       const n = Math.round(Number(qty.value));
-      if (!(n >= (old ? 0 : 1) && n <= 99)) { err.textContent = old ? 'How many: from 0 to 99 (0 means sold out).' : 'How many: from 1 to 99.'; qty.focus(); return; }
+      if (!(n >= (old ? 0 : 1) && n <= (old ? 9999 : 99))) { err.textContent = old ? 'How many: from 0 to 9999 (0 means sold out).' : 'How many: from 1 to 99.'; qty.focus(); return; }
       go.disabled = true; go.textContent = photo ? 'Sending the photo…' : old ? 'Saving…' : 'Adding…';
       const fd = new FormData();
       if (!old) { fd.append('id', card.id); fd.append('image', card.image || ''); fd.append('image_large', card.image_large || ''); fd.append('en', card.en || ''); }

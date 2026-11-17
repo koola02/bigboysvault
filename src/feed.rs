@@ -647,16 +647,11 @@ async fn feed_html(app: &App, viewer: i64, only: Option<i64>) -> Result<String, 
     render(t)
 }
 
-/// Every card for sale on the site: the vault's copies, and the cards for sale in the trainers' open stores (approved,
-/// not blocked). The home page's welcome line says it where its owner typed "{count}".
+/// Every card for sale on the site: the vault's copies, and the sellers' cards The Vault page lists (`sellers::open_count`:
+/// approved, not blocked, selling, not on vacation, not past its end date, a copy left). The home page's welcome line
+/// says it where its owner typed "{count}".
 pub(crate) fn cards_for_sale(c: &rusqlite::Connection) -> rusqlite::Result<i64> {
-    let stores: i64 = c.query_row(
-        "SELECT COUNT(*) FROM member_cards k JOIN members m ON m.id=k.member_id
-         WHERE k.kind='sale' AND k.status='Active' AND k.qty>0 AND m.seller=1 AND m.profile_ok=1 AND m.blocked=0",
-        [],
-        |r| r.get(0),
-    )?;
-    Ok(admin::in_vault(c)?.0 + stores)
+    Ok(admin::in_vault(c)?.0 + sellers::open_count(c)?)
 }
 
 /// A like or a comment changes only the kept copy of the feed (the one signed-out visitors get).
@@ -1270,6 +1265,13 @@ mod tests {
         assert_eq!(cards_for_sale(&c).unwrap(), 8);
         c.execute("UPDATE members SET blocked=1 WHERE id=?1", [brock]).unwrap();
         assert_eq!(cards_for_sale(&c).unwrap(), 7, "a blocked store's cards aren't for sale");
+        c.execute("UPDATE members SET status='Vacation' WHERE id=?1", [ash]).unwrap();
+        assert_eq!(cards_for_sale(&c).unwrap(), 3, "nor a store on vacation");
+        c.execute("UPDATE members SET status='Active' WHERE id=?1", [ash]).unwrap();
+        let ended = c.query_row("SELECT id FROM member_cards WHERE member_id=?1 AND kind='sale' AND status='Active' LIMIT 1", [ash], |r| r.get::<_, i64>(0)).unwrap();
+        c.execute("UPDATE member_cards SET expires_at=?2 WHERE id=?1", rusqlite::params![ended, members::now() - 60]).unwrap();
+        assert_eq!(cards_for_sale(&c).unwrap(), 6, "nor a card past its end date");
+        c.execute("UPDATE member_cards SET expires_at=0 WHERE id=?1", [ended]).unwrap();
         members::set_profile_ok(&c, ash, false).unwrap();
         assert_eq!(cards_for_sale(&c).unwrap(), 3, "nor a store that isn't approved");
     }

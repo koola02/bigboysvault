@@ -826,6 +826,11 @@ pub fn open_listings(c: &Connection) -> rusqlite::Result<Vec<OpenListing>> {
     Ok(v)
 }
 
+/// How many sellers' cards can be bought right now: the cards The Vault page lists (`OPEN_FOR_SALE`, a copy left).
+pub fn open_count(c: &Connection) -> rusqlite::Result<i64> {
+    c.query_row(&format!("SELECT COUNT(*) FROM member_cards c JOIN members m ON m.id=c.member_id WHERE {OPEN_FOR_SALE} AND {LEFT}>0"), [now()], |r| r.get(0))
+}
+
 impl OpenListing {
     /// The store's first letter, for a store with no picture.
     pub fn initial(&self) -> String {

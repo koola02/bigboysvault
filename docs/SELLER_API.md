@@ -39,7 +39,7 @@ nightly; the owner's cards remember theirs in `products.market_php`.
 
 Every card in a trainer's binder has a `kind`: `own` (a Highlight, shown off on the trainer page), `sale` (in the
 store, with stock and a price; only a seller can pick this) or `wish` (a card the trainer is after). A seller's
-`Add cards` puts cards straight on sale; `/me` adds Highlights. Change it per card with `POST /me/cards/{id}`
+`Add cards` puts cards straight on sale; on `/me` a seller's pick from the card list opens the same "Add to your store" window (add-card.js, `POST /me/cards/new`), while a collector's pick joins their binder as a Highlight (`POST /me/cards`). Change it per card with `POST /me/cards/{id}`
 `{ action: "kind", kind }` or `POST /me/listings/{id}` `{ kind }`, or many at once through the listings bulk
 sheet (`{ action: "edit", kind }`). A seller's listings page has an **In stock / Out of stock** switch: it flips the
 status between `Active` and `Out of stock` without touching the copy count.
@@ -85,10 +85,13 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 | `GET /me/store` | Dashboard: on sale, stock value, sold, views (7/30 days, chart by day), followers, rating, to-do (open orders, questions, expiring), sales this week/month/ever, most looked at, popular binders, recent activity |
 | `GET /me/listings?q=&status=&binder=&sort=&id=` | Listings, filtered. `sort`: `newest`, `price-desc`, `price-asc`, `views`, `stock`, `title`, or the seller's order. `id` scrolls to a card |
 | `POST /me/listings/{id}` | Change one listing. JSON, any of: `price` (₱, 0 = follow the market), `cond`, `qty`, `status`, `finish`, `notes`, `binder_id` (null = none), `expires_days` (0 = no end), `title`/`set`/`number` (own-photo cards only), `flag` (ask the vault to check a custom card). Returns `card` |
+| `GET /me/listings/{id}` | One of the seller's cards (`{ ok, card }`, with `image_large`), so the "Add to your store" window can open filled in with it |
+| `POST /me/listings/{id}/place` | Multipart: `cond`, `price` (₱, 1 or more), `qty` (0–9999), `notes` (up to 500 letters), `binder_id` (empty: no binder), optional `photo`. A card already in the store goes into a binder through the same window as a new card, and is saved and placed together; a new photo replaces the old one and its kept original. Sellers only |
 | `POST /me/listings/bulk` | `{ ids, action }`: `edit` (same fields as above), `reprice` (`percent`, −90…500), `delete`. Returns `n` |
 | `POST /me/listings/{id}/renew` | `{ days }` (default 30, 0 = no end date). Puts an expired card back on sale |
 | `POST /me/listings/move` | `{ ids, binder_id }` moves cards into a binder (null = out) |
 | `POST /me/cards` | Add a catalogue card (`{ id, image, image_large, en }`), as before; now allows a second listing of the same card |
+| `POST /me/cards/new` | Multipart: the card's `id`, `image`, `image_large`, `en`, `cond`, `price`, `qty` (1–99), `notes`, `binder_id`, optional `photo`. A seller's new card goes on sale through the "Add to your store" window (store Add cards, a binder's Add, `/me`); nothing is priced for them |
 | `POST /me/cards/upload` | Add a card from the seller's own photo (multipart: `photo`, `name`, `set`, `cond`, `value`) |
 | `GET /me/search?q=&lang=` | The card catalogue, as before |
 | `GET /me/binders` | Binders page |

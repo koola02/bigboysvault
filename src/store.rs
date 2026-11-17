@@ -215,10 +215,11 @@ pub async fn place_listing(State(app): State<App>, h: HeaderMap, Path(id): Path<
     let Some(price) = price.replace(',', "").parse::<f64>().ok().filter(|p| p.is_finite() && *p >= 1.0 && *p <= 100_000_000.0) else {
         return Ok(fail(StatusCode::BAD_REQUEST, "Type your price for one card, in pesos."));
     };
-    let Some(qty) = qty.parse::<i64>().ok().filter(|q| (0..=99).contains(q)) else {
-        return Ok(fail(StatusCode::BAD_REQUEST, "How many: from 0 to 99 (0 means sold out)."));
+    // The same limits as the listing editor (`sellers::update_listing`), so a card's stock and note go through unchanged.
+    let Some(qty) = qty.parse::<i64>().ok().filter(|q| (0..=9999).contains(q)) else {
+        return Ok(fail(StatusCode::BAD_REQUEST, "How many: from 0 to 9999 (0 means sold out)."));
     };
-    let notes = members::clean_text(&notes, 300);
+    let notes = members::clean_text(&notes, 500);
     let binder_id = match binder.parse::<i64>().ok().filter(|b| *b > 0) {
         Some(b) => {
             if !with_db(&app, move |c| Ok(members::binders_of(c, mid)?.iter().any(|x| x.id == b))).await? {
@@ -243,13 +244,20 @@ pub async fn place_listing(State(app): State<App>, h: HeaderMap, Path(id): Path<
         }
     }
     let pic = new_pic.clone();
-    let card = with_db(&app, move |c| {
+    let (card, original) = with_db(&app, move |c| {
         let patch = sellers::Patch { price: Some(price), cond: Some(cond), qty: Some(qty), notes: Some(notes), binder_id: Some(binder_id), ..Default::default() };
         let card = sellers::update_listing(c, mid, id, &patch)?;
-        if let Some((small, large, size)) = &pic {
-            c.execute("UPDATE member_cards SET image=?3, image_large=?4, photo_bytes=?5 WHERE member_id=?1 AND id=?2", rusqlite::params![mid, id, small, large, size])?;
+        // A new photo replaces the old one completely: the original the VM kept when it tidied the old photo goes too,
+        // and the new one is tidied in its turn (`photo_clean` 0; only an own photo is ever picked up).
+        let mut original = String::new();
+        if let (Some((small, large, size)), Some(_)) = (&pic, &card) {
+            original = c.query_row("SELECT photo_original FROM member_cards WHERE member_id=?1 AND id=?2", [mid, id], |r| r.get(0)).unwrap_or_default();
+            c.execute(
+                "UPDATE member_cards SET image=?3, image_large=?4, photo_bytes=?5, photo_clean=0, photo_original='' WHERE member_id=?1 AND id=?2",
+                rusqlite::params![mid, id, small, large, size],
+            )?;
         }
-        Ok(card)
+        Ok((card, original))
     })
     .await?;
     if card.is_none() {
@@ -263,6 +271,9 @@ pub async fn place_listing(State(app): State<App>, h: HeaderMap, Path(id): Path<
     if new_pic.is_some() && before.uploaded_photo() {
         admin::remove_upload(&app.uploads, &before.image);
         admin::remove_upload(&app.uploads, &before.image_large);
+    }
+    for f in original.split('|').filter(|f| f.starts_with(&format!("/uploads/m{mid}-"))) {
+        admin::remove_upload(&app.uploads, f);
     }
     app.forget();
     let now = with_db(&app, move |c| members::card(c, mid, id)).await?;

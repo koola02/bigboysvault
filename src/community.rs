@@ -257,6 +257,8 @@ struct MemberCardPage {
     related: Vec<Like>,
     /// How the market price of this card moved lately, as on a vault card's page.
     trend: Option<marcuru_rs::history::Trend>,
+    /// Who is looking (0 for a visitor): a seller gets no "+" or Message on their own store's cards in "More like this".
+    viewer: i64,
 }
 
 /// The same, without the site around it, for the card window.
@@ -267,6 +269,7 @@ struct MemberCardPart {
     c: MemberCard,
     related: Vec<Like>,
     trend: Option<marcuru_rs::history::Trend>,
+    viewer: i64,
 }
 
 #[derive(Template)]
@@ -700,7 +703,7 @@ pub async fn member_card(State(app): State<App>, h: HeaderMap, Path((id, cid)): 
         Ok((marcuru_rs::sellers::related(db, &card, 12)?, marcuru_rs::history::listing_trend(db, &card.card_id, &card.finish)?))
     })
     .await?;
-    Ok(html(if q.part.is_some() { render(MemberCardPart { t, c, related, trend })? } else { render(MemberCardPage { nav, t, c, related, trend })? }))
+    Ok(html(if q.part.is_some() { render(MemberCardPart { t, c, related, trend, viewer: viewer.unwrap_or(0) })? } else { render(MemberCardPage { nav, t, c, related, trend, viewer: viewer.unwrap_or(0) })? }))
 }
 
 // ---------- my trainer ----------
