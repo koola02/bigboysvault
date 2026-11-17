@@ -16,19 +16,36 @@ import time
 import urllib.error
 import urllib.request
 
-SITE = os.environ["SITE"].rstrip("/")
+# The site's own Fly address (ORIGIN) when it is set: it skips Cloudflare, like the other jobs' big downloads.
+SITE = (os.environ.get("ORIGIN") or os.environ["SITE"]).rstrip("/")
 TOKEN = os.environ["ADMIN_TOKEN"]
 DATA = os.environ.get("DATA_DIR", os.path.expanduser("~/bbv"))
 CACHE = os.path.join(DATA, "tcgdex")
 MODEL = os.environ.get("SIMILAR_MODEL", "sentence-transformers/all-MiniLM-L6-v2")
 PICKS = 24
+# How often the site is asked before the job gives up. On 17 Nov 2026 one slow answer (over 60 s, when it usually
+# takes under 1 s) failed the whole night; now a slow or broken answer is asked for again, a little later each time.
+TRIES = int(os.environ.get("SIMILAR_TRIES", "4"))
+WAIT_S = int(os.environ.get("SIMILAR_WAIT_S", "30"))
 
 
-def get(url, admin=False):
+def again(what, call):
+    """Runs call(); when the site is slow or answers with an error, waits and tries again (TRIES times in all)."""
+    for n in range(1, TRIES + 1):
+        try:
+            return call()
+        except (urllib.error.URLError, TimeoutError, ConnectionError, OSError, ValueError) as e:
+            if n == TRIES:
+                raise
+            print(f"{what}: try {n} of {TRIES} failed ({type(e).__name__}: {e}); trying again in {WAIT_S * n} s", file=sys.stderr)
+            time.sleep(WAIT_S * n)
+
+
+def get(url, admin=False, timeout=60):
     req = urllib.request.Request(url, headers={"Accept": "application/json", "User-Agent": "bbv-similar"})
     if admin:
         req.add_header("Cookie", f"marcuru_admin={TOKEN}")
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
 
@@ -94,7 +111,7 @@ def describe(card, d):
 
 
 def main():
-    cards = get(f"{SITE}/admin/similar/cards", admin=True)["cards"]
+    cards = again("the vault's card list", lambda: get(f"{SITE}/admin/similar/cards", admin=True, timeout=120))["cards"]
     if len(cards) < 3:
         print("too few cards")
         return 0
@@ -125,9 +142,13 @@ def main():
                 break
         out.append({"id": int(c["id"]), "picks": picks})
     body = json.dumps({"cards": out}).encode()
-    req = urllib.request.Request(f"{SITE}/admin/similar", data=body, method="POST", headers={"Content-Type": "application/json", "Cookie": f"marcuru_admin={TOKEN}", "User-Agent": "bbv-similar"})
-    with urllib.request.urlopen(req, timeout=120) as r:
-        saved = json.load(r).get("saved", 0)
+    def send():
+        # Sending the same picks twice is harmless: the site keeps the newest.
+        req = urllib.request.Request(f"{SITE}/admin/similar", data=body, method="POST", headers={"Content-Type": "application/json", "Cookie": f"marcuru_admin={TOKEN}", "User-Agent": "bbv-similar"})
+        with urllib.request.urlopen(req, timeout=180) as r:
+            return json.load(r).get("saved", 0)
+
+    saved = again("sending tonight's look-alikes", send)
     known = sum(1 for c in cards if c.get("api_id") and os.path.exists(os.path.join(CACHE, c["api_id"].replace(":", "_").replace("/", "_") + ".json")))
     print(f"{saved} cards have look-alikes; {known} of {len(cards)} described from the catalogue")
     return 0

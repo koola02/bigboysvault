@@ -56,8 +56,8 @@ WAITING="$(wc -l < "$WAIT")"
 log "$WAITING file(s) waiting to go to the site"
 if [ "$WAITING" -eq 0 ]; then done_ok "Nothing new to push ($MADE made tonight)"; exit 0; fi
 
-FLY="$(command -v fly || command -v flyctl || true)"
-[ -n "$FLY" ] || { alert "flyctl is not on the VM (expected ~/.fly/bin/fly). $WAITING picture file(s) are waiting to be pushed."; exit 1; }
+FLY=fly   # lib.sh's fly: a time limit, and never holding this job's lock
+[ -n "$FLYCTL_BIN" ] || { alert "flyctl is not on the VM (expected ~/.fly/bin/fly). $WAITING picture file(s) are waiting to be pushed."; exit 1; }
 [ -n "${FLY_API_TOKEN:-}" ] || { alert "FLY_API_TOKEN is empty in ops/env, so pictures can't be pushed. $WAITING file(s) waiting."; exit 1; }
 
 # The site's disk is small (1 GB): never fill it. Before each batch (below), at least 150 MB must stay free after

@@ -18,7 +18,7 @@ fi
 # Back up before every schema change (docs/HANDOFF.md §5): the nightly job may be hours old.
 bash "$OPS_DIR/backup.sh" | tail -1
 log "deploying $FLY_APP"
-fly deploy -a "$FLY_APP" --remote-only --strategy immediate
+FLY_TIMEOUT=2700 fly deploy -a "$FLY_APP" --remote-only --strategy immediate   # lib.sh: 45 minutes at most
 sleep 10
 if curl -sS --max-time 20 "$SITE/healthz" | grep -q '"ok":true'; then log "live: $(fly releases -a "$FLY_APP" | sed -n 2p)"; else alert "Deploy of $FLY_APP finished but /healthz isn't answering"; exit 1; fi
 # The phone, tablet and computer check (docs/HANDOFF.md §6), where this machine has Node, Chrome and the check's packages.

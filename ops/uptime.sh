@@ -83,8 +83,9 @@ if [ "$FAILS" -ge "$NEED" ] && [ ! -f "$RUNG" ]; then
     alert "$SITE could not be reached through Cloudflare for 15 minutes, but the server itself is fine (it answers at its own address). Open the site on your phone: if it loads, visitors are not affected. Last answer: ${OUT:0:60}"
   else
     # What Fly says right now goes into the log, so the reason is on record even after the server restarts.
-    if command -v fly >/dev/null 2>&1; then
-      { echo "--- what Fly says"; timeout 40 fly machine list -a "$FLY_APP" 2>&1 | tail -n 6; timeout 40 fly logs -a "$FLY_APP" --no-tail 2>&1 | tail -n 25; echo "---"; } | cut -c1-300 || true
+    # lib.sh's fly (with FLY_TIMEOUT), not `timeout fly`: that would run flyctl holding this job's lock.
+    if [ -n "$FLYCTL_BIN" ]; then
+      { echo "--- what Fly says"; FLY_TIMEOUT=40 fly machine list -a "$FLY_APP" 2>&1 | tail -n 6; FLY_TIMEOUT=40 fly logs -a "$FLY_APP" --no-tail 2>&1 | tail -n 25; echo "---"; } | cut -c1-300 || true
     fi
     alert "$SITE is DOWN: two checks in a row failed and the server does not answer at its own address either. Last answer: ${OUT:0:90}. What Fly said is in $LOG_DIR/uptime.log on the VM."
   fi

@@ -18,7 +18,7 @@ if [ ! -d "$SRC/.git" ]; then git clone -q "$(git -C "$REPO_DIR" remote get-url 
 cd "$SRC" && git fetch -q origin && git checkout -q -B "$BRANCH" "origin/$BRANCH"
 log "building $(git log --oneline -1) on Fly's builder (a few minutes; nothing is deployed)"
 IMG="registry.fly.io/${FLY_APP:-bigboysvault}:preview"
-if fly deploy -a "${FLY_APP:-bigboysvault}" --build-only --push --remote-only --image-label preview >"$DATA_DIR/staging-build.log" 2>&1    && fly auth docker >/dev/null 2>&1 && docker pull -q "$IMG" >/dev/null; then
+if FLY_TIMEOUT=2700 fly deploy -a "${FLY_APP:-bigboysvault}" --build-only --push --remote-only --image-label preview >"$DATA_DIR/staging-build.log" 2>&1    && fly auth docker >/dev/null 2>&1 && docker pull -q "$IMG" >/dev/null; then
   docker tag "$IMG" bbv-staging
 else
   log "Fly's builder didn't work (see $DATA_DIR/staging-build.log); building here instead, which is slow"

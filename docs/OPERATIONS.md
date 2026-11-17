@@ -95,6 +95,14 @@ The VM's clock is set to Asia/Manila, so the times below are Philippine time.
 - The site itself notices a quiet VM: no good backup or drill report for 30 hours (pictures and
   similar cards: 50 hours; page checks: 1 hour) rings the bell too, so a stopped VM or a broken cron is still noticed.
 - Any job that stops with an error raises an alert on the way out (`ops/lib.sh`), with the line it stopped at.
+- **"Already running" can't go quiet any more.** Each job holds a lock (`~/bbv/<job>.lock`, which also says which run
+  holds it and since when). From 14 to 17 Nov 2026 the picture job stopped every night at "images is already
+  running" while nothing was running: flyctl's background helper ("agent"), started by the 13 Nov run, had kept the
+  job's lock. Now every flyctl call goes through `fly()` in `lib.sh` (a time limit, and never with the lock), a
+  lock held by anything that isn't a run of that job is cleared before the job starts, and a run still going after
+  `LONG_RUN_HOURS` (6) is reported as stuck. Check with `fuser ~/bbv/*.lock`.
+- `similar.py` talks to the site's own address (`ORIGIN`) and asks again when the site is slow (4 tries). A failure
+  says why in the bell; the last error is in `~/bbv/logs/similar-errors.log`.
 - Telegram (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`) or a webhook (`ALERT_WEBHOOK`) in `ops/env` also sends each
   alert to a phone. Needed for "the site is DOWN", which can't reach a site that is down.
 - Logs: `~/bbv/logs/<job>.log` on the VM (`tail -50 ~/bbv/logs/backup.log`). The push details are in
