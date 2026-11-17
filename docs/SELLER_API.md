@@ -87,7 +87,7 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 | `POST /me/listings/{id}` | Change one listing. JSON, any of: `price` (₱, 0 = follow the market), `cond`, `qty`, `status`, `finish`, `notes`, `binder_id` (null = none), `expires_days` (0 = no end), `title`/`set`/`number` (own-photo cards only), `flag` (ask the vault to check a custom card). Returns `card` |
 | `GET /me/listings/{id}` | One of the seller's cards (`{ ok, card }`, with `image_large`), so the "Add to your store" window can open filled in with it |
 | `POST /me/listings/{id}/place` | Multipart: `cond`, `price` (₱, 1 or more), `qty` (0–9999), `notes` (up to 500 letters), `binder_id` (empty: no binder), optional `photo`. A card already in the store goes into a binder through the same window as a new card, and is saved and placed together; a new photo replaces the old one and its kept original. Sellers only |
-| `POST /me/listings/bulk` | `{ ids, action }`: `edit` (same fields as above), `reprice` (`percent`, −90…500), `delete`. Returns `n` |
+| `POST /me/listings/bulk` | `{ ids, action }`: `edit` (the same JSON fields as `POST /me/listings/{id}`), `reprice` (`percent`, −90…500), `delete`. Returns `n` |
 | `POST /me/listings/{id}/renew` | `{ days }` (default 30, 0 = no end date). Puts an expired card back on sale |
 | `POST /me/listings/move` | `{ ids, binder_id }` moves cards into a binder (null = out) |
 | `POST /me/cards` | Add a catalogue card (`{ id, image, image_large, en }`), as before; now allows a second listing of the same card |
