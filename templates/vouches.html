@@ -5,7 +5,7 @@
   <div class="tr-head">
     <p class="eyebrow plate">The community</p>
     <h1 class="h1">Vouches</h1>
-    <p class="tr-sub">What trainers say about the vault.</p>
+    <p class="tr-sub">What trainers say about the stores on {{ nav.brand }}. Each store's own vouches are under Vouches on its page.</p>
     {% if me.is_none() %}<a class="btn" href="/join">Register to vouch</a>{% endif %}
   </div>
   {% if vouches.is_empty() %}<p class="empty" data-empty>No vouches yet. Be the first.</p>{% endif %}

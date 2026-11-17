@@ -24,7 +24,7 @@
           </div>
           {% if a.note.is_empty() %}<p class="ap-note ap-none">No note.</p>{% else %}<p class="ap-note">{{ a.note }}</p>{% endif %}
           {% if !a.photos.is_empty() %}<div class="ap-proof">{% for (big, small) in a.pics() %}<a href="{{ big }}" target="_blank" rel="noopener" aria-label="See this photo bigger"><img src="{{ small }}" width="120" height="120" alt="" loading="lazy"></a>{% endfor %}</div>{% endif %}
-          <div class="ap-acts">
+          <div class="ap-iacts">
             <button type="button" class="btn" data-apply="approve" data-id="{{ a.id }}" data-name="{{ a.name }}" data-full-only>Approve: open their store</button>
             <button type="button" class="btn ghost" data-apply="decline" data-id="{{ a.id }}" data-full-only>Decline</button>
             <a class="btn ghost" href="/admin/messages?t={{ a.thread_id }}">Open the chat</a>

@@ -1851,7 +1851,7 @@ async fn store_id(app: &App, slug: String) -> Result<Option<i64>, (StatusCode, S
     if slug == sellers::VAULT_SLUG {
         return Ok(Some(0));
     }
-    Ok(seller_by_slug(app, slug).await?.map(|m| m.id))
+    Ok(seller_by_slug(app, slug).await?.filter(|m| m.seller && m.profile_ok && !m.blocked).map(|m| m.id))
 }
 
 /// POST /store/{slug}/follow: follow the store, or stop. The vault's store ("vault") is followed like any other.
@@ -1862,6 +1862,9 @@ pub async fn follow(State(app): State<App>, h: HeaderMap, Path(slug): Path<Strin
     };
     let Some(sid) = store_id(&app, slug).await? else { return Ok(fail(StatusCode::NOT_FOUND, "No such store.")) };
     let me = m.id;
+    if over_limit(&app, format!("follow|{me}"), 30) {
+        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of following for now. Please try again in a while."));
+    }
     let following = with_db(&app, move |c| sellers::toggle_follow(c, me, sid)).await?;
     let n = with_db(&app, move |c| sellers::followers(c, sid)).await?;
     // The vault's store page is kept for everyone, with its follower count on it.
@@ -2218,6 +2221,7 @@ pub async fn admin_vault_pay(State(app): State<App>, h: HeaderMap, Json(req): Js
     }
     let (methods, info) = (req.methods.join(","), req.info);
     with_db(&app, move |c| sellers::set_vault_pay(c, &methods, &info)).await?;
+    app.forget();
     Ok(ok(json!({ "ok": true })))
 }
 
@@ -2457,17 +2461,27 @@ pub async fn apply_send(State(app): State<App>, h: HeaderMap, mut mp: Multipart)
     let words = if note.is_empty() { "No note.".to_string() } else { note.clone() };
     let n = pics.len();
     let text = format!("📝 Seller application\n\n{words}{}", if n > 0 { format!("\n\n📷 {n} photo{} below.", if n == 1 { "" } else { "s" }) } else { String::new() });
+    let pics2 = pics.clone();
     let preview = with_db(&app, move |c| {
+        let kept: Vec<(String, String)> = pics2.iter().map(|(l, s, _)| (l.clone(), s.clone())).collect();
+        if sellers::add_application(c, id, &note, &kept, t2.id, now).is_err() {
+            return Ok(None);
+        }
         let first = dm::New { kind: "text".into(), text, ..Default::default() };
         dm::post(c, &t2, id, id, &first, now)?;
-        for (large, small, size) in &pics {
+        for (large, small, size) in &pics2 {
             dm::post(c, &t2, id, id, &dm::New { kind: "photo".into(), media: large.clone(), media_thumb: small.clone(), bytes: *size, ..Default::default() }, now)?;
         }
-        let kept: Vec<(String, String)> = pics.iter().map(|(l, s, _)| (l.clone(), s.clone())).collect();
-        sellers::add_application(c, id, &note, &kept, t2.id, now)?;
-        Ok(dm::preview(&first))
+        Ok(Some(dm::preview(&first)))
     })
     .await?;
+    let Some(preview) = preview else {
+        for (l, s, _) in &pics {
+            admin::remove_upload(&app.uploads, l);
+            admin::remove_upload(&app.uploads, s);
+        }
+        return Ok(fail(StatusCode::CONFLICT, "Your application is with the admins already. Their answer comes in your messages."));
+    };
     crate::messages::after_post(&app, t.clone(), id, id, preview, false, true).await;
     app.forget();
     Ok(ok(json!({ "ok": true, "thread": t.id })))
@@ -2497,7 +2511,7 @@ pub async fn apply_decide(State(app): State<App>, h: HeaderMap, Path(aid): Path<
     let done = with_db(&app, move |c| {
         let Some(a) = sellers::decide_application(c, aid, approve, &reason, by, now)? else { return Ok(None) };
         let text = if approve {
-            "✅ Your seller application is approved! Your store is open: tap your picture at the top, then My store, to put up your first cards.".to_string()
+            "✅ Your seller application is approved! Your store is open: open the menu and tap My store to put up your first cards.".to_string()
         } else if reason.is_empty() {
             "Your seller application wasn't approved this time. You can apply again later from your menu.".to_string()
         } else {
@@ -2537,7 +2551,11 @@ pub async fn bookmark(State(app): State<App>, h: HeaderMap, Json(req): Json<Book
     let (me, kind, id) = (m.id, req.kind, req.id);
     let on = with_db(&app, move |c| match kind.as_str() {
         "card" => {
-            let there: i64 = c.query_row("SELECT COUNT(*) FROM member_cards WHERE id=?1 AND kind='sale'", [id], |r| r.get(0))?;
+            let there: i64 = c.query_row(
+                "SELECT COUNT(*) FROM member_cards k JOIN members m ON m.id=k.member_id WHERE k.id=?1 AND k.kind='sale' AND k.status NOT IN ('Hidden','Expired') AND m.profile_ok=1 AND m.blocked=0",
+                [id],
+                |r| r.get(0),
+            )?;
             if there == 0 && !sellers::saved_ids(c, me)?.contains(&id) {
                 return Ok(None);
             }
@@ -2569,9 +2587,9 @@ pub async fn bookmark(State(app): State<App>, h: HeaderMap, Json(req): Json<Book
 pub async fn bookmark_ids(State(app): State<App>, h: HeaderMap) -> Res {
     let Some(m) = crate::community::current(&app, &h).await? else { return Ok(ok(json!({ "stores": [], "products": [], "cards": [], "count": 0 }))) };
     let id = m.id;
-    let all = with_db(&app, move |c| sellers::bookmarks_of(c, id)).await?;
+    let (all, n) = with_db(&app, move |c| Ok((sellers::bookmarks_of(c, id)?, sellers::bookmark_count(c, id)?))).await?;
     let pick = |k: &str| all.iter().filter(|(kind, _, _)| kind == k).map(|(_, r, _)| *r).collect::<Vec<i64>>();
-    Ok(ok(json!({ "stores": pick("store"), "products": pick("product"), "cards": pick("card"), "count": all.len() })))
+    Ok(ok(json!({ "stores": pick("store"), "products": pick("product"), "cards": pick("card"), "count": n })))
 }
 
 /// A bookmarked store on the Bookmarks page.
@@ -2698,7 +2716,8 @@ pub async fn bookmarks_page(State(app): State<App>, h: HeaderMap) -> Res {
                     let owner: Option<i64> = c.query_row("SELECT member_id FROM member_cards WHERE id=?1", [r], |x| x.get(0)).optional()?;
                     let Some(owner) = owner else { continue };
                     let (Some(k), Some(m)) = (members::card(c, owner, r)?, members::get(c, owner)?) else { continue };
-                    if m.blocked {
+                    // What the card's own page would refuse to show isn't shown here either.
+                    if m.blocked || !m.profile_ok || !k.is_sale() || matches!(k.status.as_str(), "Hidden" | "Expired") {
                         continue;
                     }
                     let open = m.seller && m.profile_ok && !m.on_vacation();
@@ -2928,7 +2947,7 @@ mod tests {
         let slug = members::get(&c, s).unwrap().unwrap().slug;
         // No binders yet: the owner still gets the heading, the button and a word on what binders are for.
         let own = page_as(&c, &slug, None, true);
-        assert!(own.contains("data-bt-edit=\"seller\"") && own.contains("class=\"bt-none\"") && own.contains("/static/binder-tools.js?v=2"), "{own}");
+        assert!(own.contains("data-bt-edit=\"seller\"") && own.contains("class=\"bt-none\"") && own.contains("/static/binder-tools.js?v=3"), "{own}");
         let visitor = page(&c, &slug, None);
         assert!(!visitor.contains("data-bt-edit") && !visitor.contains("binder-tools.js") && !visitor.contains(">Binders<"));
         let b = members::create_member_binder(&c, s, "Fire").unwrap();

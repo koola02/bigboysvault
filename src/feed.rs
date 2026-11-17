@@ -231,6 +231,16 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
         "vouch" => {
             v.headline = format!("vouched for {brand}");
             if let Some(vid) = p.payload["vouch"].as_i64() {
+                // A vouch is for one store (0, the vault's, is the site's own name).
+                let store: Option<String> = rusqlite::OptionalExtension::optional(c
+                    .query_row(
+                        "SELECT CASE WHEN TRIM(s.store_name)<>'' THEN TRIM(s.store_name) ELSE s.name || '''s store' END FROM vouches v JOIN members s ON s.id=v.store_id WHERE v.id=?1 AND v.store_id<>0",
+                        [vid],
+                        |r| r.get(0),
+                    ))?;
+                if let Some(s) = store {
+                    v.headline = format!("vouched for {s}");
+                }
                 v.photos = c.prepare_cached("SELECT path, thumb FROM vouch_images WHERE vouch_id=?1 ORDER BY id LIMIT 4")?.query_map([vid], |r| Ok((0, r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
             }
         }

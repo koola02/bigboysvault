@@ -70,11 +70,15 @@
     head.append(titles, x);
     const body = make('div', 'sv-scroll'); body.append(make('p', 'sv-wait', 'Loading…'));
     panel.append(head, body); d.append(panel); document.body.append(d);
-    const close = () => { d.close(); d.remove(); btn.focus({ preventScroll: true }); };
-    d.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
+    const close = () => {
+      const t = document.getElementById('toast'); if (t && d.contains(t)) document.body.append(t);
+      d.close(); d.remove(); btn.focus({ preventScroll: true });
+    };
+    // Escape closes a photo opened big inside the window first (fb-shell.js does that), then the window.
+    d.addEventListener('cancel', (e) => { e.preventDefault(); if (!d.querySelector('.dm-lightbox')) close(); });
     let downOutside = false;
-    d.addEventListener('pointerdown', (e) => { downOutside = !panel.contains(e.target); });
-    d.addEventListener('click', (e) => { if (downOutside && !panel.contains(e.target)) close(); downOutside = false; });
+    d.addEventListener('pointerdown', (e) => { downOutside = e.target === d; });
+    d.addEventListener('click', (e) => { if (downOutside && e.target === d) close(); downOutside = false; });
     d.showModal(); panel.focus({ preventScroll: true });
 
     async function fill() {
@@ -114,6 +118,8 @@
     const b = e.target.closest('[data-vouches]'); if (!b) return;
     vouches(b);
   });
+  // Arriving from "… left you a review" (the bell): the Vouches window, where reviews are now.
+  if (location.hash === '#vouches') { const b = root.querySelector('[data-vouches]'); if (b) { history.replaceState(null, '', location.pathname + location.search); vouches(b); } }
 
   /* ----- the border colour ----- */
   // Every store starts gold; any colour that shows up on the dark page can be picked. The server checks the same rule.

@@ -122,6 +122,7 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
          CREATE TABLE IF NOT EXISTS bookmarks(
            member_id INTEGER NOT NULL, kind TEXT NOT NULL, ref INTEGER NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(member_id, kind, ref));
          CREATE INDEX IF NOT EXISTS idx_apply_status ON seller_applications(status, id);
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_apply_one_waiting ON seller_applications(member_id) WHERE status='Waiting';
          CREATE UNIQUE INDEX IF NOT EXISTS idx_sf_pair ON store_follows(follower_id, seller_id);
          CREATE INDEX IF NOT EXISTS idx_reviews_seller ON reviews(seller_id, created_at);
          CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_tx ON reviews(transaction_id);
@@ -1551,7 +1552,7 @@ pub fn add_review(c: &Connection, reviewer: i64, transaction_id: i64, rating: i6
     )?;
     let id = c.last_insert_rowid();
     let (name, _) = names(c, reviewer, 0)?;
-    notify(c, seller, "review", &format!("{name} left you a {rating}-star review."), &format!("/store/{}#reviews", slug_of(c, seller)?))?;
+    notify(c, seller, "review", &format!("{name} left you a {rating}-star review."), &format!("/store/{}#vouches", slug_of(c, seller)?))?;
     Ok(Ok(id))
 }
 
@@ -1755,7 +1756,15 @@ pub fn bookmarks_of(c: &Connection, member: i64) -> rusqlite::Result<Vec<(String
 
 /// How many things one trainer bookmarked: the number beside Bookmarks in the menu.
 pub fn bookmark_count(c: &Connection, member: i64) -> rusqlite::Result<i64> {
-    c.query_row("SELECT (SELECT COUNT(*) FROM bookmarks WHERE member_id=?1) + (SELECT COUNT(*) FROM listing_saves WHERE member_id=?1)", [member], |r| r.get(0))
+    c.query_row(
+        "SELECT (SELECT COUNT(*) FROM bookmarks b WHERE b.member_id=?1 AND (
+                   (b.kind='store' AND (b.ref=0 OR EXISTS(SELECT 1 FROM members m WHERE m.id=b.ref AND m.blocked=0)))
+                OR (b.kind='product' AND EXISTS(SELECT 1 FROM products p WHERE p.id=b.ref))))
+              + (SELECT COUNT(*) FROM listing_saves s JOIN member_cards k ON k.id=s.card_id JOIN members m ON m.id=k.member_id
+                 WHERE s.member_id=?1 AND m.blocked=0 AND m.profile_ok=1 AND k.kind='sale' AND k.status NOT IN ('Hidden','Expired'))",
+        [member],
+        |r| r.get(0),
+    )
 }
 
 pub fn saved_ids(c: &Connection, member: i64) -> rusqlite::Result<Vec<i64>> {

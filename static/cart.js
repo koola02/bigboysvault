@@ -88,7 +88,8 @@
   const close = () => {
     const inside = drawer.contains(document.activeElement);
     drawer.hidden = true; scrim.hidden = true; fab.setAttribute('aria-expanded', 'false'); document.body.classList.remove('cart-open'); badge();
-    const back = opener && opener.isConnected ? opener : fab; opener = null;
+    let back = opener && opener.isConnected ? opener : fab; opener = null;
+    if (!back.getClientRects().length) back = [...document.querySelectorAll('[data-menu-toggle]')].find((b) => b.getClientRects().length) || back;
     if (inside && !back.hidden) back.focus();
   };
   fab.addEventListener('click', () => { if (drawer.hidden) { opener = fab; open(); } else close(); });

@@ -276,7 +276,7 @@ As of 12 November 2026, behind the new-look switch:
 - **Binders belong to stores.** The vault's binders are its collections (Legendary Collections, Pikachu Set, Mew &
   Mewtwo, Japanese, Playables, Favorites, Trainers, Vintage, Affordable Common/Uncommon, E X Cards). Big Boys Vault
   is a store: `/store/vault` (store::vault_store, templates/store_vault.html; the address is reserved, and a trainer
-  who held it is moved), listed first on /stores, its binders as a grid (2 per row below 700px, 3 from 700px; the
+  who held it is moved), listed on /stores like every other store (by its latest card, since 18 Nov 2026), its binders as a grid (2 per row below 700px, 3 from 700px; the
   same `binder_tile.html` as sellers' binders), then everything in the vault. A vault binder keeps its address
   `/collections/{handle}`; in the new look it opens under a sticky bar with an X back to /store/vault. A seller's
   binders show the same way on their store, and a seller binder (`/store/{slug}/binders/{bslug}`) opens as its own

@@ -102,16 +102,23 @@ The same card can be listed more than once (say a Near Mint and a Lightly Played
 | `POST /me/notifications/prefs` | `{ event, site, email, push }`. Events: `my_order` (the buyer's news: accepted, declined, countered, replied, paid, ran out, off sale), `follow`, `view`, `inquiry`, `offer`, `reservation`, `order`, `sale`, `price`, `expiry`, `status`, `announcement`. `inquiry`, `offer` and `reservation` are the seller's side only; a reservation that runs out tells both the buyer and the seller. Also `{ address }` saves the email address and returns `{ ok, email }` |
 | `GET /api/notifications`, `POST /api/notifications/read` | The bell, as before |
 | `POST /api/notifications/push` | Saves a Web Push subscription (`{ endpoint, keys: { p256dh, auth } }`, or `remove: true`) |
-| `POST /api/cards/{id}/save` | Save a card for later, or unsave. Returns `saved` |
+| `POST /api/cards/{id}/save` | Save a card for later, or unsave. Returns `saved` (the same saved listing a Bookmark is; see below) |
+| `GET /me/bookmarks` | The Bookmarks page: stores, then cards under the store each came from, with Add to cart |
+| `POST /me/bookmarks` | `{ kind: "store" \| "product" \| "card", id }`: bookmark or take it off. A store's id is the seller's, 0 for the vault's; a seller's card is a saved listing. Returns `on`, `count` |
+| `GET /me/bookmarks/ids` | What the visitor bookmarked (`stores`, `products`, `cards`, `count`), for pages kept for everyone |
+| `GET /me/sell`, `POST /me/sell` | Apply as a seller: multipart `note` and up to 8 `proof` photos, both optional. Posted into the trainer's chat with the vault; one waiting application at a time. Returns `thread` |
+| `POST /admin/applications/{id}` | `{ action: "approve" \| "decline", reason }`, full admins: approving switches selling on; the answer goes into the application's chat |
+| `POST /admin/store/border` | `{ border }`: the vault's store border colour (full admins). Sellers send `store_border` with `/me/settings` |
 
 ## The public store
 
 | Route | What |
 |---|---|
-| `GET /stores` (also `/sellers`) | Stores with cards on sale, busiest first |
+| `GET /stores` (also `/sellers`) | Every store with cards on sale, the vault's among them, drawn alike: the one that last put up or changed a card first |
 | `GET /store/{slug}` | A store: cover, name, status banner, stats from real data, links, ways to pay, binders, cards on sale, reviews. Blocked and not-yet-approved stores are seen only by their owner and the vault's staff |
 | `GET /store/{slug}/binders/{binder}` | One binder (`Private` only for the owner) |
-| `POST /store/{slug}/follow` | Follow or unfollow. Returns `following`, `followers` |
+| `GET /store/{slug}/follow`, `POST /store/{slug}/follow` | Whether the visitor follows the store; follow or unfollow. `vault` is the vault's store (its admins are told). Returns `following`, `followers` |
+| `GET /store/{slug}/vouches` | The store's Vouches window: vouches written for it and, for a seller, the reviews from its finished sales |
 | `POST /store/{slug}/reserve` | `{ card_id, qty, message }`. Refused for the seller's own cards, on vacation, when not enough copies are free, or with an open reservation already |
 | `POST /store/{slug}/offer` | `{ card_id, qty, amount, message }` |
 | `POST /store/{slug}/ask` | `{ card_id?, message }` |

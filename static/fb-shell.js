@@ -346,7 +346,8 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     img.addEventListener('click', (ev) => { const r = img.getBoundingClientRect(), fx = (ev.clientX - r.left) / r.width, fy = (ev.clientY - r.top) / r.height; const big = o.classList.toggle('in'); if (big) requestAnimationFrame(() => { o.scrollLeft = img.offsetWidth * fx - o.clientWidth / 2; o.scrollTop = img.offsetHeight * fy - o.clientHeight / 2; }); });
     o.addEventListener('click', (ev) => { if (ev.target === o || ev.target === x) close(); });
     document.addEventListener('keydown', esc);
-    document.body.append(o); x.focus();
+    // Inside an open window (a store's Vouches), the photo goes in that window, or it would sit behind it.
+    (z.closest('dialog[open]') || document.body).append(o); x.focus();
   });
 
   /* ---------- Marketplace: more cards arrive as you scroll, and the filters stay open on a wide screen ---------- */

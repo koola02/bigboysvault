@@ -853,7 +853,7 @@ mod tests {
         assert!(binder.contains("class=\"wrap mk mk-bpage\"") && binder.contains("<form class=\"filters\"") && binder.contains("id=\"grid\""), "its search and cards stay");
         assert!(!binder.contains("<p class=\"sub\">"));
         // Full admins arrange its cards right there: the button is in every visitor's page (it is kept), hidden unless they are signed in.
-        assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=2"));
+        assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=3"));
         // The Vault (all cards) and a search: no bar.
         for (base, title) in [("/search", "All cards"), ("/search", "Results for “pika”")] {
             let other = page(base, title, 3);
