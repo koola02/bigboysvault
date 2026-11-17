@@ -495,6 +495,7 @@ mod tests {
             order: 0,
             store: 0,
             lid: 0,
+            time: 0,
         }
     }
 

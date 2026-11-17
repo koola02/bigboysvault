@@ -864,28 +864,42 @@ pub fn related(c: &Connection, me: &MemberCard, n: usize) -> rusqlite::Result<Ve
     Ok(picks.into_iter().filter_map(|i| pool.get_mut(i.checked_sub(1)?)?.take()).collect())
 }
 
+/// When a store's card was put up for sale, in seconds, for The Vault page's newest-first order (`market_lines`; `e` is
+/// each card's first entry in its history, `card_events`). A card added through Add a card has "listed" as its first
+/// entry. An older card goes by the earliest thing known about it (its first entry or its last change), and failing
+/// both, the day its seller joined.
+const LISTED_AT: &str = "COALESCE(MIN(NULLIF(c.updated_at,0), e.first), NULLIF(c.updated_at,0), e.first, m.created_at, 0)";
+
 /// Every seller's card that can be bought right now, for The Vault page's card finder (`/vault.tsv`, after the vault's
 /// own catalogue) and Ask the Vault: one `S` line per store, the stores with the most cards first, then one `M` line per
-/// listing, newest first. A card is in when it is open for sale (`OPEN_FOR_SALE`) and has a copy left that no open
-/// reservation holds.
+/// listing, newest first, each with the day it was listed (`LISTED_AT`). A card is in when it is open for sale
+/// (`OPEN_FOR_SALE`) and has a copy left that no open reservation holds.
 pub fn market_lines(c: &Connection) -> rusqlite::Result<String> {
     use std::collections::HashMap;
-    let mut st = c.prepare(&open_sql(" ORDER BY c.id DESC"))?;
-    let rows = st.query_map([now()], open_row)?;
-    let (mut cards, mut stores): (Vec<(MemberCard, i64)>, HashMap<i64, vault_search::Store>) = (vec![], HashMap::new());
+    let mut st = c.prepare(&format!(
+        "SELECT {}, m.slug, m.store_name, m.name, m.avatar, {LEFT}, {LISTED_AT} AS listed
+         FROM member_cards c JOIN members m ON m.id=c.member_id
+         LEFT JOIN (SELECT card_id, MIN(created_at) AS first FROM card_events GROUP BY card_id) e ON e.card_id=c.id
+         WHERE {OPEN_FOR_SALE}
+         ORDER BY listed DESC, c.id DESC",
+        members::CARD_COLS
+    ))?;
+    let n = members::CARD_N;
+    let rows = st.query_map([now()], |r| Ok((open_row(r)?, r.get::<_, i64>(n + 5)?)))?;
+    let (mut cards, mut stores): (Vec<(MemberCard, i64, i64)>, HashMap<i64, vault_search::Store>) = (vec![], HashMap::new());
     for row in rows {
-        let OpenListing { card: k, store: s, left } = row?;
+        let (OpenListing { card: k, store: s, left }, listed) = row?;
         if left <= 0 {
             continue;
         }
         stores.entry(k.member_id).or_insert(s).count += 1;
-        cards.push((k, left));
+        cards.push((k, left, listed));
     }
     let mut order: Vec<vault_search::Store> = stores.into_values().collect();
     order.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase())).then(a.id.cmp(&b.id)));
     let at: HashMap<i64, u16> = order.iter().enumerate().map(|(i, s)| (s.id, i as u16 + 1)).collect();
     let mut out: String = order.iter().enumerate().map(|(i, s)| vault_search::store_line(i as u16 + 1, s)).collect();
-    for (k, left) in cards {
+    for (k, left, listed) in cards {
         let key = catalogue_key(&k.card_id);
         let (variant, finish) = variant_of(&k);
         out += &vault_search::market_line(&vault_search::Card {
@@ -908,6 +922,7 @@ pub fn market_lines(c: &Connection) -> rusqlite::Result<String> {
             order: 0,
             store: at.get(&k.member_id).copied().unwrap_or(0),
             lid: k.id,
+            time: listed,
         });
     }
     Ok(out)
@@ -3025,6 +3040,29 @@ mod tests {
         let b2 = create(&c, "Buyer Two", "h").unwrap().unwrap();
         reserve(&c, b2, s, card, 1, "").unwrap().unwrap();
         assert_eq!(ask_tile(&c, card).unwrap(), None, "every copy is spoken for");
+    }
+
+    #[test]
+    fn a_store_card_goes_by_the_day_it_was_listed() {
+        let c = db();
+        let (s, _, card) = seller_with_card(&c);
+        let time = |id: i64| vault_search::parse_market(&market_lines(&c).unwrap()).2.iter().find(|x| x.lid == id).map(|x| x.time);
+        let listed: i64 = c.query_row("SELECT created_at FROM card_events WHERE card_id=?1 AND kind='listed'", [card], |r| r.get(0)).unwrap();
+        assert!(listed > 0);
+        assert_eq!(time(card), Some(listed), "the moment Add a card put it up");
+        // Changing it later doesn't make it new again.
+        c.execute("UPDATE member_cards SET updated_at=?2 WHERE id=?1", [card, listed + 5000]).unwrap();
+        log_event(&c, s, card, "stock", "2 → 3").unwrap();
+        assert_eq!(time(card), Some(listed));
+        // A card from before "listed" was kept: the earliest thing known about it.
+        c.execute("DELETE FROM card_events WHERE card_id=?1", [card]).unwrap();
+        c.execute("INSERT INTO card_events(member_id,card_id,kind,detail,created_at) VALUES(?1,?2,'stock','',?3)", [s, card, listed - 300]).unwrap();
+        assert_eq!(time(card), Some(listed - 300), "its first entry, from before its last change");
+        c.execute("DELETE FROM card_events WHERE card_id=?1", [card]).unwrap();
+        assert_eq!(time(card), Some(listed + 5000), "no history: its last change");
+        c.execute("UPDATE member_cards SET updated_at=0 WHERE id=?1", [card]).unwrap();
+        c.execute("UPDATE members SET created_at=?2 WHERE id=?1", [s, 1_700_000_000]).unwrap();
+        assert_eq!(time(card), Some(1_700_000_000), "nothing known about it: the day its seller joined");
     }
 
     #[test]

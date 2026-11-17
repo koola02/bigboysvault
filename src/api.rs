@@ -160,8 +160,9 @@ pub async fn cards_file(State(app): State<App>, headers: HeaderMap) -> Res {
     Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8".to_string()), (header::CACHE_CONTROL, TSV_CACHE.to_string()), (header::ETAG, tag)], (*body).clone()).into_response())
 }
 
-/// Every card for sale on the site: the vault's catalogue (`/cards.tsv`, unchanged) and then every seller's card that can
-/// be bought now (`sellers::market_lines`), read with `vault_search::parse_market`. The Vault page and Ask the Vault both
+/// Every card for sale on the site: the vault's catalogue (as `/cards.tsv`, with each card's date) and then every seller's
+/// card that can be bought now, with the day it was listed (`sellers::market_lines`), read with
+/// `vault_search::parse_market`, so everyone's cards can be shown newest first. The Vault page and Ask the Vault both
 /// use it. Kept with its ETag on the first line (take it off with `market_text`), so a visitor's revalidation of
 /// `/vault.tsv` is answered without reading the whole file again. Any change empties the cache, the sellers' changes included.
 pub(crate) async fn market(app: &App) -> Result<Arc<String>, (StatusCode, String)> {
@@ -170,7 +171,7 @@ pub(crate) async fn market(app: &App) -> Result<Arc<String>, (StatusCode, String
         return Ok(hit);
     }
     let since = app.change_count();
-    let vault = catalogue(app).await?;
+    let vault = with_db(app, db::catalogue_dated).await?;
     let stores = with_db(app, marcuru_rs::sellers::market_lines).await?;
     let body = format!("{vault}{stores}");
     let kept = Arc::new(format!("{}\n{body}", fingerprint(&body)));
