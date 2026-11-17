@@ -160,8 +160,9 @@ pub async fn cards_file(State(app): State<App>, headers: HeaderMap) -> Res {
     Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8".to_string()), (header::CACHE_CONTROL, TSV_CACHE.to_string()), (header::ETAG, tag)], (*body).clone()).into_response())
 }
 
-/// The Vault page's file for the card finder: the vault's catalogue (`/cards.tsv`, unchanged) and then every seller's card
-/// that can be bought now (`sellers::market_lines`). Kept with its ETag on the first line, so a visitor's revalidation
+/// The Vault page's file for the card finder: the vault's catalogue (as `/cards.tsv`, with each card's date) and then every
+/// seller's card that can be bought now, with the day it was listed (`sellers::market_lines`), so the finder can show
+/// everyone's cards newest first. Kept with its ETag on the first line, so a visitor's revalidation
 /// is answered without reading the whole file again. Any change empties the cache, the sellers' changes included.
 pub async fn vault_file(State(app): State<App>, headers: HeaderMap) -> Res {
     const KEY: &str = "vault.tsv";
@@ -169,7 +170,7 @@ pub async fn vault_file(State(app): State<App>, headers: HeaderMap) -> Res {
         Some(hit) => hit,
         None => {
             let since = app.change_count();
-            let vault = catalogue(&app).await?;
+            let vault = with_db(&app, db::catalogue_dated).await?;
             let stores = with_db(&app, marcuru_rs::sellers::market_lines).await?;
             let body = format!("{vault}{stores}");
             let kept = Arc::new(format!("{}\n{body}", fingerprint(&body)));

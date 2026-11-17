@@ -97,7 +97,9 @@ one file on its volume. Don't add a second machine without moving those first.
 
 - **Catalogue:** `/cards.tsv` (the vault's cards) and `/vault.tsv` (those plus every store card that can be bought
   now) are whole lists in one compact text file, built by `db.rs` and kept in memory. The finder downloads the
-  list and searches in the browser.
+  list and searches in the browser. `/vault.tsv` also gives each card's date on a `T` line after its card line (a
+  finder from before dates skips those lines), so The Vault shows everyone's cards newest first; `/cards.tsv` has no
+  dates and keeps the owner's order.
 - **The card window:** a link to `/products/…` or `/trainers/{id}/cards/{id}` opens over the page
   (`fb-shell.js`, loading `?part=1`). The address changes, so links can be shared.
 - **Binders belong to stores.** The vault's binders are its collections (`/collections/{handle}`); a seller's are at
@@ -157,7 +159,7 @@ Environment variables: `DATABASE`, `UPLOADS`, `PORT` (3000 locally), `HOST`, `AD
 For real data, point `DATABASE` at a copy of a backup (never at the only copy).
 
 ### Tests
-- **Rust:** `cargo test` (116 in the library, 43 in the binary) and `cargo test -p vault-search` (21).
+- **Rust:** `cargo test` (116 in the library, 43 in the binary) and `cargo test -p vault-search` (24).
 - **The phone, tablet and computer check:** `tests/browser/smoke.mjs` opens the site in Chrome at phone, tablet and
   computer size and walks a buyer's path: home, The Vault, a search, a card in its window and on its page, the cart, "Send
   order", then the other main pages. On each it checks that the page opened, nothing sticks out sideways, no

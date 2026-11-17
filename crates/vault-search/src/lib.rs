@@ -35,6 +35,9 @@ pub struct Card {
     pub store: u16,
     /// A store's card is one listing (`/trainers/{seller}/cards/{lid}`). 0 for the vault's own cards.
     pub lid: i64,
+    /// When it was put up for sale, in seconds since 1970: the day the vault added it, or the day a store listed it.
+    /// Sent as a `T` line after the card's line (see `card_line`). 0 when the file doesn't say, as in `/cards.tsv`.
+    pub time: i64,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -57,6 +60,16 @@ pub struct Store {
     pub img: String,
     /// How many of the store's cards the file has. Counted when the file is read, not sent.
     pub count: u32,
+}
+
+/// The "Sold by" buttons after All, as (`Card::store`, how many cards): every seller with cards, the vault (0) among the
+/// stores like any of them, most cards first, a tie by name. `vault` is how many cards the vault shows; it is always
+/// there, and a store with no cards isn't.
+pub fn sellers_by_count<S: Borrow<Store>>(vault: usize, brand: &str, stores: &[S]) -> Vec<(u16, usize)> {
+    let mut out: Vec<(u16, usize, String)> = vec![(0, vault, brand.to_lowercase())];
+    out.extend(stores.iter().enumerate().map(|(i, s)| (i, s.borrow())).filter(|(_, s)| s.count > 0).map(|(i, s)| (i as u16 + 1, s.count as usize, s.title.to_lowercase())));
+    out.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.2.cmp(&b.2)));
+    out.into_iter().map(|(at, n, _)| (at, n)).collect()
 }
 
 impl Store {
@@ -490,7 +503,11 @@ pub fn search_market<C: Borrow<Card>, S: Borrow<Store>>(cards: &[C], stores: &[S
         hits = picked(&|c| fits(c, &from, &near));
         typo = !hits.is_empty();
     }
-    // Typed words and no sort asked for: the best match comes first, and the owner's order settles ties.
+    // Every seller is treated alike: the default order is newest first, whoever sells the card (the day the vault added
+    // it, or the day a store listed it), and newest first also settles every tie in the other orders. Cards with no
+    // date keep the file's order, so `/cards.tsv` (no dates) stays in the owner's order.
+    let newest = |a: usize, b: usize| card(b).time.cmp(&card(a).time).then(card(a).order.cmp(&card(b).order));
+    // Typed words and no sort asked for: the best match comes first.
     // A word that only picked a store says nothing about which of its cards matches best, so it doesn't count here.
     let query: Vec<String> = f.words.iter().zip(&from).filter(|(_, s)| s.is_none()).map(|(w, _)| w.clone()).chain(names.iter().flat_map(|(w, _)| w.iter().cloned())).collect();
     if f.sort.is_none() && sort == Sort::Newest && !query.is_empty() && hits.len() > 1 {
@@ -498,42 +515,23 @@ pub fn search_market<C: Borrow<Card>, S: Borrow<Store>>(cards: &[C], stores: &[S
         let heads: Vec<String> = hits.iter().map(|&i| norm(&title_and_set(&card(i).title, &card(i).set).0)).collect();
         let scores = relevance(&query, &all, &hits, &heads);
         let mut ranked: Vec<(usize, f64)> = hits.iter().copied().zip(scores).collect();
-        ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(card(a.0).order.cmp(&card(b.0).order)));
+        ranked.sort_by(|a, b| b.1.total_cmp(&a.1).then(newest(a.0, b.0)));
         hits = ranked.into_iter().map(|(i, _)| i).collect();
         return Found { hits, typo };
     }
     // Either way round, cards with no price yet come last.
     let unpriced = |i: usize| card(i).price <= 0.0;
     match f.sort.unwrap_or(sort) {
-        Sort::Newest => {
-            hits.sort_by_key(|&i| card(i).order);
-            hits = mix_in_stores(&hits, |i| card(i).store > 0);
+        Sort::Newest => hits.sort_by(|&a, &b| newest(a, b)),
+        Sort::PriceAsc => hits.sort_by(|&a, &b| unpriced(a).cmp(&unpriced(b)).then(card(a).price.total_cmp(&card(b).price)).then(newest(a, b))),
+        Sort::PriceDesc => hits.sort_by(|&a, &b| unpriced(a).cmp(&unpriced(b)).then(card(b).price.total_cmp(&card(a).price)).then(newest(a, b))),
+        Sort::Name => {
+            let mut named: Vec<(String, usize)> = hits.iter().map(|&i| (card(i).title.to_lowercase(), i)).collect();
+            named.sort_by(|a, b| a.0.cmp(&b.0).then(newest(a.1, b.1)));
+            hits = named.into_iter().map(|(_, i)| i).collect();
         }
-        Sort::PriceAsc => hits.sort_by(|&a, &b| unpriced(a).cmp(&unpriced(b)).then(card(a).price.total_cmp(&card(b).price)).then(card(a).order.cmp(&card(b).order))),
-        Sort::PriceDesc => hits.sort_by(|&a, &b| unpriced(a).cmp(&unpriced(b)).then(card(b).price.total_cmp(&card(a).price)).then(card(a).order.cmp(&card(b).order))),
-        Sort::Name => hits.sort_by_cached_key(|&i| (card(i).title.to_lowercase(), card(i).order)),
     }
     Found { hits, typo }
-}
-
-/// How many of the vault's cards come before each store card in the default order.
-pub const VAULT_RUN: usize = 3;
-
-/// The default order with the stores' cards in it: the vault's own order, with one store card (newest first) after
-/// every `VAULT_RUN` of the vault's, until the store cards run out; the rest of the vault follows. Should there be more
-/// store cards than that, the rest of them come last. `hits` is already in catalogue order; nothing else is reordered.
-fn mix_in_stores(hits: &[usize], from_store: impl Fn(usize) -> bool) -> Vec<usize> {
-    let (vault, stores): (Vec<usize>, Vec<usize>) = hits.iter().partition(|&&i| !from_store(i));
-    let mut stores = stores.into_iter();
-    let mut out = Vec::with_capacity(hits.len());
-    for (n, v) in vault.into_iter().enumerate() {
-        out.push(v);
-        if (n + 1) % VAULT_RUN == 0 {
-            out.extend(stores.next());
-        }
-    }
-    out.extend(stores);
-    out
 }
 
 /// How well each hit matches the typed words: a BM25-style score.
@@ -705,8 +703,14 @@ fn card_fields(c: &Card) -> String {
     )
 }
 
+/// The line with a card's date (`Card::time`), right after the card's own line; nothing when it has none. A `T` line
+/// is a line of its own, so a finder from before dates skips it and still reads every card.
+fn time_line(c: &Card) -> String {
+    if c.time > 0 { format!("T\t{}\n", c.time) } else { String::new() }
+}
+
 pub fn card_line(c: &Card) -> String {
-    format!("C\t{}", card_fields(c))
+    format!("C\t{}{}", card_fields(c), time_line(c))
 }
 
 /// A store on The Vault page's file. `at` is its place in the file's store list plus one: what its cards' `M` lines say.
@@ -714,9 +718,17 @@ pub fn store_line(at: u16, s: &Store) -> String {
     format!("S\t{at}\t{}\t{}\t{}\t{}\n", s.id, clean(&s.slug), clean(&s.title), clean(&s.img))
 }
 
-/// One card a store has for sale: its store (`Card::store`), its listing number, then the same fields as a vault card.
+/// One card a store has for sale: its store (`Card::store`), its listing number, then the same fields as a vault card,
+/// and its date as for a vault card.
 pub fn market_line(c: &Card) -> String {
-    format!("M\t{}\t{}\t{}", c.store, c.lid, card_fields(c))
+    format!("M\t{}\t{}\t{}{}", c.store, c.lid, card_fields(c), time_line(c))
+}
+
+/// A card's date from its `T` line. `last` is the card read from the line just before, if that line was a card.
+fn read_time(t: &str, last: Option<&mut Card>) {
+    if let (Some(c), Ok(t)) = (last, t.parse::<i64>()) {
+        c.time = t.max(0);
+    }
 }
 
 /// A card from the fields after a line's first ones. Older files have no notes at the end.
@@ -753,22 +765,29 @@ fn read_card(fields: &[&str], order: u32) -> Option<Card> {
         order,
         store: 0,
         lid: 0,
+        time: 0,
     })
 }
 
 /// Read the catalogue file. It's plain tab-separated text, which keeps the browser download small and quick to read.
-/// Only the vault's binders (`B`) and cards (`C`): any other line, like a store's (`S`, `M`), is left out.
+/// Only the vault's binders (`B`) and cards (`C`), with a card's date (`T`) when the file has one: any other line,
+/// like a store's (`S`, `M`), is left out.
 pub fn parse(data: &str) -> (Vec<Binder>, Vec<Card>) {
-    let (mut binders, mut cards) = (vec![], vec![]);
+    let (mut binders, mut cards): (Vec<Binder>, Vec<Card>) = (vec![], vec![]);
+    // Whether the line just read was a card, so a `T` line after it is that card's date.
+    let mut after_card = false;
     for line in data.lines() {
         let f: Vec<&str> = line.split('\t').collect();
+        let was_card = std::mem::take(&mut after_card);
         match f.as_slice() {
             ["B", handle, title, img, count] => binders.push(Binder { handle: handle.to_string(), title: title.to_string(), img: img.to_string(), count: count.parse().unwrap_or(0) }),
             ["C", rest @ ..] => {
                 if let Some(c) = read_card(rest, cards.len() as u32) {
                     cards.push(c);
+                    after_card = true;
                 }
             }
+            ["T", t] => read_time(t, cards.last_mut().filter(|_| was_card)),
             _ => {}
         }
     }
@@ -777,16 +796,18 @@ pub fn parse(data: &str) -> (Vec<Binder>, Vec<Card>) {
 
 /// Read The Vault page's file (`/vault.tsv`): the vault's binders and cards as `parse` reads them, then the stores
 /// (`S` lines) and every card they have for sale (`M` lines). The stores' cards come after the vault's in the list, in
-/// the file's order (newest first). Typing a store's name finds its cards when searched with `search_market`, which is
-/// given the stores; the name is not in the cards' own text. The default order mixes them in among the vault's (see
-/// `mix_in_stores`).
+/// the file's order. Typing a store's name finds its cards when searched with `search_market`, which is given the
+/// stores; the name is not in the cards' own text. Each card's date (`T`) puts everyone's cards newest first together.
 pub fn parse_market(data: &str) -> (Vec<Binder>, Vec<Store>, Vec<Card>) {
     let (binders, mut cards) = parse(data);
     let mut stores: Vec<Store> = vec![];
     // What the file numbers each store, and its place in `stores` plus one.
     let mut index: Vec<(u16, u16)> = vec![];
+    // Whether the line just read was a store's card, so a `T` line after it is that card's date.
+    let mut after_card = false;
     for line in data.lines() {
         let f: Vec<&str> = line.split('\t').collect();
+        let was_card = std::mem::take(&mut after_card);
         match f.as_slice() {
             ["S", at, id, slug, title, img] => {
                 let (Ok(at), Ok(id)) = (at.parse::<u16>(), id.parse::<i64>()) else { continue };
@@ -804,8 +825,10 @@ pub fn parse_market(data: &str) -> (Vec<Binder>, Vec<Store>, Vec<Card>) {
                     c.lid = lid;
                     stores[usize::from(store) - 1].count += 1;
                     cards.push(c);
+                    after_card = true;
                 }
             }
+            ["T", t] => read_time(t, cards.last_mut().filter(|_| was_card)),
             _ => {}
         }
     }
@@ -817,7 +840,7 @@ mod tests {
     use super::*;
 
     fn tiny(title: &str, variant: &str, finish: &str, lang: &str, price: f64) -> Card {
-        Card { notes: String::new(), sym: String::new(), finish: finish.into(), lang: lang.into(), handle: norm(title), title: title.into(), variant: variant.into(), set: String::new(), no: String::new(), price, img: String::new(), grade: String::new(), qty: 1, binders: vec![], tags: String::new(), text: norm(title), order: 0, store: 0, lid: 0 }
+        Card { notes: String::new(), sym: String::new(), finish: finish.into(), lang: lang.into(), handle: norm(title), title: title.into(), variant: variant.into(), set: String::new(), no: String::new(), price, img: String::new(), grade: String::new(), qty: 1, binders: vec![], tags: String::new(), text: norm(title), order: 0, store: 0, lid: 0, time: 0 }
     }
 
     #[test]
@@ -973,7 +996,7 @@ mod tests {
     fn deck() -> Vec<Card> {
         let mut data = String::new();
         for (t, p, g, b) in [("Pikachu VMAX", 500.0, "", "0"), ("Charizard ex", 9000.0, "PSA 10", "0,1"), ("Umbreon VMAX", 1500.0, "", "1"), ("ピカチュウ", 200.0, "", "")] {
-            data += &card_line(&Card { notes: String::new(), sym: String::new(), finish: String::new(), lang: String::new(), handle: norm(t).replace(' ', "-"), title: t.into(), variant: String::new(), set: "Test Set".into(), no: "7".into(), price: p, img: "/x.jpg".into(), grade: g.into(), qty: 1, binders: b.split(',').filter_map(|x| x.parse().ok()).collect(), tags: String::new(), text: String::new(), order: 0, store: 0, lid: 0 });
+            data += &card_line(&Card { notes: String::new(), sym: String::new(), finish: String::new(), lang: String::new(), handle: norm(t).replace(' ', "-"), title: t.into(), variant: String::new(), set: "Test Set".into(), no: "7".into(), price: p, img: "/x.jpg".into(), grade: g.into(), qty: 1, binders: b.split(',').filter_map(|x| x.parse().ok()).collect(), tags: String::new(), text: String::new(), order: 0, store: 0, lid: 0, time: 0 });
         }
         parse(&data).1
     }
@@ -1052,7 +1075,7 @@ mod tests {
 
     #[test]
     fn round_trip_survives_tabs_and_keeps_order() {
-        let c = Card { sym: String::new(), finish: String::new(), lang: String::new(), notes: "LP-NM".into(), handle: "a".into(), title: "A\tB".into(), variant: "x\ny".into(), set: String::new(), no: String::new(), price: 12.5, img: String::new(), grade: String::new(), qty: 3, binders: vec![2, 5], tags: String::new(), text: String::new(), order: 0, store: 0, lid: 0 };
+        let c = Card { sym: String::new(), finish: String::new(), lang: String::new(), notes: "LP-NM".into(), handle: "a".into(), title: "A\tB".into(), variant: "x\ny".into(), set: String::new(), no: String::new(), price: 12.5, img: String::new(), grade: String::new(), qty: 3, binders: vec![2, 5], tags: String::new(), text: String::new(), order: 0, store: 0, lid: 0, time: 0 };
         let b = Binder { handle: "h".into(), title: "T".into(), img: "/i".into(), count: 4 };
         let (bs, cs) = parse(&(binder_line(&b) + &card_line(&c) + &card_line(&c)));
         assert_eq!(bs, vec![b]);
@@ -1096,28 +1119,67 @@ mod tests {
     }
 
     #[test]
-    fn the_default_order_puts_a_store_card_after_every_three_of_the_vaults() {
+    fn the_default_order_is_newest_first_whoever_sells_it() {
+        // Seven vault cards, v0 the newest; Shop lists s0 and s1, Gym lists s2 (the newest of all).
         let mut data = String::new();
         for i in 0..7 {
-            data += &card_line(&Card { handle: format!("v-{i}"), title: format!("v{i}"), price: 10.0 + f64::from(i), qty: 1, ..Default::default() });
+            data += &card_line(&Card { handle: format!("v-{i}"), title: format!("v{i}"), price: 10.0 + f64::from(i), qty: 1, time: 1000 - 100 * i64::from(i), ..Default::default() });
         }
         data += &store_line(1, &Store { id: 9, slug: "shop".into(), title: "Shop".into(), ..Default::default() });
-        for i in 0..3 {
-            data += &market_line(&Card { store: 1, lid: 100 + i64::from(i), title: format!("s{i}"), price: 500.0 - 100.0 * f64::from(i), qty: 1, ..Default::default() });
+        data += &store_line(2, &Store { id: 8, slug: "gym".into(), title: "Gym".into(), ..Default::default() });
+        for (store, lid, title, price, time) in [(1, 100, "s0", 500.0, 950), (1, 101, "s1", 400.0, 650), (2, 102, "s2", 300.0, 1100)] {
+            data += &market_line(&Card { store, lid, title: title.into(), price, qty: 1, time, ..Default::default() });
         }
         let (_, stores, cards) = parse_market(&data);
+        assert_eq!(cards.iter().map(|c| c.time).collect::<Vec<_>>(), vec![1000, 900, 800, 700, 600, 500, 400, 950, 650, 1100], "every card's date is read");
         let run = |f: &Filter, sort: Sort| search_market(&cards, &stores, f, sort).hits.iter().map(|&i| cards[i].title.clone()).collect::<Vec<_>>().join(" ");
-        assert_eq!(run(&Filter::default(), Sort::Newest), "v0 v1 v2 s0 v3 v4 v5 s1 v6 s2", "the vault's order, a store card (newest first) after every three");
-        assert_eq!(run(&Filter { min_price: Some(13.0), ..Default::default() }, Sort::Newest), "v3 v4 v5 s0 v6 s1 s2", "the same rhythm in what a filter leaves; store cards left over come last");
-        assert_eq!(run(&Filter { store: Some(1), ..Default::default() }, Sort::Newest), "s0 s1 s2");
-        assert_eq!(run(&Filter { store: Some(0), ..Default::default() }, Sort::Newest), "v0 v1 v2 v3 v4 v5 v6", "the vault alone keeps its own order");
-        // Only the default order mixes: the other orders and a typed search are as they were.
+        assert_eq!(run(&Filter::default(), Sort::Newest), "s2 v0 s0 v1 v2 v3 s1 v4 v5 v6", "newest first, the vault and the stores alike");
+        assert_eq!(run(&Filter { min_price: Some(13.0), ..Default::default() }, Sort::Newest), "s2 s0 v3 s1 v4 v5 v6", "the same in what a filter leaves");
+        assert_eq!(run(&Filter { store: Some(1), ..Default::default() }, Sort::Newest), "s0 s1");
+        assert_eq!(run(&Filter { store: Some(2), ..Default::default() }, Sort::Newest), "s2");
+        assert_eq!(run(&Filter { store: Some(0), ..Default::default() }, Sort::Newest), "v0 v1 v2 v3 v4 v5 v6");
         assert_eq!(run(&Filter::default(), Sort::PriceAsc), "v0 v1 v2 v3 v4 v5 v6 s2 s1 s0");
         assert_eq!(run(&Filter::default(), Sort::PriceDesc), "s0 s1 s2 v6 v5 v4 v3 v2 v1 v0");
         assert_eq!(run(&Filter::default(), Sort::Name), "s0 s1 s2 v0 v1 v2 v3 v4 v5 v6");
-        assert_eq!(run(&read_words("shop"), Sort::Newest), "s0 s1 s2", "a store's name finds its cards, by relevance");
-        // The catalogue alone (/api/search, Ask the Vault) has no store cards, so its order is unchanged.
+        assert_eq!(run(&read_words("shop"), Sort::Newest), "s0 s1", "a store's name finds its cards, newest first");
+        // The catalogue alone (/cards.tsv: /api/search, Ask the Vault, a binder's window) has no dates, so it keeps the
+        // owner's order.
         assert_eq!(parse(&data).1.iter().map(|c| c.title.as_str()).collect::<Vec<_>>().join(" "), "v0 v1 v2 v3 v4 v5 v6");
+        let plain: String = data.lines().filter(|l| !l.starts_with("T\t")).map(|l| format!("{l}\n")).collect();
+        let (_, s2, c2) = parse_market(&plain);
+        assert_eq!(search_market(&c2, &s2, &Filter::default(), Sort::Newest).hits, (0..10).collect::<Vec<_>>(), "a file with no dates keeps its own order");
+        assert_eq!(c2, cards.iter().map(|c| Card { time: 0, ..c.clone() }).collect::<Vec<_>>(), "and reads the same cards");
+    }
+
+    #[test]
+    fn ties_go_to_the_newest_card_not_to_the_vault() {
+        let mut data = card_line(&Card { handle: "pikachu-1".into(), title: "Pikachu - 1/9".into(), price: 100.0, qty: 1, time: 500, ..Default::default() });
+        data += &store_line(1, &Store { id: 9, slug: "shop".into(), title: "Shop".into(), ..Default::default() });
+        data += &market_line(&Card { store: 1, lid: 7, title: "Pikachu - 1/9".into(), price: 100.0, qty: 1, time: 800, ..Default::default() });
+        let (_, stores, cards) = parse_market(&data);
+        let who = |f: &Filter, sort: Sort| search_market(&cards, &stores, f, sort).hits.iter().map(|&i| cards[i].store).collect::<Vec<_>>();
+        for sort in [Sort::Newest, Sort::PriceAsc, Sort::PriceDesc, Sort::Name] {
+            assert_eq!(who(&Filter::default(), sort), vec![1, 0], "the same card at the same price: the newer listing first ({sort:?})");
+            assert_eq!(who(&read_words("pikachu"), sort), vec![1, 0], "and when both match the words as well ({sort:?})");
+        }
+    }
+
+    #[test]
+    fn a_date_is_its_own_line_so_older_finders_still_read_the_file() {
+        // The card lines are exactly as before; the date follows on a line a finder from before dates skips.
+        let plain = Card { handle: "h".into(), title: "x".into(), price: 5.0, qty: 1, ..Default::default() };
+        let dated = Card { time: 1234, ..plain.clone() };
+        assert_eq!(card_line(&dated), format!("{}T\t1234\n", card_line(&plain)));
+        let (sold, sold_dated) = (Card { store: 1, lid: 2, ..plain.clone() }, Card { store: 1, lid: 2, ..dated.clone() });
+        assert_eq!(market_line(&sold_dated), format!("{}T\t1234\n", market_line(&sold)));
+        assert_eq!(parse(&card_line(&dated)).1[0].time, 1234);
+        // A date belongs only to the card on the line just before it: one after a binder, a store, a card that
+        // couldn't be read, or another date is skipped, and so is one that isn't a number.
+        let card = "h\tA\t\t\t\t1\t\t\t1\t\t\t\t\t\n";
+        let odd = format!("B\th\tT\t\t1\nT\t5\nC\t{card}T\t7\nT\t8\nC\tbad\nT\t9\nS\t1\t3\ts\tS\t\nT\t10\nM\t1\t4\t{card}T\tx\nM\t1\t5\t{card}T\t11\n");
+        let (_, _, cards) = parse_market(&odd);
+        assert_eq!(cards.iter().map(|c| (c.store, c.time)).collect::<Vec<_>>(), vec![(0, 7), (1, 0), (1, 11)]);
+        assert_eq!(parse(&odd).1.iter().map(|c| c.time).collect::<Vec<_>>(), vec![7]);
     }
 
     #[test]
@@ -1137,16 +1199,18 @@ mod tests {
     }
 
     /// The vault's Pikachu, Charizard, Eevee and Dratini; "Pikachu Corner PH" sells a Charizard, an Umbreon and a
-    /// Pikachu; Cerulean Gym (no address) a Charizard and a Mew with no price. Each card as "store:Name".
+    /// Pikachu; Cerulean Gym (no address) a Charizard and a Mew with no price. Each card as "store:Name". Newest first:
+    /// the vault's Pikachu, the store's Charizard, the vault's Charizard, Umbreon, Eevee, Cerulean's Charizard, Dratini,
+    /// the store's Pikachu, Mew.
     fn corner() -> (Vec<Store>, Vec<Card>) {
         let mut data = String::new();
-        for (i, t) in ["Pikachu - 25/102", "Charizard - 4/102", "Eevee - 51/64", "Dratini - 26/64"].into_iter().enumerate() {
-            data += &card_line(&Card { handle: format!("v-{i}"), title: t.into(), price: 100.0 + 10.0 * i as f64, qty: 1, ..Default::default() });
+        for (i, (t, time)) in [("Pikachu - 25/102", 100), ("Charizard - 4/102", 90), ("Eevee - 51/64", 80), ("Dratini - 26/64", 70)].into_iter().enumerate() {
+            data += &card_line(&Card { handle: format!("v-{i}"), title: t.into(), price: 100.0 + 10.0 * i as f64, qty: 1, time, ..Default::default() });
         }
         data += &store_line(1, &Store { id: 7, slug: "pikachu-corner".into(), title: "Pikachu Corner PH".into(), ..Default::default() });
         data += &store_line(2, &Store { id: 8, slug: String::new(), title: "Cerulean Gym".into(), ..Default::default() });
-        for (store, lid, t, price) in [(1, 11, "Charizard ex - 199/165", 900.0), (1, 12, "Umbreon VMAX - 215/203", 5000.0), (1, 13, "Pikachu V - 43/185", 50.0), (2, 21, "Charizard - 4/102", 2000.0), (2, 22, "Mew - 8/9", 0.0)] {
-            data += &market_line(&Card { store, lid, title: t.into(), price, qty: 1, ..Default::default() });
+        for (store, lid, t, price, time) in [(1, 11, "Charizard ex - 199/165", 900.0, 95), (1, 12, "Umbreon VMAX - 215/203", 5000.0, 85), (1, 13, "Pikachu V - 43/185", 50.0, 60), (2, 21, "Charizard - 4/102", 2000.0, 75), (2, 22, "Mew - 8/9", 0.0, 50)] {
+            data += &market_line(&Card { store, lid, title: t.into(), price, qty: 1, time, ..Default::default() });
         }
         let (_, stores, cards) = parse_market(&data);
         (stores, cards)
@@ -1200,8 +1264,8 @@ mod tests {
         let (stores, cards) = corner();
         let name = |i: usize| format!("{}:{}", cards[i].store, cards[i].title.split(' ').next().unwrap_or(""));
         let run = |f: &Filter, sort: Sort| search_market(&cards, &stores, f, sort).hits.iter().map(|&i| name(i)).collect::<Vec<_>>().join(" ");
-        let every = "0:Pikachu 0:Charizard 0:Eevee 1:Charizard 0:Dratini 1:Umbreon 1:Pikachu 2:Charizard 2:Mew";
-        assert_eq!(run(&Filter::default(), Sort::Newest), every, "a store card after every three of the vault's, the rest last");
+        let every = "0:Pikachu 1:Charizard 0:Charizard 1:Umbreon 0:Eevee 2:Charizard 0:Dratini 1:Pikachu 2:Mew";
+        assert_eq!(run(&Filter::default(), Sort::Newest), every, "newest first, whoever sells it");
         assert_eq!(search(&cards, &Filter::default(), Sort::Newest).hits, search_market(&cards, &stores, &Filter::default(), Sort::Newest).hits, "no words, no difference");
         assert_eq!(run(&read_words(""), Sort::Newest), every);
         assert_eq!(run(&Filter { store: Some(1), ..Default::default() }, Sort::Newest), "1:Charizard 1:Umbreon 1:Pikachu");
@@ -1209,6 +1273,17 @@ mod tests {
         // The plain catalogue reader is as it was: the vault's cards, read the same.
         let (_, vault) = parse(&cards.iter().filter(|c| c.store == 0).map(card_line).collect::<String>());
         assert_eq!(vault.iter().map(|c| c.text.as_str()).collect::<Vec<_>>(), cards[..4].iter().map(|c| c.text.as_str()).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn the_vault_takes_its_place_among_the_stores_by_how_many_cards() {
+        let store = |title: &str, count: u32| Store { title: title.into(), count, ..Default::default() };
+        let stores = [store("Big Shop", 50), store("ash's cards", 7), store("Empty", 0), store("Zed", 7), store("Tiny", 1)];
+        // Big Shop (1) has more than the vault; Ash and the vault have 7 each, so they go by name; Empty is left out.
+        assert_eq!(sellers_by_count(7, "Big Boys Vault", &stores), vec![(1, 50), (2, 7), (0, 7), (4, 7), (5, 1)]);
+        assert_eq!(sellers_by_count(900, "Big Boys Vault", &stores)[0], (0, 900), "the vault first only when it has the most");
+        assert_eq!(sellers_by_count(0, "Big Boys Vault", &stores).last(), Some(&(0, 0)), "the vault is always there, last with none");
+        assert_eq!(sellers_by_count::<Store>(3, "Big Boys Vault", &[]), vec![(0, 3)]);
     }
 
     #[test]

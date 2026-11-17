@@ -6,7 +6,7 @@
 use leptos::mount::mount_to;
 use leptos::prelude::*;
 use std::sync::Arc;
-use vault_search::{add_token, norm, one_condition, parse, parse_market, peso, pos_for, price_at, read_tokens, read_words, search_market, title_and_set, toggle_token, Binder, Card, Found, Sort, Store, Token, COND_LABELS, FINISH_LABELS, LANG_LABELS};
+use vault_search::{add_token, norm, one_condition, parse, parse_market, peso, pos_for, price_at, read_tokens, read_words, search_market, sellers_by_count, title_and_set, toggle_token, Binder, Card, Found, Sort, Store, Token, COND_LABELS, FINISH_LABELS, LANG_LABELS};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
@@ -445,7 +445,7 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
         }
     };
 
-    // "Sold by": everyone, the vault, then each store (most cards first, as the file has them), each with its count.
+    // "Sold by": everyone, then every seller, the vault among the stores, most cards first, each with its count.
     // A press shows only that seller's cards; pressing it again, or All, shows everyone's. All is lit only when nothing
     // narrows whose cards these are, so a binder turns it off too, and pressing All takes the binder off as well.
     let sold_chip = move |pick: Option<u16>, name: String, pic: Option<String>, n: usize| {
@@ -493,8 +493,9 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
             </button>
         })
     };
-    // The row: All, the binder while one is on, the vault, then the stores. With no stores at all it is there only
-    // while a binder is on, to show it.
+    // The row: All, the binder while one is on, then the sellers. The vault is one of them, in its place by how many
+    // cards it has, like any store (a tie goes by name). With no stores at all the row is there only while a binder is
+    // on, to show it.
     let sold_row = (!embedded).then(|| {
         let mut chips = vec![];
         if has_stores {
@@ -502,8 +503,12 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
         }
         chips.push(binder_chip.into_any());
         if has_stores {
-            chips.push(sold_chip(Some(0), brand.to_string(), Some(LOGO.into()), vault_listed).into_any());
-            stores.with_value(|ss| chips.extend(ss.iter().enumerate().filter(|(_, s)| s.count > 0).map(|(i, s)| sold_chip(Some(i as u16 + 1), s.title.clone(), Some(s.img.clone()), s.count as usize).into_any())));
+            stores.with_value(|ss| {
+                for (at, n) in sellers_by_count(vault_listed, &brand, ss) {
+                    let (name, pic) = if at == 0 { (brand.to_string(), LOGO.to_string()) } else { (ss[usize::from(at) - 1].title.clone(), ss[usize::from(at) - 1].img.clone()) };
+                    chips.push(sold_chip(Some(at), name, Some(pic), n).into_any());
+                }
+            });
         }
         let label = if has_stores { "Sold by" } else { "Binder" };
         view! { <div class="fd-sold" hidden=move || !has_stores && binder.get().is_none()><span class="fd-flabel">{label}</span><div class="fd-binders" role="group" aria-label=label>{chips}</div></div> }
@@ -659,7 +664,7 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
                     <div class="fd-frow"><span class="fd-flabel">"Sort"</span>
                         <label class="fd-sort">
                             <select aria-label="Sort" on:change=move |e| { sort.set(Sort::parse(&event_target_value(&e))); shown.set(STEP); }>
-                                <option value="" prop:selected=move || sort.get() == Sort::Newest>"Featured"</option>
+                                <option value="" prop:selected=move || sort.get() == Sort::Newest>"Newest"</option>
                                 <option value="price-asc" prop:selected=move || sort.get() == Sort::PriceAsc>"Price: low to high"</option>
                                 <option value="price-desc" prop:selected=move || sort.get() == Sort::PriceDesc>"Price: high to low"</option>
                                 <option value="title" prop:selected=move || sort.get() == Sort::Name>"Name"</option>
@@ -703,7 +708,7 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
         </div>
         <Show when=move || found.get().0.is_empty()>
             <div class="fd-none">
-                <p>"Nothing in the vault matches that."</p>
+                <p>"No card for sale matches that."</p>
                 <button type="button" class="btn" on:click=reset>"Show all cards"</button>
             </div>
         </Show>

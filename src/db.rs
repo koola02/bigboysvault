@@ -797,7 +797,6 @@ fn list_n(c: &Connection, q: &Query, per_page: usize) -> rusqlite::Result<(Vec<P
     Ok((rows, total))
 }
 
-/// Every card as one catalogue file for the card finder and the AI tools. Copies of a card are one entry with a count.
 /// The vault's most valuable cards with pictures, one of each, for the home page's opening scene. Real catalogue cards come first, so it's cards in orbit and not boxes.
 pub fn orbit_cards(c: &Connection, limit: i64) -> rusqlite::Result<Vec<Product>> {
     let mut st = c.prepare(&format!("SELECT {COLS} FROM products p WHERE p.image<>'' AND p.image NOT LIKE '%placeholder%' GROUP BY lower(trim(p.title)) ORDER BY (p.api_id<>'') DESC, p.price DESC, p.id DESC LIMIT ?1"))?;
@@ -805,7 +804,19 @@ pub fn orbit_cards(c: &Connection, limit: i64) -> rusqlite::Result<Vec<Product>>
     Ok(v)
 }
 
+/// Every card as one catalogue file (`/cards.tsv`) for the card finder and the AI tools. Copies of a card are one entry with a count.
 pub fn catalogue(c: &Connection) -> rusqlite::Result<String> {
+    catalogue_file(c, false)
+}
+
+/// The same file with each card's date (a `T` line after it: the day its newest copy was added), for The Vault page
+/// (`/vault.tsv`), where the vault's cards and the stores' are shown newest first together. `/cards.tsv` has no dates,
+/// so a binder's window and the AI tools keep the owner's order.
+pub fn catalogue_dated(c: &Connection) -> rusqlite::Result<String> {
+    catalogue_file(c, true)
+}
+
+fn catalogue_file(c: &Connection, dated: bool) -> rusqlite::Result<String> {
     use std::collections::HashMap;
     let binders = collections(c)?;
     let index: HashMap<&str, u16> = binders.iter().enumerate().map(|(i, b)| (b.handle.as_str(), i as u16)).collect();
@@ -821,18 +832,23 @@ pub fn catalogue(c: &Connection) -> rusqlite::Result<String> {
     for b in &binders {
         out += &vault_search::binder_line(&vault_search::Binder { handle: b.handle.clone(), title: b.title.clone(), img: b.img(360), count: b.count.max(0) as u32 });
     }
-    let mut st = c.prepare(&format!("SELECT {COLS}, {DUP_KEY} AS gk FROM products p ORDER BY p.position ASC, p.created_at DESC, p.id DESC"))?;
-    let rows = st.query_map([], |r| Ok((map(r)?, r.get::<_, String>(NCOLS)?)))?;
+    // The vault's cards carry their date as text in UTC ("2026-11-09T22:06:16"), the stores' as seconds.
+    let mut st = c.prepare(&format!(
+        "SELECT {COLS}, {DUP_KEY} AS gk, COALESCE(CAST(strftime('%s', p.created_at) AS INTEGER), 0) FROM products p ORDER BY p.position ASC, p.created_at DESC, p.id DESC"
+    ))?;
+    let rows = st.query_map([], |r| Ok((map(r)?, r.get::<_, String>(NCOLS)?, r.get::<_, i64>(NCOLS + 1)?)))?;
     // qty counts only copies still for sale, so a sold card gets no "+" in the finder. A copy that's for sale stands for the
     // card, so the cart gets one it can really buy. The card keeps its place in the list either way.
-    let (mut order, mut seen): (Vec<(Product, Vec<u16>, u32)>, HashMap<String, usize>) = (vec![], HashMap::new());
+    // A card's date is its newest copy's, so another copy of a card brings it back up among the newest.
+    let (mut order, mut seen): (Vec<(Product, Vec<u16>, u32, i64)>, HashMap<String, usize>) = (vec![], HashMap::new());
     for row in rows {
-        let (p, key) = row?;
+        let (p, key, added) = row?;
         let mine = member.remove(&p.id).unwrap_or_default();
         let sale = u32::from(p.available);
         match seen.get(&key) {
             Some(&at) => {
                 order[at].2 += sale;
+                order[at].3 = order[at].3.max(added);
                 order[at].1.extend(mine); // once per copy, so each binder can count its own
                 if p.available && !order[at].0.available {
                     order[at].0 = p;
@@ -840,11 +856,11 @@ pub fn catalogue(c: &Connection) -> rusqlite::Result<String> {
             }
             None => {
                 seen.insert(key, order.len());
-                order.push((p, mine, sale));
+                order.push((p, mine, sale, added));
             }
         }
     }
-    for (p, bs, qty) in order {
+    for (p, bs, qty, added) in order {
         let (variant, set, notes) = (p.condition_text(), p.set_text(), p.note_line());
         out += &vault_search::card_line(&vault_search::Card {
             sym: p.symbol(),
@@ -866,6 +882,7 @@ pub fn catalogue(c: &Connection) -> rusqlite::Result<String> {
             order: 0,
             store: 0,
             lid: 0,
+            time: if dated { added } else { 0 },
         });
     }
     Ok(out)
@@ -1817,6 +1834,30 @@ mod dashboard_tests {
         assert_eq!(canonical_handle(&c, &p3).unwrap(), "h1", "all sold: the first copy, as before");
         assert_eq!(copies(&c, &p3).unwrap(), 0);
         assert_eq!(tsv.lines().filter(|l| l.starts_with("C\t")).count(), 2);
+    }
+
+    /// The Vault page's copy of the catalogue dates each card by its newest copy; `/cards.tsv` stays as it was.
+    #[test]
+    fn the_vault_page_file_dates_each_card_by_its_newest_copy() {
+        let c = Connection::open_in_memory().unwrap();
+        register_set_code(&c).unwrap();
+        c.execute_batch(SCHEMA).unwrap();
+        migrate(&c).unwrap();
+        for (id, title, api, at) in [(1, "Pikachu - 058/102 - Base Set", "base1-58", "2026-01-01T00:00:00"), (2, "Mew - 8/9", "x-8", "2026-02-01T00:00:00"), (3, "Pikachu - 058/102 - Base Set", "base1-58", "2026-03-01T00:00:00")] {
+            c.execute(
+                "INSERT INTO products(id,handle,title,api_id,price,variant,created_at) VALUES(?1,?2,?3,?4,50,'Near Mint',?5)",
+                rusqlite::params![id, format!("h{id}"), title, api, at],
+            )
+            .unwrap();
+        }
+        let (plain, dated) = (catalogue(&c).unwrap(), catalogue_dated(&c).unwrap());
+        assert!(!plain.lines().any(|l| l.starts_with("T\t")), "no dates in /cards.tsv:\n{plain}");
+        let undated: String = dated.lines().filter(|l| !l.starts_with("T\t")).map(|l| format!("{l}\n")).collect();
+        assert_eq!(undated, plain, "the same lines, with a date after each card");
+        let when = |t: &str| vault_search::parse(&dated).1.into_iter().find(|x| x.title.starts_with(t)).map(|x| x.time);
+        assert_eq!(when("Pikachu"), Some(1_772_323_200), "two copies: the newer one's day, 1 March 2026");
+        assert_eq!(when("Mew"), Some(1_769_904_000), "1 February 2026");
+        assert!(vault_search::parse(&plain).1.iter().all(|x| x.time == 0));
     }
 
     /// Sorting by set: release date from the set code, else the set's name; unknown sets last.
