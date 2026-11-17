@@ -1313,7 +1313,8 @@ struct ShowcasePage {
     tab: &'static str,
     cards: Vec<ShowCard>,
     max: usize,
-    /// The welcome line as the owner wrote it ("{count}" and all), and the number that "{count}" stands for.
+    /// The welcome line as the owner wrote it ("{count}" and all), and the number that "{count}" stands for: every card
+    /// for sale on the site (`feed::cards_for_sale`).
     welcome: String,
     welcome_max: usize,
     count: String,
@@ -1324,7 +1325,7 @@ pub async fn showcase_page(State(app): State<App>, h: HeaderMap) -> Res {
     if !authed(&app, &h) {
         return login_page(&app, false).await;
     }
-    let (nav, cards, welcome, count) = with_db(&app, |c| Ok((chrome(c)?, show_cards(c, &blocks::showcase_ids(c)?), blocks::welcome(c)?, db::thousands(in_vault(c)?.0)))).await?;
+    let (nav, cards, welcome, count) = with_db(&app, |c| Ok((chrome(c)?, show_cards(c, &blocks::showcase_ids(c)?), blocks::welcome(c)?, db::thousands(crate::feed::cards_for_sale(c)?)))).await?;
     rd(ShowcasePage { nav, tab: "showcase", cards, max: blocks::SHOWCASE_MAX, welcome, welcome_max: blocks::WELCOME_MAX, count })
 }
 

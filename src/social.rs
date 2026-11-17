@@ -16,14 +16,15 @@ pub const COMMENTS_PER_HOUR: i64 = 60;
 pub const REACTIONS: [(&str, &str); 6] = [("like", "👍"), ("love", "❤️"), ("fire", "🔥"), ("wow", "😮"), ("haha", "😆"), ("sad", "😢")];
 
 /// The posts the site writes by itself, each with a switch for the admins (`set_auto`). "vault" is not a stored
-/// post: it is the sets of cards that keep the feed going after the posts run out.
+/// post: it is the sets of cards from the stores' binders (the vault's and the trainers', taking turns) that keep the
+/// feed going after the posts run out. (Its name is from when they were the vault's binders only.)
 pub const AUTO: [(&str, &str); 6] = [
     ("arrivals", "New cards in the vault (one post a day)"),
     ("listing", "Sellers' new listings"),
     ("vouch", "Vouches"),
     ("prices", "The week's price moves"),
     ("joined", "New trainers joining"),
-    ("vault", "Sets of cards from the vault after the posts run out (this keeps the feed endless)"),
+    ("vault", "Sets of cards from the stores' binders after the posts run out (this keeps the feed endless)"),
 ];
 
 /// The kinds an admin switched off.

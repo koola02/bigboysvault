@@ -22,13 +22,13 @@
   <div class="post-comments" data-comments hidden></div>{% endif %}
 </article>
 {% endif %}{% if !it.stores.is_empty() %}
-<section class="box" aria-label="Trainers' stores">
-  <div class="caro-h"><h2 class="h2">Trainers' stores</h2><a href="/stores">See all</a></div>
+<section class="box" aria-label="Stores">
+  <div class="caro-h"><h2 class="h2">Stores</h2><a href="/stores">See all</a></div>
   <div class="caro">
-    {% for s in it.stores %}<div class="caro-i"><a class="caro-pic" href="{{ s.url }}">{% if !s.pic.is_empty() %}<img src="{{ s.pic }}" loading="lazy" decoding="async" alt="">{% endif %}<span class="av">{% if s.avatar.is_empty() %}{{ s.initial }}{% else %}<img src="{{ s.avatar }}" alt="" loading="lazy" decoding="async">{% endif %}</span>{% if !s.price.is_empty() %}<span class="price">{{ s.price }}</span>{% endif %}</a><div class="caro-t"><b>{{ s.name }}</b><small>{{ s.sub }}</small></div><div class="caro-acts"><button type="button" class="btn soft" data-dm-to="{{ s.id }}">Message</button><a class="btn ghost" href="{{ s.url }}">Visit</a></div></div>{% endfor %}
+    {% for s in it.stores %}<div class="caro-i"><a class="caro-pic" href="{{ s.url }}">{% if !s.pic.is_empty() %}<img src="{{ s.pic }}" loading="lazy" decoding="async" alt="">{% endif %}<span class="av">{% if s.avatar.is_empty() %}{{ s.initial }}{% else %}<img src="{{ s.avatar }}" alt="" loading="lazy" decoding="async">{% endif %}</span>{% if !s.price.is_empty() %}<span class="price">{{ s.price }}</span>{% endif %}</a><div class="caro-t"><b>{{ s.name }}</b><small>{{ s.sub }}</small></div><div class="caro-acts"><button type="button" class="btn soft" data-dm-to="{{ s.id }}"{% if s.id == 0 %} data-not-full{% endif %}>Message</button><a class="btn ghost" href="{{ s.url }}">Visit</a></div></div>{% endfor %}
   </div>
 </section>
-{% endif %}{% if let Some(v) = it.vault %}
+{% endif %}{% if let Some(v) = it.binder %}
 <section class="box vault-unit" aria-label="{{ v.title }}">
   <div class="caro-h"><h2 class="h2">{{ v.title }}</h2><a href="{{ v.url }}">See all{% if v.total > 0 %} {{ v.total }}{% endif %}</a></div>
   <div class="vu-grid">{% for t in v.tiles %}<a class="vu" href="{{ t.url }}" data-c="{{ t.c }}"><span class="vu-img"><img src="{{ t.img }}" loading="lazy" decoding="async" alt=""></span><b class="vu-p">{{ t.price }}</b><span class="vu-t">{{ t.title }}</span></a>{% endfor %}</div>

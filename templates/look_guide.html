@@ -28,7 +28,7 @@
   </section>
 
   <article class="box post">
-    <header class="post-h"><span class="av"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span><div class="post-who"><b><a href="#">{{ nav.brand }}</a></b> added {{ items.len() }} cards to the vault<small>2 h · New in the vault</small></div><button type="button" class="ibtn" aria-label="More">⋯</button></header>
+    <header class="post-h"><span class="av"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span><div class="post-who"><b><a href="#">{{ nav.brand }}</a></b> listed {{ items.len() }} cards for sale<small>2 h</small></div><button type="button" class="ibtn" aria-label="More">⋯</button></header>
     <p class="post-text">Fresh pulls just went in. Tap a card to see it.</p>
     <div class="post-cards">{% for p in items.iter().take(4) %}<a href="#"><img src="{{ p.img(360) }}" loading="lazy" alt="{{ p.short_title() }}">{% if loop.last && items.len() > 4 %}<span class="more">+{{ items.len() - 4 }}</span>{% endif %}</a>{% endfor %}</div>
     <div class="post-stats"><span class="reacts"><i>👍</i><i>🔥</i><i>❤️</i><span>24</span></span><span>6 comments · 2 shares</span></div>
@@ -40,7 +40,7 @@
   </article>
 
   <section class="box">
-    <div class="caro-h"><h2 class="h2">Trainers' stores</h2><small>Suggested for you</small></div>
+    <div class="caro-h"><h2 class="h2">Stores</h2><small>Suggested for you</small></div>
     <div class="caro">
       {% for p in items.iter().take(5) %}<div class="caro-i"><div class="caro-pic"><img src="{{ p.img(360) }}" loading="lazy" alt=""><span class="av"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span><span class="price">{{ p.price_text() }}</span></div><div class="caro-t"><b>{% if loop.first %}Hayme's store{% else if loop.index == 2 %}Selhio pop-up store{% else %}A trainer's store{% endif %}</b><small>{{ loop.index + 1 }} on sale · {{ p.short_title() }}</small></div><div class="caro-acts"><button type="button" class="btn soft">Follow</button><button type="button" class="btn ghost">Visit</button></div></div>{% endfor %}
     </div>

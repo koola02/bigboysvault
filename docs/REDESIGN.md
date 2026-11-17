@@ -103,7 +103,7 @@ Cart, card camera, private messages, wishlist alerts, price history, Ask with Ge
 
 Order: welcome banner (signed-out only: logo, one line, Join / Log in) → **Stories row** → composer → items, 8 at a time.
 
-**Endless scrolling.** More items load by themselves as you scroll, and the feed never ends: when the posts run out it carries on with sets of cards "From the vault", binder after binder, round and round.
+**Endless scrolling.** More items load by themselves as you scroll, and the feed never ends: when the posts run out it carries on with sets of cards "From {store} · {binder}" from every open store's public binders with cards for sale, the stores taking turns (the vault's store is one of them, like any other), round and round. A seller's card opens in the card window.
 
 **Automatic posts have switches.** Full admins can turn each kind on or off (new cards, sellers' listings, vouches, price moves, new trainers, the vault sets) at `/admin/look`, or from a post's ⋯ menu. Off: those posts leave the feed, with their likes and comments kept for when they're switched back on.
 
@@ -111,7 +111,7 @@ Order: welcome banner (signed-out only: logo, one line, Join / Log in) → **Sto
 
 - **Trainers' posts:** words, up to 4 photos, or an attached card.
 - **Vouches:** shown as posts ("vouched for Big Boys Vault").
-- **New in the vault:** one post per day from Big Boys Vault with that day's new cards as a photo grid.
+- **New in the vault:** one post per day from Big Boys Vault with that day's new cards as a photo grid. It reads like any store's listing post: "listed 12 cards for sale", the name and "Visit the store" open `/store/vault`.
 - **New store listings:** one post per seller per day.
 - **Price moves:** "Charizard ex is up 18% this month" with the small chart.
 - **Announcements** from admins (can be pinned to the top).
@@ -119,7 +119,7 @@ Order: welcome banner (signed-out only: logo, one line, Join / Log in) → **Sto
 
 **Units placed between posts**
 
-- **Stores carousel** after the 2nd post and about every 12 after: a sideways-scrolling row of store cards (cover, avatar, name, one hero listing with price, **Visit store** / **Follow**), labelled "Trainers' stores" where Facebook says "Sponsored".
+- **Stores carousel** after the 2nd post and about every 6 sets of cards after the posts: a sideways-scrolling row of store cards (cover, avatar, name, one hero listing with price, **Visit store** / **Follow**), labelled "Stores" where Facebook says "Sponsored". The vault's store is in it like any other, in the Stores page's order (the most recently active first); so is the right column's Stores list.
 - **Trainers you may know** carousel (Follow buttons).
 - **Ask the Vault** prompt card.
 

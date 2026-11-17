@@ -1,6 +1,7 @@
 //! The home feed: posts from marcuru_rs::social, drawn with live cards and prices, ten or so at a time.
-//! It never ends: when the posts run out, the feed goes on with sets of cards from the vault, binder after binder,
-//! round and round. Between posts sit the stores carousel and, at the very top, the showcase as a row of stories.
+//! It never ends: when the posts run out, the feed goes on with sets of cards from the stores' binders, the stores
+//! taking turns (the vault's store is one of them, like any other), round and round. Between posts sit the stores
+//! carousel and, at the very top, the showcase as a row of stories.
 //!
 //! GET /           the feed page (signed-out visitors get a kept copy; signed-in ones see their own reactions)
 //! GET /feed?c=    the next items, as HTML (the page's last element asks for them when it scrolls into view)
@@ -15,6 +16,8 @@ use axum::{
     Json,
 };
 use marcuru_rs::{blocks, db, dm, members, sellers, social};
+use marcuru_rs::members::MemberCard;
+use crate::store::StoreCard;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -30,6 +33,7 @@ pub struct Who {
     pub url: String,
 }
 
+#[derive(Clone)]
 pub struct Tile {
     pub title: String,
     pub img: String,
@@ -95,6 +99,8 @@ impl PostView {
     }
 }
 
+/// A store in the stores carousel and in the right column's list. `id` 0 is the vault's store.
+#[derive(Clone)]
 pub struct StoreView {
     pub id: i64,
     pub name: String,
@@ -106,7 +112,8 @@ pub struct StoreView {
     pub sub: String,
 }
 
-pub struct VaultUnit {
+/// A set of cards from one store's binder, after the posts: "From {store} · {binder}".
+pub struct BinderUnit {
     pub title: String,
     pub url: String,
     pub tiles: Vec<Tile>,
@@ -116,8 +123,36 @@ pub struct VaultUnit {
 pub struct Item {
     pub post: Option<PostView>,
     pub stores: Vec<StoreView>,
-    pub vault: Option<VaultUnit>,
+    pub binder: Option<BinderUnit>,
 }
+
+/// One store as the feed shows it, the vault's like any other: in the stores carousel, in the right column's list,
+/// and its binders in the sets of cards after the posts.
+struct Shop {
+    view: StoreView,
+    shelves: Vec<Shelf>,
+}
+
+/// One of a store's public binders with cards for sale. After the posts, the feed shows sets of its cards.
+struct Shelf {
+    /// "From Big Boys Vault · Pikachu Set"
+    title: String,
+    /// The binder's own page.
+    url: String,
+    /// How many cards its page shows.
+    total: i64,
+    cards: ShelfCards,
+}
+
+enum ShelfCards {
+    /// A vault binder, by its handle: its cards are read a page at a time when a set is shown.
+    Vault(String),
+    /// A seller's binder: its cards for sale (with a picture), in the binder's order.
+    Seller(Vec<Tile>),
+}
+
+/// How many cards one set shows.
+const SET: usize = 8;
 
 pub struct Story {
     pub title: String,
@@ -153,9 +188,17 @@ fn product_tile(p: &db::Product) -> Tile {
     Tile { title: p.short_title(), img: p.img(360), price: if p.price > 0.0 { p.price_text() } else { String::new() }, url: format!("/products/{}", p.handle), cond: p.tile_cond(), c: p.cond_class().to_string(), sub: p.set_text() }
 }
 
+/// A seller's card for sale. Its link opens it in the card window.
+fn listing_tile(seller: i64, k: &MemberCard) -> Tile {
+    Tile { title: k.title.clone(), img: k.image.clone(), price: if k.has_price() { k.price_text() } else { "Ask".into() }, url: format!("/trainers/{seller}/cards/{}", k.id), c: k.cond_class().to_string(), cond: k.cond.clone(), sub: k.card_set.clone() }
+}
+
+/// Who wrote a post (0: the vault itself). `store`: the post is about a store's cards, so the name is the store's and
+/// it opens the store, the vault's (/store/vault) as any seller's.
 fn who(c: &rusqlite::Connection, id: i64, brand: &str, store: bool) -> rusqlite::Result<Option<Who>> {
     if id == 0 {
-        return Ok(Some(Who { name: brand.to_string(), avatar: "/static/img/logo-sm-144.png?v=1".into(), initial: "B".into(), url: "/".into() }));
+        let url = if store { format!("/store/{}", sellers::VAULT_SLUG) } else { "/".into() };
+        return Ok(Some(Who { name: brand.to_string(), avatar: "/static/img/logo-sm-144.png?v=1".into(), initial: "B".into(), url }));
     }
     Ok(members::get(c, id)?.filter(|m| !m.blocked).map(|m| Who {
         name: if store { m.store_title() } else { m.name.clone() },
@@ -167,7 +210,7 @@ fn who(c: &rusqlite::Connection, id: i64, brand: &str, store: bool) -> rusqlite:
 
 /// One post, drawn from what the site holds right now. None: nothing left to show (cards sold, trainer gone).
 fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i64) -> rusqlite::Result<Option<PostView>> {
-    let Some(author) = who(c, p.member_id, brand, p.kind == "listing")? else { return Ok(None) };
+    let Some(author) = who(c, p.member_id, brand, matches!(p.kind.as_str(), "listing" | "arrivals"))? else { return Ok(None) };
     let mut v = PostView {
         id: p.id,
         kind: p.kind.clone(),
@@ -196,6 +239,7 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
     };
     let ids = |key: &str| -> Vec<i64> { p.payload[key].as_array().map(|a| a.iter().filter_map(Value::as_i64).collect()).unwrap_or_default() };
     match p.kind.as_str() {
+        // The vault's new cards read like any store's listings: its name opens its store, and so does the link.
         "arrivals" => {
             for id in ids("ids") {
                 if let Some(pr) = db::product_by_id(c, id)?.filter(|x| x.available) {
@@ -206,16 +250,16 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
                 return Ok(None);
             }
             let count = p.payload["count"].as_i64().unwrap_or(v.tiles.len() as i64).max(v.tiles.len() as i64);
-            v.headline = if count == 1 { "added a card to the vault".into() } else { format!("added {} cards to the vault", db::thousands(count)) };
+            v.headline = if count == 1 { "listed a card for sale".into() } else { format!("listed {} cards for sale", db::thousands(count)) };
             v.tiles.truncate(4);
             v.more = count - v.tiles.len() as i64;
-            v.link = "/all".into();
-            v.link_text = "See what's new".into();
+            v.link = v.who.url.clone();
+            v.link_text = "Visit the store".into();
         }
         "listing" => {
             for id in ids("cards") {
                 if let Some(mc) = members::card(c, p.member_id, id)?.filter(|x| x.kind == "sale" && x.status == "Active") {
-                    v.tiles.push(Tile { title: mc.title.clone(), img: mc.image.clone(), price: if mc.has_price() { mc.price_text() } else { "Ask".into() }, url: format!("/trainers/{}/cards/{}", p.member_id, mc.id), c: vault_search::cond_class(&mc.cond).to_string(), cond: mc.cond.clone(), sub: mc.card_set.clone() });
+                    v.tiles.push(listing_tile(p.member_id, &mc));
                 }
             }
             if v.tiles.is_empty() {
@@ -281,58 +325,161 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
     Ok(Some(v))
 }
 
-fn store_views(c: &rusqlite::Connection, turn: usize) -> rusqlite::Result<Vec<StoreView>> {
-    let mut out: Vec<StoreView> = sellers::directory(c)?
-        .into_iter()
-        .map(|(m, stats, cards)| {
-            let first = cards.first();
-            StoreView {
-                id: m.id,
-                name: m.store_title(),
-                url: m.store_url(),
-                avatar: m.avatar.clone(),
-                initial: m.initial(),
-                pic: first.map(|x| x.image.clone()).filter(|i| !i.is_empty()).unwrap_or_else(|| m.cover_photo.clone()),
-                price: first.filter(|x| x.has_price()).map(|x| x.price_text()).unwrap_or_default(),
-                sub: format!("{} on sale{}", stats.on_sale, first.map(|x| format!(" · {}", x.title)).unwrap_or_default()),
-            }
-        })
-        .collect();
-    if !out.is_empty() {
-        let k = turn % out.len();
-        out.rotate_left(k);
+/// Every store on the Stores page, in its order (the one that last put up or changed a card for sale first,
+/// `store::store_cards`): the vault's and the trainers', each worked out the same way.
+fn shops(c: &rusqlite::Connection, nav: &Chrome) -> rusqlite::Result<Vec<Shop>> {
+    let mut out = vec![];
+    for s in crate::store::store_cards(c, &nav.brand)? {
+        out.push(if s.owner == 0 { vault_shop(c, &nav.links, &s)? } else { seller_shop(c, &s)? });
     }
     Ok(out)
 }
 
-/// The n-th set of cards from the vault: binder after binder, then round again with the next cards of each.
-fn vault_unit(c: &rusqlite::Connection, nav: &Chrome, n: usize) -> rusqlite::Result<Option<VaultUnit>> {
-    let binders: Vec<&db::Collection> = nav.links.iter().filter(|b| b.count > 0).collect();
-    let (title, url, handle, total, round) = if binders.is_empty() {
-        ("From the vault".to_string(), "/all".to_string(), None, 0, n)
-    } else {
-        let b = binders[n % binders.len()];
-        (format!("From the vault · {}", b.title), format!("/collections/{}", b.handle), Some(b.handle.clone()), b.count, n / binders.len())
-    };
-    let get = |page: usize| db::list(c, &db::Query { collection: handle.clone(), q: String::new(), sort: String::new(), in_stock: true, page });
-    // (The card list's pages count from 0.)
-    let (mut items, _) = get(round)?;
-    if items.is_empty() {
-        items = get(0)?.0;
-        if !items.is_empty() {
-            let k = (round * 8) % items.len();
-            items.rotate_left(k);
-        }
+/// A store's tile in the carousel: its first card for sale (`pic`, `price`, `title`; no picture: its cover photo).
+fn store_view(s: &StoreCard, pic: String, price: String, title: &str) -> StoreView {
+    StoreView {
+        id: s.owner,
+        name: s.name.clone(),
+        url: s.url.clone(),
+        avatar: s.avatar.clone(),
+        initial: s.initial.clone(),
+        pic: if pic.is_empty() { s.cover.clone() } else { pic },
+        price,
+        sub: format!("{} on sale{}", s.on_sale_text(), if title.is_empty() { String::new() } else { format!(" · {title}") }),
     }
-    let tiles: Vec<Tile> = items.iter().filter(|p| p.has_image()).take(8).map(product_tile).collect();
-    Ok(if tiles.is_empty() { None } else { Some(VaultUnit { title, url, tiles, total }) })
 }
 
-/// Where a page of the feed starts: the top, after a post (time, id), or at the n-th vault set.
+/// The vault's store: its first card for sale, and every binder with cards for sale in the owner's order (as its store
+/// page shows them).
+fn vault_shop(c: &rusqlite::Connection, links: &[db::Collection], s: &StoreCard) -> rusqlite::Result<Shop> {
+    let first: Option<i64> = rusqlite::OptionalExtension::optional(c.query_row("SELECT id FROM products WHERE available=1 AND image<>'' ORDER BY position, created_at DESC, id DESC LIMIT 1", [], |r| r.get(0)))?;
+    let view = match first.map(|id| db::product_by_id(c, id)).transpose()?.flatten() {
+        Some(p) => store_view(s, p.img(360), if p.price > 0.0 { p.price_text() } else { String::new() }, &p.short_title()),
+        None => store_view(s, String::new(), String::new(), ""),
+    };
+    // A binder has a set in the feed while one of its cards for sale has a picture.
+    let peeks = db::binder_peeks(c, 1)?;
+    let shelves = links
+        .iter()
+        .filter(|b| peeks.get(&b.handle).is_some_and(|(_, pics)| !pics.is_empty()))
+        .map(|b| Shelf { title: format!("From {} · {}", s.name, b.title), url: format!("/collections/{}", b.handle), total: b.count, cards: ShelfCards::Vault(b.handle.clone()) })
+        .collect();
+    Ok(Shop { view, shelves })
+}
+
+/// A trainer's store: its first card for sale, and its public binders with cards for sale now, in the store's order.
+fn seller_shop(c: &rusqlite::Connection, s: &StoreCard) -> rusqlite::Result<Shop> {
+    let listings = sellers::storefront_listings(c, s.owner)?;
+    let view = match listings.first() {
+        Some(k) => store_view(s, k.image.clone(), if k.has_price() { k.price_text() } else { String::new() }, &k.title),
+        None => store_view(s, String::new(), String::new(), ""),
+    };
+    let mut shelves = vec![];
+    for b in members::binders_of(c, s.owner)?.into_iter().filter(|b| b.visibility == "Public") {
+        let tiles: Vec<Tile> = listings.iter().filter(|k| k.binder_id == Some(b.id) && k.status == "Active" && !k.image.is_empty()).map(|k| listing_tile(s.owner, k)).collect();
+        if tiles.is_empty() {
+            continue;
+        }
+        // Its page lists its cards on sale, reserved or out of stock: the number its tile in the store says.
+        let total = listings.iter().filter(|k| k.binder_id == Some(b.id)).count() as i64;
+        shelves.push(Shelf { title: format!("From {} · {}", s.name, b.title), url: format!("{}/binders/{}", s.url, b.slug), total, cards: ShelfCards::Seller(tiles) });
+    }
+    Ok(Shop { view, shelves })
+}
+
+/// The stores for a carousel: the Stores page's order, starting `turn` stores in (each later carousel starts further on).
+fn store_views(shops: &[Shop], turn: usize) -> Vec<StoreView> {
+    let mut out: Vec<StoreView> = shops.iter().map(|s| s.view.clone()).collect();
+    if !out.is_empty() {
+        let k = turn % out.len();
+        out.rotate_left(k);
+    }
+    out
+}
+
+/// The binders in turn, store by store: the first binder of each store, then the second of each, and so on. So the sets
+/// after the posts take turns between the stores, and every binder comes up once before any comes up again.
+fn in_turn(shops: &[Shop]) -> Vec<&Shelf> {
+    let most = shops.iter().map(|s| s.shelves.len()).max().unwrap_or(0);
+    (0..most).flat_map(|k| shops.iter().filter_map(move |s| s.shelves.get(k))).collect()
+}
+
+/// `n` of `all` from `start` on, going round to the first ones after the last (never one twice).
+fn ring<T: Clone>(all: &[T], start: usize, n: usize) -> Vec<T> {
+    if all.is_empty() {
+        return vec![];
+    }
+    all.iter().cycle().skip(start % all.len()).take(n.min(all.len())).cloned().collect()
+}
+
+/// A vault binder's set of cards the `round`-th time it comes up: the next cards each time, the first ones again after
+/// the last. A big binder is read a page at a time, each page going round before the next.
+fn vault_set(c: &rusqlite::Connection, handle: &str, round: usize) -> rusqlite::Result<Vec<Tile>> {
+    let page = |n: usize| db::list(c, &db::Query { collection: Some(handle.to_string()), q: String::new(), sort: String::new(), in_stock: true, page: n });
+    let (first, found) = page(0)?;
+    let pages = usize::try_from(found).unwrap_or(0).div_ceil(db::PAGE_SIZE).max(1);
+    let start = round * SET;
+    let (items, at) = match (start / db::PAGE_SIZE) % pages {
+        _ if pages == 1 => (first, start),
+        0 => (first, start % db::PAGE_SIZE),
+        k => (page(k)?.0, start % db::PAGE_SIZE),
+    };
+    let tiles: Vec<Tile> = items.iter().filter(|p| p.has_image()).map(product_tile).collect();
+    Ok(ring(&tiles, at, SET))
+}
+
+/// The n-th set of cards after the posts: the binders in turn (`in_turn`), then round again with the next cards of each.
+fn binder_unit(c: &rusqlite::Connection, shelves: &[&Shelf], n: usize) -> rusqlite::Result<Option<BinderUnit>> {
+    if shelves.is_empty() {
+        return Ok(None);
+    }
+    let s = shelves[n % shelves.len()];
+    let round = n / shelves.len();
+    let tiles = match &s.cards {
+        ShelfCards::Vault(handle) => vault_set(c, handle, round)?,
+        ShelfCards::Seller(tiles) => ring(tiles, round * SET, SET),
+    };
+    Ok((!tiles.is_empty()).then(|| BinderUnit { title: s.title.clone(), url: s.url.clone(), tiles, total: s.total }))
+}
+
+/// Up to `want` sets from the n-th on, and the number the next page starts at. A binder with nothing to show is passed
+/// over; when a whole turn of the binders finds nothing, there are none (and the feed ends instead of asking forever).
+fn sets(c: &rusqlite::Connection, shelves: &[&Shelf], n: usize, want: usize) -> rusqlite::Result<(Vec<BinderUnit>, usize)> {
+    let (mut out, mut k) = (vec![], n);
+    while out.len() < want && k < n + want + shelves.len() {
+        if let Some(u) = binder_unit(c, shelves, k)? {
+            out.push(u);
+        }
+        k += 1;
+    }
+    Ok((out, k))
+}
+
+/// The stores, worked out at most once for a page of the feed, and only when the page shows them.
+struct Shops<'a> {
+    c: &'a rusqlite::Connection,
+    nav: &'a Chrome,
+    list: Option<Vec<Shop>>,
+}
+
+impl<'a> Shops<'a> {
+    fn new(c: &'a rusqlite::Connection, nav: &'a Chrome) -> Self {
+        Shops { c, nav, list: None }
+    }
+    fn all(&mut self) -> rusqlite::Result<&[Shop]> {
+        if self.list.is_none() {
+            self.list = Some(shops(self.c, self.nav)?);
+        }
+        Ok(self.list.as_deref().unwrap_or_default())
+    }
+}
+
+/// Where a page of the feed starts: the top, after a post (time, id), or at the n-th set of cards from the binders.
+/// (A set's address is still "v:n", from when the sets were the vault's only, so links already out keep working.)
 enum Cursor {
     Top,
     After(i64, i64),
-    Vault(usize),
+    Binders(usize),
 }
 
 fn cursor(s: &str) -> Cursor {
@@ -342,31 +489,36 @@ fn cursor(s: &str) -> Cursor {
             (Ok(t), Ok(id)) => Cursor::After(t, id),
             _ => Cursor::Top,
         },
-        ["v", n] => Cursor::Vault(n.parse::<usize>().unwrap_or(0).min(100_000)),
+        ["v", n] => Cursor::Binders(n.parse::<usize>().unwrap_or(0).min(100_000)),
         _ => Cursor::Top,
     }
 }
 
-/// One page of the feed and where the next one starts. There is always a next one.
-fn build(c: &rusqlite::Connection, nav: &Chrome, viewer: i64, at: Cursor) -> rusqlite::Result<(Vec<Item>, String)> {
-    let post_item = |p: PostView| Item { post: Some(p), stores: vec![], vault: None };
+/// One page of the feed and where the next one starts. Nothing: the feed is over (the admins switched the sets off, or
+/// no store has a binder to show).
+fn build(c: &rusqlite::Connection, nav: &Chrome, viewer: i64, at: Cursor, shops: &mut Shops<'_>) -> rusqlite::Result<(Vec<Item>, String)> {
+    let post_item = |p: PostView| Item { post: Some(p), stores: vec![], binder: None };
+    let set_item = |u: BinderUnit| Item { post: None, stores: vec![], binder: Some(u) };
     let mut items: Vec<Item> = vec![];
-    let vault_on = !social::auto_off(c)?.iter().any(|k| k == "vault");
+    // (The admins' switch for the sets is called "vault": once, they were the vault's only.)
+    let sets_on = !social::auto_off(c)?.iter().any(|k| k == "vault");
     let (before, top) = match at {
-        Cursor::Vault(_) if !vault_on => return Ok((items, String::new())),
-        Cursor::Vault(n) => {
-            for k in n..n + 2 {
-                if let Some(u) = vault_unit(c, nav, k)? {
-                    items.push(Item { post: None, stores: vec![], vault: Some(u) });
-                }
+        Cursor::Binders(_) if !sets_on => return Ok((items, String::new())),
+        Cursor::Binders(n) => {
+            let all = shops.all()?;
+            let (units, next) = sets(c, &in_turn(all), n, 2)?;
+            if units.is_empty() {
+                return Ok((items, String::new()));
             }
-            if n % 6 == 4 {
-                let stores = store_views(c, n / 6 + 1)?;
+            items.extend(units.into_iter().map(set_item));
+            // The stores carousel comes back every six sets or so, starting further along each time.
+            if n / 6 != next / 6 {
+                let stores = store_views(all, next / 6);
                 if !stores.is_empty() {
-                    items.insert(1.min(items.len()), Item { post: None, stores, vault: None });
+                    items.insert(1.min(items.len()), Item { post: None, stores, binder: None });
                 }
             }
-            return Ok((items, format!("v:{}", n + 2)));
+            return Ok((items, format!("v:{next}")));
         }
         Cursor::Top => (None, true),
         Cursor::After(t, id) => (Some((t, id)), false),
@@ -388,22 +540,25 @@ fn build(c: &rusqlite::Connection, nav: &Chrome, viewer: i64, at: Cursor) -> rus
             shown += 1;
             // The stores carousel sits after the second post of the first page.
             if top && shown == 2 {
-                let stores = store_views(c, 0)?;
+                let stores = store_views(shops.all()?, 0);
                 if !stores.is_empty() {
-                    items.push(Item { post: None, stores, vault: None });
+                    items.push(Item { post: None, stores, binder: None });
                 }
             }
         }
     }
     let next = match (full, last) {
         (true, Some((t, id))) => format!("p:{t}:{id}"),
-        _ if !vault_on => String::new(),
+        _ if !sets_on => String::new(),
         _ => {
-            // The posts are done: start on the vault, so the page never ends.
-            if let Some(u) = vault_unit(c, nav, 0)? {
-                items.push(Item { post: None, stores: vec![], vault: Some(u) });
+            // The posts are done: the stores' binders take over, so the page never ends.
+            let (units, next) = sets(c, &in_turn(shops.all()?), 0, 1)?;
+            if units.is_empty() {
+                String::new()
+            } else {
+                items.extend(units.into_iter().map(set_item));
+                format!("v:{next}")
             }
-            "v:1".to_string()
         }
     };
     Ok((items, next))
@@ -459,22 +614,23 @@ fn seo(nav: &Chrome) -> Seo {
 async fn feed_html(app: &App, viewer: i64, only: Option<i64>) -> Result<String, (StatusCode, String)> {
     let t = with_db(app, move |c| {
         let mut nav = crate::chrome(c)?;
+        let mut shops = Shops::new(c, &nav);
         let (items, next, single) = match only {
             Some(id) => {
                 let item = match social::post(c, viewer, id)?.filter(|p| !p.hidden) {
                     Some(p) => post_view(c, &p, &nav.brand, viewer)?,
                     None => None,
                 };
-                (item.into_iter().map(|p| Item { post: Some(p), stores: vec![], vault: None }).collect::<Vec<_>>(), String::new(), true)
+                (item.into_iter().map(|p| Item { post: Some(p), stores: vec![], binder: None }).collect::<Vec<_>>(), String::new(), true)
             }
             None => {
-                let (items, next) = build(c, &nav, viewer, Cursor::Top)?;
+                let (items, next) = build(c, &nav, viewer, Cursor::Top, &mut shops)?;
                 (items, next, false)
             }
         };
         let stories = if single { vec![] } else { stories(c)? };
-        // The welcome line can hold "{count}": the number of cards in the vault.
-        let tagline = blocks::welcome(c)?.replace("{count}", &db::thousands(admin::in_vault(c)?.0));
+        // The welcome line can hold "{count}": the number of cards for sale on the site.
+        let tagline = blocks::welcome(c)?.replace("{count}", &db::thousands(cards_for_sale(c)?));
         let moves = match c.query_row("SELECT id FROM posts WHERE kind='prices' AND hidden=0 ORDER BY created_at DESC LIMIT 1", [], |r| r.get::<_, i64>(0)) {
             Ok(id) => match social::post(c, 0, id)? {
                 Some(p) => post_view(c, &p, &nav.brand, 0)?.map(|v| v.moves).unwrap_or_default(),
@@ -482,13 +638,25 @@ async fn feed_html(app: &App, viewer: i64, only: Option<i64>) -> Result<String, 
             },
             Err(_) => vec![],
         };
-        let stores = store_views(c, 0)?.into_iter().take(6).collect();
+        let stores = store_views(shops.all()?, 0).into_iter().take(6).collect();
         nav.seo = if single { Seo { title: format!("A post · {}", nav.brand), ..Default::default() } } else { seo(&nav) };
         let end = !single && next.is_empty();
         Ok(FeedPage { nav, stories, items, next, tagline, moves: moves.into_iter().take(4).collect(), stores, single, end })
     })
     .await?;
     render(t)
+}
+
+/// Every card for sale on the site: the vault's copies, and the cards for sale in the trainers' open stores (approved,
+/// not blocked). The home page's welcome line says it where its owner typed "{count}".
+pub(crate) fn cards_for_sale(c: &rusqlite::Connection) -> rusqlite::Result<i64> {
+    let stores: i64 = c.query_row(
+        "SELECT COUNT(*) FROM member_cards k JOIN members m ON m.id=k.member_id
+         WHERE k.kind='sale' AND k.status='Active' AND k.qty>0 AND m.seller=1 AND m.profile_ok=1 AND m.blocked=0",
+        [],
+        |r| r.get(0),
+    )?;
+    Ok(admin::in_vault(c)?.0 + stores)
 }
 
 /// A like or a comment changes only the kept copy of the feed (the one signed-out visitors get).
@@ -520,7 +688,7 @@ pub async fn more(State(app): State<App>, h: HeaderMap, Query(q): Query<MoreQs>)
     let at = q.c.clone();
     let (items, next) = with_db(&app, move |c| {
         let nav = crate::chrome(c)?;
-        build(c, &nav, viewer, cursor(&at))
+        build(c, &nav, viewer, cursor(&at), &mut Shops::new(c, &nav))
     })
     .await?;
     let end = next.is_empty();
@@ -614,7 +782,7 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
     .await?;
     app.forget();
     match out {
-        Ok(Some(v)) => Ok(html(part(vec![Item { post: Some(v), stores: vec![], vault: None }])?)),
+        Ok(Some(v)) => Ok(html(part(vec![Item { post: Some(v), stores: vec![], binder: None }])?)),
         Ok(None) => Ok(fail(StatusCode::INTERNAL_SERVER_ERROR, "That post didn't save. Please try again.")),
         Err(e) => Ok(fail(StatusCode::BAD_REQUEST, e)),
     }
@@ -691,7 +859,7 @@ pub async fn edit(State(app): State<App>, h: HeaderMap, Path(pid): Path<i64>, mu
     }
     app.forget();
     match view {
-        Some(v) => Ok(html(part(vec![Item { post: Some(v), stores: vec![], vault: None }])?)),
+        Some(v) => Ok(html(part(vec![Item { post: Some(v), stores: vec![], binder: None }])?)),
         None => Ok(fail(StatusCode::INTERNAL_SERVER_ERROR, "That didn't save. Please try again.")),
     }
 }
@@ -922,13 +1090,224 @@ pub async fn pin(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Json
 #[cfg(test)]
 mod tests {
     use super::*;
+    use marcuru_rs::members::Added;
 
     #[test]
     fn a_page_knows_where_it_starts() {
         assert!(matches!(cursor(""), Cursor::Top));
         assert!(matches!(cursor("p:1794400000:12"), Cursor::After(1_794_400_000, 12)));
-        assert!(matches!(cursor("v:7"), Cursor::Vault(7)));
+        assert!(matches!(cursor("v:7"), Cursor::Binders(7)));
         assert!(matches!(cursor("p:x:y"), Cursor::Top));
-        assert!(matches!(cursor("v:99999999999"), Cursor::Vault(100_000)), "a silly page number is capped");
+        assert!(matches!(cursor("v:99999999999"), Cursor::Binders(100_000)), "a silly page number is capped");
+    }
+
+    fn db() -> rusqlite::Connection {
+        let c = rusqlite::Connection::open_in_memory().unwrap();
+        db::register_set_code(&c).unwrap();
+        c.execute_batch(db::SCHEMA).unwrap();
+        c.execute_batch(blocks::SCHEMA).unwrap();
+        c.execute_batch(members::SCHEMA).unwrap();
+        members::migrate(&c).unwrap();
+        db::migrate(&c).unwrap();
+        social::migrate(&c).unwrap();
+        marcuru_rs::history::migrate(&c).unwrap();
+        c
+    }
+
+    /// The vault: Pikachu Set (two cards for sale, one sold), Graded Cards (one for sale), Trainers (sold out). Its newest
+    /// card went up on 1 Jan 2026.
+    fn vault(c: &rusqlite::Connection) {
+        for (i, (h, t)) in [("pikachu-set", "Pikachu Set"), ("graded-cards", "Graded Cards"), ("trainers", "Trainers")].iter().enumerate() {
+            c.execute("INSERT INTO collections(handle,title,position) VALUES(?1,?2,?3)", rusqlite::params![h, t, i as i64]).unwrap();
+        }
+        for (id, title, price, sale, binder) in [(1, "Pikachu V", 500.0, true, "pikachu-set"), (2, "Pikachu ex", 900.0, true, "pikachu-set"), (3, "Raichu", 50.0, false, "pikachu-set"), (4, "Iono", 300.0, false, "trainers"), (5, "Charizard PSA 10", 9000.0, true, "graded-cards")] {
+            c.execute(
+                "INSERT INTO products(id,handle,title,price,image,available,created_at) VALUES(?1,?2,?3,?4,?5,?6,'2026-01-01T00:00:00')",
+                rusqlite::params![id, format!("c{id}"), title, price, format!("/uploads/c0-{id}_l.jpg"), sale],
+            )
+            .unwrap();
+            c.execute("INSERT INTO collection_products(collection,product_id) VALUES(?1,?2)", rusqlite::params![binder, id]).unwrap();
+        }
+    }
+
+    /// An open store with binders of cards: (binder, [(card, status)]). Its cards were last changed at `when`.
+    fn store(c: &rusqlite::Connection, name: &str, binders: &[(&str, &str, &[(&str, &str)])], when: i64) -> (i64, Vec<i64>) {
+        let s = members::create(c, name, "h").unwrap().unwrap();
+        members::set_seller(c, s, true).unwrap();
+        members::set_profile_ok(c, s, true).unwrap();
+        let mut ids = vec![];
+        for (title, visibility, cards) in binders {
+            let b = members::create_member_binder(c, s, title).unwrap();
+            c.execute("UPDATE member_binders SET visibility=?2 WHERE id=?1", rusqlite::params![b.id, visibility]).unwrap();
+            for (card, status) in cards.iter() {
+                let Added::Yes(id) = sellers::add_listing(c, s, &format!("tcgdex:{card}"), card, "1", "Set", &format!("/p/{card}.webp"), "").unwrap() else { panic!() };
+                members::move_card_to_binder(c, s, id, Some(b.id)).unwrap();
+                c.execute("UPDATE member_cards SET status=?2 WHERE id=?1", rusqlite::params![id, status]).unwrap();
+                ids.push(id);
+            }
+        }
+        c.execute("UPDATE member_cards SET updated_at=?2 WHERE member_id=?1", rusqlite::params![s, when]).unwrap();
+        (s, ids)
+    }
+
+    /// Ash put up cards after the vault's newest; Brock before it. Ash has two public binders with cards for sale, a
+    /// private one and one whose only card is reserved; Brock has one.
+    fn town(c: &rusqlite::Connection) -> (i64, Vec<i64>, i64) {
+        vault(c);
+        let (ash, ids) = store(
+            c,
+            "Ash",
+            &[("Fire", "Public", &[("charmander", "Active"), ("vulpix", "Active")]), ("Water", "Public", &[("squirtle", "Active")]), ("Secret", "Private", &[("mew", "Active")]), ("Held", "Public", &[("onix", "Reserved")])],
+            2_000_000_000,
+        );
+        let (brock, _) = store(c, "Brock", &[("Rock", "Public", &[("geodude", "Active")])], 1_000);
+        (ash, ids, brock)
+    }
+
+    fn feed_part(items: Vec<Item>, next: String) -> String {
+        let end = next.is_empty();
+        render(FeedPart { items, next, end }).unwrap()
+    }
+
+    #[test]
+    fn the_sets_after_the_posts_take_turns_between_every_store() {
+        let c = db();
+        let (ash, ids, brock) = town(&c);
+        let nav = crate::chrome(&c).unwrap();
+        let slug = members::get(&c, ash).unwrap().unwrap().slug;
+        let rock = format!("{}/binders/rock", members::get(&c, brock).unwrap().unwrap().store_url());
+        let mut shops = Shops::new(&c, &nav);
+        // The first binder of each store in the Stores page's order (Ash, the vault, Brock), then the second of each.
+        let turn: Vec<(String, String)> = in_turn(shops.all().unwrap()).iter().map(|s| (s.title.clone(), s.url.clone())).collect();
+        assert_eq!(
+            turn,
+            vec![
+                ("From Ash · Fire".to_string(), format!("/store/{slug}/binders/fire")),
+                ("From Big Boys Vault · Pikachu Set".into(), "/collections/pikachu-set".into()),
+                ("From Brock · Rock".into(), rock),
+                ("From Ash · Water".into(), format!("/store/{slug}/binders/water")),
+                ("From Big Boys Vault · Graded Cards".into(), "/collections/graded-cards".into()),
+            ],
+            "not the private binder, not the one with nothing for sale, not the vault's sold-out one"
+        );
+        // A page of the feed after the posts: two sets, the seller's cards opening in the card window.
+        let (items, next) = build(&c, &nav, 0, Cursor::Binders(0), &mut shops).unwrap();
+        assert_eq!(next, "v:2");
+        let titles: Vec<&str> = items.iter().filter_map(|i| i.binder.as_ref()).map(|u| u.title.as_str()).collect();
+        assert_eq!(titles, vec!["From Ash · Fire", "From Big Boys Vault · Pikachu Set"]);
+        let fire = items[0].binder.as_ref().unwrap();
+        assert_eq!(fire.tiles.iter().map(|t| t.url.clone()).collect::<Vec<_>>(), vec![format!("/trainers/{ash}/cards/{}", ids[0]), format!("/trainers/{ash}/cards/{}", ids[1])]);
+        assert_eq!(fire.total, 2);
+        let pika = items[1].binder.as_ref().unwrap();
+        assert_eq!(pika.tiles.iter().map(|t| t.url.as_str()).collect::<Vec<_>>(), vec!["/products/c2", "/products/c1"], "cards for sale only");
+        let html = feed_part(items, next);
+        assert!(html.contains(&format!("<a href=\"/store/{slug}/binders/fire\">See all 2</a>")), "{html}");
+        assert!(html.contains(&format!("<a class=\"vu\" href=\"/trainers/{ash}/cards/{}\"", ids[0])));
+        assert!(html.contains("<h2 class=\"h2\">From Big Boys Vault · Pikachu Set</h2>") && html.contains("<a href=\"/collections/pikachu-set\">See all 3</a>"));
+        assert!(html.contains("hx-get=\"/feed?c=v:2\""));
+        // The next page goes on where this one stopped; after the last binder, round again.
+        let (items, next) = build(&c, &nav, 0, cursor("v:4"), &mut shops).unwrap();
+        let titles: Vec<&str> = items.iter().filter_map(|i| i.binder.as_ref()).map(|u| u.title.as_str()).collect();
+        assert_eq!((titles, next.as_str()), (vec!["From Big Boys Vault · Graded Cards", "From Ash · Fire"], "v:6"));
+        // The admins' switch ends the feed instead.
+        social::set_auto(&c, "vault", false, 1).unwrap();
+        let (items, next) = build(&c, &nav, 0, Cursor::Binders(0), &mut shops).unwrap();
+        assert!(items.is_empty() && next.is_empty());
+    }
+
+    #[test]
+    fn the_vault_is_a_store_like_any_other_in_the_carousel_and_the_list() {
+        let c = db();
+        let (ash, _, brock) = town(&c);
+        let nav = crate::chrome(&c).unwrap();
+        let mut shops = Shops::new(&c, &nav);
+        let views = store_views(shops.all().unwrap(), 0);
+        let url = |id: i64| members::get(&c, id).unwrap().unwrap().store_url();
+        assert_eq!(views.iter().map(|s| (s.id, s.name.clone(), s.url.clone())).collect::<Vec<_>>(), vec![(ash, "Ash".to_string(), url(ash)), (0, "Big Boys Vault".into(), "/store/vault".into()), (brock, "Brock".into(), url(brock))], "the Stores page's order");
+        let v = &views[1];
+        assert_eq!((v.avatar.as_str(), v.pic.as_str(), v.price.as_str()), ("/static/img/logo-sm-144.png?v=1", "/uploads/c0-5_s.jpg", "₱9,000"));
+        assert!(v.sub.starts_with("3 on sale · "), "{}", v.sub);
+        assert_eq!(store_views(shops.all().unwrap(), 1)[0].id, 0, "a later carousel starts further along");
+        // In the feed, after the second post: the vault's store is one of the stores, its Message button hidden from the
+        // full admins (they are the vault).
+        for t in [100, 200] {
+            social::post_add(&c, 0, "post", &format!("Hello {t}"), &[], &json!({}), t).unwrap();
+        }
+        let (items, next) = build(&c, &nav, 0, Cursor::Top, &mut shops).unwrap();
+        assert!(items[0].post.is_some() && items[1].post.is_some() && items[2].stores.len() == 3, "the carousel after the second post");
+        assert_eq!(items[3].binder.as_ref().map(|u| u.title.as_str()), Some("From Ash · Fire"), "the posts are done: the sets begin");
+        assert_eq!(next, "v:1");
+        let html = feed_part(items, next);
+        assert!(html.contains("<section class=\"box\" aria-label=\"Stores\">") && html.contains("<h2 class=\"h2\">Stores</h2>") && !html.contains("Trainers' stores"));
+        assert!(html.contains("<a class=\"caro-pic\" href=\"/store/vault\">") && html.contains("data-dm-to=\"0\" data-not-full>Message</button>"), "{html}");
+        assert!(html.contains(&format!("data-dm-to=\"{ash}\">Message</button>")));
+        // The carousel comes back between the sets later on.
+        let back = (1..40).step_by(2).any(|n| build(&c, &nav, 0, Cursor::Binders(n), &mut shops).unwrap().0.iter().any(|i| !i.stores.is_empty()));
+        assert!(back);
+    }
+
+    #[test]
+    fn the_vaults_new_cards_read_like_a_stores_listing_post() {
+        let c = db();
+        vault(&c);
+        social::sync(&c, 1_794_400_000).unwrap();
+        let p = social::feed(&c, 0, None, 50).unwrap().into_iter().find(|p| p.kind == "arrivals").expect("the vault's post");
+        let v = post_view(&c, &p, "Big Boys Vault", 0).unwrap().unwrap();
+        assert_eq!((v.who.name.as_str(), v.who.url.as_str()), ("Big Boys Vault", "/store/vault"));
+        assert_eq!(v.headline, "listed 3 cards for sale");
+        assert_eq!((v.link.as_str(), v.link_text.as_str()), ("/store/vault", "Visit the store"));
+        // A post the vault wrote itself still opens the home page.
+        let id = social::post_add(&c, 0, "post", "Hello", &[], &json!({}), 100).unwrap();
+        let p = social::post(&c, 0, id).unwrap().unwrap();
+        assert_eq!(post_view(&c, &p, "Big Boys Vault", 0).unwrap().unwrap().who.url, "/");
+    }
+
+    #[test]
+    fn the_welcome_line_counts_every_card_for_sale_on_the_site() {
+        let c = db();
+        let (ash, _, brock) = town(&c);
+        // The vault's three copies, Ash's four cards for sale (not the reserved one), Brock's one.
+        assert_eq!(cards_for_sale(&c).unwrap(), 8);
+        c.execute("UPDATE members SET blocked=1 WHERE id=?1", [brock]).unwrap();
+        assert_eq!(cards_for_sale(&c).unwrap(), 7, "a blocked store's cards aren't for sale");
+        members::set_profile_ok(&c, ash, false).unwrap();
+        assert_eq!(cards_for_sale(&c).unwrap(), 3, "nor a store that isn't approved");
+    }
+
+    #[test]
+    fn with_nothing_to_show_the_feed_ends_instead_of_asking_forever() {
+        let c = db();
+        let nav = crate::chrome(&c).unwrap();
+        let (items, next) = build(&c, &nav, 0, Cursor::Top, &mut Shops::new(&c, &nav)).unwrap();
+        assert!(items.is_empty() && next.is_empty());
+        // A store whose cards are in no binder has no sets either.
+        let s = members::create(&c, "Misty", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        let Added::Yes(_) = sellers::add_listing(&c, s, "tcgdex:staryu", "Staryu", "1", "Set", "/p/staryu.webp", "").unwrap() else { panic!() };
+        let mut shops = Shops::new(&c, &nav);
+        assert_eq!(store_views(shops.all().unwrap(), 0).len(), 1, "it is still one of the stores");
+        let (items, next) = build(&c, &nav, 0, Cursor::Binders(3), &mut shops).unwrap();
+        assert!(items.is_empty() && next.is_empty());
+    }
+
+    #[test]
+    fn a_binder_shows_its_next_cards_each_time_round() {
+        assert_eq!(ring(&(1..=10).collect::<Vec<_>>(), 8, 8), vec![9, 10, 1, 2, 3, 4, 5, 6]);
+        assert_eq!(ring(&[1, 2], 8, 8), vec![1, 2], "a small binder shows all it has");
+        assert!(ring::<i32>(&[], 3, 8).is_empty());
+        // A big vault binder goes a page at a time: 60 cards, the newest first.
+        let c = db();
+        c.execute("INSERT INTO collections(handle,title,position) VALUES('big','Big',0)", []).unwrap();
+        for id in 1..=60 {
+            c.execute("INSERT INTO products(id,handle,title,price,image,available,created_at) VALUES(?1,?2,?2,1,?3,1,'2026-01-01T00:00:00')", rusqlite::params![id, format!("c{id}"), format!("/uploads/c0-{id}_l.jpg")]).unwrap();
+            c.execute("INSERT INTO collection_products(collection,product_id) VALUES('big',?1)", [id]).unwrap();
+        }
+        let set = |round: usize| vault_set(&c, "big", round).unwrap().iter().map(|t| t.url.trim_start_matches("/products/c").parse::<i64>().unwrap()).collect::<Vec<_>>();
+        assert_eq!(set(0), (53..=60).rev().collect::<Vec<_>>());
+        assert_eq!(set(1), (45..=52).rev().collect::<Vec<_>>());
+        assert_eq!(set(6), (5..=12).rev().collect::<Vec<_>>(), "the second page");
+        assert_eq!(set(7), vec![4, 3, 2, 1, 12, 11, 10, 9], "its last cards, then round");
+        assert_eq!(set(12), set(0), "and back to the start");
     }
 }

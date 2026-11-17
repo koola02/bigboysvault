@@ -1827,3 +1827,9 @@ dialog.of .sheet-acts { display: flex; justify-content: flex-end; gap: 8px; }
   .bm-store .bm-who { flex: 1 1 100%; }
   .bm-store .btn { flex: 1; }
 }
+
+/* ---------- 40-feed. The sets of cards after the posts come from every store ("From {store} · {binder}") ---------- */
+/* A store's name makes the heading longer: it wraps by itself, and "See all" stays on one line beside it. */
+.caro-h { gap: 12px; }
+.caro-h .h2 { min-width: 0; overflow-wrap: anywhere; }
+.caro-h > a { flex: none; white-space: nowrap; }
