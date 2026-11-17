@@ -1706,7 +1706,7 @@ pub async fn ask_page(State(app): State<App>, Query(q): Query<PartQs>) -> Res {
 }
 
 fn chat_json(m: &ChatMessage) -> Value {
-    json!({ "id": m.id, "member": m.member_id, "name": m.name, "avatar": m.avatar, "role": m.role, "stars": m.stars, "worth": if m.worth > 0.0 { vault_search::peso(m.worth) } else { String::new() }, "text": m.text, "at": m.created_at, "tags": members::tag_list(&m.tags) })
+    json!({ "id": m.id, "member": m.member_id, "name": m.name, "avatar": m.avatar, "role": m.role, "text": m.text, "at": m.created_at, "tags": members::tag_list(&m.tags) })
 }
 
 #[derive(Deserialize)]

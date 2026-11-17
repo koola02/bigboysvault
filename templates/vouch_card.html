@@ -1,6 +1,6 @@
 <article class="vouch" id="vouch-{{ v.id }}" data-vouch="{{ v.id }}" data-owner="{{ v.member_id }}" data-name="{{ v.name }}"{% if !v.role.is_empty() %} data-staff{% endif %}>
   <header class="v-head">
-    <a class="v-who" data-role="{{ v.role }}" href="/trainers/{{ v.member_id }}">{% if v.has_avatar() %}<img class="av" src="{{ v.avatar }}" width="56" height="56" alt="" loading="lazy">{% else %}<span class="av">{{ v.initial() }}</span>{% endif %}<span class="v-name"><b>{{ v.name }}</b>{% if !v.role_text().is_empty() %}<span class="role" data-role="{{ v.role }}">{{ v.role_text() }}</span>{% endif %}{% if v.stars > 0 %}<span class="stars">★ {{ v.stars }}</span>{% endif %}{% if v.worth > 0.0 %}<span class="worth">{{ v.worth_text() }}</span>{% endif %}{% for g in v.tag_list() %}<span class="tag-hl mtag">{{ g }}</span>{% endfor %}</span></a>
+    <a class="v-who" data-role="{{ v.role }}" href="/trainers/{{ v.member_id }}">{% if v.has_avatar() %}<img class="av" src="{{ v.avatar }}" width="56" height="56" alt="" loading="lazy">{% else %}<span class="av">{{ v.initial() }}</span>{% endif %}<span class="v-name"><b>{{ v.name }}</b>{% if !v.role_text().is_empty() %}<span class="role" data-role="{{ v.role }}">{{ v.role_text() }}</span>{% endif %}{% for g in v.tag_list() %}<span class="tag-hl mtag">{{ g }}</span>{% endfor %}</span></a>
     <time data-at="{{ v.created_at }}">{{ v.when() }}</time>
   </header>
   {% if v.parent_id.is_none() && !v.store_name.is_empty() %}<p class="v-for">For <a href="/store/{{ v.store_slug }}">{{ v.store_name }}</a></p>{% endif %}
