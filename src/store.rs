@@ -9,6 +9,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
     Json,
 };
+use marcuru_rs::binder_sort;
 use marcuru_rs::db::{self, Collection, Product};
 use marcuru_rs::dm;
 use marcuru_rs::members::{self, Member, MemberBinder, MemberCard, Notification};
@@ -426,15 +427,73 @@ pub async fn order_binder(State(app): State<App>, h: HeaderMap, Path(bid): Path<
     }
     let id = m.id;
     let ids: Vec<i64> = req.ids.into_iter().take(1000).collect();
-    with_db(&app, move |c| {
-        for (pos, cid) in ids.iter().enumerate() {
-            c.execute("UPDATE member_cards SET position=?4 WHERE member_id=?1 AND id=?2 AND binder_id=?3", rusqlite::params![id, cid, bid, pos as i64])?;
-        }
-        Ok(())
-    })
-    .await?;
+    with_db(&app, move |c| members::order_binder_cards(c, id, bid, &ids)).await?;
     app.forget();
     Ok(ok(json!({ "ok": true })))
+}
+
+#[derive(Deserialize)]
+pub struct SortReq {
+    by: String,
+}
+
+/// The order a binder's cards take when sorted with one tap, and how many cards couldn't be looked up just now (they go
+/// last; sorting again later places them). By evolution, cards not looked up before are asked about first.
+pub(crate) async fn sort_order(app: &App, cards: Vec<binder_sort::SortCard>, by: binder_sort::By) -> Result<(Vec<i64>, usize), (StatusCode, String)> {
+    let keys: Vec<String> = cards.iter().map(|k| binder_sort::dex_key(&k.api_id)).collect();
+    let mut missing = 0;
+    if by == binder_sort::By::Evolution {
+        let now = crate::unix_now();
+        let ask = keys.clone();
+        let need = with_db(app, move |c| binder_sort::to_learn(c, &ask, now)).await?;
+        if !need.is_empty() {
+            let got = binder_sort::learn(&app.http, need.clone()).await;
+            missing = need.len() - got.len();
+            with_db(app, move |c| {
+                for (k, d) in &got {
+                    binder_sort::remember(c, k, d.as_ref(), now)?;
+                }
+                Ok(())
+            })
+            .await?;
+        }
+    }
+    let dex = with_db(app, move |c| binder_sort::known(c, &keys)).await?;
+    Ok((binder_sort::order(&cards, by, &dex), missing))
+}
+
+/// The cards a seller's binder editor shows: those on sale, reserved, out of stock, or hidden by the seller.
+fn editor_cards(c: &rusqlite::Connection, member_id: i64, binder_id: i64) -> rusqlite::Result<Vec<MemberCard>> {
+    Ok(members::cards_of_binder(c, member_id, Some(binder_id))?.into_iter().filter(|k| k.is_sale() && matches!(k.status.as_str(), "Active" | "Reserved" | "Out of stock" | "Hidden")).collect())
+}
+
+/// POST /me/binders/{id}/sort {by: "az" | "za" | "set" | "number" | "evolution"}: puts the cards of one of the seller's
+/// binders in that order and saves it, as dragging does. Says the new order, first to last.
+pub async fn sort_binder(State(app): State<App>, h: HeaderMap, Path(bid): Path<i64>, Json(req): Json<SortReq>) -> Res {
+    let m = match binder_owner(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let Some(by) = binder_sort::By::parse(&req.by) else { return Ok(fail(StatusCode::BAD_REQUEST, "Choose how to sort the cards.")) };
+    let id = m.id;
+    let found = with_db(&app, move |c| {
+        if !members::binders_of(c, id)?.iter().any(|b| b.id == bid) {
+            return Ok(None);
+        }
+        let mut cards = vec![];
+        for k in editor_cards(c, id, bid)? {
+            let released = binder_sort::released(c, &k.card_id, &k.card_set)?;
+            cards.push(binder_sort::SortCard { id: k.id, name: k.title, set: k.card_set, released, number: k.number, api_id: k.card_id });
+        }
+        Ok(Some(cards))
+    })
+    .await?;
+    let Some(cards) = found else { return Ok(fail(StatusCode::NOT_FOUND, "Binder not found.")) };
+    let (ids, missing) = sort_order(&app, cards, by).await?;
+    let save = ids.clone();
+    with_db(&app, move |c| members::order_binder_cards(c, id, bid, &save)).await?;
+    app.forget();
+    Ok(ok(json!({ "ok": true, "ids": ids, "missing": missing })))
 }
 
 #[derive(Deserialize)]
@@ -481,14 +540,16 @@ pub async fn order_binders(State(app): State<App>, h: HeaderMap, Json(req): Json
 
 /// A seller's card as the binder tools show it: picture, name, what it is, price, and whether it is the binder's cover.
 /// `inside` names the binder it is in now (the "Add cards" picker says it will move).
+/// `hidden`: the seller hid it (status Hidden): nobody else sees it, the editor shows it faded with Show.
 fn binder_card_json(k: &MemberCard, cover: bool, inside: &str) -> serde_json::Value {
     let sub = [k.card_set.trim(), k.number.trim(), k.cond.trim()].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" · ");
-    let note = if k.status == "Active" { String::new() } else { k.status.clone() };
-    json!({ "id": k.id, "title": k.title, "sub": sub, "image": k.image, "price": if k.has_price() { k.price_text() } else { "Ask for a price".to_string() }, "cover": cover, "note": note, "inside": inside })
+    let hidden = k.status == "Hidden";
+    let note = if k.status == "Active" || hidden { String::new() } else { k.status.clone() };
+    json!({ "id": k.id, "title": k.title, "sub": sub, "image": k.image, "price": if k.has_price() { k.price_text() } else { "Ask for a price".to_string() }, "cover": cover, "note": note, "inside": inside, "hidden": hidden, "qty": k.qty })
 }
 
 /// GET /me/binders/{id}/cards: the cards of one of the seller's binders as its page shows them (on sale, reserved or out
-/// of stock), in the binder's order, for the binder's editor.
+/// of stock), and the ones the seller hid, in the binder's order, for the binder's editor.
 pub async fn binder_cards(State(app): State<App>, h: HeaderMap, Path(bid): Path<i64>) -> Res {
     let m = match binder_owner(&app, &h).await? {
         Ok(m) => m,
@@ -497,8 +558,7 @@ pub async fn binder_cards(State(app): State<App>, h: HeaderMap, Path(bid): Path<
     let id = m.id;
     let found = with_db(&app, move |c| {
         let Some(b) = members::binders_of(c, id)?.into_iter().find(|b| b.id == bid) else { return Ok(None) };
-        let cards: Vec<MemberCard> = members::cards_of_binder(c, id, Some(bid))?.into_iter().filter(|k| k.is_sale() && matches!(k.status.as_str(), "Active" | "Reserved" | "Out of stock")).collect();
-        Ok(Some((b, cards)))
+        Ok(Some((b, editor_cards(c, id, bid)?)))
     })
     .await?;
     let Some((b, cards)) = found else { return Ok(fail(StatusCode::NOT_FOUND, "Binder not found.")) };
@@ -2934,6 +2994,54 @@ mod tests {
         let found = vault_html(&c, "charizard");
         assert!(found.contains("<meta name=\"robots\" content=\"noindex, follow\">"));
         assert_eq!(found.matches("<a class=\"card\" href=").count(), 1);
+    }
+
+    /// A seller's binder editor. Hide makes a listing Hidden: visitors don't see it, the editor still shows it (marked
+    /// hidden). Show puts it back on sale, or out of stock when none are left, without changing how many there are. Sort
+    /// puts the cards in order and saves it the way dragging does.
+    #[test]
+    fn a_seller_hides_shows_and_sorts_a_binders_cards() {
+        let c = db();
+        let s = members::create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        let slug = members::get(&c, s).unwrap().unwrap().slug;
+        let b = members::create_member_binder(&c, s, "Mix").unwrap();
+        let mut ids = vec![];
+        for (k, name, no) in [("tcgdex:x-1", "Mew", "8/102"), ("tcgdex:x-2", "Abra", "43/102"), ("tcgdex:x-3", "Charizard", "4/102")] {
+            let Added::Yes(id) = sellers::add_listing(&c, s, k, name, no, "Base Set", &format!("/p/{name}.webp"), "").unwrap() else { panic!() };
+            members::move_card_to_binder(&c, s, id, Some(b.id)).unwrap();
+            ids.push(id);
+        }
+        let set = |id: i64, st: &str| sellers::update_listing(&c, s, id, &Patch { status: Some(st.into()), ..Default::default() }).unwrap().unwrap();
+
+        assert_eq!(set(ids[1], "Hidden").status, "Hidden");
+        let mix = page(&c, &slug, Some(&b.slug));
+        assert!(!mix.contains("Abra") && mix.contains("Mew"), "visitors don't see a hidden card");
+        let editor = editor_cards(&c, s, b.id).unwrap();
+        assert_eq!(editor.len(), 3, "its owner still does, in the binder's editor");
+        let abra = binder_card_json(editor.iter().find(|k| k.id == ids[1]).unwrap(), false, "");
+        assert_eq!((abra["hidden"].as_bool(), abra["note"].as_str()), (Some(true), Some("")), "marked hidden, not with a note");
+        assert_eq!(binder_card_json(editor.iter().find(|k| k.id == ids[0]).unwrap(), false, "")["hidden"], false);
+
+        // Show: none left, so it comes back out of stock and still says none; with one left, on sale.
+        c.execute("UPDATE member_cards SET qty=0 WHERE id=?1", [ids[1]]).unwrap();
+        let back = set(ids[1], "Out of stock");
+        assert_eq!((back.status.as_str(), back.qty), ("Out of stock", 0));
+        assert_eq!(set(ids[0], "Hidden").status, "Hidden");
+        assert_eq!(set(ids[0], "Active").status, "Active");
+
+        // Sort: worked out by binder_sort, saved like a drag.
+        let cards: Vec<binder_sort::SortCard> =
+            editor_cards(&c, s, b.id).unwrap().into_iter().map(|k| binder_sort::SortCard { id: k.id, name: k.title, set: k.card_set, released: String::new(), number: k.number, api_id: k.card_id }).collect();
+        let names = || editor_cards(&c, s, b.id).unwrap().into_iter().map(|k| k.title).collect::<Vec<_>>();
+        members::order_binder_cards(&c, s, b.id, &binder_sort::order(&cards, binder_sort::By::Az, &Default::default())).unwrap();
+        assert_eq!(names(), vec!["Abra", "Charizard", "Mew"]);
+        members::order_binder_cards(&c, s, b.id, &binder_sort::order(&cards, binder_sort::By::Number, &Default::default())).unwrap();
+        assert_eq!(names(), vec!["Charizard", "Mew", "Abra"]);
+        let other = members::create_member_binder(&c, s, "Other").unwrap();
+        members::order_binder_cards(&c, s, other.id, &[ids[1], ids[0]]).unwrap();
+        assert_eq!(names(), vec!["Charizard", "Mew", "Abra"], "cards of another binder aren't moved by its order");
     }
 
     /// The binder tools show only for whoever owns the binders: a seller on their own store and binder pages; on the

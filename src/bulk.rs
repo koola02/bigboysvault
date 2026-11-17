@@ -39,9 +39,10 @@ pub fn restore(c: &Connection, snaps: &[Snap]) -> rusqlite::Result<usize> {
             "UPDATE products SET price=?2,variant=?3,finish=?4,price_updated=?5,price_src=COALESCE(?6,price_src) WHERE id=?1",
             rusqlite::params![s.id, s.price, s.variant, s.finish, s.price_updated, s.price_src],
         )?;
+        let hid = crate::db::hidden_binders(&tx, s.id)?;
         tx.execute("DELETE FROM collection_products WHERE product_id=?1", [s.id])?;
         for b in &s.binders {
-            tx.execute("INSERT OR IGNORE INTO collection_products(collection,product_id,position) VALUES(?1,?2,0)", rusqlite::params![b, s.id])?;
+            tx.execute("INSERT OR IGNORE INTO collection_products(collection,product_id,position,hidden) VALUES(?1,?2,0,?3)", rusqlite::params![b, s.id, hid.contains(b)])?;
         }
     }
     tx.commit()?;
@@ -65,9 +66,11 @@ pub fn binder_op(c: &Connection, ids: &[i64], binders: &[String], mode: &str) ->
                 }
             }
             "move" => {
+                // A binder it stays in keeps it hidden there, if it was.
+                let hid = crate::db::hidden_binders(&tx, *id)?;
                 tx.execute("DELETE FROM collection_products WHERE product_id=?1", [id])?;
                 for b in &bs {
-                    tx.execute("INSERT OR IGNORE INTO collection_products(collection,product_id,position) VALUES(?1,?2,0)", rusqlite::params![b, id])?;
+                    tx.execute("INSERT OR IGNORE INTO collection_products(collection,product_id,position,hidden) VALUES(?1,?2,0,?3)", rusqlite::params![b, id, hid.iter().any(|h| h == b)])?;
                 }
             }
             _ => {

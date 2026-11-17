@@ -1163,6 +1163,16 @@ pub fn move_card_to_binder(c: &Connection, member_id: i64, card_id: i64, binder_
     Ok(changed > 0)
 }
 
+/// The order of the cards inside one of a trainer's binders (dragged, or sorted with one tap): `ids` first to last.
+/// Cards that aren't theirs or aren't in this binder are ignored.
+pub fn order_binder_cards(c: &Connection, member_id: i64, binder_id: i64, ids: &[i64]) -> rusqlite::Result<()> {
+    let tx = c.unchecked_transaction()?;
+    for (pos, cid) in ids.iter().take(1000).enumerate() {
+        tx.execute("UPDATE member_cards SET position=?4 WHERE member_id=?1 AND id=?2 AND binder_id=?3", rusqlite::params![member_id, cid, binder_id, pos as i64])?;
+    }
+    tx.commit()
+}
+
 /// Put a trainer's binders in this order (drag and drop): `ids` first to last. Their other binders keep their order
 /// after these; ids that aren't theirs are ignored.
 pub fn reorder_member_binders(c: &Connection, member_id: i64, ids: &[i64]) -> rusqlite::Result<()> {

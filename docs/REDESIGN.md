@@ -289,6 +289,14 @@ As of 12 November 2026, behind the new-look switch:
   (seller Binders: drag to reorder, add/remove cards; admin Binders: delete, add/remove cards). Vault binders: full
   admins only. The owner: "sellers should be able to do that as well and admins too ... add/remove cards in the
   binders, add/remove binders, select the cover of the binders and the ability to reposition their binders."
+- **Sort and Hide in a binder's editor** (18 Nov 2026): "Sort:" A to Z, Z to A, By set (oldest set first, by
+  `card_sets` release dates), By number (the number part: "4/102" is 4, "SV001" is 1) and By evolution (Pokédex
+  order, each evolution line together from Basic up, then Trainers, Energy, unknown cards). The site works the order
+  out (`src/binder_sort.rs`) and saves it like a drag; Undo puts the old order back. Evolution needs each card's
+  Pokédex number, stage and "evolves from" from TCGdex, kept in `card_dex` (a card TCGdex doesn't know is asked again
+  after a week). Each card has Hide / Show: a seller's card becomes Hidden (no visitor sees it anywhere); a vault
+  card is hidden in that binder only (`collection_products.hidden`): its page, count, tile, cover and finder leave
+  it out, and it stays in the vault and its other binders. Hidden cards show faded in the editor, marked "Hidden".
 - **The Vault shows every card for sale:** the vault's cards and every store card that can be bought now (Active,
   copies left after reservations, store approved, selling, not on vacation), from `/vault.tsv` (the catalogue plus
   `S`/`M` lines; `/cards.tsv` is unchanged for Ask the Vault and the AI tools). By default one store card follows

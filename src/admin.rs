@@ -324,7 +324,7 @@ pub async fn cards(State(app): State<App>, h: HeaderMap, Qs(qs): Qs<ListQs>) -> 
         let mut items = vec![];
         let mut total = 0;
         for p in 0..=page {
-            let (rows, t) = db::list(c, &Query { page: p, ..query.clone() })?;
+            let (rows, t) = db::list_with_hidden(c, &Query { page: p, ..query.clone() })?;
             items.extend(rows);
             total = t;
         }
@@ -1589,11 +1589,17 @@ fn binder_admin(app: &App, h: &HeaderMap) -> Result<(), Response> {
     Ok(())
 }
 
-/// A vault card as the binder tools show it: picture, name, what it is, price, and whether it is the binder's cover.
-fn binder_card_json(p: &Product, cover: bool) -> Value {
+/// A vault card as the binder tools show it: picture, name, what it is, price, whether it is the binder's cover, and
+/// whether it is hidden in this binder (shown faded in the editor only).
+fn binder_card_json(p: &Product, cover: bool, hidden: bool) -> Value {
     let sub = [p.set_text(), p.card_no.trim().to_string(), p.tile_cond()].into_iter().filter(|x| !x.is_empty()).collect::<Vec<_>>().join(" · ");
     let note = if p.qty == 0 { "Sold".to_string() } else if p.qty > 1 { format!("×{}", p.qty) } else { String::new() };
-    json!({ "id": p.id, "title": p.short_title(), "sub": sub, "image": p.img(360), "price": p.price_text(), "cover": cover, "note": note, "inside": "" })
+    json!({ "id": p.id, "title": p.short_title(), "sub": sub, "image": p.img(360), "price": p.price_text(), "cover": cover, "note": note, "inside": "", "hidden": hidden })
+}
+
+/// Any copy of this card (a binder's editor shows copies as one) is in `ids`.
+fn any_copy_in(p: &Product, ids: &std::collections::HashSet<i64>) -> bool {
+    ids.contains(&p.id) || p.copy_ids.split(',').filter_map(|x| x.trim().parse::<i64>().ok()).any(|k| ids.contains(&k))
 }
 
 /// GET /admin/binders/{handle}/cards: every card in a vault binder, in the binder's order, for its editor.
@@ -1604,13 +1610,13 @@ pub async fn binder_cards(State(app): State<App>, h: HeaderMap, Path(handle): Pa
     if !known_binder(&app, &handle).await? {
         return Ok(err_json(StatusCode::NOT_FOUND, "That binder doesn't exist."));
     }
-    let (title, cover, cards) = with_db(&app, move |c| {
+    let (title, cover, cards, hidden) = with_db(&app, move |c| {
         let b = db::collections(c)?.into_iter().find(|b| b.handle == handle);
         let (title, cover) = b.map(|b| (b.title.clone(), if b.custom_cover { b.image } else { String::new() })).unwrap_or_default();
-        Ok((title, cover, db::binder_cards(c, &handle)?))
+        Ok((title, cover, db::binder_cards(c, &handle)?, db::hidden_in_binder(c, &handle)?))
     })
     .await?;
-    let cards: Vec<Value> = cards.iter().map(|p| binder_card_json(p, !cover.is_empty() && p.image == cover)).collect();
+    let cards: Vec<Value> = cards.iter().map(|p| binder_card_json(p, !cover.is_empty() && p.image == cover, any_copy_in(p, &hidden))).collect();
     Ok(ok_json(json!({ "ok": true, "title": title, "cards": cards, "photo_cover": db::uploaded_cover(&cover) })))
 }
 
@@ -1652,6 +1658,63 @@ pub async fn binder_arrange(State(app): State<App>, h: HeaderMap, Path(handle): 
 }
 
 #[derive(Deserialize)]
+pub struct BinderSort {
+    by: String,
+}
+
+/// POST /admin/binders/{handle}/sort {by: "az" | "za" | "set" | "number" | "evolution"}: puts a vault binder's cards in
+/// that order and saves it, as dragging does (`db::arrange_binder`). Says the new order, first to last.
+pub async fn binder_sort(State(app): State<App>, h: HeaderMap, Path(handle): Path<String>, Json(req): Json<BinderSort>) -> Res {
+    if let Err(r) = binder_admin(&app, &h) {
+        return Ok(r);
+    }
+    if !known_binder(&app, &handle).await? {
+        return Ok(err_json(StatusCode::NOT_FOUND, "That binder doesn't exist."));
+    }
+    let Some(by) = marcuru_rs::binder_sort::By::parse(&req.by) else { return Ok(err_json(StatusCode::BAD_REQUEST, "Choose how to sort the cards.")) };
+    let h2 = handle.clone();
+    let cards = with_db(&app, move |c| {
+        let mut out = vec![];
+        for p in db::binder_cards(c, &h2)? {
+            let set = p.set_text();
+            let named = if p.card_set.trim().is_empty() { set.clone() } else { p.card_set.clone() };
+            let released = marcuru_rs::binder_sort::released(c, &p.api_id, &named)?;
+            out.push(marcuru_rs::binder_sort::SortCard { id: p.id, name: p.short_title(), set, released, number: p.card_no.clone(), api_id: p.api_id.clone() });
+        }
+        Ok(out)
+    })
+    .await?;
+    let (ids, missing) = crate::store::sort_order(&app, cards, by).await?;
+    let save = ids.clone();
+    with_db(&app, move |c| db::arrange_binder(c, &handle, &save)).await?;
+    app.forget();
+    Ok(ok_json(json!({ "ok": true, "ids": ids, "missing": missing })))
+}
+
+#[derive(Deserialize)]
+pub struct BinderHide {
+    id: i64,
+    hidden: bool,
+}
+
+/// POST /admin/binders/{handle}/hide {id, hidden}: hide a card in this vault binder only, or show it again. It stays in
+/// the vault and in its other binders.
+pub async fn binder_hide(State(app): State<App>, h: HeaderMap, Path(handle): Path<String>, Json(req): Json<BinderHide>) -> Res {
+    if let Err(r) = binder_admin(&app, &h) {
+        return Ok(r);
+    }
+    if !known_binder(&app, &handle).await? {
+        return Ok(err_json(StatusCode::NOT_FOUND, "That binder doesn't exist."));
+    }
+    let (id, hidden) = (req.id, req.hidden);
+    if !with_db(&app, move |c| db::hide_in_binder(c, &handle, id, hidden)).await? {
+        return Ok(err_json(StatusCode::NOT_FOUND, "That card isn't in this binder any more."));
+    }
+    app.forget();
+    Ok(ok_json(json!({ "ok": true, "hidden": hidden })))
+}
+
+#[derive(Deserialize)]
 pub struct ChoiceQs {
     #[serde(default)]
     q: String,
@@ -1667,7 +1730,7 @@ pub async fn binder_choices(State(app): State<App>, h: HeaderMap, Path(handle): 
     }
     let q: String = qs.q.trim().chars().take(80).collect();
     let rows = with_db(&app, move |c| db::binder_choices(c, &handle, &q)).await?;
-    Ok(ok_json(json!({ "ok": true, "cards": rows.iter().map(|p| binder_card_json(p, false)).collect::<Vec<_>>() })))
+    Ok(ok_json(json!({ "ok": true, "cards": rows.iter().map(|p| binder_card_json(p, false, false)).collect::<Vec<_>>() })))
 }
 
 // ---------- card picker (showcase) ----------
