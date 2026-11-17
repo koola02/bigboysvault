@@ -10,6 +10,8 @@
   const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
   const visible = () => document.hidden ? new Promise((ok) => document.addEventListener('visibilitychange', ok, { once: true })) : null;
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Who's here is asked once per page and shared (see fb-shell.js).
+  const bbvWho = () => (window.bbvWho ? window.bbvWho() : (window.bbvWhoAnswer ||= fetch('/me/who', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))));
 
   /* ---------- the chat ---------- */
   async function chat(root) {
@@ -78,8 +80,6 @@
       if (j.v) version = j.v;
     }
 
-    // Who's here is asked once per page and shared (see vault-core.js).
-    const bbvWho = () => (window.bbvWho ? window.bbvWho() : (window.bbvWhoAnswer ||= fetch('/me/who', { credentials: 'same-origin', headers: { Accept: 'application/json' } }).then((r) => (r.ok ? r.json() : {})).catch(() => ({}))));
     try { const w = await bbvWho(); if (w && 'member' in w) who = w; } catch (_) {}
     if (who.member) {
       form.hidden = false;
@@ -137,8 +137,13 @@
   }
 
   /* ---------- Ask the Vault ---------- */
-  function tile(c) {
-    const a = make('a', 'card'); a.href = `/products/${c.handle}`; a.dataset.foil = c.foil; a.dataset.c = c.c;
+  // A card from any seller. The vault's own cards have a handle (and, while for sale, `id` and `amount`); a store's card
+  // has its listing number `lid`, its page `url` and its store (`seller`...), and only comes with a price. `me` is the
+  // visitor's member number: a seller gets no "+" or Message on their own store's cards.
+  function tile(c, me) {
+    const store = c.lid > 0;
+    const a = make('a', 'card'); a.href = store ? c.url : `/products/${c.handle}`; a.dataset.foil = c.foil; a.dataset.c = c.c;
+    if (store) a.dataset.store = c.seller_id;
     const box = make('div', 'card-img');
     if (c.img) { const i = make('img'); i.src = c.img; i.alt = c.full; i.loading = 'lazy'; i.decoding = 'async'; box.append(i); }
     if (c.grade) box.append(make('span', 'grade', c.grade));
@@ -150,16 +155,33 @@
     if (c.tags?.length) { const t = make('div', 'card-tags'); c.tags.forEach((x) => t.append(make('span', 'tag-hl', x))); a.append(t); }
     if (c.notes) a.append(make('div', 'card-note', c.notes));
     const p = make('div', 'card-p', c.price);
-    // The "+" only shows when the vault sent the card's own number and real price: that means it is still for sale.
-    if (c.id && c.amount > 0) {
-      const d = make('span', 'dm-mini'); d.setAttribute('role', 'button'); d.tabIndex = 0; d.title = 'Message the seller'; d.setAttribute('aria-label', `Message the seller about ${c.title}`); d.dataset.dmVault = c.id;
-      p.append(d);
+    // The "+" only shows when the server sent the card's own number and real price: that means it is still for sale.
+    const mini = () => {
+      const d = make('span', 'dm-mini'); d.setAttribute('role', 'button'); d.tabIndex = 0; d.title = 'Message the seller'; d.setAttribute('aria-label', `Message the seller about ${c.title}`);
       const b = make('span', 'cart-mini', '+');
       b.setAttribute('role', 'button'); b.tabIndex = 0; b.title = 'Add to cart'; b.setAttribute('aria-label', `Add ${c.title} to cart`);
+      p.append(d, b);
+      return [d, b];
+    };
+    if (store) {
+      if (c.amount > 0 && c.seller_id !== me) {
+        const [d, b] = mini();
+        d.dataset.dmCard = c.lid;
+        Object.assign(b.dataset, { cartCard: c.lid, title: c.title, price: c.amount, image: c.img || '', url: c.url, seller: c.seller || '', sellerSlug: c.seller_slug || '' });
+      }
+    } else if (c.id && c.amount > 0) {
+      const [d, b] = mini();
+      d.dataset.dmVault = c.id;
       Object.assign(b.dataset, { cartVault: c.id, title: c.title, price: c.amount, image: c.img || '', url: `/products/${c.handle}` });
-      p.append(b);
     }
     a.append(p);
+    // Whose card it is, the way The Vault page says it: the store's picture (or its first letter) and name.
+    if (store) {
+      const by = make('div', 'card-by');
+      if (c.seller_img) { const i = make('img', 'card-by-av'); i.src = c.seller_img; i.width = 16; i.height = 16; i.alt = ''; i.loading = 'lazy'; i.decoding = 'async'; by.append(i); } else { const l = make('span', 'card-by-av', ([...(c.seller || '?').trim()][0] || '?').toUpperCase()); l.setAttribute('aria-hidden', 'true'); by.append(l); }
+      by.append(make('span', 'card-by-t', c.seller || ''));
+      a.append(by);
+    }
     return a;
   }
 
@@ -196,8 +218,10 @@
         log.append(a);
       }
       if (j.cards?.length) {
+        let me = 0;
+        try { me = (await bbvWho())?.member?.id || 0; } catch (_) {}
         const grid = make('div', 'grid ask-cards');
-        j.cards.forEach((c) => grid.append(tile(c)));
+        j.cards.forEach((c) => grid.append(tile(c, me)));
         log.append(grid);
       }
       if (j.ctx) last_ctx = j.ctx;

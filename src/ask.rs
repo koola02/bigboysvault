@@ -1,4 +1,5 @@
-//! "Ask the Vault": a guide that answers plain questions from the real catalogue, in the visitor's words, with no outside service.
+//! "Ask the Vault": a guide that answers plain questions from every card for sale, the vault's and every open store's (The
+//! Vault page's list, `vault_search::parse_market`), in the visitor's words, with no outside service.
 //! It works out what's being asked, filters the cards with the same search the site uses, and can solve "what can I get for ₱1,000"
 //! as a knapsack problem: the set of cards that uses the budget best.
 use vault_search::{amount, cond_class, peso, read_tokens, read_words, search, Binder, Card, Sort, Token};
@@ -19,7 +20,7 @@ pub struct Answer {
     pub ctx: Option<String>,
 }
 
-const START: [&str; 5] = ["Show me Near Mint Pikachu", "What can I get for ₱1,000?", "What's your most expensive card?", "Cheapest holo cards", "Who are the top trainers?"];
+const START: [&str; 5] = ["Show me Near Mint Pikachu", "What can I get for ₱1,000?", "What's the most expensive card?", "Cheapest holo cards", "Who are the top trainers?"];
 
 fn start_chips() -> Vec<String> {
     START.iter().map(|s| (*s).to_string()).collect()
@@ -174,9 +175,11 @@ fn listing(cards: &[&Card], hits: &[usize], typo: bool, what: &str) -> Answer {
     Answer { say, picks: shown, ..Default::default() }
 }
 
+/// `cards` are the vault's (`store` 0) and the stores' (`store` above 0, from `parse_market`); `picks` point into them.
 pub fn answer(question: &str, prev_ctx: Option<&str>, cards: &[Card], binders: &[Binder], trainers: &[Trainer]) -> Answer {
-    // A card with every copy sold is only a record now: the guide talks about what can be bought.
-    let keep: Vec<usize> = (0..cards.len()).filter(|&i| cards[i].qty > 0).collect();
+    // A card with every copy sold is only a record now: the guide talks about what can be bought. A store's card with
+    // no price yet can't go in the cart, so the guide leaves it to The Vault page ("Ask for a price").
+    let keep: Vec<usize> = (0..cards.len()).filter(|&i| cards[i].qty > 0 && (cards[i].store == 0 || cards[i].price > 0.0)).collect();
     let pool: Vec<&Card> = keep.iter().map(|&i| &cards[i]).collect();
     let mut a = answer_in(question, prev_ctx, &pool, binders, trainers);
     a.picks = a.picks.into_iter().map(|k| keep[k]).collect();
@@ -188,7 +191,7 @@ fn answer_in(question: &str, prev_ctx: Option<&str>, cards: &[&Card], binders: &
     let text = text.trim().to_string();
     let text = preprocess_text(&text);
     if text.is_empty() || has(&text, &["help", "hi", "hello", "hey"]) && text.split_whitespace().count() <= 3 || text.contains("what can you") {
-        return Answer { say: "I know every card in the vault. Ask me for a card, a condition, a price or a budget, or ask how something here works.".into(), chips: start_chips(), ..Default::default() };
+        return Answer { say: "I know every card for sale here, the vault's and every store's. Ask me for a card, a condition, a price or a budget, or ask how something here works.".into(), chips: start_chips(), ..Default::default() };
     }
 
     // How the site works.
@@ -217,9 +220,9 @@ fn answer_in(question: &str, prev_ctx: Option<&str>, cards: &[&Card], binders: &
         }
     }
 
-// The vault itself.
-    let total: u32 = cards.iter().map(|c| c.qty.max(1)).sum();
-    let value: f64 = cards.iter().map(|c| c.price * f64::from(c.qty.max(1))).sum();
+// The vault itself: its own cards, not the stores'.
+    let total: u32 = cards.iter().filter(|c| c.store == 0).map(|c| c.qty.max(1)).sum();
+    let value: f64 = cards.iter().filter(|c| c.store == 0).map(|c| c.price * f64::from(c.qty.max(1))).sum();
     if has(&text, &["trainer", "trainers", "collector", "collectors", "members"]) {
         if trainers.is_empty() {
             return Answer { say: "No trainers yet. You could be the first.".into(), link: Some(("Register".into(), "/join".into())), ..Default::default() };
@@ -413,7 +416,7 @@ fn answer_in(question: &str, prev_ctx: Option<&str>, cards: &[&Card], binders: &
         let prices: Vec<f64> = found.hits.iter().map(|i| cards[*i].price).collect();
         let chosen: Vec<usize> = best_for_budget(&prices, money).into_iter().map(|k| found.hits[k]).collect();
         if chosen.is_empty() {
-            return Answer { say: format!("Nothing in the vault fits {}{}.", peso(money), if f.words.is_empty() { String::new() } else { format!(" for {}", f.words.join(" ")) }), chips: start_chips(), ctx: new_ctx, ..Default::default() };
+            return Answer { say: format!("Nothing for sale fits {}{}.", peso(money), if f.words.is_empty() { String::new() } else { format!(" for {}", f.words.join(" ")) }), chips: start_chips(), ctx: new_ctx, ..Default::default() };
         }
         let spent: f64 = chosen.iter().map(|i| cards[*i].price).sum();
         let mut picks = chosen.clone();
@@ -428,7 +431,7 @@ fn answer_in(question: &str, prev_ctx: Option<&str>, cards: &[&Card], binders: &
     }
     let found = search(cards, &f, sort);
     if found.hits.is_empty() {
-        return Answer { say: format!("Nothing in the vault matches {what} right now."), chips: start_chips(), ctx: None, ..Default::default() };
+        return Answer { say: format!("Nothing for sale matches {what} right now."), chips: start_chips(), ctx: None, ..Default::default() };
     }
     let mut a = listing(cards, &found.hits, found.typo, &what);
     if let Some(first) = found.hits.first().filter(|_| matches!(f.sort, Some(Sort::PriceAsc) | Some(Sort::PriceDesc)) && found.hits.len() > 1) {
@@ -605,6 +608,28 @@ mod tests {
         assert_eq!(a.picks, vec![1], "the sold one is left out, and the pick still points at the right card: {a:?}");
         let a = answer("how many cards do you have?", None, &d, &[], &[]);
         assert!(a.say.starts_with("The vault holds 2"), "{a:?}");
+    }
+
+    #[test]
+    fn store_cards_are_offered_like_the_vaults_but_only_with_a_price() {
+        let store = |title: &str, price: f64, lid: i64| {
+            let mut c = make_card(title, price, "Near Mint", "", "", "");
+            c.store = 1;
+            c.lid = lid;
+            c
+        };
+        let d = vec![make_card("Pikachu", 500.0, "Near Mint", "", "", ""), store("Pikachu", 300.0, 7), store("Pikachu", 0.0, 8), store("Mew", 50.0, 9)];
+        let a = answer("pikachu", None, &d, &[], &[]);
+        assert_eq!(a.picks, vec![0, 1], "the vault's and a store's Pikachu; the one with no price yet is left out: {a:?}");
+        assert!(a.say.contains("2 Pikachu cards"), "{a:?}");
+        let a = answer("cheapest pikachu", None, &d, &[], &[]);
+        assert_eq!(a.picks[0], 1, "the store's is cheaper: {a:?}");
+        let a = answer("what can I get for ₱60", None, &d, &[], &[]);
+        assert_eq!(a.picks, vec![3], "a budget can be spent in any store: {a:?}");
+        let a = answer("how many cards do you have?", None, &d, &[], &[]);
+        assert!(a.say.starts_with("The vault holds 1 "), "the vault's own count leaves the stores out: {a:?}");
+        let a = answer("charizard", None, &d, &[], &[]);
+        assert!(a.picks.is_empty() && a.say.starts_with("Nothing for sale matches"), "{a:?}");
     }
 
     #[test]

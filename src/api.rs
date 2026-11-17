@@ -160,23 +160,32 @@ pub async fn cards_file(State(app): State<App>, headers: HeaderMap) -> Res {
     Ok(([(header::CONTENT_TYPE, "text/plain; charset=utf-8".to_string()), (header::CACHE_CONTROL, TSV_CACHE.to_string()), (header::ETAG, tag)], (*body).clone()).into_response())
 }
 
-/// The Vault page's file for the card finder: the vault's catalogue (`/cards.tsv`, unchanged) and then every seller's card
-/// that can be bought now (`sellers::market_lines`). Kept with its ETag on the first line, so a visitor's revalidation
-/// is answered without reading the whole file again. Any change empties the cache, the sellers' changes included.
-pub async fn vault_file(State(app): State<App>, headers: HeaderMap) -> Res {
+/// Every card for sale on the site: the vault's catalogue (`/cards.tsv`, unchanged) and then every seller's card that can
+/// be bought now (`sellers::market_lines`), read with `vault_search::parse_market`. The Vault page and Ask the Vault both
+/// use it. Kept with its ETag on the first line (take it off with `market_text`), so a visitor's revalidation of
+/// `/vault.tsv` is answered without reading the whole file again. Any change empties the cache, the sellers' changes included.
+pub(crate) async fn market(app: &App) -> Result<Arc<String>, (StatusCode, String)> {
     const KEY: &str = "vault.tsv";
-    let kept = match app.cache.get(KEY) {
-        Some(hit) => hit,
-        None => {
-            let since = app.change_count();
-            let vault = catalogue(&app).await?;
-            let stores = with_db(&app, marcuru_rs::sellers::market_lines).await?;
-            let body = format!("{vault}{stores}");
-            let kept = Arc::new(format!("{}\n{body}", fingerprint(&body)));
-            app.keep(KEY.to_string(), kept.clone(), since);
-            kept
-        }
-    };
+    if let Some(hit) = app.cache.get(KEY) {
+        return Ok(hit);
+    }
+    let since = app.change_count();
+    let vault = catalogue(app).await?;
+    let stores = with_db(app, marcuru_rs::sellers::market_lines).await?;
+    let body = format!("{vault}{stores}");
+    let kept = Arc::new(format!("{}\n{body}", fingerprint(&body)));
+    app.keep(KEY.to_string(), kept.clone(), since);
+    Ok(kept)
+}
+
+/// `market` without its ETag line.
+pub(crate) fn market_text(kept: &str) -> &str {
+    kept.split_once('\n').map_or(kept, |x| x.1)
+}
+
+/// The Vault page's file for the card finder (`market`).
+pub async fn vault_file(State(app): State<App>, headers: HeaderMap) -> Res {
+    let kept = market(&app).await?;
     let (tag, body) = kept.split_once('\n').unwrap_or(("", &kept));
     if headers.get(header::IF_NONE_MATCH).and_then(|v| v.to_str().ok()) == Some(tag) {
         return Ok((StatusCode::NOT_MODIFIED, [(header::ETAG, tag.to_string()), (header::CACHE_CONTROL, TSV_CACHE.to_string())]).into_response());
@@ -346,15 +355,42 @@ fn like_target(q: &str) -> Option<String> {
     None
 }
 
-/// Ask the Vault: a plain question in, an answer and some cards out, worked out here from the live catalogue.
+/// Ask the Vault: a plain question in, an answer and some cards out, worked out here from every card for sale (`market`).
 #[derive(Deserialize)]
 pub struct AskReq {
     q: String,
     ctx: Option<String>,
 }
 
-/// Ask the Vault: a plain question in, an answer and some cards out, worked out here from the live catalogue.
-/// A card as an Ask tile; the "+" (id and amount) only while it is for sale.
+/// A card Ask picked, before the database is read: one of the vault's (its handle and tile, which gets its "+" once the
+/// card is found still for sale) or a store's listing number (its tile is built from the listing, `sellers::ask_tile`).
+enum Picked {
+    Vault(String, serde_json::Value),
+    Store(i64),
+}
+
+/// The tiles for the picked cards, in order. A vault card always shows (its "+" only while it is for sale); a store's
+/// card shows only while it can be bought now and has a price.
+fn picked_tiles(c: &rusqlite::Connection, picks: Vec<Picked>) -> rusqlite::Result<Vec<serde_json::Value>> {
+    let mut tiles = vec![];
+    for p in picks {
+        match p {
+            Picked::Vault(handle, mut t) => {
+                // The "+" needs the vault's own number for the card and its real price. The handle is not that number,
+                // so look the card up. A sold card, or one with no price, gets no "+".
+                if let Some(p) = db::product(c, &handle)?.filter(|p| p.available && p.price > 0.0) {
+                    t["id"] = p.id.into();
+                    t["amount"] = p.price.into();
+                }
+                tiles.push(t);
+            }
+            Picked::Store(id) => tiles.extend(marcuru_rs::sellers::ask_tile(c, id)?),
+        }
+    }
+    Ok(tiles)
+}
+
+/// A vault card as an Ask tile; the "+" (id and amount) only while it is for sale.
 pub(crate) fn product_tile(p: &db::Product) -> serde_json::Value {
     let mut t = serde_json::json!({ "handle": p.handle, "title": p.short_title(), "full": p.title, "img": p.img(360), "price": peso(p.price), "c": p.cond_class(), "cond": vault_search::tile_condition(&p.variant), "set": p.set_text(), "sym": "", "foil": vault_search::foil_class(&format!("{} {}", p.title, p.variant)), "grade": p.grade().unwrap_or_default(), "notes": "", "tags": [] });
     if p.available && p.price > 0.0 {
@@ -412,40 +448,28 @@ pub async fn ask_vault(State(app): State<App>, h: HeaderMap, axum::Json(req): ax
     }
     let trainers = with_db(&app, |c| members::approved(c)).await?;
     let trainers: Vec<ask::Trainer> = trainers.into_iter().map(|t| ask::Trainer { name: t.name, stars: t.stars, worth: t.worth }).collect();
-    let (mut out, handles) = tokio::task::spawn_blocking(move || {
-        let (binders, cards) = parse(&body);
+    // Every card for sale: the vault's and every open store's, the way The Vault page shows them.
+    let all = market(&app).await?;
+    let (mut out, picks) = tokio::task::spawn_blocking(move || {
+        let (binders, _, cards) = vault_search::parse_market(market_text(&all));
         let a = ask::answer(&question, ctx.as_deref(), &cards, &binders, &trainers);
-        let handles: Vec<String> = a.picks.iter().map(|i| cards[*i].handle.clone()).collect();
-        let tiles: Vec<serde_json::Value> = a
+        let picks: Vec<Picked> = a
             .picks
             .iter()
             .map(|i| {
                 let c = &cards[*i];
-                serde_json::json!({ "handle": c.handle, "title": vault_search::title_and_set(&c.title, &c.set).0, "full": c.title, "img": c.img, "price": peso(c.price), "c": vault_search::cond_class(&c.variant), "cond": vault_search::tile_condition(&c.variant), "set": c.set, "sym": c.sym, "foil": vault_search::foil_class(&format!("{} {}", c.title, c.variant)), "grade": c.grade, "notes": c.notes, "tags": c.tags.split(',').map(str::trim).filter(|t| !t.is_empty() && db::tag_for_people(t)).collect::<Vec<_>>() })
+                if c.store > 0 {
+                    return Picked::Store(c.lid);
+                }
+                Picked::Vault(c.handle.clone(), serde_json::json!({ "handle": c.handle, "title": vault_search::title_and_set(&c.title, &c.set).0, "full": c.title, "img": c.img, "price": peso(c.price), "c": vault_search::cond_class(&c.variant), "cond": vault_search::tile_condition(&c.variant), "set": c.set, "sym": c.sym, "foil": vault_search::foil_class(&format!("{} {}", c.title, c.variant)), "grade": c.grade, "notes": c.notes, "tags": c.tags.split(',').map(str::trim).filter(|t| !t.is_empty() && db::tag_for_people(t)).collect::<Vec<_>>() }))
             })
             .collect();
-        (serde_json::json!({ "say": a.say, "cards": tiles, "chips": a.chips, "link": a.link.map(|(t, u)| serde_json::json!({ "text": t, "href": u })), "ctx": a.ctx }), handles)
+        (serde_json::json!({ "say": a.say, "cards": [], "chips": a.chips, "link": a.link.map(|(t, u)| serde_json::json!({ "text": t, "href": u })), "ctx": a.ctx }), picks)
     })
     .await
     .map_err(crate::ise)?;
-    // The "+" on a tile needs the vault's own number for the card and its real price.
-    // The handle is not that number, so look the card up. A sold card, or one with no price, gets no "+".
-    if !handles.is_empty() {
-        let buy = with_db(&app, move |c| {
-            handles
-                .iter()
-                .map(|h| db::product(c, h).map(|p| p.filter(|p| p.available && p.price > 0.0).map(|p| (p.id, p.price))))
-                .collect::<rusqlite::Result<Vec<Option<(i64, f64)>>>>()
-        })
-        .await?;
-        if let Some(tiles) = out["cards"].as_array_mut() {
-            for (t, b) in tiles.iter_mut().zip(buy) {
-                if let Some((id, price)) = b {
-                    t["id"] = serde_json::json!(id);
-                    t["amount"] = serde_json::json!(price);
-                }
-            }
-        }
+    if !picks.is_empty() {
+        out["cards"] = with_db(&app, move |c| picked_tiles(c, picks)).await?.into();
     }
     Ok(json(out))
 }
