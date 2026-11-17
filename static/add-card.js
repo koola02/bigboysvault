@@ -28,7 +28,7 @@
     } catch (_) { return file; } finally { URL.revokeObjectURL(url); }
   }
   let binders = null;
-  const loadBinders = () => (binders ||= json('/me/binders').then((j) => (j.binders || []).map((b) => ({ id: b.id, title: b.title }))).catch(() => []));
+  const loadBinders = () => (binders ||= json('/me/binders').then((j) => (j.binders || []).map((b) => ({ id: b.key ?? b.id, title: b.title }))).catch(() => []));
   const prices = new Map();
   const nearMint = (id) => {
     if (!prices.has(id)) prices.set(id, json(`/me/cards/price?id=${encodeURIComponent(id)}`).then((j) => { const f = (j.matches && j.matches[0] && j.matches[0].finishes) || []; return f.length ? Number(f[0].php) || 0 : 0; }));
@@ -62,9 +62,12 @@
     let photo = null;
     const showChoice = () => { useList.setAttribute('aria-pressed', String(!photo)); upLabel.classList.toggle('on', !!photo); };
     useList.addEventListener('click', () => { photo = null; img.src = card.image || ''; showChoice(); });
+    let preparing = false;
     file.addEventListener('change', async () => {
       const f = file.files && file.files[0]; if (!f) return;
+      preparing = true; go.disabled = true; go.textContent = 'Getting the photo ready…';
       photo = await shrink(f); img.src = URL.createObjectURL(photo); showChoice(); file.value = '';
+      preparing = false; go.disabled = false; go.textContent = 'Add to my store';
     });
 
     // Condition: chosen by the seller (none picked for them).
@@ -83,6 +86,7 @@
       hint.replaceChildren();
       if (!nm) { hint.textContent = cond.value ? 'No market price found for this card. Set the price you want.' : ''; return; }
       const sug = window.Price && cond.value ? window.Price.suggest(nm, cond.value) : null;
+      if (cond.value && sug == null && cond.value !== 'Near Mint') { hint.textContent = `No market price for ${cond.value} here. Set the price you want.`; return; }
       const v = sug || nm;
       hint.append(`${cond.value ? `Market price in ${cond.value}` : 'Market price in Near Mint'}: about ${peso(v)}. `);
       const use = make('button', 'linkbtn inline', `Use ${peso(v)}`); use.type = 'button';
@@ -117,12 +121,16 @@
     const close = () => { d.close(); d.remove(); };
     x.addEventListener('click', close); cancel.addEventListener('click', close);
     d.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
-    d.addEventListener('click', (e) => { if (e.target === d) close(); });
+    d.addEventListener('keydown', (e) => { if (e.key === 'Escape') e.stopPropagation(); });
+    let downOutside = false;
+    d.addEventListener('pointerdown', (e) => { downOutside = e.target === d; });
+    d.addEventListener('click', (e) => { if (downOutside && e.target === d) close(); downOutside = false; });
 
     form.addEventListener('input', () => { err.textContent = ''; });
     form.addEventListener('change', () => { err.textContent = ''; });
     form.addEventListener('submit', async (e) => {
       e.preventDefault(); err.textContent = '';
+      if (preparing) return;
       if (!cond.value) { err.textContent = 'Choose the card’s condition.'; cond.focus(); return; }
       const p = Number(price.value);
       if (!(p >= 1)) { err.textContent = 'Type your price for one card.'; price.focus(); return; }

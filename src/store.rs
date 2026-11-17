@@ -289,7 +289,7 @@ pub async fn bulk_listings(State(app): State<App>, h: HeaderMap, Json(req): Json
         }
         "delete" => {
             let gone = with_db(&app, move |c| sellers::bulk_delete(c, mid, &ids)).await?;
-            for k in gone.iter().filter(|k| k.own_photo()) {
+            for k in gone.iter().filter(|k| k.uploaded_photo()) {
                 admin::remove_upload(&app.uploads, &k.image);
                 admin::remove_upload(&app.uploads, &k.image_large);
             }

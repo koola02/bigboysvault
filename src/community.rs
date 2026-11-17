@@ -1156,9 +1156,10 @@ pub async fn add_card(State(app): State<App>, h: HeaderMap, Json(req): Json<AddR
         Added::Full => Ok(fail(StatusCode::CONFLICT, "Your binder is full. Take a card out first.")),
         Added::Duplicate => Ok(fail(StatusCode::CONFLICT, "That card is already in your store.")),
         Added::Yes(cid) => {
-            if let Some(k) = req.kind.filter(|k| k == "own" || k == "wish" || k == "sale") {
-                with_db(&app, move |c| marcuru_rs::sellers::set_kind(c, id, cid, &k)).await?.ok();
-            }
+            // Cards for sale are added through "Add to your store" (add_card_full), where the seller sets the price.
+            // Here a card goes in as theirs (or a wish), never for sale at an automatic price.
+            let k = req.kind.filter(|k| k == "own" || k == "wish").unwrap_or_else(|| "own".into());
+            with_db(&app, move |c| marcuru_rs::sellers::set_kind(c, id, cid, &k)).await?.ok();
             // Only the new listing gets a value (its finish is still empty, so the card's default finish). Other sellers'
             // listings of this card keep their own finish's price from the nightly job.
             let market = market::member_finish_price(&info, "").unwrap_or(0.0);
@@ -1251,7 +1252,7 @@ pub async fn card_action(State(app): State<App>, h: HeaderMap, Path(cid): Path<i
     match req.action.as_str() {
         "remove" => {
             let gone = with_db(&app, move |c| { let k = members::card(c, id, cid)?; members::remove_card(c, id, cid)?; Ok(k) }).await?;
-            if let Some(k) = gone.filter(MemberCard::own_photo) {
+            if let Some(k) = gone.filter(MemberCard::uploaded_photo) {
                 admin::remove_upload(&app.uploads, &k.image);
                 admin::remove_upload(&app.uploads, &k.image_large);
             }
@@ -1892,7 +1893,7 @@ pub async fn staff_remove_card(State(app): State<App>, h: HeaderMap, Path(cid): 
         return Ok(fail(StatusCode::FORBIDDEN, "That's another staff member's card, so only an admin can take it down."));
     }
     with_db(&app, move |c| members::remove_card(c, owner, cid)).await?;
-    if k.own_photo() {
+    if k.uploaded_photo() {
         admin::remove_upload(&app.uploads, &k.image);
         admin::remove_upload(&app.uploads, &k.image_large);
     }

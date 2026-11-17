@@ -54,14 +54,20 @@
     const close = () => { dialog.close(); dialog.remove(); if (b.isConnected) b.focus({ preventScroll: true }); };
     x.addEventListener('click', close); cancel.addEventListener('click', close);
     dialog.addEventListener('cancel', (ev) => { ev.preventDefault(); close(); });
-    dialog.addEventListener('click', (ev) => { if (ev.target === dialog) close(); });
+    // Escape closes this window only, not the card window under it.
+    dialog.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') ev.stopPropagation(); });
+    let downOutside = false;
+    dialog.addEventListener('pointerdown', (ev) => { downOutside = ev.target === dialog; });
+    dialog.addEventListener('click', (ev) => { if (downOutside && ev.target === dialog) close(); downOutside = false; });
     form.addEventListener('submit', async (ev) => {
       ev.preventDefault(); err.textContent = '';
       const a = Number(amount.value);
       if (!(a > 0)) { err.textContent = 'Type how much you offer for one card.'; amount.focus(); return; }
+      const n = Math.round(Number(qty.value));
+      if (!(n >= 1 && n <= left)) { err.textContent = left === 1 ? 'There is 1 of this card.' : `How many: from 1 to ${left}.`; qty.focus(); return; }
       go.disabled = true; go.textContent = 'Sending…';
       try {
-        const r = await fetch(`/store/${encodeURIComponent(d.slug)}/offer`, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ card_id: Number(d.offerCard), qty: Math.min(left, Math.max(1, Number(qty.value) || 1)), amount: a, message: note.value }) });
+        const r = await fetch(`/store/${encodeURIComponent(d.slug)}/offer`, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ card_id: Number(d.offerCard), qty: n, amount: a, message: note.value }) });
         const res = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(res.error || 'That didn’t work. Please try again.');
         close();

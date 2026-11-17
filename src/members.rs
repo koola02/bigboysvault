@@ -580,6 +580,11 @@ impl MemberCard {
     pub fn own_photo(&self) -> bool {
         self.card_id.starts_with("own:")
     }
+    /// The picture is a photo this trainer uploaded (an own card, or a card from the card list shown with their own
+    /// photo since 18 Nov 2026): its files go when the card goes.
+    pub fn uploaded_photo(&self) -> bool {
+        self.own_photo() || self.image_large.starts_with(&format!("/uploads/m{}-", self.member_id))
+    }
     /// Shown to the public: anything not for sale, or a listing the store shows too (not hidden, sold or ended).
     pub fn on_show(&self) -> bool {
         self.kind != "sale" || matches!(self.status.as_str(), "Active" | "Out of stock" | "Reserved")
@@ -1274,7 +1279,7 @@ pub fn delete(c: &Connection, id: i64) -> rusqlite::Result<Vec<String>> {
         c.execute("DELETE FROM vouch_images WHERE member_id=?1 OR vouch_id IN (SELECT id FROM vouches WHERE member_id=?1 OR parent_id IN (SELECT id FROM vouches WHERE member_id=?1))", [id])?;
         c.execute("DELETE FROM vouches WHERE member_id=?1 OR parent_id IN (SELECT id FROM vouches WHERE member_id=?1)", [id])?;
         c.execute("DELETE FROM star_awards WHERE member_id=?1", [id])?;
-        let mut st = c.prepare("SELECT image, image_large FROM member_cards WHERE member_id=?1 AND card_id LIKE 'own:%'")?;
+        let mut st = c.prepare("SELECT image, image_large FROM member_cards WHERE member_id=?1 AND (card_id LIKE 'own:%' OR image_large LIKE '/uploads/m' || ?1 || '-%')")?;
         for pair in st.query_map([id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))? {
             let (a, b) = pair?;
             files.extend([a, b].into_iter().filter(|f| f.starts_with("/uploads/")));
