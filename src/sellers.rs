@@ -319,7 +319,15 @@ pub fn max_cards(c: &Connection) -> i64 {
 pub fn add_listing(c: &Connection, member_id: i64, card_id: &str, title: &str, number: &str, set: &str, image: &str, image_large: &str) -> rusqlite::Result<members::Added> {
     let key = catalogue_key(card_id).to_string();
     let n: i64 = c.query_row("SELECT COUNT(*) FROM member_cards WHERE member_id=?1 AND (card_id=?2 OR card_id LIKE ?2 || '#%')", rusqlite::params![member_id, key], |r| r.get(0))?;
-    let id = if n == 0 { key } else { format!("{key}#{}", n + 1) };
+    // The next copy gets the next free number: after a copy was deleted, counting alone could hit one still there
+    // (seen 18 Nov 2026: "That card is already in your store" for a third copy).
+    let taken = |id: &str| -> rusqlite::Result<bool> { c.query_row("SELECT COUNT(*) FROM member_cards WHERE member_id=?1 AND card_id=?2", rusqlite::params![member_id, id], |r| r.get::<_, i64>(0)).map(|n| n > 0) };
+    let mut id = if n == 0 { key.clone() } else { format!("{key}#{}", n + 1) };
+    let mut next = n + 1;
+    while taken(&id)? {
+        next += 1;
+        id = format!("{key}#{next}");
+    }
     let added = members::add_card(c, member_id, &id, title, number, set, image, image_large)?;
     if let members::Added::Yes(cid) = added {
         let selling: i64 = c.query_row("SELECT seller FROM members WHERE id=?1", [member_id], |r| r.get(0)).unwrap_or(0);
@@ -2910,6 +2918,16 @@ mod tests {
         assert!(toggle_save(&c, b, card).unwrap());
         assert!(!toggle_save(&c, b, card).unwrap());
         assert_eq!(most_viewed(&c, s, 5).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn another_copy_after_one_was_deleted_still_adds() {
+        let c = db();
+        let s = members::create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        let ids: Vec<i64> = (0..3).map(|_| match add_listing(&c, s, "tcgdex:x-1", "Mew", "1", "Set", "/p/m.webp", "").unwrap() { members::Added::Yes(id) => id, _ => panic!() }).collect();
+        c.execute("DELETE FROM member_cards WHERE id=?1", [ids[0]]).unwrap();
+        assert!(matches!(add_listing(&c, s, "tcgdex:x-1", "Mew", "1", "Set", "/p/m.webp", "").unwrap(), members::Added::Yes(_)), "a free number is found");
     }
 
     #[test]

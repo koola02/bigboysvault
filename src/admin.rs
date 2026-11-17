@@ -843,6 +843,26 @@ pub struct PriceQs {
     id: Option<String>,
 }
 
+/// Today's market value for one exact card ("tcgdex:sv08-057"), cached like `price`. The sellers' "Add a card" window
+/// shows it as a hint (community::seller_price); the seller still types their own price.
+pub(crate) async fn price_for_id(app: &App, id: &str) -> serde_json::Value {
+    let key = format!("id|{id}");
+    if let Some(hit) = app.prices.get(&key) {
+        return (*hit).clone();
+    }
+    match market::by_id_lang(&app.http, &app.fx, id).await {
+        Ok(m) => {
+            let rate = market::fx(&app.http, &app.fx).await.map(|f| f.usd_php).unwrap_or(0.0);
+            let v = json!({ "matches": m.into_iter().collect::<Vec<_>>(), "rate": rate, "exact": true });
+            if v["matches"].as_array().map_or(false, |m| !m.is_empty()) {
+                app.prices.insert(key, std::sync::Arc::new(v.clone()));
+            }
+            v
+        }
+        Err(e) => json!({ "matches": [], "error": e }),
+    }
+}
+
 /// Looks up today's market value (in pesos) for a card by name + number, or by exact card id.
 /// Never blocks saving: failures come back as a hint.
 pub async fn price(State(app): State<App>, h: HeaderMap, Qs(q): Qs<PriceQs>) -> Res {

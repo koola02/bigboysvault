@@ -1900,6 +1900,171 @@ pub async fn staff_remove_card(State(app): State<App>, h: HeaderMap, Path(cid): 
     Ok(ok(json!({ "ok": true })))
 }
 
+/// GET /me/cards/price?id=: what the card list's market says a card is worth, for a seller's "Add a card" window
+/// (static/add-card.js). It is only shown as a hint there: the seller types their own price.
+pub async fn seller_price(State(app): State<App>, h: HeaderMap, Query(q): Query<SellerPriceQs>) -> Res {
+    let Some(m) = current(&app, &h).await? else { return Ok(fail(StatusCode::UNAUTHORIZED, "Please log in again.")) };
+    if !m.seller {
+        return Ok(fail(StatusCode::FORBIDDEN, "Only sellers add cards to a store."));
+    }
+    if over_limit(&app, format!("sprice|{}", m.id), 240) {
+        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of looking up. Please wait a few minutes."));
+    }
+    let id: String = q.id.chars().take(60).collect();
+    Ok(ok(crate::admin::price_for_id(&app, &id).await))
+}
+
+#[derive(Deserialize)]
+pub struct SellerPriceQs {
+    id: String,
+}
+
+/// The most copies one "Add a card" can put up at once.
+const ADD_QTY_MAX: i64 = 99;
+
+/// POST /me/cards/new (a form, with an optional photo): a seller puts a card from the card list up for sale with
+/// everything chosen by them first: its condition, their own price, how many, a note, the binder, and either the card
+/// list's picture or a photo of their own card. Nothing is filled in for them (the owner, 18 Nov 2026: "adding a card
+/// shouldn't automatically give it a price"). The listing is made only when everything checks out.
+pub async fn add_card_full(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    if !m.seller {
+        return Ok(fail(StatusCode::FORBIDDEN, "Only sellers add cards to a store. Apply as a seller from the menu."));
+    }
+    if m.cards >= with_db(&app, |c| Ok(marcuru_rs::sellers::max_cards(c))).await? {
+        return Ok(fail(StatusCode::CONFLICT, "Your store is full. Take a card out first."));
+    }
+    if over_limit(&app, format!("addfull|{}", m.id), 120) {
+        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of cards in a short time. Please take a short break and try again."));
+    }
+    let (mut card_id, mut image, mut image_large, mut en) = (String::new(), None::<String>, None::<String>, None::<String>);
+    let (mut cond, mut price, mut qty, mut notes, mut binder, mut photo) = (String::new(), String::new(), String::from("1"), String::new(), String::new(), None::<Vec<u8>>);
+    while let Some(f) = mp.next_field().await.map_err(|_| (StatusCode::BAD_REQUEST, "That didn't upload. Please try again.".to_string()))? {
+        let key = f.name().unwrap_or("").to_string();
+        if key == "photo" {
+            let b = f.bytes().await.map_err(|_| (StatusCode::BAD_REQUEST, "The photo didn't upload. Please try again.".to_string()))?;
+            if !b.is_empty() {
+                photo = Some(b.to_vec());
+            }
+            continue;
+        }
+        let text = f.text().await.unwrap_or_default();
+        match key.as_str() {
+            "id" => card_id = text.trim().chars().take(60).collect(),
+            "image" => image = Some(text),
+            "image_large" => image_large = Some(text),
+            "en" => en = Some(text),
+            "cond" => cond = text.trim().to_string(),
+            "price" => price = text.trim().to_string(),
+            "qty" => qty = text.trim().to_string(),
+            "notes" => notes = text,
+            "binder_id" => binder = text.trim().to_string(),
+            _ => {}
+        }
+    }
+    // Everything is checked before anything is made.
+    if card_id.is_empty() {
+        return Ok(fail(StatusCode::BAD_REQUEST, "Pick a card first."));
+    }
+    if !members::CONDITIONS.contains(&cond.as_str()) {
+        return Ok(fail(StatusCode::BAD_REQUEST, "Choose the card's condition."));
+    }
+    let Some(price) = price.replace(',', "").parse::<f64>().ok().filter(|p| p.is_finite() && *p >= 1.0 && *p <= 100_000_000.0) else {
+        return Ok(fail(StatusCode::BAD_REQUEST, "Type your price for one card, in pesos."));
+    };
+    let Some(qty) = qty.parse::<i64>().ok().filter(|q| (1..=ADD_QTY_MAX).contains(q)) else {
+        return Ok(fail(StatusCode::BAD_REQUEST, "How many: from 1 to 99."));
+    };
+    let notes = members::clean_text(&notes, 300);
+    let id = m.id;
+    let binder_id = match binder.parse::<i64>().ok().filter(|b| *b > 0) {
+        Some(b) => {
+            let mine = with_db(&app, move |c| Ok(members::binders_of(c, id)?.iter().any(|x| x.id == b))).await?;
+            if !mine {
+                return Ok(fail(StatusCode::BAD_REQUEST, "That binder isn't yours."));
+            }
+            Some(b)
+        }
+        None => None,
+    };
+    if photo.is_some() {
+        let room = with_db(&app, |c| Ok(members::photo_bytes(c)?)).await?;
+        if room >= photo_cap_mb() * 1024 * 1024 {
+            return Ok(fail(StatusCode::INSUFFICIENT_STORAGE, "The vault's photo space is full right now. Use the card's own picture for now."));
+        }
+    }
+    // The card's details come from the card list, not from what the browser says.
+    let info = match market::by_id_lang(&app.http, &app.fx, &card_id).await {
+        Ok(Some(v)) => v,
+        _ => return Ok(fail(StatusCode::BAD_REQUEST, "That card couldn't be found. Please try again.")),
+    };
+    let text = |k: &str| info[k].as_str().unwrap_or("").to_string();
+    let name = text("name");
+    if name.is_empty() {
+        return Ok(fail(StatusCode::BAD_REQUEST, "That card couldn't be found. Please try again."));
+    }
+    let en = en.as_deref().map(|e| members::clean_line(e, 60)).filter(|e| !e.is_empty() && *e != name);
+    let title = members::clean_line(&en.map(|e| format!("{name} ({e})")).unwrap_or_else(|| name.clone()), 120);
+    let number = match (info["number"].as_str(), info["total"].as_i64()) {
+        (Some(n), Some(t)) if t > 0 => format!("{n}/{t}"),
+        (Some(n), _) => n.to_string(),
+        _ => String::new(),
+    };
+    let pick = |own: String, given: Option<String>| if known_picture(&own) { own } else { given.filter(|g| known_picture(g)).unwrap_or_default() };
+    let (mut pic, mut pic_large) = (pick(text("image"), image), pick(text("image_large"), image_large));
+    // A photo of the seller's own card replaces the card list's picture.
+    let mut own_bytes = 0i64;
+    if let Some(bytes) = photo {
+        let dir = PathBuf::from(&*app.uploads);
+        let stem = format!("m{}-{}", m.id, members::temp_password());
+        match gated(move || store_photo(bytes, dir, stem)).await? {
+            Ok((large, small, _, _, size)) => {
+                pic = small;
+                pic_large = large;
+                own_bytes = size.max(1);
+            }
+            Err(e) if e == TOO_BIG => return Ok(fail(StatusCode::BAD_REQUEST, TOO_BIG_TEXT)),
+            Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "That photo couldn't be read. Try a JPEG or PNG.")),
+        }
+    }
+    let set = members::clean_line(&text("set"), 80);
+    let market = market::member_finish_price(&info, "").unwrap_or(0.0);
+    let (t2, n2, s2, i2, l2, key) = (title.clone(), number.clone(), set.clone(), pic.clone(), pic_large.clone(), card_id.clone());
+    let made = with_db(&app, move |c| {
+        let added = marcuru_rs::sellers::add_listing(c, id, &key, &t2, &n2, &s2, &i2, &l2)?;
+        let Added::Yes(cid) = added else { return Ok(Err(added)) };
+        marcuru_rs::sellers::set_kind(c, id, cid, "sale")?.ok();
+        // The market price is kept for the seller's dashboard and hints; the card sells at the seller's own price.
+        let value = if market > 0.0 { market } else { members::vault_price(c, &key)? };
+        members::set_listing_value(c, id, cid, value, crate::unix_now())?;
+        if own_bytes > 0 {
+            members::set_card_photo_bytes(c, cid, own_bytes)?;
+        }
+        let patch = marcuru_rs::sellers::Patch { price: Some(price), cond: Some(cond), qty: Some(qty), notes: Some(notes), binder_id: binder_id.map(Some), ..Default::default() };
+        let card = marcuru_rs::sellers::update_listing(c, id, cid, &patch)?;
+        Ok(Ok((cid, card)))
+    })
+    .await?;
+    let (cid, card) = match made {
+        Ok(x) => x,
+        Err(a) => {
+            if own_bytes > 0 {
+                admin::remove_upload(&app.uploads, &pic);
+                admin::remove_upload(&app.uploads, &pic_large);
+            }
+            return Ok(fail(StatusCode::CONFLICT, if matches!(a, Added::Full) { "Your store is full. Take a card out first." } else { "That card is already in your store." }));
+        }
+    };
+    if m.profile_ok {
+        app.forget();
+    }
+    let shown = card.as_ref().map(|k| k.price_text()).unwrap_or_default();
+    Ok(ok(json!({ "ok": true, "card": { "id": cid, "title": title, "number": number, "set": set, "image": pic, "price": shown, "binder_id": binder_id } })))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -289,15 +289,13 @@
       const pic = el('span', 'me-res-pic');
       if (c.image) { const i = el('img'); i.src = c.image; i.alt = ''; i.loading = 'lazy'; i.width = 245; i.height = 342; i.onerror = () => i.remove(); pic.append(i); }
       b.append(pic, el('b', null, c.name), el('small', null, [c.en, c.set, c.number].filter(Boolean).join(' · ')));
-      b.addEventListener('click', async () => {
-        if (b.disabled) return; b.classList.add('busy'); b.disabled = true;
-        try {
-          const j = await send('/me/cards', { id: c.id, image: c.image, image_large: c.image_large, en: c.en });
+      // Tapping a card opens "Add to your store": condition, price, picture and the rest are chosen there (add-card.js).
+      b.addEventListener('click', () => {
+        if (!window.bbvAddCard) { A.toast('Please reload the page and try again.', { kind: 'err' }); return; }
+        window.bbvAddCard.open({ card: c, onAdded: () => {
           added++; b.classList.add('in'); b.querySelector('b').textContent = `${c.name} ✓ added`;
-          A.toast(`Added ${c.name} at ${j.card.value || 'no price yet'} ✓`, { kind: 'ok' });
           root.dataset.total = Number(root.dataset.total) + 1;
-        } catch (err) { A.toast(err.message, { kind: 'err' }); }
-        b.classList.remove('busy'); b.disabled = false;
+        } });
       });
       return b;
     }

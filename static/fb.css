@@ -1728,6 +1728,25 @@ html.bt-modal { overflow: hidden; }
 .bm-ib:hover { color: var(--text); }
 .sf-save.bm-ib { width: 40px; height: 40px; }
 .buy-bar .bm-bar { flex: none; width: 44px; height: auto; min-height: 44px; border-radius: var(--r); }
+/* "Add to your store" (add-card.js): the seller chooses everything before a card is added. */
+dialog.ac .float-panel { padding: 0; gap: 0; width: min(560px, 100%); }
+.ac-body { display: flex; flex-direction: column; gap: 14px; padding: 16px; overflow-y: auto; }
+.ac-top { display: flex; align-items: center; gap: 12px; }
+.ac-pic { flex: none; width: 84px; }
+.ac-pic img { display: block; width: 100%; height: auto; border-radius: var(--r-sm); background: var(--surface-2); }
+.ac-who { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ac-who small { color: var(--muted); }
+.ac-f { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0; padding: 0; border: 0; }
+.ac-f legend { padding: 0; margin-bottom: 6px; font-weight: 700; }
+.ac-f small, .ac-how { color: var(--muted); font-size: .8125rem; }
+.ac-f select, .ac-f input, .ac-f textarea { width: 100%; min-height: 44px; }
+.ac-opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.ac-opt { flex: 1 1 160px; display: grid; place-items: center; min-height: 44px; padding: 8px 12px; border: 0; border-radius: var(--r); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-2); color: var(--text); font: 600 .875rem/1.2 var(--font); text-align: center; cursor: pointer; }
+.ac-opt[aria-pressed="true"], .ac-opt.on { background: var(--gold-tint); box-shadow: inset 0 0 0 2px var(--gold-edge); color: var(--gold-hi); }
+.ac-pair { display: flex; gap: 12px; }
+.ac-half { flex: 1 1 0; }
+.ac-acts { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
+@media (max-width: 699px) { .ac-acts { padding-bottom: calc(12px + var(--sab)); } .ac-acts .btn { flex: 1; } }
 /* The make-an-offer window (offer.js). */
 dialog.of .float-panel { padding: 0; gap: 0; }
 .of-body { display: flex; flex-direction: column; gap: 12px; padding: 16px; }

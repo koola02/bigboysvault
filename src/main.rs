@@ -853,7 +853,7 @@ mod tests {
         assert!(binder.contains("class=\"wrap mk mk-bpage\"") && binder.contains("<form class=\"filters\"") && binder.contains("id=\"grid\""), "its search and cards stay");
         assert!(!binder.contains("<p class=\"sub\">"));
         // Full admins arrange its cards right there: the button is in every visitor's page (it is kept), hidden unless they are signed in.
-        assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=3"));
+        assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=4"));
         // The Vault (all cards) and a search: no bar.
         for (base, title) in [("/search", "All cards"), ("/search", "Results for “pika”")] {
             let other = page(base, title, 3);
@@ -1186,6 +1186,8 @@ async fn main() {
         .route("/vouches/{id}/act", post(community::vouch_act))
         .route("/me/search", get(community::search_cards))
         .route("/me/cards", post(community::add_card))
+        .route("/me/cards/new", post(community::add_card_full).layer(axum::extract::DefaultBodyLimit::max(12 * 1024 * 1024)))
+        .route("/me/cards/price", get(community::seller_price))
         .route("/me/cards/upload", post(community::upload_card).layer(axum::extract::DefaultBodyLimit::max(12 * 1024 * 1024)))
         .route("/admin/member-cards/{id}/delete", post(community::staff_remove_card))
         .route("/me/cards/order", post(community::order_cards))

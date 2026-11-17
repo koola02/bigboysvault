@@ -582,7 +582,7 @@
         try {
           const j = await req(`/me/search?q=${enc(q)}&lang=en`); if (my !== freshSeq) return;
           const found = (j.cards || []).slice(0, 24);
-          freshState.textContent = found.length ? 'Cards you don’t have yet. Tap one to put it up for sale in this binder.' : (j.error || `Nothing called “${q}” in the card list. Check the spelling.`);
+          freshState.textContent = found.length ? 'Cards you don’t have yet. Tap one to choose its condition, your price and its picture, then add it to this binder.' : (j.error || `Nothing called “${q}” in the card list. Check the spelling.`);
           freshList.replaceChildren(...found.map(newRow));
         } catch (e) { if (my === freshSeq) freshState.textContent = e.message; }
       }
@@ -597,16 +597,14 @@
         if (sub) t.append(el('small', '', sub));
         const how = el('small', 'bt-price', '+ Add to this binder'); t.append(how);
         b.append(pic, t);
-        b.addEventListener('click', async () => {
-          if (b.disabled || b.getAttribute('aria-pressed') === 'true') return;
-          b.disabled = true; how.textContent = 'Adding…';
-          try {
-            const j = await req('/me/cards', { id: c.id, image: c.image, image_large: c.image_large, en: c.en });
-            await api.change(key, { add: [j.card.id] }); dirty = true;
-            b.setAttribute('aria-pressed', 'true'); how.textContent = `Added for ${j.card.value || 'no price yet'} ✓`;
+        b.addEventListener('click', () => {
+          if (b.getAttribute('aria-pressed') === 'true') return;
+          if (!window.bbvAddCard) { how.textContent = 'Please reload the page and try again.'; return; }
+          window.bbvAddCard.open({ card: c, binderId: key, onAdded: async (card) => {
+            dirty = true;
+            b.setAttribute('aria-pressed', 'true'); how.textContent = `Added${card && card.price ? ` for ${card.price}` : ''} ✓`;
             await load(); draw();
-          } catch (e) { how.textContent = e.message; }
-          b.disabled = false;
+          } });
         });
         li.append(b); return li;
       }
