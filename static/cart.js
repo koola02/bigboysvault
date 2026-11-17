@@ -114,20 +114,25 @@
   const unmark = (l) => { if (l.kind === 'vault' && l.ok === false && l.left !== 0) { delete l.ok; delete l.why; } };
   function paint() {
     list.replaceChildren();
+    // Each card sits under the store it came from, with a link back to that store (the vault's is a store too).
     const groups = new Map();
+    const site = document.querySelector('meta[property="og:site_name"]')?.content || 'Big Boys Vault';
     for (const l of lines) {
-      const k = l.kind === 'vault' ? 'vault' : `s:${l.seller_slug || l.id}`;
-      if (!groups.has(k)) groups.set(k, { name: l.kind === 'vault' ? 'From Big Boys Vault' : `From ${l.seller_name || 'a seller'}`, lines: [] });
+      const slug = l.kind === 'vault' ? 'vault' : (l.seller_slug || '');
+      const k = l.kind === 'vault' ? 'vault' : `s:${slug || l.id}`;
+      if (!groups.has(k)) groups.set(k, { name: l.seller_name || (l.kind === 'vault' ? site : 'a seller'), slug, lines: [] });
       groups.get(k).lines.push(l);
     }
     let sum = 0, okCount = 0;
     for (const g of groups.values()) {
-      const h = el('h3', 'cart-g', g.name); list.append(h);
+      const h = el('h3', 'cart-g', 'From ');
+      if (g.slug) { const a = el('a', 'cart-store', g.name); a.href = `/store/${g.slug}`; h.append(a); } else h.append(g.name);
+      list.append(h);
       for (const l of g.lines) {
         const li = el('li', 'cart-line' + (l.ok === false ? ' off' : ''));
         const pic = el('a', 'cart-pic'); pic.href = l.url || '#'; if (l.image) { const i = el('img'); i.src = l.image; i.alt = ''; i.width = 48; i.height = 67; pic.append(i); }
         const body = el('div', 'cart-body');
-        body.append(el('b', null, l.title || 'Card'));
+        const name = el('a', 'cart-t', l.title || 'Card'); name.href = l.url || '#'; body.append(name);
         if (l.ok === false) body.append(el('small', 'cart-why', l.why || 'Not available'));
         else body.append(el('small', null, `${peso(l.price)} each` + (l.left > 0 && (l.qty || 1) >= l.left ? ` · ${l.left === 1 ? 'only 1 there' : `all ${l.left} there`}` : '')));
         const qty = el('div', 'cart-qty');

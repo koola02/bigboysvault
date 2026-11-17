@@ -1728,6 +1728,18 @@ html.bt-modal { overflow: hidden; }
 .bm-ib:hover { color: var(--text); }
 .sf-save.bm-ib { width: 40px; height: 40px; }
 .buy-bar .bm-bar { flex: none; width: 44px; height: auto; min-height: 44px; border-radius: var(--r); }
+/* The make-an-offer window (offer.js). */
+dialog.of .float-panel { padding: 0; gap: 0; }
+.of-body { display: flex; flex-direction: column; gap: 12px; padding: 16px; }
+.of-card { display: flex; align-items: center; gap: 12px; margin: 0; color: var(--muted); }
+.of-card img { border-radius: var(--r-sm); }
+dialog.of .sheet-acts { display: flex; justify-content: flex-end; gap: 8px; }
+/* On a phone the card's bar holds Add to cart, Message, Offer and Bookmark: Message shows as its picture only. */
+@media (max-width: 699px) {
+  .buy-bar .dm-add { flex: none; width: 44px; padding: 0; }
+  .buy-bar .dm-add span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .buy-bar .of-btn { flex: 1 1 0; }
+}
 .sf-save.bm-ib[aria-pressed="true"] { background: var(--gold-tint); color: var(--gold-hi); }
 .mn-n.mn-n-soft { background: var(--surface-3); color: var(--text); }
 .row .mn-n { margin-left: auto; }

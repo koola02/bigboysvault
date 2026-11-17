@@ -2598,6 +2598,8 @@ pub struct CartLine {
 
 pub fn cart_lines(c: &Connection, vault_ids: &[i64], card_ids: &[i64]) -> rusqlite::Result<Vec<CartLine>> {
     let mut out = vec![];
+    // The vault's cards come from its store like any other: its name (the site's) and /store/vault.
+    let vault_name = crate::blocks::setting(c, "brand")?.map(|b| b.trim().to_string()).filter(|b| !b.is_empty()).unwrap_or_else(|| "Big Boys Vault".into());
     for id in vault_ids.iter().take(60) {
         // The copy in the cart may have sold while identical copies are still for sale: the line stands for those.
         let now_id = crate::db::sale_copy(c, *id)?.unwrap_or(*id);
@@ -2607,7 +2609,7 @@ pub fn cart_lines(c: &Connection, vault_ids: &[i64], card_ids: &[i64]) -> rusqli
                 let left = crate::db::vault_left(c, now_id, 0)?;
                 let ok = p.available && p.price > 0.0 && left > 0;
                 let why = if ok { "" } else if p.available && p.price > 0.0 { "All copies are spoken for" } else { "Not for sale right now" };
-                out.push(CartLine { kind: "vault", id: *id, title: p.short_title(), price: p.price, image: p.img(360), url: format!("/products/{}", p.handle), ok, why: why.into(), seller_id: 0, seller_name: String::new(), seller_slug: String::new(), left });
+                out.push(CartLine { kind: "vault", id: *id, title: p.short_title(), price: p.price, image: p.img(360), url: format!("/products/{}", p.handle), ok, why: why.into(), seller_id: 0, seller_name: vault_name.clone(), seller_slug: VAULT_SLUG.into(), left });
             }
             None => out.push(CartLine { kind: "vault", id: *id, title: "A card that's gone".into(), price: 0.0, image: String::new(), url: "/".into(), ok: false, why: "No longer in the vault".into(), seller_id: 0, seller_name: String::new(), seller_slug: String::new(), left: 0 }),
         }

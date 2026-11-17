@@ -2858,7 +2858,7 @@ mod tests {
         assert!(fire.contains("<h1 class=\"sf-bh\">Fire</h1>") && fire.contains("3 cards · by"));
         assert!(!fire.contains("class=\"sf-head") && !fire.contains("data-vouches") && !fire.contains("← All of"));
         assert_eq!(fire.matches("class=\"sf-card\"").count(), 3, "the binder's cards, with their buttons");
-        assert!(fire.contains("id=\"buySheet\"") && fire.contains("storefront.js"));
+        assert!(!fire.contains("data-offer") && !fire.contains("id=\"buySheet\"") && fire.contains("storefront.js"), "Offer and Message live in each card's window");
     }
 
     /// The vault's own binders and cards: Pikachu Set with two copies for sale and one sold; Graded Cards, never in the

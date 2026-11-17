@@ -46,9 +46,7 @@
 
   /* (Bookmarking a card is bookmarks.js's, the same on every page.) */
 
-  /* ----- reserve or make an offer ----- */
-  const sheet = $('buySheet'), form = $('buyForm');
-  let mode = 'reserve', cardId = 0;
+  /* ----- the ask sheet (Offer and Message are in each card's window: offer.js, dm.js) ----- */
   // A sheet slides up on phones and sits in the middle on big screens (the "open" class does that).
   // While it's open, Tab stays inside it, and closing it puts the keyboard back on the button that opened it.
   let back = null;
@@ -83,35 +81,6 @@
     else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   });
-  root.addEventListener('click', (e) => {
-    const b = e.target.closest('[data-offer]'); if (!b) return;
-    if (!me) return signIn();
-    const card = b.closest('.sf-card');
-    mode = 'offer'; cardId = Number(card.dataset.id);
-    $('buyTitle').textContent = mode === 'reserve' ? 'Reserve this card' : 'Make an offer';
-    $('buyImg').src = card.querySelector('img')?.src || ''; $('buyName').textContent = card.dataset.title;
-    $('buyMeta').textContent = `${card.dataset.cond} · ${Number(card.dataset.price) > 0 ? '₱' + Math.round(card.dataset.price).toLocaleString('en-US') : 'no price yet'} · ${card.dataset.qty} available`;
-    $('buyAmountRow').hidden = mode !== 'offer'; form.amount.required = mode === 'offer';
-    form.qty.max = card.dataset.qty; form.qty.value = 1; form.message.value = ''; form.amount.value = '';
-    $('buyHint').textContent = mode === 'reserve' ? 'The seller gets your reservation and accepts it. Then you’ll see how to pay them. The vault never handles the money.' : 'The seller can accept, counter or decline. If they accept, it becomes a reservation at your price.';
-    $('buyGo').textContent = mode === 'reserve' ? 'Reserve' : 'Send offer';
-    open(sheet);
-  });
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault(); const go = $('buyGo'); go.disabled = true;
-    try {
-      const body = { card_id: cardId, qty: Number(form.qty.value) || 1, message: form.message.value };
-      if (mode === 'offer') body.amount = Number(form.amount.value);
-      await send(`/store/${slug}/${mode}`, body);
-      close(sheet);
-      // The page reloads to show the card's new state; the note is said again once it's back (fb-shell.js reads it).
-      const said = mode === 'reserve' ? 'Reserved ✓ Watch the bell for the seller’s answer.' : 'Offer sent ✓ Watch the bell for the seller’s answer.';
-      toast(said); try { sessionStorage.setItem('bbv:toast', said); } catch (_) {}
-      setTimeout(() => location.reload(), 1200);
-    } catch (err) { toast(err.message, true); }
-    go.disabled = false;
-  });
-
   /* ----- ask the seller ----- */
   const askSheet = $('askSheet'), askForm = $('askForm');
   $('askBtn')?.addEventListener('click', () => { if (!me) return signIn(); open(askSheet); });
