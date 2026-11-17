@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% block title %}{% if nav.seo.title.is_empty() %}{{ title }} · {{ nav.brand }}{% else %}{{ nav.seo.title }}{% endif %}{% endblock %}
-{% block layout %}wide{% endblock %}
+{% block layout %}page{% endblock %}
 {% block content %}
 {#- The new look opens one of the vault's binders as a plain page under a bar: an X back to the vault's store, its name and count. -#}
 {% let bpage = base.starts_with("/collections/") %}

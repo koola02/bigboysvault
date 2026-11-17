@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block layout %}wide{% endblock %}
+{% block layout %}page{% endblock %}
 {% block content %}
 {#- The new look opens a binder as its own plain page: a bar with an X back to the store, then the cards. No store header, no reviews. -#}
 {% let bpage = binder.is_some() %}

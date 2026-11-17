@@ -109,6 +109,8 @@ main { min-width: 0; width: 100%; max-width: 1664px; margin: 0 auto; padding: 16
 body[data-layout="feed"] main { max-width: calc(var(--feed) + 32px); }
 body[data-layout="wide"] main { max-width: none; padding: 0; }
 body[data-layout="plain"] main { max-width: 1568px; }
+/* A store's page and a binder's page sit beside the menu like any page, and fill the room beside it edge to edge. */
+body[data-layout="page"] main:has(> .storefront, > .mk) { max-width: none; padding: 0; }
 .fb-left, .fb-right { display: none; }
 .fb-right { position: sticky; top: calc(var(--hd-h) + var(--sat)); height: calc(100dvh - var(--hd-h) - var(--sat)); padding: 16px 12px 16px 4px; overflow-y: auto; scrollbar-width: thin; }
 .fb-right:empty { display: none !important; }
