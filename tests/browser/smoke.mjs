@@ -145,6 +145,14 @@ for (const [size, viewport] of Object.entries(SIZES)) {
   });
 
   // 6. The cart. The first card that can really be bought is used: a copy held by someone's open order can't be.
+  // The cart is a row in the menu, under Orders (17 Nov 2026): on a phone or tablet the menu opens first.
+  const openCart = async () => {
+    if (!(await shown('#cartFab'))) {
+      const at = await page.evaluate(() => { const b = [...document.querySelectorAll('[data-menu-toggle]')].find((x) => x.getClientRects().length && getComputedStyle(x).visibility !== 'hidden'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+      if (at) { await page.mouse.click(at.x, at.y); await until(() => shown('#cartFab'), 3000); }
+    }
+    await page.click('#cartFab');
+  };
   let bought = '', why = 'none of them has an Add to cart button';
   for (const href of cards) {
     await page.goto(BASE + href, { waitUntil: 'networkidle2', timeout: 60000 }).catch(() => {});
@@ -153,8 +161,8 @@ for (const [size, viewport] of Object.entries(SIZES)) {
     if (!(await count('main button.cart-add'))) continue;
     broke = [];
     await tap('main button.cart-add');
-    if (!(await until(async () => (await text('#cartN')) === '1' && (await shown('#cartFab')), 8000))) { why = 'the cart did not count the card'; break; }
-    await page.click('#cartFab');
+    if (!(await until(async () => (await text('#cartN')) === '1', 8000))) { why = 'the cart did not count the card'; break; }
+    await openCart();
     if (!(await until(() => shown('#cartDrawer'), 8000))) { why = 'the cart did not open'; break; }
     // The cart asks the site whether each line can still be bought: wait for that answer to settle.
     await sleep(1800);
@@ -178,7 +186,7 @@ for (const [size, viewport] of Object.entries(SIZES)) {
       await page.type('input[name="password"]', 'smoke-test-' + name);
       await Promise.all([page.waitForNavigation({ timeout: 30000 }).catch(() => null), page.click('main form button[type="submit"], main form .btn')]);
       await page.goto(BASE + bought, { waitUntil: 'networkidle2' });
-      if (!(await shown('#cartDrawer'))) await page.click('#cartFab').catch(() => {});
+      if (!(await shown('#cartDrawer'))) await openCart().catch(() => {});
       const again = await until(() => shown('#cartDrawer'), 10000);
       let sent = false;
       if (again && (await until(async () => !(await page.evaluate(() => document.getElementById('cartGo').disabled)), 10000))) {

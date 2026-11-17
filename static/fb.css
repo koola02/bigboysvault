@@ -1032,7 +1032,8 @@ img.av { object-fit: cover; }
   .sf-sub { justify-content: flex-start; margin-top: 2px; font-size: .8125rem; }
   .sf-bio { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font-size: .875rem; }
   .sf-acts { grid-column: 1 / -1; width: 100%; gap: 6px; }
-  .sf-acts .btn { flex: 1 1 0; min-width: 0; min-height: 38px; padding: 0 8px; gap: 6px; font-size: .875rem; white-space: nowrap; }
+  .sf-acts .btn { flex: 1 1 auto; min-height: 38px; padding: 0 10px; gap: 6px; font-size: .875rem; white-space: nowrap; }
+  .sf-acts .btn svg { flex: none; }
   .sf-stats { flex-wrap: nowrap; }
   .sf-stats li { align-items: center; padding: 6px 4px; text-align: center; }
   .sf-stats b { font-size: .9375rem; }
@@ -1721,6 +1722,7 @@ html.bt-modal { overflow: hidden; }
 .bm-ib[aria-pressed="true"] { color: var(--gold-hi); background: var(--gold-tint); }
 .bm-ib:hover { color: var(--text); }
 .sf-save.bm-ib { width: 40px; height: 40px; }
+.buy-bar .bm-bar { flex: none; width: 44px; height: auto; min-height: 44px; border-radius: var(--r); }
 .sf-save.bm-ib[aria-pressed="true"] { background: var(--gold-tint); color: var(--gold-hi); }
 .mn-n.mn-n-soft { background: var(--surface-3); color: var(--text); }
 .row .mn-n { margin-left: auto; }
