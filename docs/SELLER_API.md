@@ -68,6 +68,16 @@ passed; the owner is told and can renew).
 The same card can be listed more than once (say a Near Mint and a Lightly Played copy): the second listing's
 `card_id` is `tcgdex:base1-58#2`. `sellers::catalogue_key` strips the suffix wherever the catalogue id matters.
 
+## A card's page and window
+
+`/trainers/{id}/cards/{cid}` (and `?part=1`, the same card in the window over a page; `community::member_card`,
+`member_card_part.html`) is as full as a vault card's: under the facts, how the market price moved
+(`history::listing_trend`: the catalogue card's history, in the finish the seller named, else the common printing),
+then **More like this** (`sellers::related`): up to 12 cards for sale anywhere on the site, the vault's available
+cards and every open store's priced listings that can be bought now (`sellers::open_listings`, the same checks as
+The Vault page's finder), never the card itself. Cards with the same name come first, then cards like it, each
+scored by `similar.rs`. A store's tile says whose it is and has its own Message and cart buttons.
+
 ## The seller panel (signed in)
 
 | Route | What |

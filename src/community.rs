@@ -9,6 +9,7 @@ use axum::{
 };
 use marcuru_rs::members::{self, Added, Award, ChatMessage, Member, MemberCard, Posted, Vouch};
 use marcuru_rs::market;
+use marcuru_rs::sellers::Like;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::path::PathBuf;
@@ -252,13 +253,20 @@ struct MemberCardPage {
     nav: Chrome,
     t: Member,
     c: MemberCard,
+    /// "More like this": cards for sale in the vault and the open stores (`sellers::related`).
+    related: Vec<Like>,
+    /// How the market price of this card moved lately, as on a vault card's page.
+    trend: Option<marcuru_rs::history::Trend>,
 }
 
+/// The same, without the site around it, for the card window.
 #[derive(Template)]
 #[template(path = "member_card_part.html")]
 struct MemberCardPart {
     t: Member,
     c: MemberCard,
+    related: Vec<Like>,
+    trend: Option<marcuru_rs::history::Trend>,
 }
 
 #[derive(Template)]
@@ -684,10 +692,15 @@ pub async fn member_card(State(app): State<App>, h: HeaderMap, Path((id, cid)): 
     // A shared link shows the card, its picture and price; listings for sale in an open store are indexed.
     let mut nav = nav;
     nav.seo = crate::store::listing_seo(&nav, &t, &c);
-    // A look at a card in a store counts for its seller (once a day per viewer, never the owner).
-    let (cid2, who, viewer) = (c.id, crate::store::viewer_hash(&h), me.as_ref().map(|m| m.id));
-    with_db(&app, move |c| marcuru_rs::sellers::count_view(c, cid2, &who, viewer)).await.ok();
-    Ok(html(if q.part.is_some() { render(MemberCardPart { t, c })? } else { render(MemberCardPage { nav, t, c })? }))
+    // A look at a card in a store counts for its seller (once a day per viewer, never the owner). Under the card, as
+    // under a vault card: similar cards for sale anywhere on the site, and how its market price moved.
+    let (cid2, who, viewer, card) = (c.id, crate::store::viewer_hash(&h), me.as_ref().map(|m| m.id), c.clone());
+    let (related, trend) = with_db(&app, move |db| {
+        marcuru_rs::sellers::count_view(db, cid2, &who, viewer).ok();
+        Ok((marcuru_rs::sellers::related(db, &card, 12)?, marcuru_rs::history::listing_trend(db, &card.card_id, &card.finish)?))
+    })
+    .await?;
+    Ok(html(if q.part.is_some() { render(MemberCardPart { t, c, related, trend })? } else { render(MemberCardPage { nav, t, c, related, trend })? }))
 }
 
 // ---------- my trainer ----------
