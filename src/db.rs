@@ -920,6 +920,14 @@ pub fn total(c: &Connection) -> rusqlite::Result<i64> {
     c.query_row("SELECT COUNT(*) FROM products", [], |r| r.get(0))
 }
 
+/// Every card the vault has for sale now, once each (copies grouped, as its pages show them), in the vault's order.
+/// "More like this" under a store's card picks from these and the open stores' listings (`sellers::related`).
+pub fn available_cards(c: &Connection) -> rusqlite::Result<Vec<Product>> {
+    let mut st = c.prepare_cached(&format!("SELECT {COLS}, COUNT(*) AS qty, group_concat(p.id) AS ids FROM products p WHERE p.available=1 GROUP BY {DUP_KEY} ORDER BY MIN(p.position), MIN(p.id)"))?;
+    let v = st.query_map([], map_grouped)?.collect::<Result<Vec<_>, _>>()?;
+    Ok(v)
+}
+
 pub fn related(c: &Connection, p: &Product, n: usize) -> rusqlite::Result<Vec<Product>> {
     // Every card once (copies grouped), scored against this one by crate::similar: names alike, same set, prices alike, same condition.
     let mut st = c.prepare_cached(&format!("SELECT {COLS}, COUNT(*) AS qty, group_concat(p.id) AS ids FROM products p GROUP BY {DUP_KEY} ORDER BY MIN(p.position), MIN(p.id)"))?;

@@ -87,6 +87,22 @@ pub fn trend(c: &Connection, api_id: &str, finish: &str) -> rusqlite::Result<Opt
     Ok(trend_of(&all, &month_ago(c)?))
 }
 
+/// The trend on a trainer's card page: its catalogue card's market history (a second copy, "tcgdex:sv08-147#2", is the
+/// same card), in the finish the seller named, else the common printing. None for an own photo, a card the vault has
+/// never priced, or history younger than two days.
+pub fn listing_trend(c: &Connection, card_id: &str, finish: &str) -> rusqlite::Result<Option<Trend>> {
+    let key = crate::sellers::catalogue_key(card_id).trim();
+    if key.is_empty() || key.starts_with("own:") {
+        return Ok(None);
+    }
+    let mut st = c.prepare_cached("SELECT DISTINCT finish FROM price_history WHERE api_id=?1")?;
+    let have: Vec<String> = st.query_map([key], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    match crate::market::finish_key(&have, finish) {
+        Some(f) => trend(c, key, f),
+        None => Ok(None),
+    }
+}
+
 fn month_ago(c: &Connection) -> rusqlite::Result<String> {
     c.query_row("SELECT date('now', '+8 hours', '-30 days')", [], |r| r.get(0))
 }
@@ -210,6 +226,26 @@ mod tests {
         let t = trend_of(&s(&[("2026-11-01", 80.0), ("2026-11-11", 80.0)]), "2026-10-12").unwrap();
         assert_eq!(t.text(), "Market price steady since 1 Nov");
         assert_eq!(t.points.split(' ').count(), 2);
+    }
+
+    #[test]
+    fn a_store_card_follows_its_catalogue_cards_history() {
+        let c = Connection::open_in_memory().unwrap();
+        c.execute_batch(SCHEMA).unwrap();
+        let day = |ago: i64| -> String { c.query_row("SELECT date('now', '+8 hours', ?1)", [format!("-{ago} days")], |r| r.get(0)).unwrap() };
+        for (fin, then, now) in [("holofoil", 100.0, 110.0), ("reverse-holofoil", 100.0, 80.0)] {
+            record(&c, "tcgdex:a-1", fin, then, &day(5)).unwrap();
+            record(&c, "tcgdex:a-1", fin, now, &day(1)).unwrap();
+        }
+        let pct = |id: &str, fin: &str| listing_trend(&c, id, fin).unwrap().map(|t| t.pct);
+        assert_eq!(pct("tcgdex:a-1", ""), Some(10), "no finish named: the common printing");
+        assert_eq!(pct("tcgdex:a-1#2", "Reverse Holo"), Some(-20), "a second copy is the same card, in the finish its seller named");
+        assert_eq!(pct("tcgdex:a-1", "reverseHolofoil"), Some(-20));
+        assert_eq!(pct("tcgdex:a-1", "Shiny Gold"), Some(10), "a finish the market doesn't know: the common printing");
+        assert_eq!(pct("tcgdex:b-2", ""), None, "a card the vault never priced");
+        assert_eq!(pct("own:photo-1", ""), None, "an own photo has no market");
+        record(&c, "tcgdex:c-3", "", 50.0, &day(1)).unwrap();
+        assert_eq!(pct("tcgdex:c-3", ""), None, "one day is no trend yet");
     }
 
     #[test]

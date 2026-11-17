@@ -145,21 +145,29 @@ pub fn finish_price(card: &Value, finish: &str) -> Option<f64> {
 pub fn member_finish_price(card: &Value, finish: &str) -> Option<f64> {
     let fin = card["finishes"].as_array()?;
     let f = finish.trim();
-    let lower = f.to_ascii_lowercase();
-    let dashed = lower.split_whitespace().collect::<Vec<_>>().join("-");
     let pick = fin
         .iter()
-        .find(|x| {
-            let key = x["key"].as_str().unwrap_or("");
-            !f.is_empty()
-                && (same_finish(f, key)
-                    || same_finish(&lower, key)
-                    || same_finish(&dashed, key)
-                    || x["label"].as_str().is_some_and(|l| l.eq_ignore_ascii_case(f))
-                    || label(key).eq_ignore_ascii_case(f))
-        })
+        .find(|x| typed_finish_is(f, x["key"].as_str().unwrap_or("")) || (!f.is_empty() && x["label"].as_str().is_some_and(|l| l.eq_ignore_ascii_case(f))))
         .or_else(|| default_finish(fin));
     pick.and_then(|x| x["php"].as_f64()).filter(|v| *v > 0.0)
+}
+
+/// True when the finish a seller typed (words or a key, any letter case) names the market's finish `key`.
+fn typed_finish_is(typed: &str, key: &str) -> bool {
+    let f = typed.trim();
+    if f.is_empty() {
+        return false;
+    }
+    let lower = f.to_ascii_lowercase();
+    let dashed = lower.split_whitespace().collect::<Vec<_>>().join("-");
+    same_finish(f, key) || same_finish(&lower, key) || same_finish(&dashed, key) || label(key).eq_ignore_ascii_case(f)
+}
+
+/// Of the finishes a card has market prices for, the one a seller's typed finish names, else the common printing
+/// (never 1st Edition while another is there), as `member_finish_price` picks it. None when there are none.
+pub fn finish_key<'a>(keys: &'a [String], typed: &str) -> Option<&'a str> {
+    let keys = || keys.iter().map(String::as_str);
+    keys().find(|k| typed_finish_is(typed, k)).or_else(|| keys().min_by_key(|k| rank(k)))
 }
 
 fn finishes_json(mut finishes: Vec<(String, f64)>, fx: Fx) -> Vec<Value> {

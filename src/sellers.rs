@@ -723,13 +723,23 @@ pub fn set_featured(c: &Connection, store: i64, f: &Featured) -> rusqlite::Resul
     r
 }
 
-/// Every seller's card that can be bought right now, for The Vault page's card finder (`/vault.tsv`, after the vault's
-/// own catalogue): one `S` line per store, the stores with the most cards first, then one `M` line per listing, newest
-/// first. A card is in when it is for sale and Active, has a copy left that no open reservation holds, and hasn't passed
-/// its end date, in a store that is approved, not blocked, selling and not on vacation (the same checks as `can_sell`).
-pub fn market_lines(c: &Connection) -> rusqlite::Result<String> {
-    use std::collections::HashMap;
-    let mut st = c.prepare(&format!(
+/// A seller's card that can be bought right now, with the store selling it.
+#[derive(Clone, Debug)]
+pub struct OpenListing {
+    pub card: MemberCard,
+    /// The store's name (its own, else its trainer's), its address and its picture.
+    pub store: String,
+    pub slug: String,
+    pub avatar: String,
+    /// Copies no open reservation holds (always at least one).
+    pub left: i64,
+}
+
+/// Every seller's card that can be bought right now, newest first. A card is in when it is for sale and Active, has a
+/// copy left that no open reservation holds, and hasn't passed its end date, in a store that is approved, not blocked,
+/// selling and not on vacation (the same checks as `can_sell`). A card with no price yet is in: it is asked about.
+pub fn open_listings(c: &Connection) -> rusqlite::Result<Vec<OpenListing>> {
+    let mut st = c.prepare_cached(&format!(
         "SELECT {}, m.slug, m.store_name, m.name, m.avatar,
            c.qty - COALESCE((SELECT SUM(r.qty) FROM reservations r WHERE r.card_id=c.id AND r.status IN ('Pending','Confirmed')),0)
          FROM member_cards c JOIN members m ON m.id=c.member_id
@@ -741,17 +751,65 @@ pub fn market_lines(c: &Connection) -> rusqlite::Result<String> {
     let n = members::CARD_N;
     let rows = st.query_map([now()], |r| {
         let (slug, store_name, name, avatar): (String, String, String, String) = (r.get(n)?, r.get(n + 1)?, r.get(n + 2)?, r.get(n + 3)?);
-        let title = if store_name.trim().is_empty() { name } else { store_name };
-        Ok((members::map_card(r, 0)?, vault_search::Store { id: 0, slug, title, img: avatar, count: 0 }, r.get::<_, i64>(n + 4)?))
+        let store = if store_name.trim().is_empty() { name } else { store_name };
+        Ok(OpenListing { card: members::map_card(r, 0)?, store, slug, avatar, left: r.get(n + 4)? })
     })?;
-    let (mut cards, mut stores): (Vec<(MemberCard, i64)>, HashMap<i64, vault_search::Store>) = (vec![], HashMap::new());
+    let mut v = vec![];
     for row in rows {
-        let (k, mut s, left) = row?;
-        if left <= 0 {
-            continue;
+        let l = row?;
+        if l.left > 0 {
+            v.push(l);
         }
-        s.id = k.member_id;
-        stores.entry(k.member_id).or_insert(s).count += 1;
+    }
+    Ok(v)
+}
+
+impl OpenListing {
+    /// The store's first letter, for a store with no picture.
+    pub fn initial(&self) -> String {
+        members::initial(&self.store)
+    }
+}
+
+/// A card in "More like this" under a trainer's card: one of the vault's, or a listing in an open store.
+pub enum Like {
+    Vault(crate::db::Product),
+    Store(OpenListing),
+}
+
+/// "More like this" under a trainer's card: up to `n` cards for sale anywhere on the site, the vault's and every open
+/// store's listings with a price, never the card itself. Cards with the same name come first (the same card in another
+/// store, condition or printing is what a buyer wants to compare), then cards like it. Each group is scored as the
+/// vault's own cards are (`crate::similar`: names alike, the same set, a price close by, the same condition).
+pub fn related(c: &Connection, me: &MemberCard, n: usize) -> rusqlite::Result<Vec<Like>> {
+    let item = |title: &str, set: &str, price: f64, cond: &'static str, has_image: bool| {
+        let (name, set) = vault_search::title_and_set(title, set);
+        crate::similar::Item { name, set, price, cond, has_image }
+    };
+    let mut pool: Vec<Like> = crate::db::available_cards(c)?.into_iter().map(Like::Vault).collect();
+    pool.extend(open_listings(c)?.into_iter().filter(|l| l.card.id != me.id && l.card.has_price()).map(Like::Store));
+    let mut items = vec![item(&me.title, &me.card_set, me.worth(), me.cond_class(), !me.image.is_empty())];
+    items.extend(pool.iter().map(|x| match x {
+        Like::Vault(p) => item(&p.title, &p.card_set, p.price, p.cond_class(), p.has_image()),
+        Like::Store(l) => item(&l.card.title, &l.card.card_set, l.card.worth(), l.card.cond_class(), !l.card.image.is_empty()),
+    }));
+    // Item 0 is this card; the pool follows it, one place on.
+    let name = crate::similar::words(&items[0].name);
+    let same: Vec<bool> = items.iter().map(|x| !name.is_empty() && crate::similar::words(&x.name) == name).collect();
+    let mut picks = crate::similar::pick(&items, 0, n, |i| !same[i]);
+    picks.extend(crate::similar::pick(&items, 0, n - picks.len(), |i| same[i]));
+    let mut pool: Vec<Option<Like>> = pool.into_iter().map(Some).collect();
+    Ok(picks.into_iter().filter_map(|i| pool.get_mut(i.checked_sub(1)?)?.take()).collect())
+}
+
+/// Every seller's card that can be bought right now (`open_listings`), for The Vault page's card finder (`/vault.tsv`,
+/// after the vault's own catalogue): one `S` line per store, the stores with the most cards first, then one `M` line
+/// per listing, newest first.
+pub fn market_lines(c: &Connection) -> rusqlite::Result<String> {
+    use std::collections::HashMap;
+    let (mut cards, mut stores): (Vec<(MemberCard, i64)>, HashMap<i64, vault_search::Store>) = (vec![], HashMap::new());
+    for OpenListing { card: k, store, slug, avatar, left } in open_listings(c)? {
+        stores.entry(k.member_id).or_insert(vault_search::Store { id: k.member_id, slug, title: store, img: avatar, count: 0 }).count += 1;
         cards.push((k, left));
     }
     let mut order: Vec<vault_search::Store> = stores.into_values().collect();
@@ -2793,6 +2851,68 @@ mod tests {
         assert_eq!(lids(), vec![gym, unpriced, photo, later]);
         // The vault's own catalogue reader never sees any of it.
         assert!(vault_search::parse(&market_lines(&c).unwrap()).1.is_empty());
+    }
+
+    #[test]
+    fn more_like_a_store_card_is_for_sale_now_and_never_the_card_itself() {
+        let c = db();
+        let (s, b, card) = seller_with_card(&c); // "Pikachu - 058/102 - Base Set", ₱100 at the market, 2 in stock
+        // The vault: two cards for sale and one that isn't.
+        for (id, title, price, on) in [(1, "Pikachu - 25/102 - Base Set", 120.0, 1), (2, "Mewtwo - 10/102 - Base Set", 4000.0, 1), (3, "Pikachu - 27/102 - Base Set", 110.0, 0)] {
+            c.execute(
+                "INSERT INTO products(id,handle,title,variant,price,available,card_set,created_at) VALUES(?1,?2,?3,'Near Mint',?4,?5,'Base Set','2026-11-01T00:00:00')",
+                rusqlite::params![id, format!("p-{id}"), title, price, on],
+            )
+            .unwrap();
+        }
+        // A second store, open, with a Pikachu for sale and every way of a Pikachu not being for sale right now.
+        let m = create(&c, "Misty", "h").unwrap().unwrap();
+        members::set_seller(&c, m, true).unwrap();
+        members::set_profile_ok(&c, m, true).unwrap();
+        c.execute("UPDATE members SET store_name='Cerulean Gym', slug='cerulean' WHERE id=?1", [m]).unwrap();
+        let list = |who: i64, n: &str, set: &str| -> i64 {
+            let Added::Yes(id) = add_listing(&c, who, &format!("tcgdex:base1-{n}"), &format!("Pikachu - {n}/102 - Base Set"), &format!("{n}/102"), "Base Set", "/p.png", "").unwrap() else { panic!() };
+            c.execute(&format!("UPDATE member_cards SET kind='sale', status='Active', qty=1, value_own=150, {set} WHERE id=?1"), [id]).unwrap();
+            id
+        };
+        let gym = list(m, "60", "cond='Near Mint'");
+        let mut off = vec![];
+        for (n, why) in [("61", "status='Hidden'"), ("62", "status='Expired'"), ("63", "status='Sold'"), ("64", "status='Out of stock'"), ("65", "qty=0"), ("66", "kind='own'"), ("67", "kind='wish'"), ("68", "value_own=0, value=0")] {
+            off.push((list(m, n, why), why));
+        }
+        off.push((list(m, "69", &format!("expires_at={}", now() - 60)), "ended"));
+        let held = list(m, "70", "cond='Near Mint'");
+        reserve(&c, b, m, held, 1, "").unwrap().unwrap();
+        off.push((held, "every copy held for someone"));
+        // A copy of the same card in the seller's own store is another listing: it may show. The card itself never does.
+        let again = list(s, "58", "cond='Lightly Played'");
+        let me = members::card(&c, s, card).unwrap().unwrap();
+        let got = || -> Vec<(char, i64)> {
+            related(&c, &me, 12).unwrap().iter().map(|x| match x { Like::Vault(p) => ('v', p.id), Like::Store(l) => ('s', l.card.id) }).collect()
+        };
+        let all = got();
+        assert!(all.contains(&('v', 1)) && all.contains(&('v', 2)), "the vault's cards for sale: {all:?}");
+        assert!(!all.contains(&('v', 3)), "not one the vault has sold");
+        assert!(all.contains(&('s', gym)) && all.contains(&('s', again)), "open stores' cards for sale: {all:?}");
+        assert!(!all.contains(&('s', card)), "never the card itself");
+        for (id, why) in &off {
+            assert!(!all.contains(&('s', *id)), "{why}: left out");
+        }
+        assert_eq!(all.len(), 4);
+        assert_eq!(all[0], ('s', gym), "the same name first, the nearest in set, price and condition first: {all:?}");
+        assert_eq!(all[3], ('v', 2), "then cards like it: the Mewtwo");
+        assert_eq!(related(&c, &me, 2).unwrap().len(), 2, "no more than asked for");
+        // A store that isn't open, in each way, takes its cards with it.
+        for (shut, open) in [("status='Vacation'", "status='Active'"), ("blocked=1", "blocked=0"), ("profile_ok=0", "profile_ok=1"), ("seller=0", "seller=1")] {
+            c.execute(&format!("UPDATE members SET {shut} WHERE id=?1"), [m]).unwrap();
+            let seen = got();
+            assert!(!seen.contains(&('s', gym)), "{shut}: the closed store's card is left out");
+            assert!(seen.contains(&('s', again)) && seen.contains(&('v', 1)), "{shut}: the others stay");
+            c.execute(&format!("UPDATE members SET {open} WHERE id=?1"), [m]).unwrap();
+        }
+        // Each store's tile knows whose it is, for the cart.
+        let tile = related(&c, &me, 12).unwrap().into_iter().find_map(|x| match x { Like::Store(l) if l.card.id == gym => Some(l), _ => None }).unwrap();
+        assert_eq!((tile.store.as_str(), tile.slug.as_str(), tile.card.member_id), ("Cerulean Gym", "cerulean", m));
     }
 
     #[test]
