@@ -96,7 +96,9 @@ mkdir -p "$DATA_DIR" "$LOG_DIR"
 FLYCTL_BIN="$(command -v flyctl || command -v fly || true)"
 fly() {
   if [ -z "$FLYCTL_BIN" ]; then log "flyctl is not on this VM (expected ~/.fly/bin/flyctl)"; return 127; fi
-  timeout -k 30 "${FLY_TIMEOUT:-1200}" "$FLYCTL_BIN" "$@" 9>&-
+  # </dev/null: under `timeout`, flyctl isn't in the terminal's foreground, so a run started by hand would freeze
+  # the moment flyctl looked at the keyboard (seen 17 Nov 2026). No job ever types into flyctl.
+  timeout -k 30 "${FLY_TIMEOUT:-1200}" "$FLYCTL_BIN" "$@" 9>&- </dev/null
 }
 
 # Only one copy of a job at a time (a slow night must not overlap the next run). The lock file also says which run
