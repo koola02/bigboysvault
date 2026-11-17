@@ -3,9 +3,11 @@
    - A store's Binders: "Edit binders" turns the tiles into an editor. Drag a binder to move it (a mouse drags straight
      away; a finger presses and holds first; the arrow keys move the binder whose handle has focus). "+ New binder", and
      on every binder Rename, Cover and Delete. Tapping a binder's picture opens it, ready to add cards.
-   - A binder's own page: "Edit binder" lists its cards with Cover and Remove (Remove can be undone), drag to put them
-     in order, and "Add cards": a picker of the owner's cards (the vault's cards; a seller's cards on sale, where a card
-     in another binder moves here, and the picker says so).
+   - A binder's own page: "Edit binder" lists its cards with Cover, Hide and Remove (Remove can be undone), drag to put
+     them in order, or Sort them all at once (A to Z, Z to A, by set, by number, by evolution; Undo puts them back), and
+     "Add cards": a picker of the owner's cards (the vault's cards; a seller's cards on sale, where a card in another
+     binder moves here, and the picker says so). Hide keeps a card in the binder but out of sight: a seller's card is
+     hidden everywhere (its listing is Hidden), a vault card only in that binder. Hidden cards show faded, with Show.
    - Store Manager › Binders: each binder has a handle to drag it into place.
    - The Stores page: "Choose what shows" on the owner's own store picks which binders show there and which cards are
      highlighted (a full admin does the same for the vault's store).
@@ -32,6 +34,8 @@
     out: '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 12h7"/>',
     check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
     book: '<path d="M5 4h11a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M5 17a3 3 0 0 1 3-3h11"/><path d="M9 4v10"/>',
+    eye: '<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
+    eyeoff: '<path d="M3 3l18 18"/><path d="M10.6 5.1A10.4 10.4 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1"/><path d="M6.6 6.6C3.8 8.4 2 12 2 12s3.6 7 10 7a10.2 10.2 0 0 0 5.4-1.6"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/>',
   };
   function icon(name) {
     const s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -77,6 +81,9 @@
       choices: (k, q) => req(`/admin/binders/${enc(k)}/choices?q=${enc(q)}`),
       change: (k, body) => req(`/admin/binders/${enc(k)}/cards`, body),
       arrange: (k, ids) => req(`/admin/binders/${enc(k)}/arrange`, { ids }),
+      sort: (k, by) => req(`/admin/binders/${enc(k)}/sort`, { by }),
+      hide: (k, c, hidden) => req(`/admin/binders/${enc(k)}/hide`, { id: c.id, hidden }),
+      hid: (t) => `“${t}” is hidden in this binder only. It stays in the vault and in any other binder.`,
       nameMax: 40,
       auto: 'Automatic: the dearest card',
       stays: 'It stays in the vault.',
@@ -96,6 +103,10 @@
       choices: (k, q) => req(`/me/binders/${enc(k)}/choices?q=${enc(q)}`),
       change: (k, body) => req(`/me/binders/${enc(k)}/cards`, body),
       arrange: (k, ids) => req(`/me/binders/${enc(k)}/order`, { ids }),
+      sort: (k, by) => req(`/me/binders/${enc(k)}/sort`, { by }),
+      // Hidden is the listing's own status: nobody else sees it anywhere. Show puts it back on sale (out of stock with none left).
+      hide: (k, c, hidden) => req(`/me/listings/${enc(c.id)}`, { status: hidden ? 'Hidden' : (c.qty > 0 ? 'Active' : 'Out of stock') }),
+      hid: (t) => `“${t}” is hidden. Shoppers don’t see it anywhere; you still see it here.`,
       nameMax: 60,
       auto: 'Automatic: its first card',
       stays: 'It stays in your store.',
@@ -245,7 +256,7 @@
       catch (e) { say(e.message, { bad: true }); }
     }
     api.cards(key).then((j) => {
-      const cards = (j.cards || []).filter((c) => c.image);
+      const cards = (j.cards || []).filter((c) => c.image && !c.hidden);
       state.textContent = cards.length ? '' : `No card in this binder has a picture yet. Add cards first${api.upload ? ', or upload a photo' : ''}.`;
       list.replaceChildren(...cards.map((c) => {
         const li = el('li');
@@ -437,7 +448,10 @@
     const page = bar.parentElement;
     const words = toggle.querySelector('span');
     let title = toggle.dataset.title || 'this binder';
-    let cards = [], on = false, dirty = false, box = null, list = null, count = null, empty = null, sorted = false;
+    let cards = [], on = false, dirty = false, box = null, list = null, count = null, empty = null, sorted = false, sortBar = null, sorting = false;
+    // The ways to sort, and what the message says after each.
+    const SORTS = [['az', 'A to Z'], ['za', 'Z to A'], ['set', 'By set'], ['number', 'By number'], ['evolution', 'By evolution']];
+    const SORTED = { az: 'A to Z', za: 'Z to A', set: 'by set', number: 'by number', evolution: 'by evolution' };
 
     async function load() { const j = await api.cards(key); cards = j.cards || []; if (j.title) title = j.title; }
     async function enter() {
@@ -470,17 +484,24 @@
     function build() {
       const s = el('section', 'bt-ed'); s.setAttribute('aria-label', `Edit ${title}`);
       const top = el('div', 'bt-ed-top');
-      const how = el('p', 'bt-hint', coarse ? 'Press and hold a card, then drag it to change the order. Everything saves by itself.'
-        : 'Drag a card to change the order. Everything saves by itself.');
+      const how = el('p', 'bt-hint', coarse ? 'Press and hold a card, then drag it to change the order, or sort them all below. Everything saves by itself.'
+        : 'Drag a card to change the order, or sort them all below. Everything saves by itself.');
       const add = button('btn', null, 'plus', 'Add cards'); add.dataset.add = '';
       add.addEventListener('click', picker);
       top.append(how, add);
+      sortBar = el('div', 'bt-sort'); sortBar.setAttribute('role', 'group'); sortBar.setAttribute('aria-label', 'Sort the cards');
+      sortBar.append(el('span', 'bt-sort-t', 'Sort:'));
+      SORTS.forEach(([by, words]) => {
+        const b = button('btn ghost sm bt-sort-b', null, null, words); b.dataset.sort = by;
+        b.addEventListener('click', () => sortBy(by, b));
+        sortBar.append(b);
+      });
       count = el('p', 'bt-count'); count.setAttribute('aria-live', 'polite');
       list = el('ul', 'bt-cards');
       empty = el('div', 'bt-empty');
       const add2 = button('btn', null, 'plus', 'Add cards'); add2.addEventListener('click', picker);
       empty.append(el('p', '', 'No cards in this binder yet.'), add2);
-      s.append(top, count, list, empty);
+      s.append(top, sortBar, count, list, empty);
       list.addEventListener('keydown', (e) => {
         const g = e.target.closest('.bt-grip'); if (!g) return;
         const items = [...list.querySelectorAll('.bt-card')].map((x) => Number(x.dataset.id));
@@ -496,15 +517,19 @@
     }
     function draw() {
       list.replaceChildren(...cards.map(card));
-      count.textContent = cards.length ? plural(cards.length, 'card') : '';
+      const hid = cards.filter((c) => c.hidden).length;
+      count.textContent = cards.length ? `${plural(cards.length, 'card')}${hid ? ` · ${hid} hidden` : ''}` : '';
       empty.hidden = cards.length > 0;
+      sortBar.hidden = cards.length < 2;
     }
     function card(c) {
       const li = el('li', 'bt-card'); li.dataset.id = String(c.id);
+      if (c.hidden) li.dataset.hidden = '';
       const pic = el('span', 'bt-card-pic');
       if (c.image) { const im = el('img'); im.src = c.image; im.alt = ''; im.loading = 'lazy'; im.decoding = 'async'; im.draggable = false; pic.append(im); }
       if (c.cover) pic.append(el('span', 'bt-flag', 'Cover'));
       if (c.note) pic.append(el('span', 'bt-note', c.note));
+      if (c.hidden) pic.append(el('span', 'bt-hid', 'Hidden'));
       const grip = button('bt-grip', `Move ${c.title}: drag it, or press the arrow keys`, 'grip');
       const txt = el('span', 'bt-card-t');
       txt.append(el('b', '', c.title));
@@ -513,10 +538,14 @@
       const acts = el('div', 'bt-acts'); acts.dataset.nodrag = '';
       const cv = button('bt-act', c.cover ? `${c.title} is the cover. Tap to let the cover pick itself again` : `Make ${c.title} the cover`, 'star', 'Cover');
       cv.dataset.act = 'cover'; cv.setAttribute('aria-pressed', String(!!c.cover));
+      const hd = c.hidden ? button('bt-act bt-show', `Show ${c.title} again`, 'eye', 'Show')
+        : button('bt-act', kind === 'vault' ? `Hide ${c.title} in this binder` : `Hide ${c.title} from shoppers`, 'eyeoff', 'Hide');
+      hd.dataset.act = 'hide';
       const rm = button('bt-act bt-del', `Take ${c.title} out of this binder`, 'out', 'Remove'); rm.dataset.act = 'remove';
       cv.addEventListener('click', () => makeCover(c));
+      hd.addEventListener('click', () => toggleHidden(c, hd));
       rm.addEventListener('click', () => takeOut(c));
-      acts.append(cv, rm);
+      acts.append(cv, hd, rm);
       li.append(pic, grip, txt, acts);
       return li;
     }
@@ -532,7 +561,43 @@
         say(at >= 0 ? `Moved to place ${at + 1} of ${cards.length} ✓` : 'Order saved ✓');
       } catch (e) { cards = was; draw(); say(e.message, { bad: true }); }
     }
+    // One tap puts every card in order; the site works it out and saves it like a drag. Undo puts the old order back.
+    async function sortBy(by, b) {
+      if (sorting) return;
+      sorting = true;
+      const btns = [...sortBar.querySelectorAll('[data-sort]')], words = b.querySelector('span'), was = words.textContent;
+      btns.forEach((x) => { x.disabled = true; });
+      b.setAttribute('aria-busy', 'true'); words.textContent = 'Sorting…';
+      say(by === 'evolution' ? 'Sorting… The first time, each Pokémon is looked up, so this can take a little while.' : 'Sorting…');
+      const before = cards.map((c) => c.id);
+      const put = (ids) => { const at = new Map(cards.map((c) => [c.id, c])); cards = [...ids.map((id) => at.get(id)).filter(Boolean), ...cards.filter((c) => !ids.includes(c.id))]; draw(); };
+      try {
+        const j = await api.sort(key, by); dirty = true;
+        put((j.ids || []).map(Number));
+        const miss = j.missing ? ` ${plural(j.missing, 'card')} couldn’t be looked up just now and went last: sort again later to place them.` : '';
+        say(`Sorted ${SORTED[by]} ✓${miss}`, {
+          undo: async () => { await api.arrange(key, before); put(before); say('Back to the order you had ✓'); },
+        });
+      } catch (e) { say(e.message, { bad: true }); }
+      finally {
+        sorting = false; words.textContent = was; b.removeAttribute('aria-busy');
+        btns.forEach((x) => { x.disabled = false; });
+        if (document.activeElement === document.body) b.focus({ preventScroll: true });
+      }
+    }
+    // Hide keeps the card in the binder, out of sight; Show brings it back.
+    async function toggleHidden(c, b) {
+      const to = !c.hidden;
+      b.disabled = true;
+      try {
+        await api.hide(key, c, to); dirty = true;
+        if (to && c.cover && kind === 'seller') await api.cover(key, null);   // a hidden card can't be the cover
+        await load(); draw(); focusCard(c.id, '[data-act="hide"]');
+        say(to ? `${api.hid(c.title)} ${coarse ? 'Tap' : 'Click'} the eye to show it again.` : `“${c.title}” shows again ✓`);
+      } catch (e) { b.disabled = false; say(e.message, { bad: true }); }
+    }
     async function makeCover(c) {
+      if (c.hidden && !c.cover) { say('This card is hidden. Show it first, then make it the cover.', { bad: true }); return; }
       const to = c.cover ? null : c.id;
       try {
         await api.cover(key, to); dirty = true;

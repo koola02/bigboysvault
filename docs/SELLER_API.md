@@ -95,6 +95,7 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 | `POST /me/binders` | `{ title }` makes one |
 | `POST /me/binders/{id}/edit` | `{ title?, description?, visibility? }` (`Public`, `Unlisted`, `Private`) |
 | `POST /me/binders/{id}/order` | `{ ids }`: the order of cards inside the binder |
+| `POST /me/binders/{id}/sort` | `{ by: "az" \| "za" \| "set" \| "number" \| "evolution" }`: puts the binder's cards in that order and saves it like `/order`. Answers `{ ids, missing }` (the new order; `missing`: cards TCGdex couldn't be asked about just now, put last). Full admins: the same at `/admin/binders/{handle}/sort` |
 | `POST /me/binders/{id}/cover`, `/rename`, `/delete` | As before |
 | `GET /me/featured` | What the store shows on the Stores page: `binders` (those that can show, each with `on`), `cards` (highlighted, in order), `saved`, `max` (12) |
 | `GET /me/featured/choices?q=` | The seller's cards on sale now, to highlight |

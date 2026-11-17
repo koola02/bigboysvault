@@ -383,6 +383,7 @@ pub fn open(path: &str) -> rusqlite::Result<Connection> {
     )?;
     register_set_code(&c)?;
     c.execute_batch(SCHEMA)?;
+    c.execute_batch(crate::binder_sort::SCHEMA)?;
     c.execute_batch(crate::blocks::SCHEMA)?;
     c.execute_batch(crate::suggest::SCHEMA)?;
     c.execute_batch(crate::members::SCHEMA)?;
@@ -441,6 +442,13 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         c.execute("ALTER TABLE collections ADD COLUMN menu_pos INTEGER NOT NULL DEFAULT 0", [])?;
         c.execute("UPDATE collections SET menu_pos=position", [])?;
     }
+    // A card hidden in one binder (its editor's Hide): it stays in the binder and the vault, but the binder's page,
+    // count and tile leave it out.
+    let mut st = c.prepare("PRAGMA table_info(collection_products)")?;
+    let cp: Vec<String> = st.query_map([], |r| r.get::<_, String>(1))?.collect::<Result<_, _>>()?;
+    if !cp.is_empty() && !cp.iter().any(|h| h == "hidden") {
+        c.execute("ALTER TABLE collection_products ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0", [])?;
+    }
     // Once: prices saved before `price_src` existed say where they came from. The old nightly job repriced every catalogue
     // copy that had a market date, so those prices are the market's and keep following it; the rest were typed by hand.
     c.execute_batch("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)")?;
@@ -463,6 +471,7 @@ CREATE TABLE IF NOT EXISTS collections(
   on_home INTEGER NOT NULL DEFAULT 1, in_menu INTEGER NOT NULL DEFAULT 1, menu_pos INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS collection_products(
   collection TEXT NOT NULL, product_id INTEGER NOT NULL, position INTEGER NOT NULL DEFAULT 0,
+  hidden INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY(collection, product_id));
 CREATE INDEX IF NOT EXISTS idx_cp_product ON collection_products(product_id);
 CREATE INDEX IF NOT EXISTS idx_products_created ON products(created_at DESC);
@@ -564,10 +573,10 @@ fn words_from_slug(t: &str) -> String {
     }
 }
 
-/// How many cards a binder holds, copies included. `None` is the whole vault. Every number on the site about a binder's size comes from here.
+/// How many cards a binder holds, copies included (not the ones hidden in it). `None` is the whole vault. Every number on the site about a binder's size comes from here.
 pub fn cards_in(c: &Connection, collection: Option<&str>) -> rusqlite::Result<i64> {
     match collection {
-        Some(h) => c.query_row("SELECT COUNT(*) FROM collection_products cp JOIN products p ON p.id=cp.product_id WHERE cp.collection=?1", [h], |r| r.get(0)),
+        Some(h) => c.query_row("SELECT COUNT(*) FROM collection_products cp JOIN products p ON p.id=cp.product_id WHERE cp.collection=?1 AND cp.hidden=0", [h], |r| r.get(0)),
         None => c.query_row("SELECT COUNT(*) FROM products", [], |r| r.get(0)),
     }
 }
@@ -733,19 +742,24 @@ fn card_columns() -> Vec<(&'static str, String)> {
 }
 
 pub fn list(c: &Connection, q: &Query) -> rusqlite::Result<(Vec<Product>, i64)> {
-    list_n(c, q, PAGE_SIZE)
+    list_n(c, q, PAGE_SIZE, false)
+}
+
+/// `list` with the cards hidden in the binder too, for the owner's own pages (the Cards manager).
+pub fn list_with_hidden(c: &Connection, q: &Query) -> rusqlite::Result<(Vec<Product>, i64)> {
+    list_n(c, q, PAGE_SIZE, true)
 }
 
 /// `list`, `per_page` cards at a time. In a binder, the owner's order is the binder's own (`collection_products.position`,
-/// set by dragging its cards), then the vault's.
-fn list_n(c: &Connection, q: &Query, per_page: usize) -> rusqlite::Result<(Vec<Product>, i64)> {
+/// set by dragging its cards), then the vault's. Cards hidden in the binder are left out unless `hidden_too`.
+fn list_n(c: &Connection, q: &Query, per_page: usize, hidden_too: bool) -> rusqlite::Result<(Vec<Product>, i64)> {
     let mut wh: Vec<String> = vec!["1=1".into()];
     let mut args: Vec<Value> = vec![];
     let mut join = String::new();
     let mut bpos = "0";
     if let Some(col) = &q.collection {
         join = " JOIN collection_products cp ON cp.product_id=p.id".into();
-        wh.push("cp.collection=?".into());
+        wh.push(if hidden_too { "cp.collection=?".into() } else { "cp.collection=? AND cp.hidden=0".into() });
         args.push(Value::Text(col.clone()));
         bpos = "cp.position";
     }
@@ -821,7 +835,7 @@ fn catalogue_file(c: &Connection, dated: bool) -> rusqlite::Result<String> {
     let binders = collections(c)?;
     let index: HashMap<&str, u16> = binders.iter().enumerate().map(|(i, b)| (b.handle.as_str(), i as u16)).collect();
     let mut member: HashMap<i64, Vec<u16>> = HashMap::new();
-    let mut st = c.prepare("SELECT product_id, collection FROM collection_products")?;
+    let mut st = c.prepare("SELECT product_id, collection FROM collection_products WHERE hidden=0")?;
     for row in st.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))? {
         let (id, col) = row?;
         if let Some(i) = index.get(col.as_str()) {
@@ -898,8 +912,8 @@ pub fn collections(c: &Connection) -> rusqlite::Result<Vec<Collection>> {
     let mut st = c.prepare(
         "SELECT c.handle,c.title,
            COALESCE(NULLIF(c.image,''),(SELECT p.image FROM collection_products cp JOIN products p ON p.id=cp.product_id
-             WHERE cp.collection=c.handle AND p.image<>'' ORDER BY p.price DESC LIMIT 1),''),
-           (SELECT COUNT(*) FROM collection_products cp JOIN products p ON p.id=cp.product_id WHERE cp.collection=c.handle), c.on_home, c.image<>'', c.in_menu, c.menu_pos
+             WHERE cp.collection=c.handle AND cp.hidden=0 AND p.image<>'' ORDER BY p.price DESC LIMIT 1),''),
+           (SELECT COUNT(*) FROM collection_products cp JOIN products p ON p.id=cp.product_id WHERE cp.collection=c.handle AND cp.hidden=0), c.on_home, c.image<>'', c.in_menu, c.menu_pos
          FROM collections c ORDER BY c.position",
     )?;
     let v = st
@@ -912,10 +926,10 @@ pub fn collections(c: &Connection) -> rusqlite::Result<Vec<Collection>> {
 
 /// For the vault's store page, in one trip: each binder that has cards for sale, with how many copies are for sale and
 /// the photos of up to `n` of them, dearest first, each photo once (copies often share one). Sold copies, which stay in
-/// the table as the vault's record, never show. A binder with nothing for sale isn't in the map.
+/// the table as the vault's record, never show, nor do cards hidden in the binder. A binder with nothing for sale isn't in the map.
 pub fn binder_peeks(c: &Connection, n: usize) -> rusqlite::Result<std::collections::HashMap<String, (i64, Vec<String>)>> {
     let mut st = c.prepare_cached(
-        "WITH s AS (SELECT cp.collection AS col, p.image, p.price, p.id FROM collection_products cp JOIN products p ON p.id=cp.product_id WHERE p.available=1),
+        "WITH s AS (SELECT cp.collection AS col, p.image, p.price, p.id FROM collection_products cp JOIN products p ON p.id=cp.product_id WHERE p.available=1 AND cp.hidden=0),
               k AS (SELECT col, COUNT(*) AS n FROM s GROUP BY col),
               x AS (SELECT col, image, MAX(price) AS price, MIN(id) AS id FROM s WHERE image<>'' GROUP BY col, image),
               r AS (SELECT col, image, ROW_NUMBER() OVER (PARTITION BY col ORDER BY price DESC, id) AS rn FROM x)
@@ -1189,9 +1203,36 @@ pub fn binder_cover_choices(c: &Connection, handle: &str, limit: i64) -> rusqlit
 }
 
 /// Every card in a binder, in the binder's order (what its page shows first), copies of a card as one entry whose
-/// `copy_ids` are the copies in this binder. For the binder's editor.
+/// `copy_ids` are the copies in this binder. For the binder's editor, so the cards hidden in it are there too.
 pub fn binder_cards(c: &Connection, handle: &str) -> rusqlite::Result<Vec<Product>> {
-    Ok(list_n(c, &Query { collection: Some(handle.to_string()), ..Default::default() }, 20_000)?.0)
+    Ok(list_n(c, &Query { collection: Some(handle.to_string()), ..Default::default() }, 20_000, true)?.0)
+}
+
+/// The cards (every copy) hidden in this binder.
+pub fn hidden_in_binder(c: &Connection, handle: &str) -> rusqlite::Result<std::collections::HashSet<i64>> {
+    let mut st = c.prepare_cached("SELECT product_id FROM collection_products WHERE collection=?1 AND hidden=1")?;
+    let v = st.query_map([handle], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    Ok(v)
+}
+
+/// Hide a card (every copy of it) in one binder, or show it again. Hidden, it stays in the binder and in the vault, and
+/// in its other binders; this binder's page, count and tile leave it out, and only the binder's editor still shows it.
+/// A hidden card picked as the cover stops being the cover. False when the card isn't in this binder.
+pub fn hide_in_binder(c: &Connection, handle: &str, id: i64, hidden: bool) -> rusqlite::Result<bool> {
+    let tx = c.unchecked_transaction()?;
+    let mut n = 0;
+    for k in copies_of(&tx, id)? {
+        n += tx.execute("UPDATE collection_products SET hidden=?3 WHERE collection=?1 AND product_id=?2", rusqlite::params![handle, k, hidden as i64])?;
+    }
+    if hidden {
+        tx.execute(
+            "UPDATE collections SET image='' WHERE handle=?1 AND image<>'' AND image NOT LIKE '/uploads/b-%'
+               AND NOT EXISTS (SELECT 1 FROM collection_products cp JOIN products p ON p.id=cp.product_id WHERE cp.collection=?1 AND cp.hidden=0 AND p.image=collections.image)",
+            [handle],
+        )?;
+    }
+    tx.commit()?;
+    Ok(n > 0)
 }
 
 /// Every copy of the card `id` is one of, sold or not, itself included. Empty when there is no such card.
@@ -1325,7 +1366,7 @@ pub fn duplicate(c: &Connection, id: i64) -> rusqlite::Result<Option<i64>> {
         )?;
         // A copy stays beside its card in the owner's order.
         c.execute("UPDATE products SET position=(SELECT position FROM products WHERE id=?2) WHERE id=?1", [nid, id])?;
-        c.execute("INSERT OR IGNORE INTO collection_products(collection,product_id,position) SELECT collection,?1,position FROM collection_products WHERE product_id=?2", rusqlite::params![nid, id])?;
+        c.execute("INSERT OR IGNORE INTO collection_products(collection,product_id,position,hidden) SELECT collection,?1,position,hidden FROM collection_products WHERE product_id=?2", rusqlite::params![nid, id])?;
         Ok(Some(nid))
     })();
     match r {
@@ -1337,6 +1378,13 @@ pub fn duplicate(c: &Connection, id: i64) -> rusqlite::Result<Option<i64>> {
 /// Number of different cards (copies of the same card count once).
 pub fn distinct_cards(c: &Connection) -> rusqlite::Result<i64> {
     c.query_row(&format!("SELECT COUNT(DISTINCT {DUP_KEY}) FROM products p"), [], |r| r.get(0))
+}
+
+/// The binders this card is hidden in.
+pub fn hidden_binders(c: &Connection, product_id: i64) -> rusqlite::Result<Vec<String>> {
+    let mut st = c.prepare_cached("SELECT collection FROM collection_products WHERE product_id=?1 AND hidden=1")?;
+    let v = st.query_map([product_id], |r| r.get(0))?.collect::<Result<Vec<String>, _>>()?;
+    Ok(v)
 }
 
 pub fn binders_of(c: &Connection, product_id: i64) -> rusqlite::Result<Vec<String>> {
@@ -1409,10 +1457,12 @@ fn save_entry_tx(c: &Connection, e: &Entry) -> rusqlite::Result<(i64, String)> {
            solo=CASE WHEN ?17 THEN CAST(?1 AS TEXT) ELSE solo END",
         rusqlite::params![id, handle, e.title, e.body, e.tags, e.variant, e.price, e.image, now, e.card_no, e.card_set, e.api_id, e.finish, e.price_updated, e.price_src, e.rarity, e.solo],
     )?;
+    // A card hidden in a binder stays hidden there after it is saved.
+    let hid = hidden_binders(c, id)?;
     c.execute("DELETE FROM collection_products WHERE product_id=?1", [id])?;
     for b in &e.binders {
         if binder_exists(c, b) {
-            c.execute("INSERT OR IGNORE INTO collection_products(collection,product_id,position) VALUES(?1,?2,0)", rusqlite::params![b, id])?;
+            c.execute("INSERT OR IGNORE INTO collection_products(collection,product_id,position,hidden) VALUES(?1,?2,0,?3)", rusqlite::params![b, id, hid.contains(b)])?;
         }
     }
     Ok((id, handle))
@@ -2084,6 +2134,100 @@ mod vault_store_tests {
         assert_eq!(fresh_pics(None, &s(&["a", "b"]), 3, &mut seen), s(&["a", "b"]), "nothing new to show: repeats rather than an empty tile");
         assert_eq!(fresh_pics(Some(""), &s(&["x", "x", ""]), 3, &mut seen), s(&["x"]), "never the same picture twice, never an empty one");
         assert_eq!(fresh_pics(None, &s(&["y", "z"]), 1, &mut seen), s(&["y"]), "never more than asked for");
+    }
+
+    /// Hide in a binder: the card (every copy) leaves that binder's page, count, tile, cover and finder listing, and stays
+    /// in the binder's editor, in the vault and in its other binders. Saving, copying or moving the card keeps it hidden
+    /// there. Show brings it back.
+    #[test]
+    fn a_card_hidden_in_a_vault_binder_shows_only_in_its_editor() {
+        let c = db();
+        for (i, h) in ["pikachu-set", "trainers"].iter().enumerate() {
+            c.execute("INSERT INTO collections(handle,title,position) VALUES(?1,?1,?2)", rusqlite::params![h, i as i64]).unwrap();
+        }
+        let add = |id: i64, title: &str, price: f64, binders: &[&str]| {
+            c.execute(
+                "INSERT INTO products(id,handle,title,price,image,available,created_at) VALUES(?1,?2,?3,?4,?5,1,'2026-01-01T00:00:00')",
+                rusqlite::params![id, format!("c{id}"), title, price, format!("/uploads/c0-{id}_l.jpg")],
+            )
+            .unwrap();
+            for b in binders {
+                c.execute("INSERT INTO collection_products(collection,product_id) VALUES(?1,?2)", rusqlite::params![b, id]).unwrap();
+            }
+        };
+        add(1, "Pikachu", 100.0, &["pikachu-set"]);
+        add(2, "Raichu", 900.0, &["pikachu-set", "trainers"]);
+        add(3, "Raichu", 900.0, &["pikachu-set", "trainers"]); // a second copy of Raichu, the dearest card
+        add(4, "Pichu", 50.0, &["pikachu-set"]);
+        arrange_binder(&c, "pikachu-set", &[1, 2, 4]).unwrap();
+        set_binder_cover(&c, "pikachu-set", "/uploads/c0-2_l.jpg").unwrap();
+        let page = |h: &str| list(&c, &Query { collection: Some(h.into()), ..Default::default() }).unwrap().0.iter().map(|p| p.title.clone()).collect::<Vec<_>>();
+        let tile = |h: &str| collections(&c).unwrap().into_iter().find(|b| b.handle == h).unwrap();
+
+        assert!(hide_in_binder(&c, "pikachu-set", 3, true).unwrap(), "any copy names the card");
+        assert_eq!(page("pikachu-set"), vec!["Pikachu", "Pichu"], "visitors don't see it on the binder's page");
+        assert_eq!(cards_in(&c, Some("pikachu-set")).unwrap(), 2, "nor in its count");
+        assert_eq!(tile("pikachu-set").count, 2);
+        assert!(!tile("pikachu-set").custom_cover && tile("pikachu-set").image != "/uploads/c0-2_l.jpg", "a hidden card stops being the cover, and never picks itself");
+        let peeks = binder_peeks(&c, 3).unwrap();
+        assert_eq!(peeks["pikachu-set"].0, 2);
+        assert!(!peeks["pikachu-set"].1.contains(&"/uploads/c0-2_l.jpg".to_string()), "its tile doesn't peek at it");
+        let (_, finder) = vault_search::parse(&catalogue(&c).unwrap());
+        let raichu = &finder.iter().find(|k| k.title == "Raichu").unwrap().binders;
+        assert!(raichu.contains(&1) && !raichu.contains(&0), "the finder lists it in Trainers only, not in this binder: {raichu:?}");
+        let editor = binder_cards(&c, "pikachu-set").unwrap();
+        assert_eq!(editor.iter().map(|p| p.title.as_str()).collect::<Vec<_>>(), vec!["Pikachu", "Raichu", "Pichu"], "its editor still shows it, in its place");
+        assert_eq!(hidden_in_binder(&c, "pikachu-set").unwrap(), [2, 3].into_iter().collect(), "every copy is hidden");
+        assert_eq!(page("trainers"), vec!["Raichu"], "only in that binder: its other binder still shows it");
+        assert_eq!(list(&c, &Query::default()).unwrap().1, 3, "and it is still in the vault");
+        assert_eq!(list_with_hidden(&c, &Query { collection: Some("pikachu-set".into()), ..Default::default() }).unwrap().1, 3, "the owner's Cards page still lists it");
+
+        // A new copy, a save or a bulk change keeps it hidden in that binder.
+        let nid = duplicate(&c, 2).unwrap().unwrap();
+        assert!(hidden_in_binder(&c, "pikachu-set").unwrap().contains(&nid));
+        let e = Entry { id: Some(2), title: "Raichu".into(), variant: String::new(), price: 900.0, body: String::new(), tags: String::new(), image: None, binders: vec!["pikachu-set".into(), "trainers".into()], card_no: String::new(), card_set: String::new(), api_id: String::new(), finish: String::new(), price_updated: None, price_src: String::new(), rarity: String::new(), solo: false };
+        save_entry(&c, &e).unwrap();
+        crate::bulk::binder_op(&c, &[3], &["pikachu-set".to_string()], "move").unwrap();
+        assert_eq!(page("pikachu-set"), vec!["Pikachu", "Pichu"]);
+        assert_eq!(page("trainers"), vec!["Raichu"], "the copies still there");
+
+        // Show: back on the page.
+        assert!(hide_in_binder(&c, "pikachu-set", 2, false).unwrap());
+        let back = page("pikachu-set");
+        assert!(back.len() == 3 && back.contains(&"Raichu".to_string()), "{back:?}");
+        assert_eq!(cards_in(&c, Some("pikachu-set")).unwrap(), 5, "every copy of Raichu, the new one too");
+        assert!(hidden_in_binder(&c, "pikachu-set").unwrap().is_empty());
+        assert!(!hide_in_binder(&c, "trainers", 1, true).unwrap(), "a card not in the binder can't be hidden there");
+    }
+
+    /// Sort with one tap: the order is worked out by `binder_sort` and saved with the binder's own arrange code, so its
+    /// page and its editor follow it; hidden cards keep a place too.
+    #[test]
+    fn a_vault_binder_is_sorted_and_saved_like_a_drag() {
+        let c = db();
+        c.execute("INSERT INTO collections(handle,title,position) VALUES('mix','Mix',0)", []).unwrap();
+        for (id, title, no) in [(1, "Charizard", "4/102"), (2, "Abra", "43/102"), (3, "Mew", "8/102"), (4, "Abra", "43/102")] {
+            c.execute(
+                "INSERT INTO products(id,handle,title,price,card_no,card_set,available,created_at) VALUES(?1,?2,?3,10,?4,'Base Set',1,'2026-01-01T00:00:00')",
+                rusqlite::params![id, format!("c{id}"), title, no],
+            )
+            .unwrap();
+        }
+        add_to_binder(&c, "mix", &[1, 2, 3]).unwrap();
+        hide_in_binder(&c, "mix", 3, true).unwrap();
+        let cards: Vec<crate::binder_sort::SortCard> = binder_cards(&c, "mix")
+            .unwrap()
+            .iter()
+            .map(|p| crate::binder_sort::SortCard { id: p.id, name: p.short_title(), set: p.set_text(), released: String::new(), number: p.card_no.clone(), api_id: p.api_id.clone() })
+            .collect();
+        let za = crate::binder_sort::order(&cards, crate::binder_sort::By::Za, &Default::default());
+        arrange_binder(&c, "mix", &za).unwrap();
+        assert_eq!(binder_cards(&c, "mix").unwrap().iter().map(|p| p.title.as_str()).collect::<Vec<_>>(), vec!["Mew", "Charizard", "Abra"]);
+        assert_eq!(list(&c, &Query { collection: Some("mix".into()), ..Default::default() }).unwrap().0.iter().map(|p| p.title.as_str()).collect::<Vec<_>>(), vec!["Charizard", "Abra"]);
+        assert_eq!(list(&c, &Query { collection: Some("mix".into()), ..Default::default() }).unwrap().0[1].qty, 2, "copies stay one card");
+        let by_number = crate::binder_sort::order(&cards, crate::binder_sort::By::Number, &Default::default());
+        arrange_binder(&c, "mix", &by_number).unwrap();
+        assert_eq!(binder_cards(&c, "mix").unwrap().iter().map(|p| p.title.as_str()).collect::<Vec<_>>(), vec!["Charizard", "Mew", "Abra"]);
     }
 
     /// The vault's binder tools: cards join a binder (every copy, at the end), leave it, and are put in order; the

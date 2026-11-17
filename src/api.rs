@@ -248,7 +248,7 @@ pub async fn card(State(app): State<App>, Path(handle): Path<String>) -> Res {
         let Some(p) = db::product(c, &h)? else { return Ok(None) };
         // Only copies still for sale: sold ones stay in the records but can't be bought.
         let copies = db::copies_for_sale(c, p.id)?;
-        let mut st = c.prepare("SELECT co.title FROM collections co JOIN collection_products cp ON cp.collection=co.handle WHERE cp.product_id=?1 ORDER BY co.position")?;
+        let mut st = c.prepare("SELECT co.title FROM collections co JOIN collection_products cp ON cp.collection=co.handle WHERE cp.product_id=?1 AND cp.hidden=0 ORDER BY co.position")?;
         let binders = st.query_map([p.id], |r| r.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?;
         Ok(Some((p, copies, binders)))
     })
