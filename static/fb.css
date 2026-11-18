@@ -1981,3 +1981,24 @@ dialog.of .sheet-acts { display: flex; justify-content: flex-end; gap: 8px; }
 .nt-how button[aria-pressed="true"] { background: var(--surface-3); color: var(--gold-hi); box-shadow: inset 0 0 0 1px var(--gold-edge); }
 .nt-mail { flex: none; }
 @media (max-width: 699px) { .nt-how { width: 100%; } .nt-how button { flex: 1 1 0; padding: 0 6px; } }
+
+/* ---------- People in a window: who follows, who reacted (static/people.js) ---------- */
+dialog.pp { width: min(420px, calc(100vw - 32px)); max-height: min(80dvh, 640px); padding: 0; border: 0; border-radius: var(--r-lg); background: var(--surface); color: var(--text); box-shadow: 0 0 0 1px var(--line-2), var(--shadow-pop); }
+dialog.pp[open] { display: flex; flex-direction: column; }
+dialog.pp::backdrop { background: rgba(3,4,10,.72); }
+.pp-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 10px 10px 16px; border-bottom: 1px solid var(--line); }
+.pp-h b { font: 700 1.0625rem/1.3 var(--font); overflow-wrap: anywhere; }
+.pp-x { flex: none; }
+.pp-state { margin: 0; padding: 24px 16px; color: var(--muted); text-align: center; }
+.pp-list { flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 6px; list-style: none; }
+.pp-row { display: flex; align-items: center; gap: 12px; padding: 8px 10px; border-radius: var(--r); color: var(--text); }
+.pp-row:hover { background: var(--fill); text-decoration: none; }
+.pp-row .av img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; }
+.pp-name { flex: 1; min-width: 0; font-weight: 600; overflow-wrap: anywhere; }
+.pp-emoji { flex: none; font-size: 1.25rem; }
+/* A trainer's followers, under their buttons; a post's faces open who reacted. */
+.tp-fol { align-self: flex-start; margin-top: 4px; color: var(--muted); font-size: .9375rem; }
+.tp-fol b { color: var(--text); }
+.post-stats [data-reacts] { cursor: pointer; }
+/* What the buyer said about paying: worth seeing at a glance. */
+.st-said { color: var(--gold-hi); font-weight: 600; }

@@ -25,7 +25,7 @@
     <ul class="sf-stats">
       <li><b>{{ n.for_sale_text() }}</b><span>card{% if n.for_sale != 1 %}s{% endif %} for sale</span></li>
       <li><b>{{ n.binders }}</b><span>binder{% if n.binders != 1 %}s{% endif %}</span></li>
-      <li><b id="followerN">{{ n.followers }}</b><span>follower{% if n.followers != 1 %}s{% endif %}</span></li>
+      <li class="sf-vli"><button type="button" class="sf-vouches" data-followers="/store/vault/followers" data-followers-title="Who follows {{ nav.brand }}" aria-haspopup="dialog"><b id="followerN">{{ n.followers }}</b><span>Follower{% if n.followers != 1 %}s{% endif %} <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span></button></li>
       <li class="sf-vli"><button type="button" class="sf-vouches" data-vouches="vault" aria-haspopup="dialog"><b data-vouch-n>{{ n.vouches }}</b><span>Vouches <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span></button></li>
     </ul>
     {#- The same details as every store, one per line (store.html). -#}

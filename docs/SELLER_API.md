@@ -109,7 +109,7 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 | `GET /me/featured/choices?q=` | The seller's cards on sale now, to highlight |
 | `POST /me/featured` | `{ binders, cards }`: binder and card numbers, at most 12 of each; only the seller's own count. An empty choice shows nothing but the store's name. (Full admins: the same at `/admin/featured` for the vault, binders by handle, cards by product id) |
 | `GET /me/orders?tab=selling\|questions\|sales\|buying` | Orders page. Selling lists the cards one buyer sent together from one cart as one order (`reservations.batch`, the first card's id) with Accept all, Mark all paid and Decline all (each card's own route, in turn); every order has Message (to the buyer, with the card). The Questions tab shows only while the seller has questions from before asking became Message |
-| `POST /me/orders/reservations/{id}` | Seller: `{ status: "Confirmed" \| "Paid" \| "Declined", paid_via }`. Buyer: `{ status: "Cancelled" }`. `Paid` creates the sale, lowers stock |
+| `POST /me/orders/reservations/{id}` | Seller: `{ status: "Confirmed" \| "Paid" \| "Declined", paid_via }`. Buyer: `{ status: "Cancelled" }`, or `{ status: "BuyerPaid" }` on an accepted order ("I've paid": `reservations.buyer_paid_at` on every card of that order; the seller hears, to check and mark it paid). `Paid` creates the sale, lowers stock |
 | `POST /me/orders/offers/{id}` | Seller: `{ status: "Accepted" \| "Declined" \| "Countered", counter }`. Buyer: `{ status: "accept" \| "withdraw" }` on a counter |
 | `POST /me/orders/questions/{id}/reply` | `{ text }` (old questions only: asking is Message now) |
 | `POST /me/reviews` | Buyer: `{ transaction_id, rating (1–5), text }`. Only the buyer of a finished sale, once; never the seller |
@@ -139,6 +139,10 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 | `GET /stores` (also `/sellers`) | Every store with cards on sale, the vault's among them, drawn alike: the one that last put up or changed a card first |
 | `GET /store/{slug}` | A store: cover, name, status banner, stats from real data, links, ways to pay, binders, cards on sale, reviews. Blocked and not-yet-approved stores are seen only by their owner and the vault's staff |
 | `GET /store/{slug}/binders/{binder}` | One binder (`Private` only for the owner) |
+| `GET /store/{slug}/followers`, `GET /trainers/{id}/followers` | Who follows a store or a trainer, newest first: `{ people: [{ id, name, avatar, initial, url }] }` (trainers whose page is up) |
+| `GET /trainers/{id}/follow`, `POST /trainers/{id}/follow` | Follow a trainer, or stop: the same `store_follows` row as their store's Follow. Followers hear when they post (one line per author, `posts:{id}`) or put up cards |
+| `GET /posts/{id}/reactions` | Who reacted to a post: `{ people: [{ …, emoji }] }` |
+| `POST /posts/{id}/report`, `POST /comments/{id}/report` | `{ reason? }`. Once per person per post or comment (table `reports`), 20 an hour; the admins and moderators hear (kind `staff`) |
 | `GET /store/{slug}/follow`, `POST /store/{slug}/follow` | Whether the visitor follows the store; follow or unfollow. `vault` is the vault's store (its admins are told). Returns `following`, `followers` |
 | `GET /store/{slug}/vouches` | The store's Vouches window: vouches written for it and, for a seller, the reviews from its finished sales |
 | `POST /store/{slug}/reserve` | `{ card_id, qty, message }`. Refused for the seller's own cards, on vacation, when not enough copies are free, or with an open reservation already |
@@ -160,7 +164,7 @@ There is no checkout and no payment: sending the cart places orders, and the sel
 | `GET /cart/lines?v=1,2&c=3` | Fresh title, price, picture and availability for vault products (`v`) and sellers' cards (`c`) |
 | `POST /cart/checkout` | `{ items: [{ kind: "vault" \| "card", id, qty }], message }` → `{ placed, failed }`. The vault's lines become one `vault_orders` row; each seller's card becomes a reservation (`sellers::reserve`), and one seller's cards share a `batch` (the first one's id): one order for that store. 401 when signed out. |
 | `GET /me/orders?tab=buying` | The buyer's reservations, offers and vault orders, with how to pay once accepted |
-| `POST /me/orders/vault/{id}` | `{ status: "Cancelled" }` while the order is still open |
+| `POST /me/orders/vault/{id}` | `{ status: "Cancelled" }` while the order is still open; `{ status: "BuyerPaid" }` once it is accepted (`vault_orders.buyer_paid_at`; the admins hear) |
 
 Open vault orders (`Pending`, `Confirmed`) hold the vault's copies (`db::vault_left`), oldest first, so two buyers
 can't both get the last copy; Accept and Mark paid re-check stock. One order holds at most 30 lines and 60 copies, a

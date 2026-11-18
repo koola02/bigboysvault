@@ -92,6 +92,10 @@ CREATE TABLE IF NOT EXISTS comment_reactions(
   comment_id INTEGER NOT NULL, member_id INTEGER NOT NULL, kind TEXT NOT NULL, created_at INTEGER NOT NULL,
   PRIMARY KEY(comment_id, member_id)
 );
+CREATE TABLE IF NOT EXISTS reports(
+  id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, ref_id INTEGER NOT NULL, member_id INTEGER NOT NULL,
+  reason TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, UNIQUE(kind, ref_id, member_id)
+);
 ";
 
 pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
@@ -204,6 +208,18 @@ pub fn post(c: &Connection, viewer: i64, id: i64) -> rusqlite::Result<Option<Pos
         map_post,
     )
     .optional()
+}
+
+/// Who reacted to a post, newest first: (member, name, picture, reaction).
+pub fn reactions_of(c: &Connection, post: i64, limit: i64) -> rusqlite::Result<Vec<(i64, String, String, String)>> {
+    c.prepare("SELECT m.id, m.name, m.avatar, r.kind FROM reactions r JOIN members m ON m.id=r.member_id WHERE r.post_id=?1 AND m.blocked=0 ORDER BY r.created_at DESC LIMIT ?2")?
+        .query_map(params![post, limit], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect()
+}
+
+/// Someone reports a post or a comment ("post" / "comment") to the vault's staff, once each. True when it is new.
+pub fn report(c: &Connection, kind: &str, id: i64, member: i64, reason: &str, now: i64) -> rusqlite::Result<bool> {
+    Ok(c.execute("INSERT OR IGNORE INTO reports(kind, ref_id, member_id, reason, created_at) VALUES(?1,?2,?3,?4,?5)", params![kind, id, member, reason, now])? == 1)
 }
 
 /// The reactions used most on a post, most used first (at most three), for the little row of faces.
@@ -723,6 +739,20 @@ mod tests {
         comment_react(&c, k, 2, "like", 21).unwrap();
         assert_eq!(post_remove(&c, p).unwrap(), vec!["z_l.jpg".to_string(), "z_s.jpg".to_string()]);
         assert_eq!(c.query_row("SELECT COUNT(*) FROM comment_reactions", [], |x| x.get::<_, i64>(0)).unwrap(), 0);
+    }
+
+    #[test]
+    fn who_reacted_is_listed_and_reports_count_once() {
+        let c = db();
+        let p = post_add(&c, 2, "post", "hello", &[], &json!({}), 1000).unwrap();
+        react(&c, p, 1, "fire", 10).unwrap();
+        react(&c, p, 2, "love", 11).unwrap();
+        let who: Vec<(String, String)> = reactions_of(&c, p, 10).unwrap().into_iter().map(|(_, n, _, k)| (n, k)).collect();
+        assert_eq!(who, vec![("Buyer".to_string(), "love".to_string()), ("Seller".into(), "fire".into())], "newest first");
+        assert!(report(&c, "post", p, 1, "spam", 20).unwrap());
+        assert!(!report(&c, "post", p, 1, "again", 21).unwrap(), "once per person");
+        assert!(report(&c, "post", p, 2, "", 22).unwrap());
+        assert!(report(&c, "comment", p, 1, "", 23).unwrap(), "a comment is its own thing");
     }
 
     #[test]

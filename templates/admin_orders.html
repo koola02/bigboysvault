@@ -29,6 +29,7 @@
           <div class="sf-row"><dt class="sf-row-l">Status</dt><dd class="sf-row-v"><span class="st-status" data-s="{{ o.status }}">{% if o.status == "Pending" %}New{% else if o.status == "Confirmed" %}Accepted{% else %}{{ o.status }}{% endif %}</span></dd></div>
           <div class="sf-row"><dt class="sf-row-l">Sent</dt><dd class="sf-row-v">{{ o.when() }}</dd></div>
           {% if !o.paid_via.is_empty() %}<div class="sf-row"><dt class="sf-row-l">Paid with</dt><dd class="sf-row-v">{{ o.paid_via }}</dd></div>{% endif %}
+          {% if o.status == "Confirmed" && o.buyer_paid_at > 0 %}<div class="sf-row"><dt class="sf-row-l">Payment</dt><dd class="sf-row-v st-said">The buyer says they paid, {{ o.buyer_paid_text() }}</dd></div>{% endif %}
           {% if !o.message.is_empty() %}<div class="sf-row"><dt class="sf-row-l">Note</dt><dd class="sf-row-v sf-text">“{{ o.message }}”</dd></div>{% endif %}
         </dl>
         <ul class="ao-lines">{% for i in o.items %}<li><a href="/products/{{ i.handle }}" data-float>{{ i.title }}</a> <span>×{{ i.qty }} · {{ i.price_text() }} each</span><b>{{ i.line_text() }}</b></li>{% endfor %}</ul>

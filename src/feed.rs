@@ -8,7 +8,7 @@
 //! GET /feed?c=    the next items, as HTML (the page's last element asks for them when it scrolls into view)
 //! POST /posts     a trainer's post (words, up to four photos, maybe a card)
 //! POST /posts/{id}/react · GET|POST /posts/{id}/comments · POST /posts/{id}/delete|hide · POST /comments/{id}/delete
-use crate::community::{acting, current, fail, gated, html, ok, photo_cap_mb, render, same_site, store_photo, TOO_BIG};
+use crate::community::{acting, current, fail, gated, html, ok, over_limit, photo_cap_mb, render, same_site, store_photo, TOO_BIG};
 use crate::{admin, cached, messages, page, with_db, App, Chrome, Res, Seo};
 use askama::Template;
 use axum::{
@@ -597,6 +597,16 @@ fn tell_followers(c: &rusqlite::Connection, store: i64, now: i64) -> rusqlite::R
     Ok(())
 }
 
+/// A new post: whoever follows its author (the vault's store, for a post as the vault) hears, one unread line per
+/// author kept up to date. `poster` is who wrote it (an admin, for the vault): they aren't told about their own post.
+fn tell_post_followers(c: &rusqlite::Connection, author: i64, poster: i64, pid: i64, text: &str, brand: &str) -> rusqlite::Result<()> {
+    let who_name = if author == 0 { brand.to_string() } else { members::get(c, author)?.map(|x| x.name).unwrap_or_default() };
+    for f in sellers::follower_ids(c, author)?.into_iter().filter(|f| *f != poster && *f != author) {
+        sellers::notify_from(c, f, author, "following", &format!("posts:{author}"), &format!("{who_name} posted: {}", said(text)), &format!("/posts/{pid}"))?;
+    }
+    Ok(())
+}
+
 /// Who hears about a reaction or a comment on a post: whoever wrote it, or for a post the vault itself wrote, its admins.
 fn post_owners(c: &rusqlite::Connection, p: &social::Post) -> rusqlite::Result<Vec<i64>> {
     if p.member_id != 0 { Ok(vec![p.member_id]) } else { dm::admins(c) }
@@ -768,6 +778,7 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
         }
         let pid = social::post_add(c, author, kind, &text, &photos, &payload, now)?;
         let nav = crate::chrome(c)?;
+        tell_post_followers(c, author, id, pid, &text, &nav.brand)?;
         let p = social::post(c, brand_viewer, pid)?;
         Ok(Ok(match p {
             Some(p) => post_view(c, &p, &nav.brand, brand_viewer)?,
@@ -948,6 +959,76 @@ pub async fn comments(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>)
 }
 
 /// The start of what someone said, for a line in the bell: their words, or "a photo".
+/// GET /posts/{id}/reactions: who reacted to a post, newest first (the list behind its likes).
+pub async fn reactions(State(app): State<App>, Path(id): Path<i64>) -> Res {
+    let list = with_db(&app, move |c| {
+        if social::post(c, 0, id)?.filter(|p| !p.hidden).is_none() {
+            return Ok(None);
+        }
+        Ok(Some(social::reactions_of(c, id, 300)?))
+    })
+    .await?;
+    let Some(list) = list else { return Ok(fail(StatusCode::NOT_FOUND, "That post isn't here any more.")) };
+    let people: Vec<serde_json::Value> = list
+        .into_iter()
+        .map(|(mid, name, avatar, kind)| json!({ "id": mid, "initial": members::initial(&name), "name": name, "avatar": avatar, "emoji": social::emoji(&kind), "url": format!("/trainers/{mid}") }))
+        .collect();
+    Ok(ok(json!({ "people": people })))
+}
+
+#[derive(Deserialize, Default)]
+pub struct ReportReq {
+    #[serde(default)]
+    reason: String,
+}
+
+/// POST /posts/{id}/report, /comments/{id}/report: once per person per post or comment; the vault's admins and
+/// moderators hear (one line per thing reported, kept up to date).
+async fn report(app: App, h: HeaderMap, kind: &'static str, id: i64, reason: String) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let me = m.id;
+    if over_limit(&app, format!("report|{me}"), 20) {
+        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of reports for now. The team will look at them."));
+    }
+    let (name, now, reason) = (m.name.clone(), crate::unix_now(), members::clean_line(&reason, 200));
+    let out = with_db(&app, move |c| {
+        let (post, words) = match kind {
+            "post" => match social::post(c, 0, id)? {
+                Some(p) => (p.id, p.text.clone()),
+                None => return Ok(None),
+            },
+            _ => match social::comment(c, id)? {
+                Some(k) => (k.post_id, k.text.clone()),
+                None => return Ok(None),
+            },
+        };
+        if social::report(c, kind, id, me, &reason, now)? {
+            let what = if kind == "post" { "a post" } else { "a comment" };
+            let why = if reason.is_empty() { String::new() } else { format!(" ({reason})") };
+            for s in sellers::staff_ids(c)?.into_iter().filter(|s| *s != me) {
+                sellers::notify_from(c, s, me, "staff", &format!("report:{kind}:{id}"), &format!("{name} reported {what}{why}: {}", said(&words)), &format!("/posts/{post}"))?;
+            }
+        }
+        Ok(Some(()))
+    })
+    .await?;
+    Ok(match out {
+        Some(()) => ok(json!({ "ok": true })),
+        None => fail(StatusCode::NOT_FOUND, "That isn't here any more."),
+    })
+}
+
+pub async fn report_post(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Json(req): Json<ReportReq>) -> Res {
+    report(app, h, "post", id, req.reason).await
+}
+
+pub async fn report_comment(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Json(req): Json<ReportReq>) -> Res {
+    report(app, h, "comment", id, req.reason).await
+}
+
 fn said(text: &str) -> String {
     if text.is_empty() {
         return "a photo".into();
@@ -1261,6 +1342,26 @@ mod tests {
     fn feed_part(items: Vec<Item>, next: String) -> String {
         let end = next.is_empty();
         render(FeedPart { items, next, end }).unwrap()
+    }
+
+    #[test]
+    fn followers_hear_when_someone_they_follow_posts() {
+        let c = db();
+        let (ash, _, brock) = town(&c);
+        sellers::toggle_follow(&c, brock, ash).unwrap();
+        let p1 = social::post_add(&c, ash, "post", "Look at this pull", &[], &json!({}), 10).unwrap();
+        tell_post_followers(&c, ash, ash, p1, "Look at this pull", "Big Boys Vault").unwrap();
+        let p2 = social::post_add(&c, ash, "post", "", &[], &json!({}), 11).unwrap();
+        tell_post_followers(&c, ash, ash, p2, "", "Big Boys Vault").unwrap();
+        let lines: Vec<(String, String)> = c.prepare("SELECT message, link FROM notifications WHERE member_id=?1 AND kind='following'").unwrap().query_map([brock], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(Result::unwrap).collect();
+        assert_eq!(lines, vec![("Ash posted: a photo".to_string(), format!("/posts/{p2}"))], "one line per author, brought up to date");
+        // Followers of the vault's store hear the vault's posts; the admin who wrote it doesn't.
+        sellers::toggle_follow(&c, brock, 0).unwrap();
+        let v = social::post_add(&c, 0, "post", "New box!", &[], &json!({}), 12).unwrap();
+        tell_post_followers(&c, 0, brock, v, "New box!", "Big Boys Vault").unwrap();
+        tell_post_followers(&c, 0, ash, v, "New box!", "Big Boys Vault").unwrap();
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM notifications WHERE member_id=?1 AND message LIKE 'Big Boys Vault posted%'", [brock], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
     }
 
     #[test]

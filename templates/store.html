@@ -27,7 +27,7 @@
     <ul class="sf-stats">
       <li><b>{{ stats.on_sale }}</b><span>card{% if stats.on_sale != 1 %}s{% endif %} for sale</span></li>
       <li><b>{{ binders_n }}</b><span>binder{% if binders_n != 1 %}s{% endif %}</span></li>
-      <li><b id="followerN">{{ stats.followers }}</b><span>follower{% if stats.followers != 1 %}s{% endif %}</span></li>
+      <li class="sf-vli"><button type="button" class="sf-vouches" data-followers="/store/{{ m.slug }}/followers" data-followers-title="Who follows {{ m.store_title() }}" aria-haspopup="dialog"><b id="followerN">{{ stats.followers }}</b><span>Follower{% if stats.followers != 1 %}s{% endif %} <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span></button></li>
       <li class="sf-vli"><button type="button" class="sf-vouches" data-vouches="{{ m.slug }}" aria-haspopup="dialog"><b data-vouch-n>{{ vouches }}</b><span>Vouches <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span></button></li>
     </ul>
     {#- The store's details, one per line: a label, then its value (the owner, 18 Nov 2026: "linear and prettified"). -#}

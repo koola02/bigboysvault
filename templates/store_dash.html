@@ -12,7 +12,7 @@
     <div class="kpi"><span>Stock value</span><b>{{ d.value_text() }}</b><small>asking prices × stock</small></div>
     <a class="kpi" href="/me/orders?tab=sales"><span>Sold</span><b>{{ d.sold_units }}</b><small>{{ d.sales.all_n }} sale{% if d.sales.all_n != 1 %}s{% endif %} ever</small></a>
     <div class="kpi"><span>Views</span><b>{{ d.views7 }}</b><small>last 7 days · {{ d.views30 }} in 30</small></div>
-    <div class="kpi"><span>Followers</span><b>{{ d.followers }}</b><small>{% if d.reviews > 0 %}★ {{ d.rating }} from {{ d.reviews }} review{% if d.reviews != 1 %}s{% endif %}{% else %}no reviews yet{% endif %}</small></div>
+    <button type="button" class="kpi" data-followers="/store/{{ p.m.slug }}/followers" data-followers-title="Who follows your store" aria-haspopup="dialog"><span>Followers</span><b>{{ d.followers }}</b><small>{% if d.reviews > 0 %}★ {{ d.rating }} from {{ d.reviews }} review{% if d.reviews != 1 %}s{% endif %}{% else %}no reviews yet{% endif %}</small></button>
     <a class="kpi" href="/me/binders"><span>Binders</span><b>{{ d.binders }}</b><small>arrange your cards</small></a>
   </div>
 

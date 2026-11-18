@@ -349,9 +349,10 @@
         const status = res.dataset.res;
         if (status === 'Declined' && !(await (window.bbvConfirm ? window.bbvConfirm('Decline this order? The buyer is told.', { yes: 'Decline', no: 'Keep it' }) : Promise.resolve(confirm('Decline this order? The buyer is told.'))))) return;
         if (status === 'Cancelled' && !(await (window.bbvConfirm ? window.bbvConfirm('Cancel this order?', { yes: 'Cancel it', no: 'Keep it' }) : Promise.resolve(confirm('Cancel this order?'))))) return;
+        if (status === 'BuyerPaid' && !(await (window.bbvConfirm ? window.bbvConfirm('Tell the seller you’ve paid? They check their app, then mark it paid.', { yes: 'Yes, I’ve paid', no: 'Not yet' }) : Promise.resolve(confirm('Tell the seller you’ve paid?'))))) return;
         const via = li.querySelector('[data-via]')?.value || '';
         res.disabled = true;
-        try { await send(`/me/orders/reservations/${li.dataset.id}`, { status, paid_via: via }); A.toast(status === 'Paid' ? 'Marked paid ✓ The sale is done.' : 'Saved ✓', { kind: 'ok' }); location.reload(); }
+        try { await send(`/me/orders/reservations/${li.dataset.id}`, { status, paid_via: via }); A.toast(status === 'Paid' ? 'Marked paid ✓ The sale is done.' : status === 'BuyerPaid' ? 'Sent ✓ The seller checks, then marks it paid.' : 'Saved ✓', { kind: 'ok' }); location.reload(); }
         catch (err) { res.disabled = false; A.toast(err.message, { kind: 'err' }); }
       }
       const off = e.target.closest('[data-offer]');
@@ -361,6 +362,13 @@
         off.disabled = true;
         try { await send(`/me/orders/offers/${li.dataset.id}`, { status, counter }); A.toast('Saved ✓', { kind: 'ok' }); location.reload(); }
         catch (err) { off.disabled = false; A.toast(err.message, { kind: 'err' }); }
+      }
+      const vp = e.target.closest('[data-vpaid]');
+      if (vp) {
+        if (!(await (window.bbvConfirm ? window.bbvConfirm('Tell the vault you’ve paid? The team checks, then marks it paid.', { yes: 'Yes, I’ve paid', no: 'Not yet' }) : Promise.resolve(confirm('Tell the vault you’ve paid?'))))) return;
+        vp.disabled = true;
+        try { await send(`/me/orders/vault/${li.dataset.id}`, { status: 'BuyerPaid' }); A.toast('Sent ✓ The vault checks, then marks it paid.', { kind: 'ok' }); location.reload(); } catch (err) { vp.disabled = false; A.toast(err.message, { kind: 'err' }); }
+        return;
       }
       const vc = e.target.closest('[data-vcancel]');
       if (vc) {

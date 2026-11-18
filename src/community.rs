@@ -740,6 +740,58 @@ pub async fn my_page(State(app): State<App>, h: HeaderMap) -> Res {
     })
 }
 
+/// GET /trainers/{id}/follow: whether the visitor follows this trainer (the same switch as their store's Follow), and
+/// how many do. The trainer's page asks once it is open (static/people.js).
+pub async fn trainer_follow_state(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -> Res {
+    let me = current(&app, &h).await?.map(|m| m.id);
+    let (following, n) = with_db(&app, move |c| Ok((match me { Some(v) => marcuru_rs::sellers::is_following(c, v, id)?, None => false }, marcuru_rs::sellers::followers(c, id)?))).await?;
+    Ok(ok(json!({ "ok": true, "following": following, "followers": n, "me": me == Some(id) })))
+}
+
+/// POST /trainers/{id}/follow: follow a trainer, or stop. Following a seller and following their store are one switch;
+/// they hear when the trainer posts or puts up cards.
+pub async fn trainer_follow(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let me = m.id;
+    if id == me {
+        return Ok(fail(StatusCode::BAD_REQUEST, "That's you."));
+    }
+    if over_limit(&app, format!("follow|{me}"), 30) {
+        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of following for now. Please try again in a while."));
+    }
+    let out = with_db(&app, move |c| {
+        if !members::get(c, id)?.is_some_and(|t| t.profile_ok && !t.blocked) {
+            return Ok(None);
+        }
+        let on = marcuru_rs::sellers::toggle_follow(c, me, id)?;
+        Ok(Some((on, marcuru_rs::sellers::followers(c, id)?)))
+    })
+    .await?;
+    let Some((following, n)) = out else { return Ok(fail(StatusCode::NOT_FOUND, "That trainer isn't here.")) };
+    app.forget();
+    Ok(ok(json!({ "ok": true, "following": following, "followers": n })))
+}
+
+/// GET /trainers/{id}/followers: who follows this trainer (and their store), for the window behind the count.
+pub async fn trainer_followers(State(app): State<App>, Path(id): Path<i64>) -> Res {
+    let list = with_db(&app, move |c| {
+        if !members::get(c, id)?.is_some_and(|t| t.profile_ok && !t.blocked) {
+            return Ok(vec![]);
+        }
+        marcuru_rs::sellers::follower_list(c, id, 300)
+    })
+    .await?;
+    Ok(ok(json!({ "people": people_json(list) })))
+}
+
+/// People for a window that lists them: their page, picture and name.
+pub(crate) fn people_json(list: Vec<(i64, String, String)>) -> Vec<serde_json::Value> {
+    list.into_iter().map(|(id, name, avatar)| json!({ "id": id, "initial": members::initial(&name), "name": name, "avatar": avatar, "url": format!("/trainers/{id}") })).collect()
+}
+
 /// GET /me/store/page: your own store, the page itself (the menu's "My store"; the Store Manager is a button on it).
 /// Someone who doesn't sell yet goes to Apply as a seller; signed out, log in first.
 pub async fn my_store_page(State(app): State<App>, h: HeaderMap) -> Res {

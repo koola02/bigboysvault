@@ -24,7 +24,7 @@
     {% if !push_key.is_empty() %}<div class="alerts-card" data-alerts="settings" hidden></div>{% endif %}
     <ul class="nt-list">
       {% for pr in prefs %}
-      {% if pr.event == "message" || pr.event == "my_order" || pr.event == "social" || pr.event == "following" || pr.event == "wish" || pr.event == "announcement" || (p.m.seller && pr.event != "order" && pr.event != "staff" && (pr.event != "inquiry" || has_questions)) || ((pr.event == "order" || pr.event == "staff" || pr.event == "review") && p.m.role == "admin") %}
+      {% if pr.event == "message" || pr.event == "my_order" || pr.event == "social" || pr.event == "following" || pr.event == "wish" || pr.event == "announcement" || (p.m.seller && pr.event != "order" && pr.event != "staff" && (pr.event != "inquiry" || has_questions)) || ((pr.event == "order" || pr.event == "review") && p.m.role == "admin") || (pr.event == "staff" && (p.m.role == "admin" || p.m.role == "mod")) %}
       <li class="nt-row" data-event="{{ pr.event }}">
         <span class="nt-l">{{ pr.label }}</span>
         <span class="nt-how" role="group" aria-label="{{ pr.label }}">
@@ -47,5 +47,5 @@
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/admin-ui.js?v=10" defer></script>
-<script src="/static/store.js?v=12" defer></script>
+<script src="/static/store.js?v=13" defer></script>
 {% endblock %}

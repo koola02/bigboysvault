@@ -1127,3 +1127,7 @@ body.qa-has-tray .toast { bottom: calc(84px + var(--sab)); }
 /* Listings: set, number and finish, then views, saves, sales and the end date, each its own piece that wraps whole. */
 .ls-tile .ct-set, .ls-tile .st-meta { display: flex; flex-wrap: wrap; gap: 2px 10px; overflow: visible; white-space: normal; text-overflow: clip; }
 .ls-tile .ct-set span, .ls-tile .st-meta span { white-space: nowrap; }
+/* The Overview's Followers: a button that lists them. */
+button.kpi { width: 100%; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; transition: background .15s; }
+button.kpi:hover { background: var(--surface-2); }
+button.kpi:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }

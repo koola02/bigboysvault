@@ -860,6 +860,13 @@ pub async fn answer_reservation(State(app): State<App>, h: HeaderMap, Path(id): 
         let done = with_db(&app, move |c| sellers::cancel_reservation(c, mid, id)).await?;
         return Ok(if done { ok(json!({ "ok": true })) } else { fail(StatusCode::BAD_REQUEST, "That order can't be cancelled.") });
     }
+    // The buyer: "I've paid". The seller hears, to check and mark it paid.
+    if req.status == "BuyerPaid" {
+        return Ok(match with_db(&app, move |c| sellers::buyer_paid(c, mid, id)).await? {
+            Ok(()) => ok(json!({ "ok": true })),
+            Err(e) => fail(StatusCode::BAD_REQUEST, e),
+        });
+    }
     if let Err(r) = seller_only(&m) {
         return Ok(r);
     }
@@ -2167,6 +2174,13 @@ pub async fn follow(State(app): State<App>, h: HeaderMap, Path(slug): Path<Strin
     Ok(ok(json!({ "ok": true, "following": following, "followers": n })))
 }
 
+/// GET /store/{slug}/followers: who follows the store (the vault's: `vault`), for the window behind its count.
+pub async fn store_followers(State(app): State<App>, Path(slug): Path<String>) -> Res {
+    let Some(sid) = store_id(&app, slug).await? else { return Ok(fail(StatusCode::NOT_FOUND, "No such store.")) };
+    let list = with_db(&app, move |c| sellers::follower_list(c, sid, 300)).await?;
+    Ok(ok(json!({ "people": crate::community::people_json(list) })))
+}
+
 /// GET /store/{slug}/follow: whether the visitor follows the store, and how many do. The vault's store page is the same
 /// for every visitor, so its Follow button asks this once the page is open (static/store-head.js).
 pub async fn follow_state(State(app): State<App>, h: HeaderMap, Path(slug): Path<String>) -> Res {
@@ -2452,10 +2466,16 @@ pub async fn cancel_vault_order(State(app): State<App>, h: HeaderMap, Path(id): 
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
-    if req.status != "Cancelled" {
-        return Ok(fail(StatusCode::BAD_REQUEST, "Only cancelling is yours to do here."));
-    }
     let me = m.id;
+    if req.status == "BuyerPaid" {
+        return Ok(match with_db(&app, move |c| sellers::vault_buyer_paid(c, me, id)).await? {
+            Ok(()) => ok(json!({ "ok": true })),
+            Err(e) => fail(StatusCode::BAD_REQUEST, e),
+        });
+    }
+    if req.status != "Cancelled" {
+        return Ok(fail(StatusCode::BAD_REQUEST, "Only cancelling, or saying you've paid, is yours to do here."));
+    }
     let done = with_db(&app, move |c| sellers::cancel_vault_order(c, me, id)).await?;
     Ok(if done { ok(json!({ "ok": true })) } else { fail(StatusCode::BAD_REQUEST, "That order can't be cancelled any more.") })
 }
@@ -3214,7 +3234,7 @@ mod tests {
         assert!(!store.contains(" data-off>"), "a visitor sees nothing marked for the owner");
         assert!(store.contains("class=\"sf-head") && store.contains(&format!("data-vouches=\"{slug}\"")), "the store page keeps its header, with the Vouches button");
         // The same four numbers as every store, the vault's included.
-        assert!(store.contains("<li><b>3</b><span>binders</span></li>") && store.contains("<span>followers</span>") && store.contains(">Vouches <svg"), "{store}");
+        assert!(store.contains("<li><b>3</b><span>binders</span></li>") && store.contains("<span>Followers <svg") && store.contains("data-followers=\"/store/") && store.contains(">Vouches <svg"), "{store}");
         // The owner sees every binder; the ones visitors don't see are marked and faded.
         let own = page_as(&c, &slug, None, true);
         assert_eq!(own.matches("class=\"sf-btile\"").count(), 5);

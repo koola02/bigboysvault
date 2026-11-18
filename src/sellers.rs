@@ -144,9 +144,10 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
     )?;
     add_column(c, "push_subscriptions", "fails", "INTEGER NOT NULL DEFAULT 0")?;
     message_push_on_once(c)?;
-    for (col, def) in [("qty", "INTEGER NOT NULL DEFAULT 1"), ("message", "TEXT NOT NULL DEFAULT ''"), ("price", "REAL NOT NULL DEFAULT 0"), ("paid_via", "TEXT NOT NULL DEFAULT ''"), ("updated_at", "INTEGER NOT NULL DEFAULT 0"), ("offer_id", "INTEGER NOT NULL DEFAULT 0"), ("batch", "INTEGER NOT NULL DEFAULT 0")] {
+    for (col, def) in [("qty", "INTEGER NOT NULL DEFAULT 1"), ("message", "TEXT NOT NULL DEFAULT ''"), ("price", "REAL NOT NULL DEFAULT 0"), ("paid_via", "TEXT NOT NULL DEFAULT ''"), ("updated_at", "INTEGER NOT NULL DEFAULT 0"), ("offer_id", "INTEGER NOT NULL DEFAULT 0"), ("batch", "INTEGER NOT NULL DEFAULT 0"), ("buyer_paid_at", "INTEGER NOT NULL DEFAULT 0")] {
         add_column(c, "reservations", col, def)?;
     }
+    add_column(c, "vault_orders", "buyer_paid_at", "INTEGER NOT NULL DEFAULT 0")?;
     for (col, def) in [("qty", "INTEGER NOT NULL DEFAULT 1"), ("message", "TEXT NOT NULL DEFAULT ''"), ("counter", "REAL NOT NULL DEFAULT 0"), ("updated_at", "INTEGER NOT NULL DEFAULT 0")] {
         add_column(c, "offers", col, def)?;
     }
@@ -1023,6 +1024,8 @@ pub struct Order {
     pub updated_at: i64,
     /// The cards of one store sent together from one cart share it (the first card's id); 0 for one alone, and offers.
     pub batch: i64,
+    /// When the buyer said "I've paid" (0: not yet).
+    pub buyer_paid_at: i64,
 }
 
 impl Order {
@@ -1043,6 +1046,10 @@ impl Order {
     }
     pub fn is_open(&self) -> bool {
         matches!(self.status.as_str(), "Pending" | "Confirmed" | "Countered")
+    }
+    /// When the buyer said they paid, in words ("" when they haven't).
+    pub fn buyer_paid_text(&self) -> String {
+        if self.buyer_paid_at > 0 { ago(self.buyer_paid_at) } else { String::new() }
     }
     /// The step it is at, in the words the buttons use ("Accept" makes it "Accepted").
     pub fn status_text(&self) -> &str {
@@ -1073,9 +1080,9 @@ impl Order {
     }
 }
 
-const ORDER_RES: &str = "r.id, r.buyer_id, COALESCE(b.name, 'A member who left'), r.seller_id, COALESCE(NULLIF(TRIM(s.store_name), ''), s.name, 'A store that closed'), COALESCE(s.slug, ''), r.card_id, c.title, c.image, c.cond, r.qty, r.price, 0.0, r.status, r.message, r.paid_via, r.expires_at, r.created_at, r.updated_at, r.batch
+const ORDER_RES: &str = "r.id, r.buyer_id, COALESCE(b.name, 'A member who left'), r.seller_id, COALESCE(NULLIF(TRIM(s.store_name), ''), s.name, 'A store that closed'), COALESCE(s.slug, ''), r.card_id, c.title, c.image, c.cond, r.qty, r.price, 0.0, r.status, r.message, r.paid_via, r.expires_at, r.created_at, r.updated_at, r.batch, r.buyer_paid_at
     FROM reservations r LEFT JOIN members b ON b.id=r.buyer_id LEFT JOIN members s ON s.id=r.seller_id LEFT JOIN member_cards c ON c.id=r.card_id";
-const ORDER_OFF: &str = "o.id, o.sender_id, COALESCE(b.name, 'A member who left'), o.seller_id, COALESCE(NULLIF(TRIM(s.store_name), ''), s.name, 'A store that closed'), COALESCE(s.slug, ''), o.card_id, c.title, c.image, c.cond, o.qty, o.amount, o.counter, o.status, o.message, '', 0, o.created_at, o.updated_at, 0
+const ORDER_OFF: &str = "o.id, o.sender_id, COALESCE(b.name, 'A member who left'), o.seller_id, COALESCE(NULLIF(TRIM(s.store_name), ''), s.name, 'A store that closed'), COALESCE(s.slug, ''), o.card_id, c.title, c.image, c.cond, o.qty, o.amount, o.counter, o.status, o.message, '', 0, o.created_at, o.updated_at, 0, 0
     FROM offers o LEFT JOIN members b ON b.id=o.sender_id LEFT JOIN members s ON s.id=o.seller_id LEFT JOIN member_cards c ON c.id=o.card_id";
 
 fn map_order(kind: &'static str) -> impl Fn(&Row) -> rusqlite::Result<Order> {
@@ -1102,6 +1109,7 @@ fn map_order(kind: &'static str) -> impl Fn(&Row) -> rusqlite::Result<Order> {
             created_at: r.get(17)?,
             updated_at: r.get(18)?,
             batch: r.get(19)?,
+            buyer_paid_at: r.get(20)?,
         })
     }
 }
@@ -1109,6 +1117,41 @@ fn map_order(kind: &'static str) -> impl Fn(&Row) -> rusqlite::Result<Order> {
 /// The cards one buyer sent one store from one cart belong together: `batch` is the first of them.
 pub fn set_batch(c: &Connection, id: i64, batch: i64) -> rusqlite::Result<()> {
     c.execute("UPDATE reservations SET batch=?2 WHERE id=?1", rusqlite::params![id, batch]).map(|_| ())
+}
+
+/// The buyer of an accepted order says "I've paid" (the cards they sent this store together go with it). The seller hears,
+/// to check their app and mark it paid. Err(text) says why not.
+pub fn buyer_paid(c: &Connection, buyer: i64, id: i64) -> rusqlite::Result<Result<(), &'static str>> {
+    let Some(r) = reservation(c, id)?.filter(|r| r.buyer_id == buyer) else { return Ok(Err("That order isn't yours.")) };
+    if r.status != "Confirmed" {
+        return Ok(Err("Pay once the seller accepts your order."));
+    }
+    let t = now();
+    let ids: Vec<i64> = if r.batch > 0 {
+        c.prepare("SELECT id FROM reservations WHERE batch=?1 AND buyer_id=?2 AND seller_id=?3 AND status='Confirmed' AND buyer_paid_at=0")?.query_map(rusqlite::params![r.batch, buyer, r.seller_id], |x| x.get(0))?.collect::<Result<_, _>>()?
+    } else {
+        vec![id]
+    };
+    for i in &ids {
+        c.execute("UPDATE reservations SET buyer_paid_at=?2 WHERE id=?1 AND buyer_paid_at=0", rusqlite::params![i, t])?;
+    }
+    let what = if ids.len() > 1 { format!("their order of {} cards", ids.len()) } else { short(&r.title) };
+    notify_from(c, r.seller_id, buyer, "reservation", &format!("paid:{}", if r.batch > 0 { r.batch } else { id }), &format!("{} says they paid for {what}. Check, then mark it paid.", r.buyer_name), "/me/orders")?;
+    Ok(Ok(()))
+}
+
+/// The same for an order of the vault's cards: its admins hear.
+pub fn vault_buyer_paid(c: &Connection, buyer: i64, id: i64) -> rusqlite::Result<Result<(), &'static str>> {
+    let Some(o) = vault_order(c, id)?.filter(|o| o.buyer_id == buyer) else { return Ok(Err("That order isn't yours.")) };
+    if o.status != "Confirmed" {
+        return Ok(Err("Pay once the vault accepts your order."));
+    }
+    c.execute("UPDATE vault_orders SET buyer_paid_at=?2 WHERE id=?1 AND buyer_paid_at=0", rusqlite::params![id, now()])?;
+    let admins: Vec<i64> = c.prepare("SELECT id FROM members WHERE role='admin' AND blocked=0")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    for a in admins.into_iter().filter(|a| *a != buyer) {
+        notify_from(c, a, buyer, "order", &format!("vpaid:{id}"), &format!("{} says they paid for their vault order ({}). Check, then mark it paid.", o.buyer_name, o.total_text()), "/admin/orders")?;
+    }
+    Ok(Ok(()))
 }
 
 /// The cards one buyer sent one store together: one order, answered all at once or card by card.
@@ -1124,6 +1167,10 @@ impl OrderGroup {
     /// More than one card: shown under one heading with Accept all.
     pub fn many(&self) -> bool {
         self.rows.len() > 1
+    }
+    /// When the buyer said they paid for it ("" when they haven't).
+    pub fn buyer_paid_text(&self) -> String {
+        self.rows.iter().map(|o| o.buyer_paid_at).max().filter(|t| *t > 0).map(ago).unwrap_or_default()
     }
     /// Some card in it is at this step ("Pending", "Confirmed").
     pub fn has(&self, status: &str) -> bool {
@@ -1847,7 +1894,9 @@ pub fn toggle_follow(c: &Connection, follower: i64, seller: i64) -> rusqlite::Re
             notify_from(c, a, follower, "follow", "", &format!("{name} now follows the vault's store."), &format!("/trainers/{follower}"))?;
         }
     } else {
-        notify_from(c, seller, follower, "follow", "", &format!("{name} now follows your store."), &format!("/trainers/{follower}"))?;
+        let store = c.query_row("SELECT seller FROM members WHERE id=?1", [seller], |r| r.get::<_, i64>(0)).optional()?.unwrap_or(0) != 0;
+        let words = if store { format!("{name} now follows your store.") } else { format!("{name} now follows you.") };
+        notify_from(c, seller, follower, "follow", "", &words, &format!("/trainers/{follower}"))?;
     }
     Ok(true)
 }
@@ -1920,6 +1969,19 @@ pub fn last_active(c: &Connection, seller: i64) -> rusqlite::Result<i64> {
 pub fn is_following(c: &Connection, follower: i64, seller: i64) -> rusqlite::Result<bool> {
     let n: i64 = c.query_row("SELECT COUNT(*) FROM store_follows WHERE follower_id=?1 AND seller_id=?2", [follower, seller], |r| r.get(0))?;
     Ok(n > 0)
+}
+
+/// Who follows a trainer or a store (0: the vault's), newest first: (id, name, picture). Only trainers whose page is
+/// up, as on Trainers.
+pub fn follower_list(c: &Connection, seller: i64, limit: i64) -> rusqlite::Result<Vec<(i64, String, String)>> {
+    c.prepare("SELECT m.id, m.name, m.avatar FROM store_follows f JOIN members m ON m.id=f.follower_id WHERE f.seller_id=?1 AND m.blocked=0 AND m.profile_ok=1 ORDER BY f.created_at DESC LIMIT ?2")?
+        .query_map(rusqlite::params![seller, limit], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+        .collect()
+}
+
+/// The vault's staff, who hear about reports: its admins and moderators.
+pub fn staff_ids(c: &Connection) -> rusqlite::Result<Vec<i64>> {
+    c.prepare("SELECT id FROM members WHERE role IN ('admin','mod') AND blocked=0 ORDER BY id")?.query_map([], |r| r.get(0))?.collect()
 }
 
 pub fn followers(c: &Connection, seller: i64) -> rusqlite::Result<i64> {
@@ -2102,13 +2164,13 @@ pub const EVENTS: [(&str, &str); 17] = [
     ("offer", "Someone makes an offer on my card"),
     ("inquiry", "Someone asks me a question"),
     ("order", "Someone orders from the vault (admins)"),
-    ("follow", "Someone follows my store"),
+    ("follow", "Someone follows me or my store"),
     ("social", "Likes, comments and replies"),
     ("review", "Someone vouches for my store or reviews a sale"),
-    ("following", "A store I follow puts up new cards"),
+    ("following", "Someone I follow posts or puts up cards"),
     ("wish", "A card on my wishlist is for sale"),
     ("announcement", "News from the vault"),
-    ("staff", "A trainer waits for approval (staff)"),
+    ("staff", "Trainers waiting, reports (staff)"),
     ("view", "People look at or save my cards (once a day per card)"),
     ("price", "My price is far from today's market"),
     ("expiry", "A card's end date passes"),
@@ -2229,7 +2291,7 @@ pub fn kind_label(kind: &str) -> &'static str {
         "offer" => "Offer",
         "inquiry" => "Question",
         "follow" => "Follow",
-        "following" => "New cards",
+        "following" => "Following",
         "social" => "Like or comment",
         "review" => "Vouch",
         "wish" => "Wishlist",
@@ -2646,9 +2708,15 @@ pub struct VaultOrder {
     pub created_at: i64,
     pub updated_at: i64,
     pub items: Vec<OrderItem>,
+    /// When the buyer said "I've paid" (0: not yet).
+    pub buyer_paid_at: i64,
 }
 
 impl VaultOrder {
+    /// When the buyer said they paid, in words ("" when they haven't).
+    pub fn buyer_paid_text(&self) -> String {
+        if self.buyer_paid_at > 0 { ago(self.buyer_paid_at) } else { String::new() }
+    }
     pub fn total(&self) -> f64 {
         self.items.iter().map(|i| i.price * i.qty as f64).sum()
     }
@@ -2686,15 +2754,15 @@ fn order_items(c: &Connection, order_id: i64) -> rusqlite::Result<Vec<OrderItem>
 
 fn map_vorder(c: &Connection, r: &Row) -> rusqlite::Result<VaultOrder> {
     let id: i64 = r.get(0)?;
-    Ok(VaultOrder { id, buyer_id: r.get(1)?, buyer_name: r.get(2)?, status: r.get(3)?, message: r.get(4)?, paid_via: r.get(5)?, created_at: r.get(6)?, updated_at: r.get(7)?, items: order_items(c, id)? })
+    Ok(VaultOrder { id, buyer_id: r.get(1)?, buyer_name: r.get(2)?, status: r.get(3)?, message: r.get(4)?, paid_via: r.get(5)?, created_at: r.get(6)?, updated_at: r.get(7)?, items: order_items(c, id)?, buyer_paid_at: r.get(8)? })
 }
 
-const VORDER: &str = "o.id, o.buyer_id, COALESCE(b.name, 'A member who left'), o.status, o.message, o.paid_via, o.created_at, o.updated_at FROM vault_orders o LEFT JOIN members b ON b.id=o.buyer_id";
+const VORDER: &str = "o.id, o.buyer_id, COALESCE(b.name, 'A member who left'), o.status, o.message, o.paid_via, o.created_at, o.updated_at, o.buyer_paid_at FROM vault_orders o LEFT JOIN members b ON b.id=o.buyer_id";
 
 pub fn vault_order(c: &Connection, id: i64) -> rusqlite::Result<Option<VaultOrder>> {
-    let row = c.query_row(&format!("SELECT {VORDER} WHERE o.id=?1"), [id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(5)?, r.get::<_, i64>(6)?, r.get::<_, i64>(7)?))).optional()?;
-    let Some((id, buyer_id, buyer_name, status, message, paid_via, created_at, updated_at)) = row else { return Ok(None) };
-    Ok(Some(VaultOrder { id, buyer_id, buyer_name, status, message, paid_via, created_at, updated_at, items: order_items(c, id)? }))
+    let row = c.query_row(&format!("SELECT {VORDER} WHERE o.id=?1"), [id], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?, r.get::<_, String>(3)?, r.get::<_, String>(4)?, r.get::<_, String>(5)?, r.get::<_, i64>(6)?, r.get::<_, i64>(7)?, r.get::<_, i64>(8)?))).optional()?;
+    let Some((id, buyer_id, buyer_name, status, message, paid_via, created_at, updated_at, buyer_paid_at)) = row else { return Ok(None) };
+    Ok(Some(VaultOrder { id, buyer_id, buyer_name, status, message, paid_via, created_at, updated_at, items: order_items(c, id)?, buyer_paid_at }))
 }
 
 fn vault_orders_where(c: &Connection, wh: &str, arg: i64) -> rusqlite::Result<Vec<VaultOrder>> {
@@ -3859,6 +3927,56 @@ mod tests {
     }
 
     #[test]
+    fn the_buyer_says_ive_paid_and_the_seller_hears_once() {
+        let c = db();
+        let (s, b, card) = seller_with_card(&c);
+        let Added::Yes(two) = add_listing(&c, s, "tcgdex:base1-25", "Dewgong - 025/102 - Base Set", "25/102", "Base Set", "", "").unwrap() else { panic!() };
+        members::set_card_value(&c, "tcgdex:base1-25", 50.0, now()).unwrap();
+        set_kind(&c, s, two, "sale").unwrap().unwrap();
+        let r1 = reserve(&c, b, s, card, 1, "").unwrap().unwrap();
+        let r2 = reserve(&c, b, s, two, 1, "").unwrap().unwrap();
+        set_batch(&c, r1, r1).unwrap();
+        set_batch(&c, r2, r1).unwrap();
+        assert_eq!(buyer_paid(&c, b, r1).unwrap(), Err("Pay once the seller accepts your order."));
+        answer_reservation(&c, s, r1, "Confirmed", "").unwrap().unwrap();
+        answer_reservation(&c, s, r2, "Confirmed", "").unwrap().unwrap();
+        assert_eq!(buyer_paid(&c, s, r1).unwrap(), Err("That order isn't yours."));
+        assert_eq!(buyer_paid(&c, b, r1).unwrap(), Ok(()));
+        assert!(reservation(&c, r2).unwrap().unwrap().buyer_paid_at > 0, "the whole order");
+        let told: Vec<String> = c.prepare("SELECT message FROM notifications WHERE member_id=?1 AND message LIKE '%says they paid%'").unwrap().query_map([s], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
+        assert_eq!(told, vec!["Buyer says they paid for their order of 2 cards. Check, then mark it paid.".to_string()]);
+        let g = order_groups(orders_for_seller(&c, s).unwrap().reservations).into_iter().find(|g| g.many()).unwrap();
+        assert!(!g.buyer_paid_text().is_empty());
+        // The vault's order: its admins hear.
+        let admin = create(&c, "Boss", "h").unwrap().unwrap();
+        c.execute("UPDATE members SET role='admin' WHERE id=?1", [admin]).unwrap();
+        c.execute("INSERT INTO vault_orders(buyer_id, status, message, created_at, updated_at) VALUES(?1,'Confirmed','',1,1)", [b]).unwrap();
+        let vo = c.last_insert_rowid();
+        assert_eq!(vault_buyer_paid(&c, b, vo).unwrap(), Ok(()));
+        assert!(vault_order(&c, vo).unwrap().unwrap().buyer_paid_at > 0);
+        let n: i64 = c.query_row("SELECT COUNT(*) FROM notifications WHERE member_id=?1 AND kind='order' AND message LIKE '%says they paid%'", [admin], |r| r.get(0)).unwrap();
+        assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn people_are_followed_like_stores() {
+        let c = db();
+        let ash = create(&c, "Ash", "h").unwrap().unwrap();
+        let misty = create(&c, "Misty", "h").unwrap().unwrap();
+        members::set_profile_ok(&c, misty, true).unwrap();
+        assert!(toggle_follow(&c, misty, ash).unwrap());
+        let line: (String, String) = c.query_row("SELECT message, link FROM notifications WHERE member_id=?1 AND kind='follow'", [ash], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        assert_eq!(line, ("Misty now follows you.".to_string(), format!("/trainers/{misty}")), "someone without a store is followed as themselves");
+        assert_eq!(follower_list(&c, ash, 10).unwrap().iter().map(|f| f.1.clone()).collect::<Vec<_>>(), vec!["Misty".to_string()]);
+        members::set_profile_ok(&c, misty, false).unwrap();
+        assert!(follower_list(&c, ash, 10).unwrap().is_empty(), "only trainers whose page is up are listed");
+        assert_eq!(followers(&c, ash).unwrap(), 1, "they still count");
+        let staff = create(&c, "Mod", "h").unwrap().unwrap();
+        c.execute("UPDATE members SET role='mod' WHERE id=?1", [staff]).unwrap();
+        assert_eq!(staff_ids(&c).unwrap(), vec![staff]);
+    }
+
+    #[test]
     fn likes_on_one_post_are_one_line_until_it_is_read() {
         let c = db();
         let a = create(&c, "Ash", "h").unwrap().unwrap();
@@ -3876,7 +3994,7 @@ mod tests {
         set_pref(&c, a, "social", false, false, false).unwrap();
         notify_from(&c, a, m, "social", "react:9", "Misty liked your post.", "/posts/9").unwrap();
         assert_eq!(lines(&c).len(), 3);
-        assert_eq!(kind_label("following"), "New cards");
+        assert_eq!(kind_label("following"), "Following");
         assert_eq!(default_pref("view"), (true, false, false), "views stay in the bell");
         assert_eq!(default_pref("follow"), (true, false, true), "what people wait on rings the phone");
     }

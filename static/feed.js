@@ -99,6 +99,7 @@
     const meta = el('div', 'cm-meta'); meta.append(el('span', '', k.edited ? `${k.when} · Edited` : k.when));
     const like = el('button', 'linkbtn cm-like', 'Like'); like.type = 'button'; like.dataset.cmLike = ''; meta.append(like);
     const rep = el('button', 'linkbtn', 'Reply'); rep.type = 'button'; rep.dataset.reply = k.parent || k.id; rep.dataset.name = k.name; meta.append(rep);
+    if (me && !k.own) { const r = el('button', 'linkbtn', 'Report'); r.type = 'button'; r.dataset.cmReport = k.id; meta.append(r); }
     if (k.own) { const ed = el('button', 'linkbtn', 'Edit'); ed.type = 'button'; ed.dataset.cmEdit = k.id; meta.append(ed); }
     if (k.can_remove) { const d = el('button', `linkbtn${k.own ? '' : ' staff-only'}`, 'Delete'); d.type = 'button'; d.dataset.cmDel = k.id; meta.append(d); }
     const chip = el('span', 'cm-reacts'); meta.append(chip);
@@ -173,6 +174,7 @@
     if (mine && kind === 'listing') item('Manage my listings', () => { location.href = '/me/listings'; });
     if (full) item(post.hasAttribute('data-pinned') ? 'Unpin from the top' : 'Pin to the top of the feed', async () => { try { await api(`/posts/${id}/pin`, { on: !post.hasAttribute('data-pinned') }); location.reload(); } catch (e) { toast(e.message, true); } }, 'staff-only');
     item('Copy link', () => share(post, true));
+    if (me && !mine && written && by !== 0) item('Report post', () => report('post', id));
     if (post.hasAttribute('data-own')) item('Delete post', () => remove(post, 'Delete this post for good?'));
     else if (staff) item(post.dataset.kind === 'post' || post.dataset.kind === 'share' ? 'Delete post (staff)' : 'Hide from the feed (staff)', () => remove(post, 'Take this post out of the feed?'), 'staff-only');
     // Full admins can stop a whole kind of automatic post from here (and switch it back on at /admin/look).
@@ -181,6 +183,12 @@
       try { await api('/admin/feed/auto', { kind: post.dataset.kind, on: false }); location.reload(); } catch (e) { toast(e.message, true); }
     }, 'staff-only');
     btn.parentElement.append(menu);
+  }
+  // A post or a comment that breaks the rules goes to the vault's team (once each; they decide).
+  async function report(kind, id) {
+    if (!me) { toLogin('react'); return; }
+    if (!(await sure(`Report this ${kind} to the vault’s team? They look at it and take it down if it breaks the rules.`, { yes: 'Report', no: 'Cancel' }))) return;
+    try { await api(`/${kind === 'post' ? 'posts' : 'comments'}/${id}/report`, {}); toast('Reported ✓ The vault’s team will look at it.'); } catch (e) { toast(e.message, true); }
   }
   async function remove(post, ask) {
     if (!(await sure(ask, { yes: 'Delete', no: 'Keep it' }))) return;
@@ -211,6 +219,11 @@
     const cml = t.closest('[data-cm-like]');
     if (cml) { if (held) { held = false; return; } reactComment(cml.closest('.cm'), cml.dataset.mine ? '' : 'like'); return; }
     if (t.closest('[data-comments-open]')) { openComments(postOf(t), true); return; }
+    // The faces and number under a post: who reacted.
+    const rx = t.closest('[data-reacts]');
+    if (rx && window.bbvPeople) { window.bbvPeople('Reactions', `/posts/${postOf(rx).dataset.post}/reactions`); return; }
+    const crp = t.closest('[data-cm-report]');
+    if (crp) { report('comment', crp.dataset.cmReport); return; }
     if (t.closest('[data-share]')) { share(postOf(t)); return; }
     const mb = t.closest('[data-post-menu]');
     if (mb) { e.stopPropagation(); menu ? closeMenu() : openMenu(mb); return; }
@@ -247,6 +260,7 @@
   });
   document.addEventListener('click', (e) => { if (menu && !e.target.closest('.post-pop')) closeMenu(); if (pick && !e.target.closest('.react-pick, [data-like]')) closePick(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeMenu(); closePick(); } });
+  feed.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[data-reacts]')) { e.preventDefault(); e.target.click(); } });
 
   /* ---------- the post sheet: writing a new post, or editing one ---------- */
   let sheet = null, files = [], kept = [], editing = null;
