@@ -987,12 +987,17 @@ async fn main() {
         });
     }
 
-    // Alerts for phones and computers (Web Push): what notify() queued goes out within seconds.
+    // Alerts for phones and computers (Web Push): what notify() queued goes out within seconds. The bell lives too: the
+    // open pages of whoever was just told something ask again at once (the messages' live connection carries it).
     {
         let app = app.clone();
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(Duration::from_secs(3)).await;
+                let woken = marcuru_rs::sellers::take_woken();
+                if !woken.is_empty() {
+                    app.dm.bump(&woken);
+                }
                 let Ok(batch) = with_db(&app, |c| marcuru_rs::sellers::take_push_outbox(c, 50)).await else { continue };
                 for (member, kind, message, link) in batch {
                     let msg = serde_json::json!({ "type": "note", "kind": kind, "text": message, "url": link });
@@ -1166,7 +1171,8 @@ async fn main() {
         .route("/posts", post(feed::create).layer(axum::extract::DefaultBodyLimit::max(40 * 1024 * 1024)))
         .route("/posts/{id}", get(feed::one))
         .route("/posts/{id}/react", post(feed::react))
-        .route("/posts/{id}/comments", get(feed::comments).post(feed::comment))
+        .route("/posts/{id}/comments", get(feed::comments).post(feed::comment).layer(axum::extract::DefaultBodyLimit::max(12 * 1024 * 1024)))
+        .route("/comments/{id}/react", post(feed::comment_react))
         .route("/posts/{id}/delete", post(feed::remove))
         .route("/posts/{id}/edit", post(feed::edit).layer(axum::extract::DefaultBodyLimit::max(40 * 1024 * 1024)))
         .route("/comments/{id}/edit", post(feed::comment_edit))

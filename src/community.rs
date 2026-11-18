@@ -442,6 +442,8 @@ pub async fn join(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm>)
         return join_again(&app, StatusCode::CONFLICT, "join", typed, TAKEN, &f.next).await;
     };
     over_limit(&app, format!("joined|{ip}"), u32::MAX);
+    let n3 = name.clone();
+    with_db(&app, move |c| tell_staff_waiting(c, id, &format!("{n3} joined and waits for approval."))).await?;
     signed_in(&app, &h, id, members::REMEMBER_SECS, &landing(&f.next)).await
 }
 
@@ -908,7 +910,12 @@ pub async fn save_profile(State(app): State<App>, h: HeaderMap, mut mp: Multipar
     app.forget();
     let id = m.id;
     let fresh = with_db(&app, move |c| members::get(c, id)).await?;
-    Ok(ok(json!({ "ok": true, "name": name, "avatar": avatar, "approved": fresh.is_some_and(|f| f.profile_ok) })))
+    let approved = fresh.as_ref().is_some_and(|f| f.profile_ok);
+    if m.profile_ok && !approved {
+        let n3 = name.clone();
+        with_db(&app, move |c| tell_staff_waiting(c, id, &format!("{n3} changed their page, and it waits for approval."))).await?;
+    }
+    Ok(ok(json!({ "ok": true, "name": name, "avatar": avatar, "approved": approved })))
 }
 
 // ---------- vouches and replies ----------
@@ -1001,12 +1008,50 @@ pub async fn post_vouch(State(app): State<App>, h: HeaderMap, Json(req): Json<Po
     }
     match with_db(&app, move |c| members::post_vouch(c, id, parent, store, &text, &photos)).await? {
         Posted::Yes(vid) => {
+            let name = m.name.clone();
+            with_db(&app, move |c| tell_about_vouch(c, id, &name, parent, store)).await?;
             app.forget();
             Ok(ok(json!({ "ok": true, "id": vid })))
         }
         Posted::Empty => Ok(fail(StatusCode::BAD_REQUEST, "Write something or add a photo first.")),
         Posted::NoParent => Ok(fail(StatusCode::NOT_FOUND, "That vouch isn't there any more.")),
     }
+}
+
+/// A vouch was written: the store it is for hears (its seller, or the vault's admins for the vault's), and a reply is
+/// heard by whoever wrote the vouch it answers. The line opens the store's Vouches window.
+fn tell_about_vouch(c: &rusqlite::Connection, writer: i64, name: &str, parent: Option<i64>, store: i64) -> rusqlite::Result<()> {
+    let store_of = |s: i64| -> rusqlite::Result<String> {
+        Ok(if s == 0 { "/store/vault#vouches".to_string() } else { members::get(c, s)?.map(|m| format!("{}#vouches", m.store_url())).unwrap_or_else(|| "/vouches".into()) })
+    };
+    match parent {
+        None => {
+            let owners = if store == 0 { marcuru_rs::dm::admins(c)? } else { vec![store] };
+            let whose = if store == 0 { "the vault" } else { "your store" };
+            let link = store_of(store)?;
+            for o in owners.into_iter().filter(|o| *o != writer) {
+                marcuru_rs::sellers::notify_from(c, o, writer, "review", "", &format!("{name} vouched for {whose}."), &link)?;
+            }
+        }
+        Some(p) => {
+            let at: Option<(i64, i64, Option<i64>)> = rusqlite::OptionalExtension::optional(c.query_row("SELECT member_id, store_id, parent_id FROM vouches WHERE id=?1", [p], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))))?;
+            if let Some((author, s, up)) = at.filter(|(a, _, _)| *a != writer) {
+                let what = if up.is_none() { "your vouch" } else { "you on a vouch" };
+                marcuru_rs::sellers::notify_from(c, author, writer, "social", "", &format!("{name} replied to {what}."), &store_of(s)?)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// The admins hear that trainers wait for approval: one line, brought up to date with how many wait.
+fn tell_staff_waiting(c: &rusqlite::Connection, who: i64, words: &str) -> rusqlite::Result<()> {
+    let waiting = members::unapproved_count(c)?;
+    let line = if waiting > 1 { format!("{words} {waiting} trainers wait for approval.") } else { words.to_string() };
+    for a in marcuru_rs::dm::admins(c)?.into_iter().filter(|a| *a != who) {
+        marcuru_rs::sellers::notify_from(c, a, who, "staff", "staff:waiting", &line, "/admin/trainers")?;
+    }
+    Ok(())
 }
 
 /// A photo goes up as soon as it's picked and waits for its vouch to be posted.
@@ -1470,6 +1515,8 @@ pub async fn get_notifications(State(app): State<App>, h: HeaderMap, Query(q): Q
 #[derive(Deserialize)]
 pub struct ReadNotificationReq {
     before_id: Option<i64>,
+    /// One line, tapped in the bell.
+    id: Option<i64>,
 }
 
 pub async fn read_notifications(State(app): State<App>, h: HeaderMap, Json(req): Json<ReadNotificationReq>) -> Res {
@@ -1479,7 +1526,10 @@ pub async fn read_notifications(State(app): State<App>, h: HeaderMap, Json(req):
     };
     let id = m.id;
     with_db(&app, move |c| {
-        members::mark_notifications_read(c, id, req.before_id)?;
+        match req.id {
+            Some(one) => members::mark_one_read(c, id, one)?,
+            None => members::mark_notifications_read(c, id, req.before_id)?,
+        };
         Ok(())
     }).await?;
     Ok(ok(json!({ "ok": true })))
@@ -1658,7 +1708,15 @@ pub async fn admin_action(State(app): State<App>, h: HeaderMap, Path(id): Path<i
     }
     let action = req.action.clone();
     match action.as_str() {
-        "approve" => with_db(&app, move |c| members::set_profile_ok(c, id, true)).await?,
+        "approve" => with_db(&app, move |c| {
+            let was = members::get(c, id)?.is_some_and(|m| m.profile_ok);
+            members::set_profile_ok(c, id, true)?;
+            if !was {
+                marcuru_rs::sellers::notify(c, id, "announcement", "Your page is live: everyone can see your picture, your words and your cards.", &format!("/trainers/{id}"))?;
+            }
+            Ok(())
+        })
+        .await?,
         "hide" => with_db(&app, move |c| members::set_profile_ok(c, id, false)).await?,
         "lock" => {
             let hours = req.hours.unwrap_or(0);
@@ -1682,7 +1740,15 @@ pub async fn admin_action(State(app): State<App>, h: HeaderMap, Path(id): Path<i
         }
         "seller" => {
             let on = req.seller.unwrap_or(false);
-            with_db(&app, move |c| members::set_seller(c, id, on)).await?
+            with_db(&app, move |c| {
+                let was = members::get(c, id)?.is_some_and(|m| m.seller);
+                members::set_seller(c, id, on)?;
+                if on && !was {
+                    marcuru_rs::sellers::notify(c, id, "announcement", "Your store is open. Add your first cards.", "/me/add")?;
+                }
+                Ok(())
+            })
+            .await?
         }
         "block" => with_db(&app, move |c| members::set_blocked(c, id, true)).await?,
         "unblock" => with_db(&app, move |c| members::set_blocked(c, id, false)).await?,
@@ -2204,6 +2270,55 @@ mod tests {
         assert!(from_cloudflare("104.16.0.1"));
         assert!(!from_cloudflare("104.32.0.1"));
         assert!(!from_cloudflare("not an address"));
+    }
+
+    fn db() -> rusqlite::Connection {
+        let c = rusqlite::Connection::open_in_memory().unwrap();
+        marcuru_rs::db::register_set_code(&c).unwrap();
+        c.execute_batch(marcuru_rs::db::SCHEMA).unwrap();
+        c.execute_batch(marcuru_rs::blocks::SCHEMA).unwrap();
+        c.execute_batch(members::SCHEMA).unwrap();
+        members::migrate(&c).unwrap();
+        marcuru_rs::db::migrate(&c).unwrap();
+        c
+    }
+
+    #[test]
+    fn a_vouch_tells_its_store_a_reply_tells_its_writer_and_admins_hear_who_waits() {
+        let c = db();
+        let ash = members::create(&c, "Ash", "h").unwrap().unwrap();
+        members::set_seller(&c, ash, true).unwrap();
+        members::set_profile_ok(&c, ash, true).unwrap();
+        let misty = members::create(&c, "Misty", "h").unwrap().unwrap();
+        members::set_profile_ok(&c, misty, true).unwrap();
+        let boss = members::create(&c, "Boss", "h").unwrap().unwrap();
+        members::set_profile_ok(&c, boss, true).unwrap();
+        c.execute("UPDATE members SET role='admin' WHERE id=?1", [boss]).unwrap();
+        let last = |m: i64| members::notifications(&c, m, true).unwrap().into_iter().next().unwrap();
+        // Misty vouches for Ash's store: Ash hears, with Misty's picture, and the line opens the store's vouches.
+        let members::Posted::Yes(v) = members::post_vouch(&c, misty, None, ash, "Great trade", &[]).unwrap() else { panic!() };
+        tell_about_vouch(&c, misty, "Misty", None, ash).unwrap();
+        let n = last(ash);
+        assert_eq!((n.kind.as_str(), n.actor_id, n.message.as_str()), ("review", misty, "Misty vouched for your store."));
+        assert!(n.link.ends_with("#vouches") && n.link.starts_with("/store/"), "{}", n.link);
+        // A vouch for the vault: its admins hear.
+        tell_about_vouch(&c, misty, "Misty", None, 0).unwrap();
+        assert_eq!(last(boss).link, "/store/vault#vouches");
+        // Ash answers Misty's vouch: Misty hears. Nobody hears about their own words.
+        let members::Posted::Yes(reply) = members::post_vouch(&c, ash, Some(v), ash, "Thanks!", &[]).unwrap() else { panic!() };
+        tell_about_vouch(&c, ash, "Ash", Some(v), ash).unwrap();
+        assert_eq!((last(misty).message.as_str(), last(misty).actor_id), ("Ash replied to your vouch.", ash));
+        tell_about_vouch(&c, misty, "Misty", Some(reply), ash).unwrap();
+        assert_eq!(last(ash).message, "Misty replied to you on a vouch.");
+        tell_about_vouch(&c, ash, "Ash", None, ash).unwrap();
+        assert_eq!(last(ash).message, "Misty replied to you on a vouch.", "not told about their own vouch");
+        // Trainers waiting for approval: one line in the admins' bell, kept up to date.
+        let brock = members::create(&c, "Brock", "h").unwrap().unwrap();
+        tell_staff_waiting(&c, brock, "Brock joined and waits for approval.").unwrap();
+        let gary = members::create(&c, "Gary", "h").unwrap().unwrap();
+        tell_staff_waiting(&c, gary, "Gary joined and waits for approval.").unwrap();
+        let staff: Vec<String> = members::notifications(&c, boss, true).unwrap().into_iter().filter(|n| n.kind == "staff").map(|n| n.message).collect();
+        assert_eq!(staff, vec!["Gary joined and waits for approval. 2 trainers wait for approval.".to_string()]);
     }
 
     #[test]

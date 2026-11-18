@@ -114,7 +114,8 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
 
   /* ---------- notifications: the bell in the header (members only) ----------
      From 700px it drops the latest down beside it. A phone has no room for a panel: there the bell opens the
-     Notifications page, as Messages does (dm.js). */
+     Notifications page, as Messages does (dm.js). Its number is live: the messages' connection (dm.js) brings it within
+     seconds of anything new (bbv:notes). Each line shows who did it; tapping one reads it. */
   const btn = $('notifBtn'), menu = $('notifMenu'), badge = $('notifBadge'), list = $('notifList'), holder = $('notifDropdown');
   const bellPhone = () => matchMedia('(max-width: 699px), (max-height: 520px)').matches;
   const onNotifs = /^\/me\/notifications(\/|$)/.test(here);
@@ -125,7 +126,8 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     if (s < 7 * 86400) return `${Math.floor(s / 86400)} d ago`;
     return new Date(Number(t) * 1000).toLocaleDateString('en-PH', { day: 'numeric', month: 'short' });
   };
-  const count = (n) => { if (!badge) return; badge.hidden = !n; badge.textContent = n > 99 ? '99+' : String(n); };
+  let unread = 0;
+  const count = (n) => { unread = Math.max(0, n); if (!badge) return; badge.hidden = !unread; badge.textContent = unread > 99 ? '99+' : String(unread); };
   async function load() {
     try {
       const r = await fetch('/api/notifications', { credentials: 'same-origin', headers: { Accept: 'application/json' } });
@@ -136,13 +138,16 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
       if (!list) return;
       list.replaceChildren();
       if (!j.notifications || !j.notifications.length) { const p = document.createElement('p'); p.className = 'notif-empty'; p.textContent = 'No notifications yet.'; list.append(p); return; }
-      j.notifications.forEach((n) => {
+      j.notifications.slice(0, 30).forEach((n) => {
         // Messages can hold what other people typed: text only, never HTML.
-        const a = document.createElement('a'); a.className = 'notif-item' + (n.is_read ? '' : ' unread'); a.href = n.link || '#';
-        const k = document.createElement('div'); k.className = 'notif-k'; k.textContent = (n.kind || '').replace('my_order', 'my order').replace('dm_watch', 'message');
-        const m = document.createElement('div'); m.className = 'notif-m'; m.textContent = n.message || '';
-        const t = document.createElement('div'); t.className = 'notif-t'; t.textContent = ago(n.created_at);
-        a.append(k, m, t); list.append(a);
+        const a = document.createElement('a'); a.className = 'notif-item' + (n.is_read ? '' : ' unread'); a.href = n.link || '#'; a.dataset.id = n.id;
+        const av = document.createElement('span'); av.className = 'av sm notif-av';
+        if (n.avatar) { const i = document.createElement('img'); i.src = n.avatar; i.alt = ''; i.loading = 'lazy'; av.append(i); } else av.textContent = n.initial || '•';
+        const body = document.createElement('span'); body.className = 'notif-body';
+        const k = document.createElement('span'); k.className = 'notif-k'; k.textContent = n.label || n.kind || '';
+        const m = document.createElement('span'); m.className = 'notif-m'; m.textContent = n.message || '';
+        const t = document.createElement('span'); t.className = 'notif-t'; t.textContent = ago(n.created_at);
+        body.append(k, m, t); a.append(av, body); list.append(a);
       });
     } catch (_) {}
   }
@@ -154,6 +159,19 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
   });
   document.addEventListener('click', (e) => { if (menu && !menu.hidden && !holder.contains(e.target)) setNotif(false); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && menu && !menu.hidden) { setNotif(false); btn.focus(); } });
+  // A line tapped is read: the number goes down at once, and the site hears it even as the next page opens.
+  list?.addEventListener('click', (e) => {
+    const a = e.target.closest('.notif-item'); if (!a || !a.classList.contains('unread')) return;
+    a.classList.remove('unread'); count(unread - 1);
+    fetch('/api/notifications/read', { method: 'POST', credentials: 'same-origin', keepalive: true, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: Number(a.dataset.id) }) }).catch(() => {});
+  });
+  // Something new (or read on another page): the number changes, and an open list is drawn again.
+  document.addEventListener('bbv:notes', (e) => {
+    const n = Number(e.detail) || 0;
+    if (n === unread) return;
+    count(n);
+    if (menu && !menu.hidden) load();
+  });
   $('notifRead')?.addEventListener('click', async (e) => {
     e.stopPropagation();
     try { await fetch('/api/notifications/read', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' }); count(0); list.querySelectorAll('.unread').forEach((n) => n.classList.remove('unread')); } catch (_) {}

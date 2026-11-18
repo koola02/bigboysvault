@@ -100,6 +100,8 @@
       if (!j) { await new Promise((ok) => setTimeout(ok, live.kick ? 0 : 3000)); live.kick = false; continue; }
       if (Number.isFinite(j.v)) live.v = j.v; if (j.s != null) live.s = j.s;
       setUnread(j.unread);
+      // The bell's number, live (fb-shell.js shows it).
+      if (Number.isFinite(j.notes)) document.dispatchEvent(new CustomEvent('bbv:notes', { detail: j.notes }));
       for (const s of j.signals || []) call.signal(s);
       if (j.open && j.open.id === win.thread) win.take(j.open);
       live.listeners.forEach((f) => f(j));

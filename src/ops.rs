@@ -766,7 +766,7 @@ mod tests {
         c.execute_batch(
             "CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT NOT NULL);
              CREATE TABLE members(id INTEGER PRIMARY KEY, role TEXT NOT NULL DEFAULT '', blocked INTEGER NOT NULL DEFAULT 0);
-             CREATE TABLE notifications(id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, link TEXT NOT NULL, is_read INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+             CREATE TABLE notifications(id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, link TEXT NOT NULL, is_read INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, actor_id INTEGER NOT NULL DEFAULT 0, ref TEXT NOT NULL DEFAULT ''); CREATE TABLE push_outbox(id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, link TEXT NOT NULL, created_at INTEGER NOT NULL);
              CREATE TABLE notify_prefs(member_id INTEGER NOT NULL, event TEXT NOT NULL, site INTEGER NOT NULL DEFAULT 1, email INTEGER NOT NULL DEFAULT 0, push INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(member_id, event));
              INSERT INTO members(id, role, blocked) VALUES (1, 'admin', 0), (2, 'admin', 1), (3, '', 0);",
         )

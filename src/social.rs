@@ -46,6 +46,7 @@ pub fn set_auto(c: &Connection, kind: &str, on: bool, now: i64) -> rusqlite::Res
     crate::blocks::set_setting(c, "feed_auto_off", &off.join(","))?;
     if on {
         c.execute("UPDATE posts SET hidden=0 WHERE kind=?1 AND hidden=3", [kind])?;
+        // (Switched back on: the posts come back as they were; nobody is told about old cards.)
         sync(c, now)?;
     } else {
         // 3: off for the whole kind (0 shown, 1 nothing left to show, 2 hidden by a person).
@@ -87,13 +88,26 @@ CREATE TABLE IF NOT EXISTS comments(
 );
 CREATE INDEX IF NOT EXISTS comments_post ON comments(post_id, id);
 CREATE INDEX IF NOT EXISTS comments_member ON comments(member_id, created_at);
+CREATE TABLE IF NOT EXISTS comment_reactions(
+  comment_id INTEGER NOT NULL, member_id INTEGER NOT NULL, kind TEXT NOT NULL, created_at INTEGER NOT NULL,
+  PRIMARY KEY(comment_id, member_id)
+);
 ";
 
 pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
     c.execute_batch(SCHEMA)?;
     // Added after the first release of the feed: the words someone adds to an automatic post, and when a post or
     // comment was last edited.
-    for (table, col, kind) in [("posts", "note", "TEXT NOT NULL DEFAULT ''"), ("posts", "edited_at", "INTEGER NOT NULL DEFAULT 0"), ("comments", "edited_at", "INTEGER NOT NULL DEFAULT 0")] {
+    // And (19 Nov 2026) a comment's likes and its one photo.
+    for (table, col, kind) in [
+        ("posts", "note", "TEXT NOT NULL DEFAULT ''"),
+        ("posts", "edited_at", "INTEGER NOT NULL DEFAULT 0"),
+        ("comments", "edited_at", "INTEGER NOT NULL DEFAULT 0"),
+        ("comments", "like_n", "INTEGER NOT NULL DEFAULT 0"),
+        ("comments", "image", "TEXT NOT NULL DEFAULT ''"),
+        ("comments", "thumb", "TEXT NOT NULL DEFAULT ''"),
+        ("comments", "bytes", "INTEGER NOT NULL DEFAULT 0"),
+    ] {
         let there: i64 = c.query_row(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name=?1"), [col], |r| r.get(0))?;
         if there == 0 {
             c.execute(&format!("ALTER TABLE {table} ADD COLUMN {col} {kind}"), [])?;
@@ -226,31 +240,89 @@ pub struct Comment {
     pub text: String,
     pub created_at: i64,
     pub edited_at: i64,
+    /// How many reacted to it, and the viewer's own reaction ("" when none).
+    pub like_n: i64,
+    pub mine: String,
+    /// Its one photo, if any: full size and small.
+    pub image: String,
+    pub thumb: String,
 }
 
 fn map_comment(r: &Row) -> rusqlite::Result<Comment> {
-    Ok(Comment { id: r.get(0)?, post_id: r.get(1)?, member_id: r.get(2)?, parent_id: r.get(3)?, name: r.get(4)?, avatar: r.get(5)?, role: r.get(6)?, text: r.get(7)?, created_at: r.get(8)?, edited_at: r.get(9)? })
+    Ok(Comment {
+        id: r.get(0)?,
+        post_id: r.get(1)?,
+        member_id: r.get(2)?,
+        parent_id: r.get(3)?,
+        name: r.get(4)?,
+        avatar: r.get(5)?,
+        role: r.get(6)?,
+        text: r.get(7)?,
+        created_at: r.get(8)?,
+        edited_at: r.get(9)?,
+        like_n: r.get(10)?,
+        image: r.get(11)?,
+        thumb: r.get(12)?,
+        mine: r.get(13)?,
+    })
 }
 
-const COMMENT_COLS: &str = "k.id, k.post_id, k.member_id, k.parent_id, m.name, m.avatar, m.role, k.text, k.created_at, k.edited_at";
+const COMMENT_COLS: &str = "k.id, k.post_id, k.member_id, k.parent_id, m.name, m.avatar, m.role, k.text, k.created_at, k.edited_at, k.like_n, k.image, k.thumb";
 
-/// A post's comments, oldest first (replies come after the comment they answer, by time).
-pub fn comments(c: &Connection, post: i64, limit: i64) -> rusqlite::Result<Vec<Comment>> {
-    c.prepare_cached(&format!("SELECT {COMMENT_COLS} FROM comments k JOIN members m ON m.id=k.member_id WHERE k.post_id=?1 AND k.hidden=0 ORDER BY k.id LIMIT ?2"))?
-        .query_map([post, limit], map_comment)?
-        .collect()
+/// A post's comments for one viewer (0: nobody signed in), oldest first (replies come after the comment they answer).
+pub fn comments(c: &Connection, post: i64, viewer: i64, limit: i64) -> rusqlite::Result<Vec<Comment>> {
+    c.prepare_cached(&format!(
+        "SELECT {COMMENT_COLS}, COALESCE((SELECT kind FROM comment_reactions x WHERE x.comment_id=k.id AND x.member_id=?3), '')
+         FROM comments k JOIN members m ON m.id=k.member_id WHERE k.post_id=?1 AND k.hidden=0 ORDER BY k.id LIMIT ?2"
+    ))?
+    .query_map(params![post, limit, viewer], map_comment)?
+    .collect()
 }
 
 pub fn comment(c: &Connection, id: i64) -> rusqlite::Result<Option<Comment>> {
-    c.query_row(&format!("SELECT {COMMENT_COLS} FROM comments k JOIN members m ON m.id=k.member_id WHERE k.id=?1"), [id], map_comment).optional()
+    comment_for(c, id, 0)
+}
+
+/// One comment, with the viewer's own reaction.
+pub fn comment_for(c: &Connection, id: i64, viewer: i64) -> rusqlite::Result<Option<Comment>> {
+    c.query_row(
+        &format!("SELECT {COMMENT_COLS}, COALESCE((SELECT kind FROM comment_reactions x WHERE x.comment_id=k.id AND x.member_id=?2), '') FROM comments k JOIN members m ON m.id=k.member_id WHERE k.id=?1"),
+        [id, viewer],
+        map_comment,
+    )
+    .optional()
+}
+
+/// Sets, changes or (kind "") takes back the viewer's reaction to a comment, as on a post. Returns how many reactions
+/// the comment has now.
+pub fn comment_react(c: &Connection, comment: i64, member: i64, kind: &str, now: i64) -> rusqlite::Result<Option<i64>> {
+    if c.query_row("SELECT 1 FROM comments WHERE id=?1 AND hidden=0", [comment], |_| Ok(())).optional()?.is_none() {
+        return Ok(None);
+    }
+    if kind.is_empty() {
+        c.execute("DELETE FROM comment_reactions WHERE comment_id=?1 AND member_id=?2", [comment, member])?;
+    } else {
+        c.execute(
+            "INSERT INTO comment_reactions(comment_id, member_id, kind, created_at) VALUES(?1,?2,?3,?4) ON CONFLICT(comment_id, member_id) DO UPDATE SET kind=?3",
+            params![comment, member, kind, now],
+        )?;
+    }
+    c.execute("UPDATE comments SET like_n=(SELECT COUNT(*) FROM comment_reactions WHERE comment_id=?1) WHERE id=?1", [comment])?;
+    c.query_row("SELECT like_n FROM comments WHERE id=?1", [comment], |r| r.get(0)).map(Some)
+}
+
+/// The reactions used most on a comment, most used first (at most three).
+pub fn comment_tops(c: &Connection, comment: i64) -> rusqlite::Result<Vec<String>> {
+    c.prepare_cached("SELECT kind FROM comment_reactions WHERE comment_id=?1 GROUP BY kind ORDER BY COUNT(*) DESC, MIN(created_at) LIMIT 3")?.query_map([comment], |r| r.get(0))?.collect()
 }
 
 fn recount_comments(c: &Connection, post: i64) -> rusqlite::Result<()> {
     c.execute("UPDATE posts SET comment_n=(SELECT COUNT(*) FROM comments WHERE post_id=?1 AND hidden=0) WHERE id=?1", [post]).map(|_| ())
 }
 
-/// A comment on a post, or a reply to a comment (one level: a reply to a reply answers the same comment).
-pub fn comment_add(c: &Connection, post: i64, member: i64, parent: Option<i64>, text: &str, now: i64) -> rusqlite::Result<Option<i64>> {
+/// A comment on a post, or a reply to a comment (one level: a reply to a reply answers the same comment), with
+/// maybe one photo (full size, small, bytes on disk).
+pub fn comment_add(c: &Connection, post: i64, member: i64, parent: Option<i64>, text: &str, photo: Option<(&str, &str, i64)>, now: i64) -> rusqlite::Result<Option<i64>> {
     if c.query_row("SELECT 1 FROM posts WHERE id=?1 AND hidden=0", [post], |_| Ok(())).optional()?.is_none() {
         return Ok(None);
     }
@@ -258,18 +330,31 @@ pub fn comment_add(c: &Connection, post: i64, member: i64, parent: Option<i64>, 
         Some(p) => c.query_row("SELECT COALESCE(parent_id, id) FROM comments WHERE id=?1 AND post_id=?2", [p, post], |r| r.get::<_, i64>(0)).optional()?,
         None => None,
     };
-    c.execute("INSERT INTO comments(post_id, member_id, parent_id, text, created_at) VALUES(?1,?2,?3,?4,?5)", params![post, member, parent, text, now])?;
+    let (image, thumb, bytes) = photo.unwrap_or(("", "", 0));
+    c.execute(
+        "INSERT INTO comments(post_id, member_id, parent_id, text, created_at, image, thumb, bytes) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+        params![post, member, parent, text, now, image, thumb, bytes],
+    )?;
     let id = c.last_insert_rowid();
     recount_comments(c, post)?;
     Ok(Some(id))
 }
 
-/// Takes a comment (and the replies under it) away. Returns the post it was on.
-pub fn comment_remove(c: &Connection, id: i64) -> rusqlite::Result<Option<i64>> {
+/// Takes a comment (and the replies under it) away, with their likes. Returns the post it was on, and the photo files
+/// to remove from disk.
+pub fn comment_remove(c: &Connection, id: i64) -> rusqlite::Result<Option<(i64, Vec<String>)>> {
     let Some(post) = c.query_row("SELECT post_id FROM comments WHERE id=?1", [id], |r| r.get::<_, i64>(0)).optional()? else { return Ok(None) };
+    let files = comment_files(c, "id=?1 OR parent_id=?1", id)?;
+    c.execute("DELETE FROM comment_reactions WHERE comment_id IN (SELECT id FROM comments WHERE id=?1 OR parent_id=?1)", [id])?;
     c.execute("DELETE FROM comments WHERE id=?1 OR parent_id=?1", [id])?;
     recount_comments(c, post)?;
-    Ok(Some(post))
+    Ok(Some((post, files)))
+}
+
+/// The photo files of the comments `filter` picks (with one number, ?1).
+fn comment_files(c: &Connection, filter: &str, n: i64) -> rusqlite::Result<Vec<String>> {
+    let rows: Vec<(String, String)> = c.prepare(&format!("SELECT image, thumb FROM comments WHERE ({filter}) AND image<>''"))?.query_map([n], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
+    Ok(rows.into_iter().flat_map(|(a, b)| [a, b]).filter(|f| !f.is_empty()).collect())
 }
 
 pub fn comments_since(c: &Connection, member: i64, since: i64) -> rusqlite::Result<i64> {
@@ -330,8 +415,9 @@ pub fn comment_edit(c: &Connection, id: i64, text: &str, now: i64) -> rusqlite::
     Ok(c.execute("UPDATE comments SET text=?2, edited_at=?3 WHERE id=?1", params![id, text, now])? == 1)
 }
 
+/// The space the feed's photos take: posts' and comments'.
 pub fn photo_bytes(c: &Connection) -> rusqlite::Result<i64> {
-    c.query_row("SELECT COALESCE(SUM(bytes),0) FROM post_images", [], |r| r.get(0))
+    c.query_row("SELECT (SELECT COALESCE(SUM(bytes),0) FROM post_images) + (SELECT COALESCE(SUM(bytes),0) FROM comments)", [], |r| r.get(0))
 }
 
 pub fn set_hidden(c: &Connection, id: i64, hidden: bool) -> rusqlite::Result<bool> {
@@ -349,15 +435,18 @@ pub fn post_remove(c: &Connection, id: i64) -> rusqlite::Result<Vec<String>> {
         files.push(path);
         files.push(thumb);
     }
+    files.extend(comment_files(c, "post_id=?1", id)?);
     c.execute("DELETE FROM post_images WHERE post_id=?1", [id])?;
     c.execute("DELETE FROM reactions WHERE post_id=?1", [id])?;
+    c.execute("DELETE FROM comment_reactions WHERE comment_id IN (SELECT id FROM comments WHERE post_id=?1)", [id])?;
     c.execute("DELETE FROM comments WHERE post_id=?1", [id])?;
     c.execute("DELETE FROM posts WHERE id=?1", [id])?;
     Ok(files)
 }
 
-/// Makes or refreshes an automatic post. A post an admin hid stays hidden only while `hide` says so.
-fn upsert(c: &Connection, member: i64, kind: &str, refkey: &str, text: &str, payload: &Value, at: i64, bump: bool) -> rusqlite::Result<()> {
+/// Makes or refreshes an automatic post. A post an admin hid stays hidden only while `hide` says so. True when the post
+/// is new.
+fn upsert(c: &Connection, member: i64, kind: &str, refkey: &str, text: &str, payload: &Value, at: i64, bump: bool) -> rusqlite::Result<bool> {
     let old: Option<(i64, String, String)> = c.query_row("SELECT id, payload, text FROM posts WHERE ref=?1", [refkey], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?;
     let body = payload.to_string();
     match old {
@@ -372,13 +461,16 @@ fn upsert(c: &Connection, member: i64, kind: &str, refkey: &str, text: &str, pay
         }
         None => {
             c.execute("INSERT INTO posts(member_id, kind, ref, text, payload, created_at) VALUES(?1,?2,?3,?4,?5,?6)", params![member, kind, refkey, text, body, at])?;
+            return Ok(true);
         }
     }
-    Ok(())
+    Ok(false)
 }
 
-/// Brings the automatic posts up to date with the site. Cheap and safe to run often.
-pub fn sync(c: &Connection, now: i64) -> rusqlite::Result<()> {
+/// Brings the automatic posts up to date with the site. Cheap and safe to run often. Answers the stores that just put
+/// up cards (a new post about the day's cards, from the last day): their ids, 0 the vault's, so followers can be told.
+pub fn sync(c: &Connection, now: i64) -> rusqlite::Result<Vec<i64>> {
+    let mut fresh: Vec<i64> = vec![];
     let off = auto_off(c)?;
     let on = |kind: &str| !off.iter().any(|k| k == kind);
     // 1. New in the vault: one post a day, with that day's best cards on it.
@@ -394,7 +486,9 @@ pub fn sync(c: &Connection, now: i64) -> rusqlite::Result<()> {
         if ids.is_empty() || at <= 0 {
             continue;
         }
-        upsert(c, 0, "arrivals", &format!("arrivals:{day}"), "", &json!({ "day": day, "count": count, "ids": ids }), at.min(now), true)?;
+        if upsert(c, 0, "arrivals", &format!("arrivals:{day}"), "", &json!({ "day": day, "count": count, "ids": ids }), at.min(now), true)? && now - at < 86_400 && !fresh.contains(&0) {
+            fresh.push(0);
+        }
     }
 
     // 2. Sellers' listings: one post per seller per day (Philippine days).
@@ -413,7 +507,9 @@ pub fn sync(c: &Connection, now: i64) -> rusqlite::Result<()> {
     for (member, day, count, at, ids) in rows {
         let cards: Vec<i64> = ids.split(',').filter_map(|x| x.parse().ok()).take(8).collect();
         let key = format!("listing:{member}:{day}");
-        upsert(c, member, "listing", &key, "", &json!({ "count": count, "cards": cards }), at.min(now), true)?;
+        if upsert(c, member, "listing", &key, "", &json!({ "count": count, "cards": cards }), at.min(now), true)? && now - at < 86_400 && !fresh.contains(&member) {
+            fresh.push(member);
+        }
         live.push(key);
     }
     // A listing post whose cards all sold, moved or came down has nothing left to show.
@@ -472,7 +568,7 @@ pub fn sync(c: &Connection, now: i64) -> rusqlite::Result<()> {
         }
     }
 
-    Ok(())
+    Ok(fresh)
 }
 
 #[cfg(test)]
@@ -576,12 +672,12 @@ mod tests {
         assert_eq!(top_reactions(&c, p).unwrap(), vec!["like".to_string()]);
         assert_eq!(react(&c, p, 1, "", 4).unwrap(), Some(1));
         assert_eq!(react(&c, 999, 1, "like", 4).unwrap(), None);
-        let a = comment_add(&c, p, 1, None, "Nice card", 10).unwrap().unwrap();
-        let b = comment_add(&c, p, 2, Some(a), "Thanks", 11).unwrap().unwrap();
-        let d = comment_add(&c, p, 1, Some(b), "Welcome", 12).unwrap().unwrap();
+        let a = comment_add(&c, p, 1, None, "Nice card", None, 10).unwrap().unwrap();
+        let b = comment_add(&c, p, 2, Some(a), "Thanks", None, 11).unwrap().unwrap();
+        let d = comment_add(&c, p, 1, Some(b), "Welcome", None, 12).unwrap().unwrap();
         assert_eq!(comment(&c, d).unwrap().unwrap().parent_id, Some(a), "a reply to a reply answers the same comment");
         assert_eq!(post(&c, 0, p).unwrap().unwrap().comment_n, 3);
-        assert_eq!(comment_remove(&c, a).unwrap(), Some(p));
+        assert_eq!(comment_remove(&c, a).unwrap(), Some((p, vec![])));
         assert_eq!(post(&c, 0, p).unwrap().unwrap().comment_n, 0, "its replies go with it");
         assert_eq!(photo_bytes(&c).unwrap(), 500);
         // Editing: new words, the old photo comes off, a new one goes on; the site's refresh leaves a note alone.
@@ -591,7 +687,7 @@ mod tests {
         assert!(post_edit(&c, p, "hello again", &[kept], &[], 50).unwrap().is_empty(), "a photo that is kept stays");
         let now = post(&c, 0, p).unwrap().unwrap();
         assert_eq!((now.text.as_str(), now.edited_at, photo_bytes(&c).unwrap()), ("hello again", 50, 200));
-        let k = comment_add(&c, p, 1, None, "frst", 60).unwrap().unwrap();
+        let k = comment_add(&c, p, 1, None, "frst", None, 60).unwrap().unwrap();
         assert!(comment_edit(&c, k, "first", 61).unwrap());
         assert_eq!(comment(&c, k).unwrap().unwrap().text, "first");
         comment_remove(&c, k).unwrap();
@@ -599,5 +695,47 @@ mod tests {
         assert_eq!(post(&c, 0, p).unwrap().unwrap().note, "a note");
         assert_eq!(post_remove(&c, p).unwrap(), vec!["b_l.jpg".to_string(), "b_s.jpg".to_string()]);
         assert_eq!(photo_bytes(&c).unwrap(), 0);
+    }
+
+    #[test]
+    fn comments_take_likes_and_a_photo_and_both_go_with_them() {
+        let c = db();
+        let p = post_add(&c, 2, "post", "hello", &[], &json!({}), 1000).unwrap();
+        let a = comment_add(&c, p, 1, None, "", Some(("k_l.jpg", "k_s.jpg", 300)), 10).unwrap().unwrap();
+        let r = comment_add(&c, p, 2, Some(a), "Nice pull", Some(("r_l.jpg", "r_s.jpg", 200)), 11).unwrap().unwrap();
+        assert_eq!(photo_bytes(&c).unwrap(), 500, "comment photos count toward the space");
+        assert_eq!(comment_react(&c, a, 2, "love", 12).unwrap(), Some(1));
+        assert_eq!(comment_react(&c, a, 1, "fire", 13).unwrap(), Some(2));
+        assert_eq!(comment_react(&c, a, 2, "fire", 14).unwrap(), Some(2), "changing a reaction doesn't count twice");
+        assert_eq!(comment_tops(&c, a).unwrap(), vec!["fire".to_string()]);
+        let seen = comments(&c, p, 2, 50).unwrap();
+        assert_eq!((seen[0].like_n, seen[0].mine.as_str(), seen[0].image.as_str(), seen[0].thumb.as_str()), (2, "fire", "k_l.jpg", "k_s.jpg"));
+        assert_eq!(comments(&c, p, 0, 50).unwrap()[0].mine, "", "a visitor has no reaction of their own");
+        assert_eq!(comment_for(&c, r, 1).unwrap().unwrap().mine, "");
+        assert_eq!(comment_react(&c, a, 2, "", 15).unwrap(), Some(1), "taken back");
+        assert_eq!(comment_react(&c, 999, 2, "like", 15).unwrap(), None);
+        // Removing the comment takes its reply, their likes and both photos.
+        assert_eq!(comment_remove(&c, a).unwrap(), Some((p, vec!["k_l.jpg".to_string(), "k_s.jpg".to_string(), "r_l.jpg".to_string(), "r_s.jpg".to_string()])));
+        assert_eq!(c.query_row("SELECT COUNT(*) FROM comment_reactions", [], |x| x.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(photo_bytes(&c).unwrap(), 0);
+        // Removing a post takes its comments' photos and likes too.
+        let k = comment_add(&c, p, 1, None, "again", Some(("z_l.jpg", "z_s.jpg", 50)), 20).unwrap().unwrap();
+        comment_react(&c, k, 2, "like", 21).unwrap();
+        assert_eq!(post_remove(&c, p).unwrap(), vec!["z_l.jpg".to_string(), "z_s.jpg".to_string()]);
+        assert_eq!(c.query_row("SELECT COUNT(*) FROM comment_reactions", [], |x| x.get::<_, i64>(0)).unwrap(), 0);
+    }
+
+    #[test]
+    fn stores_that_put_up_cards_are_named_once_a_day_and_never_for_old_days() {
+        let c = db();
+        let now = 1_794_400_000;
+        assert!(sync(&c, now).unwrap().is_empty(), "the cards already up are old news");
+        c.execute("INSERT INTO member_cards(id, member_id, kind, updated_at) VALUES (12, 1, 'sale', ?1)", [now - 60]).unwrap();
+        c.execute("INSERT INTO products(id, title, price, created_at) VALUES (4, 'Eevee', 80, strftime('%Y-%m-%dT%H:%M:%S', ?1, 'unixepoch'))", [now - 120]).unwrap();
+        let mut fresh = sync(&c, now).unwrap();
+        fresh.sort_unstable();
+        assert_eq!(fresh, vec![0, 1], "the vault (0) and the seller, each once");
+        c.execute("INSERT INTO member_cards(id, member_id, kind, updated_at) VALUES (13, 1, 'sale', ?1)", [now - 30]).unwrap();
+        assert!(sync(&c, now).unwrap().is_empty(), "more cards the same day: the same post, nothing new to say");
     }
 }

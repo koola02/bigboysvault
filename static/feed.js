@@ -1,4 +1,5 @@
-/* The feed: likes and other reactions, comments, sharing, the post menu, and writing a post.
+/* The feed: likes and other reactions (on posts and on comments), comments (words, a photo, or both), sharing, the
+   post menu, and writing a post.
    The posts themselves are drawn by the server; more arrive as you scroll (the last element asks for the next page).
    Everything here is one set of listeners on the page, so posts that arrive later work without any setup. */
 (() => {
@@ -8,6 +9,8 @@
   const REACTIONS = [['like', '👍', 'Like'], ['love', '❤️', 'Love'], ['fire', '🔥', 'Fire'], ['wow', '😮', 'Wow'], ['haha', '😆', 'Haha'], ['sad', '😢', 'Sad']];
   const THUMB = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v11H3V10zM7 10l4-8a2.5 2.5 0 0 1 2.5 3L13 9h6a2 2 0 0 1 2 2.3l-1.3 8A2 2 0 0 1 17.700 21H7"/></svg>';
   const SEND = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12l16-8-6 16-3-7z"/></svg>';
+  const PHOTO = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>';
+  const CAMERA = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>';
   let me = null, staff = false, full = false;
   const who = window.bbvWho ? window.bbvWho() : Promise.resolve({});
   who.then((j) => {
@@ -48,23 +51,41 @@
     if (!me) { toLogin(); return; }
     try { paintLike(post, await api(`/posts/${post.dataset.post}/react`, { kind })); } catch (e) { toast(e.message, true); }
   }
+  // A comment's Like: the same six reactions as a post; how many sits beside it, and its writer hears.
+  function paintCmLike(node, j) {
+    const b = node.querySelector('[data-cm-like]'); if (!b) return;
+    b.dataset.mine = j.mine || ''; b.setAttribute('aria-pressed', String(!!j.mine)); b.classList.toggle('on', !!j.mine);
+    b.textContent = j.mine ? `${j.emoji} ${(REACTIONS.find((r) => r[0] === j.mine) || [])[2] || 'Like'}` : 'Like';
+    const chip = node.querySelector('.cm-reacts');
+    if (chip) { chip.hidden = !j.likes; chip.replaceChildren(...(j.tops || []).map((e) => el('i', '', e)), el('span', '', String(j.likes || 0))); }
+  }
+  async function reactComment(node, kind) {
+    closePick();
+    if (!me) { toLogin(); return; }
+    try { paintCmLike(node, await api(`/comments/${node.dataset.cm}/react`, { kind })); } catch (e) { toast(e.message, true); }
+  }
   let pick = null, pickTimer = 0;
   const closePick = () => { clearTimeout(pickTimer); pick?.remove(); pick = null; };
-  function openPick(btn) {
+  // `onPick(kind)` is what a reaction does: a post's Like, or a comment's.
+  function openPick(btn, onPick) {
     closePick();
     pick = el('div', 'react-pick'); pick.setAttribute('role', 'menu');
-    REACTIONS.forEach(([k, e, label]) => { const b = el('button', '', e); b.type = 'button'; b.title = label; b.setAttribute('aria-label', label); b.addEventListener('click', (ev) => { ev.stopPropagation(); react(postOf(btn), k); }); pick.append(b); });
+    REACTIONS.forEach(([k, e, label]) => { const b = el('button', '', e); b.type = 'button'; b.title = label; b.setAttribute('aria-label', label); b.addEventListener('click', (ev) => { ev.stopPropagation(); onPick(k); }); pick.append(b); });
     btn.parentElement.append(pick);
     const r = btn.getBoundingClientRect(), host = btn.parentElement.getBoundingClientRect();
-    pick.style.left = `${Math.max(0, r.left - host.left)}px`;
+    // Under the button, kept 8px inside the screen on both sides.
+    const room = document.documentElement.clientWidth - 8 - pick.offsetWidth;
+    pick.style.left = `${Math.max(8, Math.min(r.left, room)) - host.left}px`;
   }
+  const LIKES = '[data-like], [data-cm-like]';
+  const pickFor = (b) => (b.hasAttribute('data-cm-like') ? (k) => reactComment(b.closest('.cm'), k) : (k) => react(postOf(b), k));
   // A mouse resting on Like, or a finger held on it, opens the other reactions.
-  feed.addEventListener('pointerover', (e) => { const b = e.target.closest('[data-like]'); if (!b || e.pointerType !== 'mouse' || pick) return; clearTimeout(pickTimer); pickTimer = setTimeout(() => openPick(b), 450); });
-  feed.addEventListener('pointerout', (e) => { const b = e.target.closest('[data-like], .react-pick'); if (!b || e.pointerType !== 'mouse') return; clearTimeout(pickTimer); if (pick && !e.relatedTarget?.closest?.('[data-like], .react-pick')) pickTimer = setTimeout(closePick, 350); });
+  feed.addEventListener('pointerover', (e) => { const b = e.target.closest(LIKES); if (!b || e.pointerType !== 'mouse' || pick) return; clearTimeout(pickTimer); pickTimer = setTimeout(() => openPick(b, pickFor(b)), 450); });
+  feed.addEventListener('pointerout', (e) => { const b = e.target.closest(`${LIKES}, .react-pick`); if (!b || e.pointerType !== 'mouse') return; clearTimeout(pickTimer); if (pick && !e.relatedTarget?.closest?.(`${LIKES}, .react-pick`)) pickTimer = setTimeout(closePick, 350); });
   let held = false;
-  feed.addEventListener('pointerdown', (e) => { const b = e.target.closest('[data-like]'); if (!b || e.pointerType === 'mouse') return; held = false; clearTimeout(pickTimer); pickTimer = setTimeout(() => { held = true; openPick(b); if (navigator.vibrate) navigator.vibrate(8); }, 420); });
+  feed.addEventListener('pointerdown', (e) => { const b = e.target.closest(LIKES); if (!b || e.pointerType === 'mouse') return; held = false; clearTimeout(pickTimer); pickTimer = setTimeout(() => { held = true; openPick(b, pickFor(b)); if (navigator.vibrate) navigator.vibrate(8); }, 420); });
   feed.addEventListener('pointerup', () => { if (!held) clearTimeout(pickTimer); });
-  feed.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-like]')) e.preventDefault(); });
+  feed.addEventListener('contextmenu', (e) => { if (e.target.closest(LIKES)) e.preventDefault(); });
 
   /* ---------- comments ---------- */
   function commentNode(k) {
@@ -72,12 +93,17 @@
     const av = el('a', 'av sm'); av.href = `/trainers/${k.member}`; face(av, { avatar: k.avatar, initial: k.initial, name: k.name });
     const body = el('div', 'cm-body');
     const bub = el('div', 'cm-bub'); const name = el('a', 'cm-name', k.name); name.href = `/trainers/${k.member}`;
-    bub.append(name, el('p', '', k.text));
+    bub.append(name);
+    if (k.text) bub.append(el('p', '', k.text));
+    if (k.image) { const a = el('a', 'cm-photo'); a.href = k.image; a.dataset.photo = ''; const im = el('img'); im.src = k.thumb || k.image; im.alt = 'Photo'; im.loading = 'lazy'; a.append(im); bub.append(a); }
     const meta = el('div', 'cm-meta'); meta.append(el('span', '', k.edited ? `${k.when} · Edited` : k.when));
+    const like = el('button', 'linkbtn cm-like', 'Like'); like.type = 'button'; like.dataset.cmLike = ''; meta.append(like);
     const rep = el('button', 'linkbtn', 'Reply'); rep.type = 'button'; rep.dataset.reply = k.parent || k.id; rep.dataset.name = k.name; meta.append(rep);
     if (k.own) { const ed = el('button', 'linkbtn', 'Edit'); ed.type = 'button'; ed.dataset.cmEdit = k.id; meta.append(ed); }
     if (k.can_remove) { const d = el('button', `linkbtn${k.own ? '' : ' staff-only'}`, 'Delete'); d.type = 'button'; d.dataset.cmDel = k.id; meta.append(d); }
+    const chip = el('span', 'cm-reacts'); meta.append(chip);
     body.append(bub, meta); li.append(av, body);
+    paintCmLike(li, k);
     return li;
   }
   async function openComments(post, focus) {
@@ -85,11 +111,17 @@
     if (!box.dataset.ready) {
       box.dataset.ready = '1'; box.hidden = false;
       const list = el('div', 'cm-list'); box.append(list);
-      const form = el('form', 'cm-form'); form.innerHTML = `<span class="av sm" data-my-face></span><input type="text" maxlength="600" placeholder="Write a comment…" aria-label="Write a comment" autocomplete="off" enterkeyhint="send"><button type="submit" class="ibtn" aria-label="Send">${SEND}</button>`;
+      const form = el('form', 'cm-form');
+      form.innerHTML = `<span class="av sm" data-my-face></span><span class="cm-in"><input type="text" maxlength="600" placeholder="Write a comment…" aria-label="Write a comment" autocomplete="off" enterkeyhint="send"><span class="cm-pic" hidden><img alt=""><button type="button" class="cm-pic-x" aria-label="Take the photo off">✕</button></span></span>`
+        + `<label class="ibtn cm-add" title="Add a photo" aria-label="Add a photo">${PHOTO}<input type="file" accept="image/*" hidden data-cm-file></label>`
+        + `<label class="ibtn cm-add" title="Take a photo" aria-label="Take a photo">${CAMERA}<input type="file" accept="image/*" capture="environment" data-card-cam="free" hidden data-cm-file></label>`
+        + `<button type="submit" class="ibtn" aria-label="Send">${SEND}</button>`;
+      form.querySelectorAll('[data-cm-file]').forEach((inp) => inp.addEventListener('change', () => { const f = inp.files && inp.files[0]; inp.value = ''; if (f) setCmPhoto(form, f); }));
+      form.querySelector('.cm-pic-x').addEventListener('click', () => setCmPhoto(form, null));
       face(form.querySelector('[data-my-face]'), me); box.append(form);
       try { const j = await api(`/posts/${post.dataset.post}/comments`); j.comments.forEach((k) => place(list, commentNode(k), k.parent)); } catch (e) { toast(e.message, true); }
     } else box.hidden = false;
-    if (focus) box.querySelector('input').focus({ preventScroll: false });
+    if (focus) box.querySelector('.cm-form input[type="text"]').focus({ preventScroll: false });
   }
   // A reply sits under the comment it answers, after the replies already there.
   function place(list, node, parent) {
@@ -100,18 +132,28 @@
     after.after(node);
   }
   const setCount = (post, n) => { const b = post.querySelector('.post-cn'); b.hidden = !n; b.textContent = `${n} comment${n === 1 ? '' : 's'}`; stats(post); };
+  // The photo waiting to go with a comment: shown small in the box, with ✕ to take it off.
+  function setCmPhoto(form, file) {
+    const box = form.querySelector('.cm-pic'), img = box.querySelector('img');
+    if (form.cmPhotoUrl) URL.revokeObjectURL(form.cmPhotoUrl);
+    form.cmPhoto = file || null; form.cmPhotoUrl = file ? URL.createObjectURL(file) : '';
+    img.src = form.cmPhotoUrl; box.hidden = !file;
+    if (file) form.querySelector('input[type="text"]').focus({ preventScroll: true });
+  }
   feed.addEventListener('submit', async (e) => {
     const f = e.target.closest('.cm-form'); if (!f) return;
     e.preventDefault();
     if (!me) { toLogin(); return; }
-    const input = f.querySelector('input'), text = input.value.trim(), post = postOf(f);
-    if (!text) return;
-    const parent = f.dataset.parent ? Number(f.dataset.parent) : null;
+    const input = f.querySelector('input[type="text"]'), text = input.value.trim(), post = postOf(f);
+    if (!text && !f.cmPhoto) return;
+    const fd = new FormData(); fd.append('text', text);
+    if (f.dataset.parent) fd.append('parent', f.dataset.parent);
+    if (f.cmPhoto) fd.append('photo', f.cmPhoto, f.cmPhoto.name || 'photo.jpg');
     input.disabled = true;
     try {
-      const j = await api(`/posts/${post.dataset.post}/comments`, { text, parent });
+      const j = await api(`/posts/${post.dataset.post}/comments`, fd);
       place(post.querySelector('.cm-list'), commentNode(j.comment), j.comment.parent);
-      input.value = ''; delete f.dataset.parent; input.placeholder = 'Write a comment…'; setCount(post, j.n);
+      input.value = ''; delete f.dataset.parent; input.placeholder = 'Write a comment…'; setCmPhoto(f, null); setCount(post, j.n);
     } catch (err) { toast(err.message, true); }
     input.disabled = false; input.focus();
   });
@@ -166,15 +208,19 @@
     const t = e.target;
     const like = t.closest('[data-like]');
     if (like) { if (held) { held = false; return; } react(postOf(like), like.dataset.mine ? '' : 'like'); return; }
+    const cml = t.closest('[data-cm-like]');
+    if (cml) { if (held) { held = false; return; } reactComment(cml.closest('.cm'), cml.dataset.mine ? '' : 'like'); return; }
     if (t.closest('[data-comments-open]')) { openComments(postOf(t), true); return; }
     if (t.closest('[data-share]')) { share(postOf(t)); return; }
     const mb = t.closest('[data-post-menu]');
     if (mb) { e.stopPropagation(); menu ? closeMenu() : openMenu(mb); return; }
     const rep = t.closest('[data-reply]');
-    if (rep) { const f = postOf(rep).querySelector('.cm-form'), input = f.querySelector('input'); f.dataset.parent = rep.dataset.reply; input.placeholder = `Reply to ${rep.dataset.name}…`; input.focus(); return; }
+    if (rep) { const f = postOf(rep).querySelector('.cm-form'), input = f.querySelector('input[type="text"]'); f.dataset.parent = rep.dataset.reply; input.placeholder = `Reply to ${rep.dataset.name}…`; input.focus(); return; }
     const ced = t.closest('[data-cm-edit]');
     if (ced) {
-      const node = ced.closest('.cm'), par = node.querySelector('.cm-bub p'), id = ced.dataset.cmEdit;
+      const node = ced.closest('.cm'), id = ced.dataset.cmEdit;
+      let par = node.querySelector('.cm-bub p');
+      if (!par) { par = el('p', ''); node.querySelector('.cm-name').after(par); }
       if (node.querySelector('.cm-edit')) return;
       const input = el('input', 'cm-edit'); input.type = 'text'; input.maxLength = 600; input.value = par.textContent; input.setAttribute('aria-label', 'Edit your comment');
       par.hidden = true; par.after(input); input.focus();

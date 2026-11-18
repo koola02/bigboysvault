@@ -5,6 +5,7 @@
 {% block content %}
 <section class="wrap admin wide dash st" id="storeDash">
   {% include "store_tabs.html" %}
+  <div class="alerts-card" data-alerts="store" hidden></div>
 
   <div class="dash-kpis">
     <div class="kpi kpi-hero"><span>On sale</span><b>{{ d.active + d.reserved }}</b><small>{{ d.listings }} listed · {{ d.reserved }} reserved</small></div>

@@ -401,11 +401,24 @@
   const nRoot = $('storeNotifs');
   if (nRoot) {
     $('readAll').onclick = async () => { try { await send('/api/notifications/read', {}); nRoot.querySelectorAll('.st-note.unread').forEach((n) => n.classList.remove('unread')); A.toast('All read ✓', { kind: 'ok' }); } catch (err) { A.toast(err.message, { kind: 'err' }); } };
+    // One choice per kind: Phone and bell, Bell only, or Off. It saves at once.
+    const how = (row) => row.querySelector('[data-how][aria-pressed="true"]')?.dataset.how || 'bell';
+    const savePref = (row) => {
+      const body = { event: row.dataset.event, how: how(row) }, mail = row.querySelector('[data-ch="email"]');
+      if (mail) body.email = mail.checked;
+      return send('/me/notifications/prefs', body);
+    };
+    nRoot.addEventListener('click', async (e) => {
+      const b = e.target.closest('[data-how]'); if (!b) return;
+      const row = b.closest('[data-event]'), before = how(row);
+      if (b.dataset.how === before) return;
+      const paint = (k) => row.querySelectorAll('[data-how]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.how === k)));
+      paint(b.dataset.how);
+      try { await savePref(row); A.toast('Saved ✓', { kind: 'ok' }); } catch (err) { paint(before); A.toast(err.message, { kind: 'err' }); }
+    });
     nRoot.addEventListener('change', async (e) => {
-      const tr = e.target.closest('tr[data-event]'); if (!tr) return;
-      const get = (k) => tr.querySelector(`[data-ch="${k}"]`).checked;
-      try { await send('/me/notifications/prefs', { event: tr.dataset.event, site: get('site'), email: get('email'), push: get('push') }); A.toast('Saved ✓', { kind: 'ok' }); }
-      catch (err) { e.target.checked = !e.target.checked; A.toast(err.message, { kind: 'err' }); }
+      const box = e.target.closest('[data-ch="email"]'); if (!box) return;
+      try { await savePref(box.closest('[data-event]')); A.toast('Saved ✓', { kind: 'ok' }); } catch (err) { box.checked = !box.checked; A.toast(err.message, { kind: 'err' }); }
     });
     // Buyers keep their email here (sellers have it in Store settings). Saving it switches on the email boxes.
     $('emailForm')?.addEventListener('submit', async (e) => {
@@ -414,19 +427,9 @@
         const j = await send('/me/notifications/prefs', { address: f.address.value.trim() });
         f.address.value = j.email || '';
         nRoot.querySelectorAll('[data-ch="email"]').forEach((b) => { b.disabled = !j.email; if (!j.email) b.checked = false; });
-        A.toast(j.email ? 'Email saved ✓ Tick Email next to what you want to hear about.' : 'Email removed ✓', { kind: 'ok' });
+        A.toast(j.email ? 'Email saved ✓' : 'Email removed ✓', { kind: 'ok' });
       } catch (err) { A.toast(err.message, { kind: 'err' }); }
       btn.disabled = false;
-    });
-    $('pushOn')?.addEventListener('click', async () => {
-      const key = nRoot.dataset.pushKey; if (!key || !('serviceWorker' in navigator) || !('PushManager' in window)) { A.toast('This browser can’t do push notifications.', { kind: 'err' }); return; }
-      try {
-        const reg = await navigator.serviceWorker.register('/static/push-sw.js');
-        const raw = atob(key.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(key.length / 4) * 4, '='));
-        const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, (c) => c.charCodeAt(0)) });
-        const j = await send('/api/notifications/push', sub.toJSON());
-        A.toast(j.enabled ? 'Push notifications on ✓' : 'Saved. Push sending isn’t switched on for the site yet.', { kind: 'ok' });
-      } catch (err) { A.toast(err.message || 'Couldn’t turn on push.', { kind: 'err' }); }
     });
   }
 })();

@@ -567,9 +567,39 @@ async fn sync_if_due(app: &App) {
     if now - last < 300 || SYNCED.compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed).is_err() {
         return;
     }
-    if let Err(e) = with_db(app, move |c| social::sync(c, now)).await {
+    if let Err(e) = with_db(app, move |c| {
+        for store in social::sync(c, now)? {
+            tell_followers(c, store, now)?;
+        }
+        Ok(())
+    })
+    .await
+    {
         tracing::warn!("feed sync: {}", e.1);
     }
+}
+
+/// A store just put up cards (`store` 0 is the vault's): whoever follows it hears, one line a day for each store (the
+/// owner's plan, 18 Nov 2026: following a store was a dead end for the follower).
+fn tell_followers(c: &rusqlite::Connection, store: i64, now: i64) -> rusqlite::Result<()> {
+    let (name, url) = if store == 0 {
+        (blocks::setting(c, "brand")?.filter(|b| !b.trim().is_empty()).unwrap_or_else(|| "Big Boys Vault".into()), format!("/store/{}", sellers::VAULT_SLUG))
+    } else {
+        match members::get(c, store)?.filter(|m| m.seller && !m.blocked && !m.store_hidden && m.profile_ok) {
+            Some(m) => (m.store_title(), m.store_url()),
+            None => return Ok(()),
+        }
+    };
+    let day = (now + 8 * 3600) / 86_400;
+    for f in sellers::follower_ids(c, store)?.into_iter().filter(|f| *f != store) {
+        sellers::notify_from(c, f, store, "following", &format!("following:{store}:{day}"), &format!("{name} put up new cards."), &url)?;
+    }
+    Ok(())
+}
+
+/// Who hears about a reaction or a comment on a post: whoever wrote it, or for a post the vault itself wrote, its admins.
+fn post_owners(c: &rusqlite::Connection, p: &social::Post) -> rusqlite::Result<Vec<i64>> {
+    if p.member_id != 0 { Ok(vec![p.member_id]) } else { dm::admins(c) }
 }
 
 fn seo(nav: &Chrome) -> Seo {
@@ -850,11 +880,11 @@ pub async fn comment_edit(State(app): State<App>, h: HeaderMap, Path(id): Path<i
     let out = with_db(&app, move |c| {
         let Some(k) = social::comment(c, id)?.filter(|k| k.member_id == me) else { return Ok(None) };
         social::comment_edit(c, k.id, &text, now)?;
-        social::comment(c, id)
+        Ok(social::comment_for(c, id, me)?.map(|k| comment_json(c, &k, me, staff)))
     })
     .await?;
     Ok(match out {
-        Some(k) => ok(json!({ "ok": true, "comment": comment_json(&k, me, staff) })),
+        Some(k) => ok(json!({ "ok": true, "comment": k })),
         None => fail(StatusCode::FORBIDDEN, "That comment isn't yours."),
     })
 }
@@ -877,17 +907,14 @@ pub async fn react(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Js
     let (me, name, now, kind) = (m.id, m.name.clone(), crate::unix_now(), req.kind.clone());
     let out = with_db(&app, move |c| {
         let Some(n) = social::react(c, id, me, &kind, now)? else { return Ok(None) };
-        // The author hears about it: one line per post, brought up to date instead of repeated.
+        // Whoever wrote it hears (the vault's own posts: its admins): one line per post, brought up to date ("Ana and 2
+        // others reacted to your post") instead of one per reaction.
         if !kind.is_empty() {
-            if let Some(p) = social::post(c, 0, id)?.filter(|p| p.member_id != 0 && p.member_id != me) {
-                let link = format!("/posts/{id}");
-                let open: Option<i64> = rusqlite::OptionalExtension::optional(c.query_row("SELECT id FROM notifications WHERE member_id=?1 AND kind='social' AND link=?2 AND is_read=0 AND message LIKE '%reacted%' LIMIT 1", rusqlite::params![p.member_id, link], |r| r.get(0)))?;
-                match open {
-                    Some(nid) if n > 1 => {
-                        c.execute("UPDATE notifications SET message=?2, created_at=?3 WHERE id=?1", rusqlite::params![nid, format!("{name} and {} other{} reacted to your post.", n - 1, if n == 2 { "" } else { "s" }), now])?;
-                    }
-                    Some(_) => {}
-                    None => sellers::notify(c, p.member_id, "social", &format!("{name} reacted {} to your post.", social::emoji(&kind)), &link)?,
+            if let Some(p) = social::post(c, 0, id)? {
+                let whose = if p.member_id == 0 { "the vault's post" } else { "your post" };
+                let words = if n > 1 { format!("{name} and {} other{} reacted to {whose}.", n - 1, if n == 2 { "" } else { "s" }) } else { format!("{name} reacted {} to {whose}.", social::emoji(&kind)) };
+                for who in post_owners(c, &p)?.into_iter().filter(|w| *w != me) {
+                    sellers::notify_from(c, who, me, "social", &format!("react:{id}"), &words, &format!("/posts/{id}"))?;
                 }
             }
         }
@@ -902,65 +929,162 @@ pub async fn react(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Js
     })
 }
 
-fn comment_json(k: &social::Comment, viewer: i64, staff: bool) -> Value {
-    json!({ "edited": k.edited_at > 0, "id": k.id, "parent": k.parent_id, "member": k.member_id, "name": k.name, "avatar": k.avatar, "initial": members::initial(&k.name), "role": k.role, "text": k.text, "at": k.created_at, "when": members::ago(k.created_at), "own": viewer == k.member_id, "can_remove": viewer == k.member_id || staff })
+fn comment_json(c: &rusqlite::Connection, k: &social::Comment, viewer: i64, staff: bool) -> Value {
+    let tops: Vec<&'static str> = if k.like_n > 0 { social::comment_tops(c, k.id).unwrap_or_default().iter().map(|x| social::emoji(x)).collect() } else { vec![] };
+    json!({
+        "edited": k.edited_at > 0, "id": k.id, "parent": k.parent_id, "member": k.member_id, "name": k.name, "avatar": k.avatar,
+        "initial": members::initial(&k.name), "role": k.role, "text": k.text, "at": k.created_at, "when": members::ago(k.created_at),
+        "own": viewer == k.member_id, "can_remove": viewer == k.member_id || staff,
+        "likes": k.like_n, "mine": k.mine, "emoji": social::emoji(&k.mine), "tops": tops, "image": k.image, "thumb": k.thumb,
+    })
 }
 
 /// GET /posts/{id}/comments
 pub async fn comments(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -> Res {
     let viewer = current(&app, &h).await?.map(|m| m.id).unwrap_or(0);
     let staff = admin::power(&app, &h) != admin::Power::Nothing;
-    let list = with_db(&app, move |c| social::comments(c, id, 200)).await?;
-    Ok(ok(json!({ "comments": list.iter().map(|k| comment_json(k, viewer, staff)).collect::<Vec<_>>() })))
+    let list = with_db(&app, move |c| Ok(social::comments(c, id, viewer, 200)?.iter().map(|k| comment_json(c, k, viewer, staff)).collect::<Vec<_>>())).await?;
+    Ok(ok(json!({ "comments": list })))
 }
 
-#[derive(Deserialize)]
-pub struct CommentReq {
-    #[serde(default)]
-    text: String,
-    parent: Option<i64>,
+/// The start of what someone said, for a line in the bell: their words, or "a photo".
+fn said(text: &str) -> String {
+    if text.is_empty() {
+        return "a photo".into();
+    }
+    let short: String = if text.chars().count() > 80 { format!("{}…", text.chars().take(79).collect::<String>()) } else { text.to_string() };
+    format!("“{short}”")
 }
 
-/// POST /posts/{id}/comments {text, parent?}
-pub async fn comment(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Json(req): Json<CommentReq>) -> Res {
+/// POST /posts/{id}/comments (a form: text, parent, and maybe one photo, uploaded or taken with the card camera): a
+/// comment or a reply, in words, a photo or both. Whoever wrote the post hears (the vault's own posts: its admins), and
+/// whoever wrote the comment answered.
+pub async fn comment(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, mut mp: Multipart) -> Res {
     let m = match acting(&app, &h).await? {
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
-    let text = members::clean_text(&req.text, social::COMMENT_MAX);
-    if text.is_empty() {
-        return Ok(fail(StatusCode::BAD_REQUEST, "Write something first."));
-    }
-    let (me, name, now, parent) = (m.id, m.name.clone(), crate::unix_now(), req.parent);
-    let staff = admin::power(&app, &h) != admin::Power::Nothing;
-    let out = with_db(&app, move |c| {
-        if social::comments_since(c, me, now - 3600)? >= social::COMMENTS_PER_HOUR {
-            return Ok(Err("That's a lot of comments for one hour. Please take a short break."));
+    let (mut text, mut parent, mut file) = (String::new(), None::<i64>, None::<Vec<u8>>);
+    let bad = |_| (StatusCode::BAD_REQUEST, "That didn't upload. Please try again.".to_string());
+    while let Some(f) = mp.next_field().await.map_err(bad)? {
+        match f.name().unwrap_or("") {
+            "text" => text = f.text().await.map_err(bad)?,
+            "parent" => parent = f.text().await.map_err(bad)?.trim().parse().ok(),
+            "photo" => {
+                let b = f.bytes().await.map_err(bad)?;
+                if !b.is_empty() {
+                    file = Some(b.to_vec());
+                }
+            }
+            _ => {}
         }
-        let Some(cid) = social::comment_add(c, id, me, parent, &text, now)? else { return Ok(Err("That post isn't here any more.")) };
-        let short: String = if text.chars().count() > 80 { format!("{}…", text.chars().take(79).collect::<String>()) } else { text.clone() };
+    }
+    let text = members::clean_text(&text, social::COMMENT_MAX);
+    if text.is_empty() && file.is_none() {
+        return Ok(fail(StatusCode::BAD_REQUEST, "Write something or add a photo first."));
+    }
+    // Photos, as on posts, once the trainer is approved; words are for everyone signed in, as before.
+    if file.is_some() && !m.profile_ok {
+        return Ok(fail(StatusCode::FORBIDDEN, "You can add photos once your trainer is approved. Words work now."));
+    }
+    let (me, name, now) = (m.id, m.name.clone(), crate::unix_now());
+    let staff = admin::power(&app, &h) != admin::Power::Nothing;
+    if with_db(&app, move |c| social::comments_since(c, me, now - 3600)).await? >= social::COMMENTS_PER_HOUR {
+        return Ok(fail(StatusCode::BAD_REQUEST, "That's a lot of comments for one hour. Please take a short break."));
+    }
+    let mut photo: Option<(String, String, i64)> = None;
+    if let Some(bytes) = file {
+        let room = with_db(&app, |c| Ok(members::photo_bytes(c)? + dm::media_bytes(c)? + social::photo_bytes(c)?)).await?;
+        if room >= photo_cap_mb() * 1024 * 1024 {
+            return Ok(fail(StatusCode::INSUFFICIENT_STORAGE, "The vault's photo space is full right now. Words still work."));
+        }
+        let dir = PathBuf::from(&*app.uploads);
+        let stem = format!("k{me}-{}{}", members::temp_password(), members::temp_password());
+        match gated(move || store_photo(bytes, dir, stem)).await? {
+            Ok((l, s, _w, _h, size)) => photo = Some((l, s, size)),
+            Err(e) if e == TOO_BIG => return Ok(fail(StatusCode::BAD_REQUEST, "That photo is too big. Please use a smaller one.")),
+            Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "That photo couldn't be read. Try a JPEG or PNG.")),
+        }
+    }
+    let kept = photo.clone();
+    let out = with_db(&app, move |c| {
+        let pic = photo.as_ref().map(|(l, s, b)| (l.as_str(), s.as_str(), *b));
+        let Some(cid) = social::comment_add(c, id, me, parent, &text, pic, now)? else { return Ok(Err("That post isn't here any more.")) };
+        let what = said(&text);
         let link = format!("/posts/{id}");
         let mut told = vec![me];
         if let Some(p) = social::post(c, 0, id)? {
-            if p.member_id != 0 && !told.contains(&p.member_id) {
-                sellers::notify(c, p.member_id, "social", &format!("{name} commented on your post: “{short}”"), &link)?;
-                told.push(p.member_id);
+            let whose = if p.member_id == 0 { "the vault's post" } else { "your post" };
+            for who in post_owners(c, &p)? {
+                if !told.contains(&who) {
+                    sellers::notify_from(c, who, me, "social", "", &format!("{name} commented on {whose}: {what}"), &link)?;
+                    told.push(who);
+                }
             }
         }
         if let Some(k) = parent.and_then(|pid| social::comment(c, pid).ok().flatten()) {
             if !told.contains(&k.member_id) {
-                sellers::notify(c, k.member_id, "social", &format!("{name} replied to your comment: “{short}”"), &link)?;
+                sellers::notify_from(c, k.member_id, me, "social", "", &format!("{name} replied to your comment: {what}"), &link)?;
             }
         }
         let n: i64 = c.query_row("SELECT comment_n FROM posts WHERE id=?1", [id], |r| r.get(0))?;
-        Ok(Ok((social::comment(c, cid)?, n)))
+        let k = social::comment_for(c, cid, me)?;
+        Ok(Ok((k.map(|k| comment_json(c, &k, me, staff)), n)))
+    })
+    .await;
+    let out = match out {
+        Ok(o) => o,
+        Err(e) => {
+            // Nothing saved: the photo that went up first goes too.
+            if let Some((l, s, _)) = &kept {
+                admin::remove_upload(&app.uploads, l);
+                admin::remove_upload(&app.uploads, s);
+            }
+            return Err(e);
+        }
+    };
+    stale(&app);
+    Ok(match out {
+        Ok((Some(k), n)) => ok(json!({ "ok": true, "comment": k, "n": n })),
+        Ok((None, _)) => fail(StatusCode::INTERNAL_SERVER_ERROR, "That comment didn't save. Please try again."),
+        Err(e) => {
+            // The post went away while the photo went up: the photo goes too.
+            if let Some((l, s, _)) = kept {
+                admin::remove_upload(&app.uploads, &l);
+                admin::remove_upload(&app.uploads, &s);
+            }
+            fail(StatusCode::BAD_REQUEST, e)
+        }
+    })
+}
+
+/// POST /comments/{id}/react {kind}: like a comment, another reaction, or "" to take it back. Its writer hears, one line
+/// per comment brought up to date.
+pub async fn comment_react(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Json(req): Json<ReactReq>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    if !req.kind.is_empty() && !social::reaction_ok(&req.kind) {
+        return Ok(fail(StatusCode::BAD_REQUEST, "That reaction isn't one of ours."));
+    }
+    let (me, name, now, kind) = (m.id, m.name.clone(), crate::unix_now(), req.kind.clone());
+    let out = with_db(&app, move |c| {
+        let Some(n) = social::comment_react(c, id, me, &kind, now)? else { return Ok(None) };
+        if !kind.is_empty() {
+            if let Some(k) = social::comment(c, id)?.filter(|k| k.member_id != me) {
+                let words = if n > 1 { format!("{name} and {} other{} reacted to your comment: {}", n - 1, if n == 2 { "" } else { "s" }, said(&k.text)) } else { format!("{name} reacted {} to your comment: {}", social::emoji(&kind), said(&k.text)) };
+                sellers::notify_from(c, k.member_id, me, "social", &format!("creact:{id}"), &words, &format!("/posts/{}", k.post_id))?;
+            }
+        }
+        let tops: Vec<&'static str> = social::comment_tops(c, id)?.iter().map(|x| social::emoji(x)).collect();
+        Ok(Some((n, tops)))
     })
     .await?;
     stale(&app);
     Ok(match out {
-        Ok((Some(k), n)) => ok(json!({ "ok": true, "comment": comment_json(&k, me, staff), "n": n })),
-        Ok((None, _)) => fail(StatusCode::INTERNAL_SERVER_ERROR, "That comment didn't save. Please try again."),
-        Err(e) => fail(StatusCode::BAD_REQUEST, e),
+        Some((n, tops)) => ok(json!({ "ok": true, "likes": n, "mine": req.kind, "emoji": social::emoji(&req.kind), "tops": tops })),
+        None => fail(StatusCode::NOT_FOUND, "That comment isn't here any more."),
     })
 }
 
@@ -976,14 +1100,19 @@ pub async fn comment_remove(State(app): State<App>, h: HeaderMap, Path(id): Path
         if !(staff || (me != 0 && me == k.member_id)) {
             return Ok(Some(Err(())));
         }
-        let post = social::comment_remove(c, id)?.unwrap_or(k.post_id);
+        let (post, files) = social::comment_remove(c, id)?.unwrap_or((k.post_id, vec![]));
         let n: i64 = rusqlite::OptionalExtension::optional(c.query_row("SELECT comment_n FROM posts WHERE id=?1", [post], |r| r.get(0)))?.unwrap_or(0);
-        Ok(Some(Ok(n)))
+        Ok(Some(Ok((n, files))))
     })
     .await?;
     stale(&app);
     Ok(match out {
-        Some(Ok(n)) => ok(json!({ "ok": true, "n": n })),
+        Some(Ok((n, files))) => {
+            for f in files {
+                admin::remove_upload(&app.uploads, &f);
+            }
+            ok(json!({ "ok": true, "n": n }))
+        }
         Some(Err(())) => fail(StatusCode::FORBIDDEN, "That comment isn't yours."),
         None => ok(json!({ "ok": true, "n": 0 })),
     })
@@ -1132,6 +1261,38 @@ mod tests {
     fn feed_part(items: Vec<Item>, next: String) -> String {
         let end = next.is_empty();
         render(FeedPart { items, next, end }).unwrap()
+    }
+
+    #[test]
+    fn the_vaults_posts_reach_its_admins_and_followers_hear_once_a_day() {
+        let c = db();
+        let (ash, _, brock) = town(&c);
+        let boss = members::create(&c, "Boss", "h").unwrap().unwrap();
+        c.execute("UPDATE members SET role='admin' WHERE id=?1", [boss]).unwrap();
+        // A like on a post the vault wrote tells its admins; on a trainer's post, the trainer.
+        let vault_post = social::post_add(&c, 0, "post", "New box!", &[], &json!({}), 10).unwrap();
+        let own = social::post_add(&c, ash, "post", "My pulls", &[], &json!({}), 11).unwrap();
+        assert_eq!(post_owners(&c, &social::post(&c, 0, vault_post).unwrap().unwrap()).unwrap(), vec![boss]);
+        assert_eq!(post_owners(&c, &social::post(&c, 0, own).unwrap().unwrap()).unwrap(), vec![ash]);
+        // Brock follows Ash's store, and the vault's.
+        assert!(sellers::toggle_follow(&c, brock, ash).unwrap());
+        assert!(sellers::toggle_follow(&c, brock, 0).unwrap());
+        let now = 2_000_000_000;
+        tell_followers(&c, ash, now).unwrap();
+        tell_followers(&c, ash, now + 60).unwrap();
+        tell_followers(&c, 0, now).unwrap();
+        let lines = |c: &rusqlite::Connection| -> Vec<(String, String, i64)> {
+            c.prepare("SELECT message, link, actor_id FROM notifications WHERE member_id=?1 AND kind='following' ORDER BY id").unwrap().query_map([brock], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(Result::unwrap).collect()
+        };
+        let ash_url = members::get(&c, ash).unwrap().unwrap().store_url();
+        assert_eq!(lines(&c), vec![("Ash put up new cards.".to_string(), ash_url, ash), ("Big Boys Vault put up new cards.".to_string(), "/store/vault".to_string(), 0)], "one line a day per store");
+        // Read, and a new day: news again. A store that closed tells nobody.
+        members::mark_notifications_read(&c, brock, None).unwrap();
+        tell_followers(&c, ash, now + 86_400).unwrap();
+        assert_eq!(lines(&c).len(), 3);
+        members::set_seller(&c, ash, false).unwrap();
+        tell_followers(&c, ash, now + 2 * 86_400).unwrap();
+        assert_eq!(lines(&c).len(), 3);
     }
 
     #[test]

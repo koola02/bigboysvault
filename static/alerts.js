@@ -2,7 +2,8 @@
    closed (Web Push: the server side is src/push.rs, the alerts themselves static/sw.js).
    - window.bbvAlerts: state(), enable() (only from a tap: browsers ask permission only then), disable().
    - Places marked [data-alerts] ("panel": the inbox drop-down, "page": the Messages page, "settings": notification
-     settings) show a short card while this device doesn't have alerts on, or how to get them.
+     settings, "order": after sending an order and on Orders, "store": the Store Manager's Overview) show a short card
+     while this device doesn't have alerts on, or how to get them. Only "settings" and "page" stay once they are on.
    - Keeps the server's copy of this device's alert address current, and drops it on signing out, or when someone
      else is signed in on this browser (alerts belong to the person who turned them on). */
 (() => {
@@ -127,27 +128,29 @@
     const later = Number(ls.get('bbv:alerts-later') || 0) > Date.now();
     place.replaceChildren();
     const show = (on) => { place.hidden = !on; };
-    if (st === 'guest' || st === 'unsupported' || (st === 'on' && kind === 'panel') || (later && kind === 'panel' && st !== 'on')) { show(false); return; }
+    // A card offered in passing (the inbox, an order, the Overview) goes once alerts are on, or after "Not now".
+    const passing = kind !== 'settings' && kind !== 'page';
+    if (st === 'guest' || st === 'unsupported' || (st === 'on' && passing) || (later && passing && st !== 'on')) { show(false); return; }
     const box = el('div', 'alerts-in'); box.innerHTML = icon;
     const words = el('div', 'alerts-t');
     const btns = el('div', 'alerts-b');
     if (st === 'on') {
-      words.append(el('b', null, 'Calls and messages reach this device ✓'), el('span', null, android ? ANDROID_TIP : 'Even with the site closed.'));
+      words.append(el('b', null, 'Alerts reach this device ✓'), el('span', null, android ? ANDROID_TIP : 'Orders, messages and calls, even with the site closed.'));
       const off = el('button', 'btn ghost sm', 'Turn off'); off.type = 'button';
       off.addEventListener('click', async () => { off.disabled = true; await disable(); say('Alerts are off on this device.'); paint(); });
       btns.append(off);
     } else if (st === 'blocked') {
       words.append(el('b', null, 'Alerts are blocked for this site'), el('span', null, 'Allow notifications for this site in your browser’s settings, then come back here to turn them on.'));
     } else if (st === 'homescreen') {
-      words.append(el('b', null, 'Get calls and messages on your iPhone'), el('span', null, 'Tap Share, then “Add to Home Screen”. Open Big Boys Vault from your Home Screen and turn alerts on there.'));
+      words.append(el('b', null, 'Get alerts on your iPhone'), el('span', null, 'Tap Share, then “Add to Home Screen”. Open Big Boys Vault from your Home Screen and turn alerts on there.'));
     } else {
-      words.append(el('b', null, 'Get calls and messages even when the site is closed'), el('span', null, 'Your phone rings for a call and shows new messages, like an app.'));
+      words.append(el('b', null, 'Hear about orders and messages, even with the site closed'), el('span', null, 'Your phone shows new orders, offers and messages, and rings for a call, like an app.'));
       const on = el('button', 'btn sm', 'Turn on'); on.type = 'button';
       on.addEventListener('click', async () => {
         on.disabled = true;
         try {
           const r = await enable();
-          if (r === 'on') say(android ? `Alerts on ✓ ${ANDROID_TIP}` : 'Alerts on ✓ Calls and messages now reach this device.');
+          if (r === 'on') say(android ? `Alerts on ✓ ${ANDROID_TIP}` : 'Alerts on ✓ Orders, messages and calls now reach this device.');
           else if (r === 'blocked') say('Alerts are blocked for this site. Allow them in your browser’s settings.', true);
           else if (r === 'homescreen') say('On iPhone, add Big Boys Vault to your Home Screen first.', true);
         } catch (err) { say(err.message || 'Couldn’t turn alerts on.', true); }

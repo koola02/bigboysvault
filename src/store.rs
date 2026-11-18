@@ -1051,7 +1051,7 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
     }
     s.contact_public = contact_public.unwrap_or(s.contact_public && !sent);
     s.pay_public = pay_public.unwrap_or(s.pay_public && !sent);
-    s.notify_views = notify_views.unwrap_or(s.notify_views && !sent);
+    s.notify_views = notify_views.unwrap_or(s.notify_views);
     if sent || !methods.is_empty() {
         s.pay_methods = methods.join(",");
     }
@@ -1089,6 +1089,9 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
     let cover_now = new_cover.clone();
     with_db(&app, move |c| {
         sellers::save_store(c, id, &s)?;
+        if let Some(on) = notify_views {
+            sellers::set_pref(c, id, "view", on, false, false)?;
+        }
         if let Some(b) = &border {
             sellers::set_border(c, id, b)?;
         }
@@ -1151,6 +1154,8 @@ struct NotificationsPage {
     prefs: Vec<Pref>,
     push_key: String,
     has_email: bool,
+    /// The site sends mail (RESEND_API_KEY): only then is there an Email choice.
+    mail_on: bool,
 }
 
 pub async fn notifications(State(app): State<App>, h: HeaderMap, Query(q): Query<PageQs>) -> Res {
@@ -1164,12 +1169,13 @@ pub async fn notifications(State(app): State<App>, h: HeaderMap, Query(q): Query
         let (notes, total) = sellers::notifications_page(c, id, page, PER)?;
         let prefs = sellers::prefs_of(c, id)?;
         // Opening the page reads what's on it.
-        members::mark_notifications_read(c, id, notes.first().map(|n| n.id))?;
+        members::mark_notifications_read(c, id, notes.iter().map(|n| n.id).max())?;
         Ok((chrome(c)?, panel(c, m, "notifications")?, notes, total, prefs))
     })
     .await?;
     let pages = (total + PER - 1) / PER;
-    Ok(html(render(NotificationsPage { nav, p, notes, page, pages, prefs, push_key: crate::push::public_key().to_string(), has_email })?))
+    let mail_on = std::env::var("RESEND_API_KEY").is_ok_and(|k| !k.trim().is_empty());
+    Ok(html(render(NotificationsPage { nav, p, notes, page, pages, prefs, push_key: crate::push::public_key().to_string(), has_email, mail_on })?))
 }
 
 #[derive(Deserialize)]
@@ -1178,12 +1184,14 @@ pub struct PrefReq {
     event: String,
     #[serde(default)]
     site: bool,
-    #[serde(default)]
-    email: bool,
+    /// Left out (the page shows no Email choice while the site sends no mail): the saved choice stays.
+    email: Option<bool>,
     #[serde(default)]
     push: bool,
     /// Sent instead of a switch: the member's email address for notifications (buyers have no Store settings page).
     address: Option<String>,
+    /// The one choice per kind: "phone" (the bell, and phones where alerts are on), "bell" (the bell only) or "off".
+    how: Option<String>,
 }
 
 pub async fn save_pref(State(app): State<App>, h: HeaderMap, Json(req): Json<PrefReq>) -> Res {
@@ -1203,7 +1211,22 @@ pub async fn save_pref(State(app): State<App>, h: HeaderMap, Json(req): Json<Pre
         }
         return Ok(ok(json!({ "ok": true, "email": saved })));
     }
-    if !with_db(&app, move |c| sellers::set_pref(c, id, &req.event, req.site, req.email, req.push)).await? {
+    let (site, push) = match req.how.as_deref() {
+        Some("phone") => (true, true),
+        Some("bell") => (true, false),
+        Some("off") => (false, false),
+        Some(_) => return Ok(fail(StatusCode::BAD_REQUEST, "Pick phone, bell or off.")),
+        None => (req.site, req.push),
+    };
+    let saved = with_db(&app, move |c| {
+        let email = match req.email {
+            Some(e) => e,
+            None => sellers::prefs_of(c, id)?.into_iter().any(|p| p.event == req.event && p.email),
+        };
+        sellers::set_pref(c, id, &req.event, site, email, push)
+    })
+    .await?;
+    if !saved {
         return Ok(fail(StatusCode::BAD_REQUEST, "Unknown kind of notification."));
     }
     Ok(ok(json!({ "ok": true })))

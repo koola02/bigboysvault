@@ -114,12 +114,14 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 | `POST /me/reviews` | Buyer: `{ transaction_id, rating (1–5), text }`. Only the buyer of a finished sale, once; never the seller |
 | `POST /me/reviews/{id}/reply` | Seller: `{ text }` |
 | `GET /me/settings` | Store settings page |
-| `POST /me/settings` | Multipart: `store_name`, `cover` (image), `drop_cover`, `status` (`Active`/`Away`/`Vacation`), `location`, `contact_info`, `contact_public`, `fb_url`, `fb_group_url`, `ig_url`, `tiktok_url`, `shopee_url`, `links` (lines of `Label \| https://…`), `pay_method` (repeatable; send `pay_methods_sent=1` to clear), `pay_info`, `email`, `notify_views`. Links must be `https://` |
+| `POST /me/settings` | Multipart: `store_name`, `cover` (image), `drop_cover`, `status` (`Active`/`Away`/`Vacation`), `location`, `contact_info`, `contact_public`, `fb_url`, `fb_group_url`, `ig_url`, `tiktok_url`, `shopee_url`, `links` (lines of `Label \| https://…`), `pay_method` (repeatable; send `pay_methods_sent=1` to clear), `pay_info`, `email`, `notify_views` (when sent, sets the `view` choice on Notifications; the box itself left this page). Links must be `https://` |
 | `POST /me/settings/slug` | `{ slug }`: 3–30 of `a-z 0-9 -`, unique whatever the case, not a name the site uses |
 | `POST /me/store/visibility` | A form: `hidden` (`1` hides the store, `0` shows it), `back` (a `/me/…` or `/store/…` page to return to). Hidden (`members.store_hidden`, 18 Nov 2026), only the seller and the vault's staff see the store and its cards: it is left out of Stores, The Vault page, Ask the Vault, the feed, wishlist alerts, bookmarks and the sitemap; its page, its cards' pages and its cards on the trainer page are not found; it takes no orders, offers or questions. Orders already placed carry on. Store settings has the button; the Store Manager and the store page show a note with Show my store while it is hidden |
-| `GET /me/notifications?page=` | Notifications (30 a page) and preferences. Opening it marks the page read |
-| `POST /me/notifications/prefs` | `{ event, site, email, push }`. Events: `my_order` (the buyer's news: accepted, declined, countered, replied, paid, ran out, off sale), `follow`, `view`, `inquiry`, `offer`, `reservation`, `order`, `sale`, `price`, `expiry`, `status`, `announcement`. `inquiry`, `offer` and `reservation` are the seller's side only; a reservation that runs out tells both the buyer and the seller. Also `{ address }` saves the email address and returns `{ ok, email }` |
-| `GET /api/notifications`, `POST /api/notifications/read` | The bell, as before |
+| `GET /me/notifications?page=` | Notifications (30 a page, each with who did it) and how each kind is heard. Opening it marks the page read |
+| `POST /me/notifications/prefs` | `{ event, how }`, `how` one of `phone` (the bell, and phones where alerts are on), `bell`, `off`; `email` (true/false) only while the site sends mail, left out it keeps the saved choice. The old `{ event, site, email, push }` still works. Events: `message`, `my_order` (the buyer's news: accepted, declined, countered, replied, paid, ran out, off sale), `reservation`, `offer`, `inquiry`, `order` (admins: vault orders), `follow`, `social` (likes, comments, replies), `review` (a vouch for the store, a review of a sale), `following` (a store you follow put up cards), `wish`, `announcement`, `staff` (admins: trainers waiting), `view`, `price`, `expiry`, `status`. Until a member chooses, everything is in the bell and all but `view`, `price`, `expiry` and `status` ring the phone. Also `{ address }` saves the email address and returns `{ ok, email }` |
+| `GET /api/notifications`, `POST /api/notifications/read` | The bell: each line has `actor_id`, `avatar` (the person's picture, the site's logo for the site's own lines), `initial` and `label` (the kind in plain words). Read: `{}` all, `{ before_id }` up to a line, `{ id }` one line |
+| `GET /posts/{id}/comments`, `POST /posts/{id}/comments` | A post's comments (each with `likes`, `mine`, `tops`, `image`, `thumb`); a new one is a form: `text`, `parent` (a reply), `photo` (one picture, up to 12 MB). Words or a photo, or both |
+| `POST /comments/{id}/react` | `{ kind }`: `like`, `love`, `fire`, `wow`, `haha`, `sad`, or `""` to take it back. Answers `{ likes, mine, emoji, tops }`; the comment's writer hears |
 | `POST /api/notifications/push` | Saves a Web Push subscription (`{ endpoint, keys: { p256dh, auth } }`, or `remove: true`) |
 | `POST /api/cards/{id}/save` | Save a card for later, or unsave. Returns `saved` (the same saved listing a Bookmark is; see below) |
 | `GET /me/bookmarks` | The Bookmarks page: stores, then cards under the store each came from, with Add to cart |
@@ -192,15 +194,16 @@ Settings the owner can add in the admin settings table: `seller_max_cards` (how 
   encryption and RFC 8292 (VAPID) signing, posted straight to the browser makers' push services (an allow-list:
   Google FCM, Mozilla, Apple, Microsoft WNS; nothing else is ever called). The site's key pair is made on the first
   start and kept in `settings` (`vapid_private`); `VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` override it. A device turns
-  alerts on from a tap (`static/alerts.js`: the cards marked `data-alerts` on the Messages page, the inbox drop-down
-  and notification settings), which registers the service worker at `/sw.js` (scope `/`, no fetch handler) and saves
+  alerts on from a tap (`static/alerts.js`: the cards marked `data-alerts` on the Messages page, the inbox drop-down,
+  notification settings, after Send order, on Orders and on the Store Manager's Overview), which registers the service worker at `/sw.js` (scope `/`, no fetch handler) and saves
   the subscription (`POST /api/notifications/push`; one browser belongs to one member, the last to sign up on it;
   turning alerts on also turns on the "message" push preference unless it was set before). Signing out, or another
   person signing in on that browser, forgets it (`POST /api/notifications/push/forget {endpoint}`, no sign-in needed:
   only the browser knows its address). What gets pushed: a call rings the callee's devices every 7 seconds while it
   rings, then one last push says how it ended (missed, answered, declined), with the Topic `call<thread>` so a phone
   that was out of reach gets only the last; private messages for members with message alerts on; and every other
-  notification event whose Push box is ticked, through the `push_outbox` queue (sent every 3 seconds). The service
+  notification whose kind is set to Phone and bell, through the `push_outbox` queue (sent every 3 seconds). A line
+  brought up to date (more likes on one post, more cards in one cart) doesn't buzz again. The service
   worker always shows an alert (Safari takes alerts away from a site that skips one; Chrome allows skipping only while
   a page of the site is on screen), asks `GET /dm/{thread}/call-state?call=` before ringing so a late push never rings
   for a call that is over, tells the caller "it's ringing here" (`type: "ringing"`), and opens or brings forward the
@@ -222,7 +225,8 @@ Settings the owner can add in the admin settings table: `seller_max_cards` (how 
 `member_cards`: `binder_id`, `status`, `expires_at`, `is_custom`, `qty`, `finish`, `notes`, `sold`, `view_n`,
 `save_n`, `updated_at`, `review_flag`. `member_binders`: `description`, `visibility`.
 New: `reservations`, `offers`, `inquiries`, `transactions`, `reviews`, `store_follows`, `listing_views`,
-`listing_saves`, `notifications`, `notify_prefs`, `push_subscriptions`, `card_events`, `outbox`, `condition_shares`.
+`listing_saves`, `notifications` (with `actor_id` and `ref`), `notify_prefs`, `push_subscriptions`, `card_events`,
+`outbox`, `condition_shares`. The feed: `comment_reactions`; `comments` gained `like_n`, `image`, `thumb`, `bytes`.
 
 ## Testing by hand
 

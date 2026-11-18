@@ -67,7 +67,6 @@
     <h2 class="h2">Email</h2>
     <div class="me-fields">
       <label>Email <small>for notifications you switch on, and never shown to anyone</small><input type="email" name="email" value="{{ p.m.email }}" maxlength="120" autocomplete="email"></label>
-      <label class="chk"><input type="checkbox" class="sr" name="notify_views" value="1"{% if p.m.notify_views %} checked{% endif %}><span class="chk-box"></span> Tell me when people look at or save my cards <small>(once a day per card)</small></label>
     </div>
 
     <div class="me-save-row"><button class="btn" type="submit">Save</button><a class="linkbtn" href="{{ p.m.store_url() }}" target="_blank" rel="noopener">See my store ↗</a></div>
@@ -75,5 +74,5 @@
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/admin-ui.js?v=10" defer></script>
-<script src="/static/store.js?v=10" defer></script>
+<script src="/static/store.js?v=11" defer></script>
 {% endblock %}

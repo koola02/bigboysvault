@@ -284,8 +284,8 @@ pub fn admins(c: &Connection) -> rusqlite::Result<Vec<i64>> {
 }
 
 /// Tells a member about a message, keeping one unread line per conversation: the line is brought up to date
-/// (latest words, how many) instead of a new line for each message.
-pub fn notify(c: &Connection, member: i64, kind: &str, who: &str, words: &str, link: &str, now: i64) -> rusqlite::Result<()> {
+/// (latest words, how many) instead of a new line for each message. `actor` wrote it (0: the vault), for the picture.
+pub fn notify(c: &Connection, member: i64, actor: i64, kind: &str, who: &str, words: &str, link: &str, now: i64) -> rusqlite::Result<()> {
     let open: Option<(i64, String)> = c
         .query_row("SELECT id, message FROM notifications WHERE member_id=?1 AND kind=?2 AND link=?3 AND is_read=0 ORDER BY id DESC LIMIT 1", params![member, kind, link], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()?;
@@ -294,10 +294,11 @@ pub fn notify(c: &Connection, member: i64, kind: &str, who: &str, words: &str, l
             // "Juan: “hi”" becomes "Juan · 2 new messages: “hello?”", and so on.
             let n = old.split(" · ").nth(1).and_then(|s| s.split(' ').next()).and_then(|n| n.parse::<i64>().ok()).unwrap_or(1) + 1;
             let msg = format!("{who} · {n} new messages: {words}");
-            c.execute("UPDATE notifications SET message=?2, created_at=?3 WHERE id=?1", params![id, msg, now])?;
+            c.execute("UPDATE notifications SET message=?2, created_at=?3, actor_id=?4 WHERE id=?1", params![id, msg, now, actor])?;
+            crate::sellers::wake(member);
             Ok(())
         }
-        None => crate::sellers::notify(c, member, kind, &format!("{who}: {words}"), link),
+        None => crate::sellers::notify_from(c, member, actor, kind, "", &format!("{who}: {words}"), link),
     }
 }
 
@@ -309,7 +310,7 @@ mod tests {
         let c = Connection::open_in_memory().unwrap();
         c.execute_batch(
             "CREATE TABLE members(id INTEGER PRIMARY KEY, name TEXT, role TEXT NOT NULL DEFAULT '', blocked INTEGER NOT NULL DEFAULT 0);
-             CREATE TABLE notifications(id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, link TEXT NOT NULL, is_read INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+             CREATE TABLE notifications(id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, link TEXT NOT NULL, is_read INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, actor_id INTEGER NOT NULL DEFAULT 0, ref TEXT NOT NULL DEFAULT ''); CREATE TABLE push_outbox(id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, kind TEXT NOT NULL, message TEXT NOT NULL, link TEXT NOT NULL, created_at INTEGER NOT NULL);
              CREATE TABLE notify_prefs(member_id INTEGER NOT NULL, event TEXT NOT NULL, site INTEGER NOT NULL DEFAULT 1, email INTEGER NOT NULL DEFAULT 0, push INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(member_id, event));
              INSERT INTO members(id, name, role) VALUES (1, 'Admin', 'admin'), (2, 'Seller', ''), (3, 'Buyer', '');",
         )
@@ -377,13 +378,14 @@ mod tests {
     #[test]
     fn one_notification_line_per_conversation() {
         let c = db();
-        notify(&c, 2, "message", "Buyer", "“hi”", "/me/messages?t=1", 1).unwrap();
-        notify(&c, 2, "message", "Buyer", "“still there?”", "/me/messages?t=1", 2).unwrap();
-        notify(&c, 2, "message", "Buyer", "“hello”", "/me/messages?t=1", 3).unwrap();
+        notify(&c, 2, 3, "message", "Buyer", "“hi”", "/me/messages?t=1", 1).unwrap();
+        notify(&c, 2, 3, "message", "Buyer", "“still there?”", "/me/messages?t=1", 2).unwrap();
+        notify(&c, 2, 3, "message", "Buyer", "“hello”", "/me/messages?t=1", 3).unwrap();
         let rows: Vec<String> = c.prepare("SELECT message FROM notifications WHERE member_id=2").unwrap().query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
         assert_eq!(rows, vec!["Buyer · 3 new messages: “hello”".to_string()]);
+        assert_eq!(c.query_row("SELECT actor_id FROM notifications WHERE member_id=2", [], |r| r.get::<_, i64>(0)).unwrap(), 3, "the line shows who wrote");
         c.execute("UPDATE notifications SET is_read=1", []).unwrap();
-        notify(&c, 2, "message", "Buyer", "“new”", "/me/messages?t=1", 4).unwrap();
+        notify(&c, 2, 3, "message", "Buyer", "“new”", "/me/messages?t=1", 4).unwrap();
         assert_eq!(c.query_row("SELECT COUNT(*) FROM notifications", [], |r| r.get::<_, i64>(0)).unwrap(), 2, "a read line starts a new one");
     }
 }

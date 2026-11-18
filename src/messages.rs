@@ -101,7 +101,7 @@ impl DmHub {
         self.versions.get_with(member, || Arc::new(watch::channel(1).0))
     }
     /// Wakes every open page of these members.
-    fn bump(&self, members: &[i64]) {
+    pub(crate) fn bump(&self, members: &[i64]) {
         for m in members {
             self.channel(*m).send_modify(|v| *v += 1);
         }
@@ -351,8 +351,10 @@ pub async fn poll(State(app): State<App>, h: HeaderMap, Query(q): Query<PollQs>)
     let (signals, place) = hub.signals_for(m.id, q.s);
     let (id, admin) = (m.id, m.role == "admin");
     let hub2 = hub.clone();
-    let (unread, open) = with_db(&app, move |c| {
+    let (unread, notes, open) = with_db(&app, move |c| {
         let unread: i64 = dm::inbox(c, id, admin, 200)?.iter().map(|r| r.unread).sum();
+        // The bell's number rides along, so it changes on every open page within seconds (sellers::wake).
+        let notes = members::unread_notification_count(c, id)?;
         let mut open = Value::Null;
         if let Some(tid) = q.t {
             if let Some(t) = dm::thread(c, tid)? {
@@ -365,10 +367,10 @@ pub async fn poll(State(app): State<App>, h: HeaderMap, Query(q): Query<PollQs>)
                 }
             }
         }
-        Ok((unread, open))
+        Ok((unread, notes, open))
     })
     .await?;
-    Ok(ok(json!({ "v": version, "s": place, "unread": unread, "signals": signals, "open": open, "retry": retry })))
+    Ok(ok(json!({ "v": version, "s": place, "unread": unread, "notes": notes, "signals": signals, "open": open, "retry": retry })))
 }
 
 // ---------- writing ----------
@@ -452,13 +454,15 @@ pub(crate) async fn after_post(app: &App, t: dm::Thread, side: i64, author: i64,
             c.execute("UPDATE notifications SET is_read=1 WHERE member_id=?1 AND kind='message' AND link=?2 AND is_read=0", rusqlite::params![who, link])?;
         }
         let recipients: Vec<i64> = if quiet { vec![] } else { people(other, &admins).into_iter().filter(|x| *x != author).collect() };
+        // The line in the bell shows who wrote: the trainer's picture, or the vault's logo.
+        let actor = if side == dm::VAULT { 0 } else { side };
         for r in &recipients {
-            dm::notify(c, *r, "message", &sender, &words, &link, now)?;
+            dm::notify(c, *r, actor, "message", &sender, &words, &link, now)?;
         }
         // Every message, for the admins who aren't in it (the people in it are never told).
         if !t.is_vault() && !quiet {
             for a in admins.iter().filter(|a| !t.has(**a) && **a != author) {
-                dm::notify(c, *a, "dm_watch", &format!("{sender} → {receiver}"), &words, &format!("/admin/messages?t={}", t.id), now)?;
+                dm::notify(c, *a, actor, "dm_watch", &format!("{sender} → {receiver}"), &words, &format!("/admin/messages?t={}", t.id), now)?;
             }
         }
         let mut wake: Vec<i64> = people(t.a, &admins);

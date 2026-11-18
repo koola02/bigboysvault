@@ -198,6 +198,9 @@
       if ((j.placed || []).length) {
         toast('Order sent ✓ You’ll see how to pay once it’s accepted.');
         const done = el('p', 'cart-done'); done.innerHTML = 'Order sent. Follow it under <a href="/me/orders?tab=buying">My orders</a>.'; list.prepend(done);
+        // The seller's answer can reach this phone even with the site closed: offered here, once, if alerts are off.
+        const ask = el('div', 'alerts-card'); ask.dataset.alerts = 'order'; ask.hidden = true; done.after(ask);
+        if (window.bbvAlerts) window.bbvAlerts.paint();
       }
       if ((j.failed || []).length) toast((j.failed[0].error || 'Some lines could not be ordered.') + (j.failed.length > 1 ? ` (+${j.failed.length - 1} more)` : ''), true);
     } catch (err) { toast(err.message, true); paint(); }

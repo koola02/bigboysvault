@@ -2569,6 +2569,12 @@ pub struct Notification {
     pub link: String,
     pub is_read: bool,
     pub created_at: i64,
+    /// Who did it (0: the site), and their picture or first letter for the line in the bell.
+    pub actor_id: i64,
+    pub avatar: String,
+    pub initial: String,
+    /// The kind in plain words ("Order", "Like or comment").
+    pub label: String,
 }
 
 impl Notification {
@@ -2577,25 +2583,43 @@ impl Notification {
     }
 }
 
+/// The columns a notification is read with: the line, then who did it (the site's own logo when nobody did).
+pub const NOTE_COLS: &str = "n.id, n.member_id, n.kind, n.message, n.link, n.is_read, n.created_at, n.actor_id, COALESCE(a.avatar, ''), COALESCE(a.name, '')";
+pub const NOTE_FROM: &str = "notifications n LEFT JOIN members a ON a.id=n.actor_id AND n.actor_id<>0";
+
+pub fn map_note(r: &rusqlite::Row) -> rusqlite::Result<Notification> {
+    let kind: String = r.get(2)?;
+    let actor: i64 = r.get(7)?;
+    let (avatar, name): (String, String) = (r.get(8)?, r.get(9)?);
+    Ok(Notification {
+        id: r.get(0)?,
+        member_id: r.get(1)?,
+        label: crate::sellers::kind_label(&kind).to_string(),
+        kind,
+        message: r.get(3)?,
+        link: r.get(4)?,
+        is_read: r.get::<_, i64>(5)? != 0,
+        created_at: r.get(6)?,
+        actor_id: actor,
+        avatar: if actor == 0 { "/static/img/logo-sm-144.png?v=1".into() } else { avatar },
+        initial: if name.is_empty() { String::new() } else { initial(&name) },
+    })
+}
+
 pub fn notifications(c: &Connection, member_id: i64, unread_only: bool) -> rusqlite::Result<Vec<Notification>> {
-    let mut sql = "SELECT id, member_id, kind, message, link, is_read, created_at FROM notifications WHERE member_id=?1".to_string();
+    let mut sql = format!("SELECT {NOTE_COLS} FROM {NOTE_FROM} WHERE n.member_id=?1");
     if unread_only {
-        sql.push_str(" AND is_read=0");
+        sql.push_str(" AND n.is_read=0");
     }
-    sql.push_str(" ORDER BY created_at DESC, id DESC LIMIT 100");
+    sql.push_str(" ORDER BY n.created_at DESC, n.id DESC LIMIT 100");
     let mut st = c.prepare(&sql)?;
-    let rows = st.query_map([member_id], |r| {
-        Ok(Notification {
-            id: r.get(0)?,
-            member_id: r.get(1)?,
-            kind: r.get(2)?,
-            message: r.get(3)?,
-            link: r.get(4)?,
-            is_read: r.get::<_, i64>(5)? != 0,
-            created_at: r.get(6)?,
-        })
-    })?.collect::<Result<Vec<_>, _>>()?;
+    let rows = st.query_map([member_id], map_note)?.collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
+}
+
+/// One line read (tapped in the bell).
+pub fn mark_one_read(c: &Connection, member_id: i64, id: i64) -> rusqlite::Result<usize> {
+    c.execute("UPDATE notifications SET is_read=1 WHERE member_id=?1 AND id=?2 AND is_read=0", rusqlite::params![member_id, id])
 }
 
 pub fn unread_notification_count(c: &Connection, member_id: i64) -> rusqlite::Result<i64> {

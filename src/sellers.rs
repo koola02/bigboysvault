@@ -161,6 +161,28 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
     }
     add_column(c, "listing_views", "day", "INTEGER NOT NULL DEFAULT 0")?;
     c.execute_batch("CREATE UNIQUE INDEX IF NOT EXISTS idx_views_once ON listing_views(card_id, viewer_ip_hash, day)")?;
+    // A line in the bell: who did it (their picture shows beside it; 0 is the site) and what it is about (lines about
+    // the same thing stay one unread line, brought up to date).
+    add_column(c, "notifications", "actor_id", "INTEGER NOT NULL DEFAULT 0")?;
+    add_column(c, "notifications", "ref", "TEXT NOT NULL DEFAULT ''")?;
+    c.execute_batch("CREATE INDEX IF NOT EXISTS idx_notif_ref ON notifications(member_id, ref, is_read)")?;
+    views_switch_once(c)?;
+    Ok(())
+}
+
+/// Once: "Tell me when people look at or save my cards" lived in Store settings and the notifications page both, and
+/// needed both. It is the "view" switch alone now, keeping each seller's choice: off for whoever had the box off.
+fn views_switch_once(c: &Connection) -> rusqlite::Result<()> {
+    c.execute_batch("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)")?;
+    let done: i64 = c.query_row("SELECT COUNT(*) FROM settings WHERE key='views_switch_v'", [], |r| r.get(0))?;
+    if done == 0 {
+        c.execute(
+            "INSERT INTO notify_prefs(member_id, event, site, email, push) SELECT id, 'view', 0, 0, 0 FROM members WHERE notify_views=0
+             ON CONFLICT(member_id, event) DO UPDATE SET site=0, email=0, push=0",
+            [],
+        )?;
+        c.execute("INSERT INTO settings(key, value) VALUES('views_switch_v', '1')", [])?;
+    }
     Ok(())
 }
 
@@ -1199,7 +1221,15 @@ fn reserve_at(c: &Connection, buyer: i64, seller: i64, card_id: i64, qty: i64, p
     let (buyer_name, title) = names(c, buyer, card_id)?;
     log_event(c, seller, card_id, "reserved", &format!("{buyer_name} ×{qty}"))?;
     if status == "Pending" {
-        notify(c, seller, "reservation", &format!("{buyer_name} wants to buy {} ×{qty} for {}.", short(&title), vault_search::peso(price * qty as f64)), "/me/orders")?;
+        // One cart is one line (and one buzz) for each store, brought up to date as its cards arrive: what this buyer
+        // is waiting on from this seller, ordered in the last few minutes.
+        let (n, units, total): (i64, i64, f64) = c.query_row(
+            "SELECT COUNT(*), COALESCE(SUM(qty),0), COALESCE(SUM(price*qty),0) FROM reservations WHERE buyer_id=?1 AND seller_id=?2 AND status='Pending' AND created_at>=?3",
+            rusqlite::params![buyer, seller, t - 600],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?;
+        let words = if n > 1 { format!("{buyer_name} wants to buy {units} cards for {}.", vault_search::peso(total)) } else { format!("{buyer_name} wants to buy {} ×{qty} for {}.", short(&title), vault_search::peso(price * qty as f64)) };
+        notify_from(c, seller, buyer, "reservation", &format!("cart:{buyer}"), &words, "/me/orders")?;
     }
     Ok(Ok(id))
 }
@@ -1242,10 +1272,10 @@ fn answer_reservation_now(c: &Connection, seller: i64, id: i64, status: &str, pa
             )?;
             c.execute("UPDATE member_cards SET qty=MAX(0, qty-?2), sold=sold+?2, updated_at=?3 WHERE id=?1", rusqlite::params![r.card_id, r.qty, t])?;
             log_event(c, seller, r.card_id, "sold", &format!("{} ×{} {}", r.buyer_name, r.qty, r.total_text()))?;
-            notify(c, r.buyer_id, "my_order", &format!("{} marked your {} as paid. Enjoy your card!", r.seller_name, short(&r.title)), "/me/orders?tab=buying")?;
+            notify_from(c, r.buyer_id, seller, "my_order", "", &format!("{} marked your {} as paid. Enjoy your card! Tap to say how it went.", r.seller_name, short(&r.title)), "/me/orders?tab=buying")?;
         }
-        "Confirmed" => notify(c, r.buyer_id, "my_order", &format!("{} accepted your reservation for {}. Time to pay.", r.seller_name, short(&r.title)), "/me/orders?tab=buying")?,
-        _ => notify(c, r.buyer_id, "my_order", &format!("{} declined your reservation for {}.", r.seller_name, short(&r.title)), "/me/orders?tab=buying")?,
+        "Confirmed" => notify_from(c, r.buyer_id, seller, "my_order", "", &format!("{} accepted your reservation for {}. Time to pay.", r.seller_name, short(&r.title)), "/me/orders?tab=buying")?,
+        _ => notify_from(c, r.buyer_id, seller, "my_order", "", &format!("{} declined your reservation for {}.", r.seller_name, short(&r.title)), "/me/orders?tab=buying")?,
     }
     refresh_reserved(c, r.card_id)?;
     Ok(Ok(reservation(c, id)?.unwrap_or(r)))
@@ -1317,7 +1347,7 @@ pub fn close_open_orders(c: &Connection, seller_id: i64, card_id: i64) -> rusqli
             continue;
         }
         told.push(buyer);
-        notify(c, buyer, "my_order", &format!("{seller_name} took {} off sale.", short(&title)), "/me/orders?tab=buying")?;
+        notify_from(c, buyer, seller_id, "my_order", "", &format!("{seller_name} took {} off sale.", short(&title)), "/me/orders?tab=buying")?;
     }
     refresh_reserved(c, card_id)?;
     Ok(n)
@@ -1328,7 +1358,7 @@ pub fn cancel_reservation(c: &Connection, buyer: i64, id: i64) -> rusqlite::Resu
     let Some(r) = reservation(c, id)?.filter(|r| r.buyer_id == buyer && matches!(r.status.as_str(), "Pending" | "Confirmed")) else { return Ok(false) };
     c.execute("UPDATE reservations SET status='Cancelled', updated_at=?2 WHERE id=?1", rusqlite::params![id, now()])?;
     refresh_reserved(c, r.card_id)?;
-    notify(c, r.seller_id, "reservation", &format!("{} cancelled their reservation for {}.", r.buyer_name, short(&r.title)), "/me/orders")?;
+    notify_from(c, r.seller_id, buyer, "reservation", "", &format!("{} cancelled their reservation for {}.", r.buyer_name, short(&r.title)), "/me/orders")?;
     Ok(true)
 }
 
@@ -1351,7 +1381,7 @@ pub fn make_offer(c: &Connection, buyer: i64, seller: i64, card_id: i64, amount:
     )?;
     let id = c.last_insert_rowid();
     let (buyer_name, title) = names(c, buyer, card_id)?;
-    notify(c, seller, "offer", &format!("{buyer_name} offers {} for {} ×{qty}.", vault_search::peso(amount), short(&title)), "/me/orders")?;
+    notify_from(c, seller, buyer, "offer", "", &format!("{buyer_name} offers {} for {} ×{qty}.", vault_search::peso(amount), short(&title)), "/me/orders")?;
     Ok(Ok(id))
 }
 
@@ -1372,18 +1402,18 @@ fn answer_offer_now(c: &Connection, seller: i64, id: i64, status: &str, counter:
                 return Ok(Err(e));
             }
             c.execute("UPDATE offers SET status='Accepted', updated_at=?2 WHERE id=?1", rusqlite::params![id, t])?;
-            notify(c, o.buyer_id, "my_order", &format!("{} accepted your offer of {} for {}. Time to pay.", o.seller_name, o.price_text(), short(&o.title)), "/me/orders?tab=buying")?;
+            notify_from(c, o.buyer_id, seller, "my_order", "", &format!("{} accepted your offer of {} for {}. Time to pay.", o.seller_name, o.price_text(), short(&o.title)), "/me/orders?tab=buying")?;
         }
         "Countered" => {
             if !counter.is_finite() || !(1.0..=10_000_000.0).contains(&counter) {
                 return Ok(Err("Type your counter price in pesos."));
             }
             c.execute("UPDATE offers SET status='Countered', counter=?2, updated_at=?3 WHERE id=?1", rusqlite::params![id, counter.round(), t])?;
-            notify(c, o.buyer_id, "my_order", &format!("{} counters with {} for {}.", o.seller_name, vault_search::peso(counter), short(&o.title)), "/me/orders?tab=buying")?;
+            notify_from(c, o.buyer_id, seller, "my_order", "", &format!("{} counters with {} for {}.", o.seller_name, vault_search::peso(counter), short(&o.title)), "/me/orders?tab=buying")?;
         }
         "Declined" => {
             c.execute("UPDATE offers SET status='Declined', updated_at=?2 WHERE id=?1", rusqlite::params![id, t])?;
-            notify(c, o.buyer_id, "my_order", &format!("{} declined your offer for {}.", o.seller_name, short(&o.title)), "/me/orders?tab=buying")?;
+            notify_from(c, o.buyer_id, seller, "my_order", "", &format!("{} declined your offer for {}.", o.seller_name, short(&o.title)), "/me/orders?tab=buying")?;
         }
         _ => return Ok(Err("Accept, decline or counter.")),
     }
@@ -1406,7 +1436,7 @@ fn answer_counter_now(c: &Connection, buyer: i64, id: i64, accept: bool) -> rusq
             return Ok(Err(e));
         }
         c.execute("UPDATE offers SET status='Accepted', amount=counter, updated_at=?2 WHERE id=?1", rusqlite::params![id, t])?;
-        notify(c, o.seller_id, "offer", &format!("{} accepted your counter of {} for {}.", o.buyer_name, o.counter_text(), short(&o.title)), "/me/orders")?;
+        notify_from(c, o.seller_id, buyer, "offer", "", &format!("{} accepted your counter of {} for {}.", o.buyer_name, o.counter_text(), short(&o.title)), "/me/orders")?;
     } else {
         if !matches!(o.status.as_str(), "Pending" | "Countered") {
             return Ok(Err("That offer is already closed."));
@@ -1479,7 +1509,7 @@ pub fn ask(c: &Connection, sender: i64, seller: i64, card_id: Option<i64>, messa
     let id = c.last_insert_rowid();
     let (name, title) = names(c, sender, card_id.unwrap_or(0))?;
     let about = if card_id.is_some() { format!(" about {}", short(&title)) } else { String::new() };
-    notify(c, seller, "inquiry", &format!("{name} asks{about}: “{}”", short(&msg)), "/me/orders?tab=questions")?;
+    notify_from(c, seller, sender, "inquiry", "", &format!("{name} asks{about}: “{}”", short(&msg)), "/me/orders?tab=questions")?;
     Ok(Ok(id))
 }
 
@@ -1490,7 +1520,7 @@ pub fn reply(c: &Connection, seller: i64, id: i64, text: &str) -> rusqlite::Resu
         return Ok(Err("Type a reply."));
     }
     c.execute("UPDATE inquiries SET reply=?2, replied_at=?3 WHERE id=?1", rusqlite::params![id, t, now()])?;
-    notify(c, q.sender_id, "my_order", &format!("{} replied: “{}”", q.seller_name, short(&t)), "/me/orders?tab=buying")?;
+    notify_from(c, q.sender_id, seller, "my_order", "", &format!("{} replied: “{}”", q.seller_name, short(&t)), "/me/orders?tab=buying")?;
     Ok(Ok(()))
 }
 
@@ -1704,7 +1734,7 @@ pub fn add_review(c: &Connection, reviewer: i64, transaction_id: i64, rating: i6
     )?;
     let id = c.last_insert_rowid();
     let (name, _) = names(c, reviewer, 0)?;
-    notify(c, seller, "review", &format!("{name} left you a {rating}-star review."), &format!("/store/{}#vouches", slug_of(c, seller)?))?;
+    notify_from(c, seller, reviewer, "review", "", &format!("{name} left you a {rating}-star review."), &format!("/store/{}#vouches", slug_of(c, seller)?))?;
     Ok(Ok(id))
 }
 
@@ -1744,10 +1774,10 @@ pub fn toggle_follow(c: &Connection, follower: i64, seller: i64) -> rusqlite::Re
         // The vault's store is run by its admins: each of them hears it, as a seller would.
         let admins: Vec<i64> = c.prepare("SELECT id FROM members WHERE role='admin' AND blocked=0")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
         for a in admins.into_iter().filter(|a| *a != follower) {
-            notify(c, a, "follow", &format!("{name} now follows the vault's store."), "/store/vault")?;
+            notify_from(c, a, follower, "follow", "", &format!("{name} now follows the vault's store."), "/store/vault")?;
         }
     } else {
-        notify(c, seller, "follow", &format!("{name} now follows your store."), "/me/store")?;
+        notify_from(c, seller, follower, "follow", "", &format!("{name} now follows your store."), "/me/store")?;
     }
     Ok(true)
 }
@@ -1856,14 +1886,11 @@ pub fn count_view(c: &Connection, card_id: i64, viewer_hash: &str, viewer: Optio
     let n = c.execute("INSERT OR IGNORE INTO listing_views(card_id, viewer_ip_hash, created_at, day) VALUES(?1,?2,?3,?4)", rusqlite::params![card_id, viewer_hash, t, t / 86400])?;
     if n == 1 {
         c.execute("UPDATE member_cards SET view_n=view_n+1 WHERE id=?1", [card_id])?;
-        let wants: bool = c.query_row("SELECT notify_views FROM members WHERE id=?1", [owner], |r| r.get::<_, i64>(0).map(|v| v != 0))?;
-        if wants {
-            // One note a day per card, not one per look.
-            let today: i64 = c.query_row("SELECT COUNT(*) FROM listing_views WHERE card_id=?1 AND day=?2", [card_id, t / 86400], |r| r.get(0))?;
-            if today == 1 {
-                let (_, title) = names(c, owner, card_id)?;
-                notify(c, owner, "view", &format!("People are looking at {} today.", short(&title)), &format!("/me/listings?id={card_id}"))?;
-            }
+        // One note a day per card, not one per look (the "view" switch says whether it is wanted).
+        let today: i64 = c.query_row("SELECT COUNT(*) FROM listing_views WHERE card_id=?1 AND day=?2", [card_id, t / 86400], |r| r.get(0))?;
+        if today == 1 {
+            let (_, title) = names(c, owner, card_id)?;
+            notify(c, owner, "view", &format!("People are looking at {} today.", short(&title)), &format!("/me/listings?id={card_id}"))?;
         }
     }
     Ok(n == 1)
@@ -1880,11 +1907,8 @@ pub fn toggle_save(c: &Connection, member: i64, card_id: i64) -> rusqlite::Resul
     c.execute("INSERT INTO listing_saves(member_id, card_id, created_at) VALUES(?1,?2,?3)", rusqlite::params![member, card_id, now()])?;
     c.execute("UPDATE member_cards SET save_n=save_n+1 WHERE id=?1", [card_id])?;
     if owner != member {
-        let wants: bool = c.query_row("SELECT notify_views FROM members WHERE id=?1", [owner], |r| r.get::<_, i64>(0).map(|v| v != 0))?;
-        if wants {
-            let (name, title) = names(c, member, card_id)?;
-            notify(c, owner, "view", &format!("{name} saved {}.", short(&title)), &format!("/me/listings?id={card_id}"))?;
-        }
+        let (name, title) = names(c, member, card_id)?;
+        notify_from(c, owner, member, "view", "", &format!("{name} saved {}.", short(&title)), &format!("/me/listings?id={card_id}"))?;
     }
     Ok(true)
 }
@@ -1998,25 +2022,35 @@ pub fn popular_binders(c: &Connection, seller: i64) -> rusqlite::Result<Vec<(Mem
 
 // ---------- notifications ----------
 
-/// Kinds of notification a member can switch on or off, with what each means. "my_order" is the buyer's side:
-/// news about cards they are buying. The others are about their own store.
-pub const EVENTS: [(&str, &str); 15] = [
-    ("message", "Someone sends me a private message"),
-    ("social", "Likes, comments and replies on my posts"),
-    ("my_order", "News about cards I'm buying (accepted, declined, counter offers, replies, ran out)"),
-    ("wish", "A card on my wishlist turns up in the vault or a store"),
-    ("follow", "Someone follows my store"),
-    ("view", "Someone looks at or saves a card (summarised, once a day per card)"),
-    ("inquiry", "Someone asks me a question"),
+/// Kinds of notification a member can switch, with what each means in plain words. "my_order" is the buyer's side:
+/// news about cards they are buying; "following" is news from stores they follow; "staff" is for the vault's staff.
+/// The others are about their own store.
+pub const EVENTS: [(&str, &str); 17] = [
+    ("message", "Private messages"),
+    ("my_order", "My orders: accepted, declined, a counter offer, a reply"),
+    ("reservation", "Someone orders one of my cards"),
     ("offer", "Someone makes an offer on my card"),
-    ("reservation", "Someone reserves one of my cards"),
-    ("sale", "A sale is done"),
-    ("expiry", "A listing expires"),
-    ("status", "A card's status changes"),
-    ("price", "A price of mine is far from today's market"),
+    ("inquiry", "Someone asks me a question"),
     ("order", "Someone orders from the vault (admins)"),
+    ("follow", "Someone follows my store"),
+    ("social", "Likes, comments and replies"),
+    ("review", "Someone vouches for my store or reviews a sale"),
+    ("following", "A store I follow puts up new cards"),
+    ("wish", "A card on my wishlist is for sale"),
     ("announcement", "News from the vault"),
+    ("staff", "A trainer waits for approval (staff)"),
+    ("view", "People look at or save my cards (once a day per card)"),
+    ("price", "My price is far from today's market"),
+    ("expiry", "A card's end date passes"),
+    ("status", "A card's status changes"),
 ];
+
+/// How a member hears about each kind until they choose: (on the site, by email, on their phone). Everything shows
+/// in the bell; what someone is waiting on also rings their phone (where alerts are on); the rest stays in the bell.
+pub fn default_pref(event: &str) -> (bool, bool, bool) {
+    let quiet = matches!(event, "view" | "price" | "expiry" | "status" | "dm_watch");
+    (true, false, !quiet)
+}
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Pref {
@@ -2031,8 +2065,8 @@ pub fn prefs_of(c: &Connection, member: i64) -> rusqlite::Result<Vec<Pref>> {
     let mut out = vec![];
     for (event, label) in EVENTS {
         let saved: Option<(i64, i64, i64)> = c.query_row("SELECT site, email, push FROM notify_prefs WHERE member_id=?1 AND event=?2", rusqlite::params![member, event], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).optional()?;
-        // Message alerts are on unless the member turned them off.
-        let (site, email, push) = saved.unwrap_or(if event == "message" { (1, 0, 1) } else { (1, 0, 0) });
+        let (s0, e0, p0) = default_pref(event);
+        let (site, email, push) = saved.unwrap_or((s0 as i64, e0 as i64, p0 as i64));
         out.push(Pref { event: event.into(), label: label.into(), site: site != 0, email: email != 0, push: push != 0 });
     }
     Ok(out)
@@ -2049,13 +2083,50 @@ pub fn set_pref(c: &Connection, member: i64, event: &str, site: bool, email: boo
     Ok(true)
 }
 
+/// Members told something since the last look: every open page of theirs asks the bell again within seconds (the
+/// push loop in main.rs wakes them through the messages' live connection).
+static WOKEN: std::sync::Mutex<Vec<i64>> = std::sync::Mutex::new(Vec::new());
+
+/// The members told something since the last call, each once.
+pub fn take_woken() -> Vec<i64> {
+    let mut w = WOKEN.lock().unwrap_or_else(|e| e.into_inner());
+    let mut v = std::mem::take(&mut *w);
+    v.sort_unstable();
+    v.dedup();
+    v
+}
+
+/// This member's bell changed (a line written or brought up to date somewhere else): their open pages ask again.
+pub fn wake(member: i64) {
+    let mut w = WOKEN.lock().unwrap_or_else(|e| e.into_inner());
+    if w.len() < 10_000 {
+        w.push(member);
+    }
+}
+
 /// Tells a member something, the ways they chose: on the site, by email (queued for the mailer, see `outbox`), and
 /// by push to their phone or computer (queued in `push_outbox`; private messages send their own, see messages.rs).
 pub fn notify(c: &Connection, member: i64, kind: &str, message: &str, link: &str) -> rusqlite::Result<()> {
+    notify_from(c, member, 0, kind, "", message, link)
+}
+
+/// `notify`, saying who did it (`actor`: their picture shows beside the line; 0 is the site) and what it is about
+/// (`group`): while a line with the same group is unread, it is brought up to date instead of written again, and the
+/// phone isn't buzzed twice. Grouped: reactions on one post, the cards of one cart, one store's new cards a day.
+pub fn notify_from(c: &Connection, member: i64, actor: i64, kind: &str, group: &str, message: &str, link: &str) -> rusqlite::Result<()> {
+    let (s0, e0, p0) = default_pref(kind);
     let (site, email, push): (i64, i64, i64) = c
         .query_row("SELECT site, email, push FROM notify_prefs WHERE member_id=?1 AND event=?2", rusqlite::params![member, kind], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .optional()?
-        .unwrap_or((1, 0, 0));
+        .unwrap_or((s0 as i64, e0 as i64, p0 as i64));
+    if !group.is_empty() && site != 0 {
+        let open: Option<i64> = c.query_row("SELECT id FROM notifications WHERE member_id=?1 AND ref=?2 AND is_read=0 ORDER BY id DESC LIMIT 1", rusqlite::params![member, group], |r| r.get(0)).optional()?;
+        if let Some(id) = open {
+            c.execute("UPDATE notifications SET message=?2, link=?3, actor_id=?4, created_at=?5 WHERE id=?1", rusqlite::params![id, message, link, actor, now()])?;
+            wake(member);
+            return Ok(());
+        }
+    }
     if push != 0 && kind != "message" {
         c.execute(
             "INSERT INTO push_outbox(member_id, kind, message, link, created_at) VALUES(?1,?2,?3,?4,?5)",
@@ -2067,13 +2138,38 @@ pub fn notify(c: &Connection, member: i64, kind: &str, message: &str, link: &str
     }
     // A note hidden from the site but wanted by email still goes into the list, marked read, so the mailer can pick it up.
     c.execute(
-        "INSERT INTO notifications(member_id, kind, message, link, is_read, created_at) VALUES(?1,?2,?3,?4,?5,?6)",
-        rusqlite::params![member, kind, message, link, site == 0, now()],
+        "INSERT INTO notifications(member_id, kind, message, link, is_read, created_at, actor_id, ref) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
+        rusqlite::params![member, kind, message, link, site == 0, now(), actor, group],
     )?;
     if email != 0 {
         c.execute("INSERT INTO outbox(notification_id, created_at) VALUES(?1,?2)", rusqlite::params![c.last_insert_rowid(), now()]).ok();
     }
+    if site != 0 {
+        wake(member);
+    }
     Ok(())
+}
+
+/// Plain words for a kind of notification, as the bell and the notifications page name it.
+pub fn kind_label(kind: &str) -> &'static str {
+    match kind {
+        "message" | "dm_watch" => "Message",
+        "my_order" => "My order",
+        "reservation" | "order" => "Order",
+        "offer" => "Offer",
+        "inquiry" => "Question",
+        "follow" => "Follow",
+        "following" => "New cards",
+        "social" => "Like or comment",
+        "review" => "Vouch",
+        "wish" => "Wishlist",
+        "announcement" => "News",
+        "staff" => "Staff",
+        "view" => "Views",
+        "price" => "Price",
+        "expiry" | "status" => "Listing",
+        _ => "Note",
+    }
 }
 
 /// Mail waiting to go out: (notification id, email address, kind, message, link). The mailer deletes what it sent.
@@ -2099,10 +2195,8 @@ pub fn outbox_done(c: &Connection, id: i64, sent: bool) -> rusqlite::Result<()> 
 pub fn notifications_page(c: &Connection, member: i64, page: i64, per: i64) -> rusqlite::Result<(Vec<members::Notification>, i64)> {
     let total: i64 = c.query_row("SELECT COUNT(*) FROM notifications WHERE member_id=?1", [member], |r| r.get(0))?;
     let v = c
-        .prepare("SELECT id, member_id, kind, message, link, is_read, created_at FROM notifications WHERE member_id=?1 ORDER BY created_at DESC, id DESC LIMIT ?2 OFFSET ?3")?
-        .query_map(rusqlite::params![member, per, page.max(0) * per], |r| {
-            Ok(members::Notification { id: r.get(0)?, member_id: r.get(1)?, kind: r.get(2)?, message: r.get(3)?, link: r.get(4)?, is_read: r.get::<_, i64>(5)? != 0, created_at: r.get(6)? })
-        })?
+        .prepare(&format!("SELECT {} FROM {} WHERE n.member_id=?1 ORDER BY n.created_at DESC, n.id DESC LIMIT ?2 OFFSET ?3", members::NOTE_COLS, members::NOTE_FROM))?
+        .query_map(rusqlite::params![member, per, page.max(0) * per], members::map_note)?
         .collect::<Result<_, _>>()?;
     Ok((v, total))
 }
@@ -2599,7 +2693,7 @@ pub fn place_vault_order(c: &Connection, buyer: i64, lines: &[(i64, i64)], messa
         let total: f64 = items.iter().map(|i| i.price * i.qty as f64).sum();
         let admins: Vec<i64> = c.prepare("SELECT id FROM members WHERE role='admin' AND blocked=0")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
         for a in admins {
-            notify(c, a, "order", &format!("{name} ordered {} card{} from the vault for {}.", items.iter().map(|i| i.qty).sum::<i64>(), if items.len() == 1 && items[0].qty == 1 { "" } else { "s" }, vault_search::peso(total)), "/admin/orders")?;
+            notify_from(c, a, buyer, "order", "", &format!("{name} ordered {} card{} from the vault for {}.", items.iter().map(|i| i.qty).sum::<i64>(), if items.len() == 1 && items[0].qty == 1 { "" } else { "s" }, vault_search::peso(total)), "/admin/orders")?;
         }
         Ok(Ok(id))
     })
@@ -2715,7 +2809,7 @@ fn answer_vault_order_now(c: &Connection, id: i64, status: &str, paid_via: &str)
     c.execute("UPDATE vault_orders SET status=?2, updated_at=?3, paid_via=?4 WHERE id=?1", rusqlite::params![id, status, t, members::clean_line(paid_via, 40)])?;
     match status {
         "Paid" => {
-            notify(c, o.buyer_id, "my_order", &format!("The vault marked your order of {} as paid. Enjoy your cards!", o.units()), "/me/orders?tab=buying")?;
+            notify(c, o.buyer_id, "my_order", &format!("The vault marked your order of {} as paid. Enjoy your cards! Tap to vouch for the vault.", o.units()), "/store/vault#vouches")?;
         }
         "Confirmed" => notify(c, o.buyer_id, "my_order", &format!("The vault accepted your order ({}). Time to pay.", o.total_text()), "/me/orders?tab=buying")?,
         _ => notify(c, o.buyer_id, "my_order", "The vault declined your order.", "/me/orders?tab=buying")?,
@@ -3605,14 +3699,77 @@ mod tests {
         push_subscribe(&c, 2, "https://fcm.googleapis.com/fcm/send/two", "k", "a").unwrap();
         assert!(!push(2), "they had said no to message alerts");
         assert_eq!(push_forget(&c, "https://fcm.googleapis.com/fcm/send/two").unwrap(), 1);
-        // Notes go to the queue only for the events the member wants pushed, and never for private messages.
+        // Notes go to the queue for the events the member wants pushed: on by default for what people wait on, off for
+        // views and hints, off where the member chose "Bell only", and never for private messages (they send their own).
         set_pref(&c, 3, "offer", true, false, true).unwrap();
         notify(&c, 3, "offer", "Juan offers ₱500", "/me/offers").unwrap();
+        notify(&c, 3, "view", "3 people looked at your card", "/me/listings").unwrap();
+        set_pref(&c, 3, "follow", true, false, false).unwrap();
         notify(&c, 3, "follow", "Someone follows your store", "/me/store").unwrap();
         notify(&c, 3, "message", "Juan: “hi”", "/me/messages?t=1").unwrap();
+        notify(&c, 3, "wish", "A card on your wishlist is for sale", "/all").unwrap();
         let q = take_push_outbox(&c, 10).unwrap();
-        assert_eq!(q, vec![(3, "offer".to_string(), "Juan offers ₱500".to_string(), "/me/offers".to_string())]);
+        assert_eq!(
+            q,
+            vec![
+                (3, "offer".to_string(), "Juan offers ₱500".to_string(), "/me/offers".to_string()),
+                (3, "wish".to_string(), "A card on your wishlist is for sale".to_string(), "/all".to_string()),
+            ]
+        );
         assert!(take_push_outbox(&c, 10).unwrap().is_empty(), "taken off the queue");
+    }
+
+    #[test]
+    fn one_cart_is_one_line_for_each_store_and_each_line_says_who() {
+        let c = db();
+        let (s, b, card) = seller_with_card(&c);
+        let Added::Yes(two) = add_listing(&c, s, "tcgdex:base1-25", "Dewgong - 025/102 - Base Set", "25/102", "Base Set", "", "").unwrap() else { panic!() };
+        members::set_card_value(&c, "tcgdex:base1-25", 50.0, now()).unwrap();
+        set_kind(&c, s, two, "sale").unwrap().unwrap();
+        reserve(&c, b, s, card, 1, "").unwrap().unwrap();
+        reserve(&c, b, s, two, 1, "").unwrap().unwrap();
+        let lines: Vec<(String, i64, String)> = c.prepare("SELECT message, actor_id, ref FROM notifications WHERE member_id=?1").unwrap().query_map([s], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(Result::unwrap).collect();
+        assert_eq!(lines.len(), 1, "one cart, one line: {lines:?}");
+        assert!(lines[0].0.starts_with("Buyer wants to buy 2 cards for ₱"), "{lines:?}");
+        assert_eq!((lines[0].1, lines[0].2.clone()), (b, format!("cart:{b}")));
+        assert_eq!(take_push_outbox(&c, 10).unwrap().iter().filter(|p| p.0 == s).count(), 1, "and one buzz");
+        // In the bell: the buyer's first letter (no picture yet) and the kind in plain words.
+        let n = members::notifications(&c, s, true).unwrap();
+        assert_eq!((n[0].actor_id, n[0].initial.as_str(), n[0].label.as_str()), (b, "B", "Order"));
+        // Tapping the line reads that line only.
+        toggle_follow(&c, b, s).unwrap();
+        assert_eq!(members::unread_notification_count(&c, s).unwrap(), 2);
+        assert_eq!(members::mark_one_read(&c, s, n[0].id).unwrap(), 1);
+        assert_eq!(members::mark_one_read(&c, b, n[0].id).unwrap(), 0, "only your own lines");
+        let n = members::notifications(&c, s, true).unwrap();
+        assert_eq!((n.len(), n[0].kind.as_str(), n[0].actor_id), (1, "follow", b), "a follow says who, too");
+        // A line from the site itself shows the site's logo.
+        notify(&c, s, "announcement", "News from the vault", "/").unwrap();
+        let n = members::notifications(&c, s, true).unwrap();
+        assert!(n[0].actor_id == 0 && n[0].avatar.contains("logo") && n[0].initial.is_empty(), "{:?}", n[0]);
+    }
+
+    #[test]
+    fn likes_on_one_post_are_one_line_until_it_is_read() {
+        let c = db();
+        let a = create(&c, "Ash", "h").unwrap().unwrap();
+        let (m, b) = (create(&c, "Misty", "h").unwrap().unwrap(), create(&c, "Brock", "h").unwrap().unwrap());
+        notify_from(&c, a, m, "social", "react:7", "Misty liked your post.", "/posts/7").unwrap();
+        notify_from(&c, a, b, "social", "react:7", "Brock and 1 other liked your post.", "/posts/7").unwrap();
+        notify_from(&c, a, b, "social", "react:8", "Brock liked your other post.", "/posts/8").unwrap();
+        let lines = |c: &Connection| -> Vec<(String, i64)> { c.prepare("SELECT message, actor_id FROM notifications WHERE member_id=?1 ORDER BY id").unwrap().query_map([a], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().map(Result::unwrap).collect() };
+        assert_eq!(lines(&c), vec![("Brock and 1 other liked your post.".to_string(), b), ("Brock liked your other post.".to_string(), b)], "the first line brought up to date");
+        assert_eq!(take_push_outbox(&c, 10).unwrap().len(), 2, "one buzz per post, not one per like");
+        members::mark_notifications_read(&c, a, None).unwrap();
+        notify_from(&c, a, m, "social", "react:7", "Misty and 2 others liked your post.", "/posts/7").unwrap();
+        assert_eq!(lines(&c).len(), 3, "once read, the next like is news again");
+        // Someone who turned a kind off hears nothing of it, grouped or not.
+        set_pref(&c, a, "social", false, false, false).unwrap();
+        notify_from(&c, a, m, "social", "react:9", "Misty liked your post.", "/posts/9").unwrap();
+        assert_eq!(lines(&c).len(), 3);
+        assert_eq!(kind_label("following"), "New cards");
+        assert_eq!(default_pref("view"), (true, false, false), "views stay in the bell");
+        assert_eq!(default_pref("follow"), (true, false, true), "what people wait on rings the phone");
     }
 
     #[test]
