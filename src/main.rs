@@ -647,7 +647,7 @@ async fn sitemap(State(app): State<App>) -> Res {
         }
         // Each open store with its own address. members::approved already leaves out trainers who are blocked or not approved;
         // a seller with no store address uses the trainer page above.
-        for t in trainers.iter().filter(|t| !t.blocked && t.seller && !t.slug.is_empty()) {
+        for t in trainers.iter().filter(|t| !t.blocked && t.seller && !t.store_hidden && !t.slug.is_empty()) {
             x.push_str(&format!("<url><loc>{site}/store/{}</loc></url>\n", xml_escape(&t.slug)));
         }
         x.push_str("</urlset>\n");
@@ -1096,6 +1096,7 @@ async fn main() {
         .route("/me", get(community::me))
         // the seller panel
         .route("/me/store", get(store::dash))
+        .route("/me/store/visibility", post(store::set_visibility))
         .route("/me/listings", get(store::listings))
         .route("/me/listings/bulk", post(store::bulk_listings))
         .route("/me/listings/move", post(store::move_cards))

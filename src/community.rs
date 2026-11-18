@@ -588,7 +588,8 @@ pub async fn seller_binder(State(app): State<App>, h: HeaderMap, Path((slug, b_s
     let nav = titled(nav, &format!("{} · {}", b.title, m.name));
     let awards: Vec<Award> = awards.into_iter().filter(|a| !a.reason.is_empty()).collect();
     // Hidden, sold or ended listings stay off the public page, as in the store. The trainer and staff see everything.
-    let cards: Vec<MemberCard> = cards.into_iter().filter(|c| is_me || owner || c.on_show()).collect();
+    // A store its seller hid shows none of its cards for sale to anyone else.
+    let cards: Vec<MemberCard> = cards.into_iter().filter(|c| is_me || owner || (c.on_show() && !(m.store_hidden && c.is_sale()))).collect();
     let highlight = m.highlight.and_then(|h| cards.iter().find(|c| c.id == h).cloned());
     let (cards, wishes, selling) = split_kinds(cards);
     Ok(html(if q.part.is_some() {
@@ -643,7 +644,8 @@ pub async fn trainer(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, 
     }
     let cards = if full { cards } else { vec![] };
     // Hidden, sold or ended listings stay off the public page, as in the store. The trainer and staff see everything.
-    let cards: Vec<MemberCard> = cards.into_iter().filter(|c| is_me || owner || c.on_show()).collect();
+    // A store its seller hid shows none of its cards for sale to anyone else.
+    let cards: Vec<MemberCard> = cards.into_iter().filter(|c| is_me || owner || (c.on_show() && !(t.store_hidden && c.is_sale()))).collect();
     let highlight = t.highlight.and_then(|h| cards.iter().find(|c| c.id == h).cloned());
     let (cards, wishes, selling) = split_kinds(cards);
     let mut nav = titled(nav, &t.name);
@@ -688,8 +690,9 @@ pub async fn member_card(State(app): State<App>, h: HeaderMap, Path((id, cid)): 
     if (!t.profile_ok || t.blocked) && !staff_view {
         return not_found(&app).await;
     }
-    // A hidden or ended listing is off the site, as in the store. A sold one stays, so order links still work.
-    if !staff_view && c.is_sale() && matches!(c.status.as_str(), "Hidden" | "Expired") {
+    // A hidden or ended listing is off the site, as in the store. A sold one stays, so order links still work. A store its
+    // seller hid shows none of its cards for sale.
+    if !staff_view && c.is_sale() && (matches!(c.status.as_str(), "Hidden" | "Expired") || t.store_hidden) {
         return not_found(&app).await;
     }
     // A shared link shows the card, its picture and price; listings for sale in an open store are indexed.

@@ -74,7 +74,7 @@ fn hits(c: &Connection, member: i64, key: &str, title: &str) -> rusqlite::Result
          FROM member_cards c JOIN members m ON m.id=c.member_id
          WHERE c.kind='sale' AND c.status='Active' AND c.qty>0 AND c.member_id<>?2
            AND (c.card_id=?1 OR c.card_id LIKE ?1 || '#%')
-           AND m.seller=1 AND m.blocked=0 AND m.profile_ok=1 AND m.status<>'Vacation'
+           AND m.seller=1 AND m.blocked=0 AND m.profile_ok=1 AND m.status<>'Vacation' AND m.store_hidden=0
          ORDER BY c.id",
     )?;
     let stores: Vec<(i64, i64, String)> = st.query_map(params![key, member], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<Result<_, _>>()?;

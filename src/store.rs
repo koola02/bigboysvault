@@ -7,7 +7,7 @@ use axum::{
     extract::{Multipart, Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Redirect, Response},
-    Json,
+    Form, Json,
 };
 use marcuru_rs::binder_sort;
 use marcuru_rs::db::{self, Collection, Product};
@@ -1256,8 +1256,9 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
     let Some(m) = with_db(app, move |c| members::by_slug(c, &s)).await? else { return not_found(app).await };
     let is_me = me.as_ref().is_some_and(|u| u.id == m.id);
     let staff = admin::can_moderate(app, h);
-    // Same rules as the trainer's page: blocked and not-yet-approved stores are for their owner and the vault's staff.
-    if (m.blocked || !m.profile_ok) && !is_me && !staff {
+    // Same rules as the trainer's page: blocked and not-yet-approved stores are for their owner and the vault's staff,
+    // and so is a store its seller hid.
+    if (m.blocked || !m.profile_ok || m.store_hidden) && !is_me && !staff {
         return not_found(app).await;
     }
     if !m.seller {
@@ -1805,7 +1806,8 @@ pub(crate) fn store_cards(c: &rusqlite::Connection, brand: &str) -> rusqlite::Re
     if vault.on_sale > 0 {
         out.push(vault);
     }
-    for (m, s, _) in sellers::directory(c)? {
+    // A store its seller hid isn't listed (the vault's Sellers page still shows it).
+    for (m, s, _) in sellers::directory(c)?.into_iter().filter(|(m, _, _)| !m.store_hidden) {
         out.push(seller_card(c, m, s)?);
     }
     out.sort_by(|a, b| b.last.cmp(&a.last).then_with(|| a.name.cmp(&b.name)));
@@ -2017,12 +2019,42 @@ async fn seller_by_slug(app: &App, slug: String) -> Result<Option<Member>, (Stat
     with_db(app, move |c| members::by_slug(c, &slug)).await
 }
 
+#[derive(Deserialize)]
+pub struct VisibilityForm {
+    /// "1" hides the store, anything else shows it.
+    hidden: String,
+    /// The page to go back to: one of the seller's own pages, or their store.
+    #[serde(default)]
+    back: String,
+}
+
+/// POST /me/store/visibility (a form: `hidden` 1 or 0, `back`): a seller hides their store, or shows it again (the
+/// owner, 18 Nov 2026: "add an option as well for sellers to hide their store"). See `sellers::set_store_hidden`.
+pub async fn set_visibility(State(app): State<App>, h: HeaderMap, Form(f): Form<VisibilityForm>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    if let Err(r) = seller_only(&m) {
+        return Ok(r);
+    }
+    if over_limit(&app, format!("visibility|{}", m.id), 30) {
+        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of changes. Please wait a few minutes."));
+    }
+    let (id, hidden) = (m.id, f.hidden.trim() == "1");
+    with_db(&app, move |c| sellers::set_store_hidden(c, id, hidden)).await?;
+    app.forget();
+    let back = f.back.trim();
+    let back = if (back.starts_with("/me/") || back.starts_with("/store/")) && !back.contains("//") && !back.contains('\\') { back } else { "/me/settings" };
+    Ok(Redirect::to(back).into_response())
+}
+
 /// What a buyer is told when a store is blocked or not approved yet.
 const CLOSED: &str = "This store is closed.";
 
-/// A blocked store, or one the vault hasn't approved yet, takes no orders, offers or questions.
+/// A blocked store, one the vault hasn't approved yet, or one its seller hid, takes no orders, offers or questions.
 fn closed(seller: &Member) -> bool {
-    seller.blocked || !seller.profile_ok
+    seller.blocked || !seller.profile_ok || seller.store_hidden
 }
 
 /// The store a `/store/{slug}/...` address names, as the number its follows and vouches are kept under: 0 for the
@@ -2031,7 +2063,7 @@ async fn store_id(app: &App, slug: String) -> Result<Option<i64>, (StatusCode, S
     if slug == sellers::VAULT_SLUG {
         return Ok(Some(0));
     }
-    Ok(seller_by_slug(app, slug).await?.filter(|m| m.seller && m.profile_ok && !m.blocked).map(|m| m.id))
+    Ok(seller_by_slug(app, slug).await?.filter(Member::store_open).map(|m| m.id))
 }
 
 /// POST /store/{slug}/follow: follow the store, or stop. The vault's store ("vault") is followed like any other.
@@ -2295,9 +2327,9 @@ pub async fn checkout(State(app): State<App>, h: HeaderMap, Json(req): Json<Chec
     }
     for (cid, qty) in cards {
         let msg = message.clone();
-        // Whose card it is, and whether their store is open (not blocked, and approved).
+        // Whose card it is, and whether their store is open (not blocked, approved, and not hidden by its seller).
         let seller: Option<(i64, bool)> = with_db(&app, move |c| {
-            c.query_row("SELECT x.member_id, (m.blocked=0 AND m.profile_ok=1) FROM member_cards x JOIN members m ON m.id=x.member_id WHERE x.id=?1", [cid], |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0))).optional()
+            c.query_row("SELECT x.member_id, (m.blocked=0 AND m.profile_ok=1 AND m.store_hidden=0) FROM member_cards x JOIN members m ON m.id=x.member_id WHERE x.id=?1", [cid], |r| Ok((r.get(0)?, r.get::<_, i64>(1)? != 0))).optional()
         })
         .await?;
         let Some((sid, open)) = seller else {
@@ -2732,7 +2764,7 @@ pub async fn bookmark(State(app): State<App>, h: HeaderMap, Json(req): Json<Book
     let on = with_db(&app, move |c| match kind.as_str() {
         "card" => {
             let there: i64 = c.query_row(
-                "SELECT COUNT(*) FROM member_cards k JOIN members m ON m.id=k.member_id WHERE k.id=?1 AND k.kind='sale' AND k.status NOT IN ('Hidden','Expired') AND m.profile_ok=1 AND m.blocked=0",
+                "SELECT COUNT(*) FROM member_cards k JOIN members m ON m.id=k.member_id WHERE k.id=?1 AND k.kind='sale' AND k.status NOT IN ('Hidden','Expired') AND m.profile_ok=1 AND m.blocked=0 AND m.store_hidden=0",
                 [id],
                 |r| r.get(0),
             )?;
@@ -2832,7 +2864,7 @@ fn bm_store(c: &rusqlite::Connection, id: i64, brand: &str) -> rusqlite::Result<
         return Ok(Some(BmStore { id: 0, name: brand.to_string(), url: VAULT_STORE.into(), avatar: "/static/img/logo-sm-144.png?v=1".into(), initial: String::new(), logo: true, sub: format!("{} card{} for sale", db::thousands(n), if n == 1 { "" } else { "s" }) }));
     }
     let Some(m) = members::get(c, id)? else { return Ok(None) };
-    let open = m.seller && m.profile_ok && !m.blocked;
+    let open = m.store_open();
     let sub = if !open {
         "This store is closed for now".to_string()
     } else if m.on_vacation() {
@@ -2897,7 +2929,7 @@ pub async fn bookmarks_page(State(app): State<App>, h: HeaderMap) -> Res {
                     let Some(owner) = owner else { continue };
                     let (Some(k), Some(m)) = (members::card(c, owner, r)?, members::get(c, owner)?) else { continue };
                     // What the card's own page would refuse to show isn't shown here either.
-                    if m.blocked || !m.profile_ok || !k.is_sale() || matches!(k.status.as_str(), "Hidden" | "Expired") {
+                    if m.blocked || !m.profile_ok || m.store_hidden || !k.is_sale() || matches!(k.status.as_str(), "Hidden" | "Expired") {
                         continue;
                     }
                     let open = m.seller && m.profile_ok && !m.on_vacation();

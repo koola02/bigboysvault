@@ -724,10 +724,11 @@ pub fn set_featured(c: &Connection, store: i64, f: &Featured) -> rusqlite::Resul
 }
 
 /// What makes a seller's card buyable right now, the same for The Vault page and Ask the Vault: for sale and Active, in
-/// stock, not past its end date (`?1` is the time now), in a store that is approved, not blocked, selling and not on
-/// vacation (the same checks as `can_sell`). Copies an open reservation holds are not for sale: `LEFT` counts the rest.
+/// stock, not past its end date (`?1` is the time now), in a store that is approved, not blocked, selling, not on
+/// vacation and not hidden by its seller (the same checks as `can_sell`). Copies an open reservation holds are not for
+/// sale: `LEFT` counts the rest.
 const OPEN_FOR_SALE: &str = "c.kind='sale' AND c.status='Active' AND c.qty>0 AND (c.expires_at<=0 OR c.expires_at>=?1)
-           AND m.seller=1 AND m.profile_ok=1 AND m.blocked=0 AND m.status<>'Vacation'";
+           AND m.seller=1 AND m.profile_ok=1 AND m.blocked=0 AND m.status<>'Vacation' AND m.store_hidden=0";
 /// A listing's copies that no open reservation holds.
 const LEFT: &str = "c.qty - COALESCE((SELECT SUM(r.qty) FROM reservations r WHERE r.card_id=c.id AND r.status IN ('Pending','Confirmed')),0)";
 
@@ -1104,9 +1105,12 @@ fn can_buy(c: &Connection, buyer: i64, seller: i64, card_id: i64, qty: i64) -> r
 /// Why `qty` copies of this listing can't be sold right now: the store, the card and the copies left.
 fn can_sell(c: &Connection, seller: i64, card_id: i64, qty: i64) -> rusqlite::Result<Result<MemberCard, &'static str>> {
     let Some(card) = members::card(c, seller, card_id)? else { return Ok(Err("That card isn't in this store.")) };
-    let (status, selling, blocked, profile_ok): (String, i64, i64, i64) =
-        c.query_row("SELECT status, seller, blocked, profile_ok FROM members WHERE id=?1", [seller], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?;
-    if blocked != 0 || profile_ok == 0 {
+    let (status, selling, blocked, profile_ok, hidden): (String, i64, i64, i64, i64) = c.query_row(
+        "SELECT status, seller, blocked, profile_ok, store_hidden FROM members WHERE id=?1",
+        [seller],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+    )?;
+    if blocked != 0 || profile_ok == 0 || hidden != 0 {
         return Ok(Err("This store is closed."));
     }
     if selling == 0 {
@@ -1822,6 +1826,14 @@ pub fn followers(c: &Connection, seller: i64) -> rusqlite::Result<i64> {
     c.query_row("SELECT COUNT(*) FROM store_follows WHERE seller_id=?1", [seller], |r| r.get(0))
 }
 
+/// A seller hides their store from everyone else, or shows it again. Hidden, it is left out of Stores, The Vault page,
+/// Ask the Vault, the feed, wishlist alerts, bookmarks and the sitemap, its page and cards are not found, and it takes
+/// no orders, offers or questions; orders already placed carry on, and its owner keeps working on it.
+pub fn set_store_hidden(c: &Connection, seller: i64, hidden: bool) -> rusqlite::Result<()> {
+    c.execute("UPDATE members SET store_hidden=?2 WHERE id=?1", rusqlite::params![seller, hidden as i64])?;
+    Ok(())
+}
+
 /// Who follows this store (for telling them about new cards).
 pub fn follower_ids(c: &Connection, seller: i64) -> rusqlite::Result<Vec<i64>> {
     let v = c.prepare("SELECT follower_id FROM store_follows WHERE seller_id=?1")?.query_map([seller], |r| r.get(0))?.collect::<Result<_, _>>()?;
@@ -1906,10 +1918,10 @@ pub fn bookmarks_of(c: &Connection, member: i64) -> rusqlite::Result<Vec<(String
 pub fn bookmark_count(c: &Connection, member: i64) -> rusqlite::Result<i64> {
     c.query_row(
         "SELECT (SELECT COUNT(*) FROM bookmarks b WHERE b.member_id=?1 AND (
-                   (b.kind='store' AND (b.ref=0 OR EXISTS(SELECT 1 FROM members m WHERE m.id=b.ref AND m.blocked=0)))
+                   (b.kind='store' AND (b.ref=0 OR EXISTS(SELECT 1 FROM members m WHERE m.id=b.ref AND m.blocked=0 AND m.store_hidden=0)))
                 OR (b.kind='product' AND EXISTS(SELECT 1 FROM products p WHERE p.id=b.ref))))
               + (SELECT COUNT(*) FROM listing_saves s JOIN member_cards k ON k.id=s.card_id JOIN members m ON m.id=k.member_id
-                 WHERE s.member_id=?1 AND m.blocked=0 AND m.profile_ok=1 AND k.kind='sale' AND k.status NOT IN ('Hidden','Expired'))",
+                 WHERE s.member_id=?1 AND m.blocked=0 AND m.profile_ok=1 AND m.store_hidden=0 AND k.kind='sale' AND k.status NOT IN ('Hidden','Expired'))",
         [member],
         |r| r.get(0),
     )
@@ -2764,12 +2776,13 @@ pub fn cart_lines(c: &Connection, vault_ids: &[i64], card_ids: &[i64]) -> rusqli
     }
     for id in card_ids.iter().take(60) {
         let row = c
-            .query_row(&format!("SELECT {}, COALESCE(NULLIF(TRIM(m.store_name), ''), m.name), m.slug, m.status, m.seller, m.blocked, m.profile_ok FROM member_cards c JOIN members m ON m.id=c.member_id WHERE c.id=?1", members::CARD_COLS), [id], |r| {
-                Ok((members::map_card(r, 0)?, r.get::<_, String>(members::CARD_N)?, r.get::<_, String>(members::CARD_N + 1)?, r.get::<_, String>(members::CARD_N + 2)?, r.get::<_, i64>(members::CARD_N + 3)?, r.get::<_, i64>(members::CARD_N + 4)? != 0 || r.get::<_, i64>(members::CARD_N + 5)? == 0))
+            .query_row(&format!("SELECT {}, COALESCE(NULLIF(TRIM(m.store_name), ''), m.name), m.slug, m.status, m.seller, m.blocked, m.profile_ok, m.store_hidden FROM member_cards c JOIN members m ON m.id=c.member_id WHERE c.id=?1", members::CARD_COLS), [id], |r| {
+                let closed = r.get::<_, i64>(members::CARD_N + 4)? != 0 || r.get::<_, i64>(members::CARD_N + 5)? == 0 || r.get::<_, i64>(members::CARD_N + 6)? != 0;
+                Ok((members::map_card(r, 0)?, r.get::<_, String>(members::CARD_N)?, r.get::<_, String>(members::CARD_N + 1)?, r.get::<_, String>(members::CARD_N + 2)?, r.get::<_, i64>(members::CARD_N + 3)?, closed))
             })
             .optional()?;
         match row {
-            // A blocked or not-yet-approved store is hidden everywhere else, so the cart shows nothing about it either:
+            // A blocked, not-yet-approved or hidden store is hidden everywhere else, so the cart shows nothing about it either:
             // no card name, picture, price or seller. Only the id the browser sent, and why.
             Some((_, _, _, _, _, true)) => out.push(CartLine { kind: "card", id: *id, title: "A card from a closed store".into(), price: 0.0, image: String::new(), url: "/stores".into(), ok: false, why: "This store is closed.".into(), seller_id: 0, seller_name: String::new(), seller_slug: String::new(), left: 0 }),
             Some((k, name, slug, status, selling, _)) => {
@@ -2923,7 +2936,7 @@ mod tests {
         let Added::Yes(gym) = add_listing(&c, m, "tcgdex:x-gym", "Staryu", "1", "Set", "", "").unwrap() else { panic!() };
         let (_, stores, _) = read();
         assert_eq!(stores.iter().map(|x| x.title.as_str()).collect::<Vec<_>>(), vec!["Shop", "Cerulean Gym"], "the store with the most cards first");
-        for (shut, open) in [("status='Vacation'", "status='Active'"), ("blocked=1", "blocked=0"), ("profile_ok=0", "profile_ok=1"), ("seller=0", "seller=1")] {
+        for (shut, open) in [("status='Vacation'", "status='Active'"), ("blocked=1", "blocked=0"), ("profile_ok=0", "profile_ok=1"), ("seller=0", "seller=1"), ("store_hidden=1", "store_hidden=0")] {
             c.execute(&format!("UPDATE members SET {shut} WHERE id=?1"), [s]).unwrap();
             let (_, stores, cards) = read();
             assert_eq!(stores.iter().map(|x| x.id).collect::<Vec<_>>(), vec![m], "{shut}: the store is left out");
@@ -3542,7 +3555,7 @@ mod tests {
     fn the_cart_hides_closed_stores_and_names_the_short_vault_lines() {
         let c = db();
         let (s, _, card) = seller_with_card(&c);
-        for sql in ["UPDATE members SET blocked=1 WHERE id=?1", "UPDATE members SET blocked=0, profile_ok=0 WHERE id=?1"] {
+        for sql in ["UPDATE members SET blocked=1 WHERE id=?1", "UPDATE members SET blocked=0, profile_ok=0 WHERE id=?1", "UPDATE members SET profile_ok=1, store_hidden=1 WHERE id=?1"] {
             c.execute(sql, [s]).unwrap();
             let l = &cart_lines(&c, &[], &[card]).unwrap()[0];
             assert!(!l.ok && l.why == "This store is closed.", "{l:?}");

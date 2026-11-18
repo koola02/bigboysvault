@@ -1914,3 +1914,7 @@ dialog.of .sheet-acts { display: flex; justify-content: flex-end; gap: 8px; }
   .sc-shoot { flex: 1 1 100%; justify-content: center; }
   .sc-again { align-self: stretch; }
 }
+/* ---------- 42-hide. A seller hides their store (Store settings): the notes they see while it is hidden ---------- */
+.mgr-hidden form, .sf-hidden form { display: inline; margin: 0 0 0 4px; }
+.mgr-hidden .linkbtn, .sf-hidden .linkbtn { font-weight: 700; }
+.st-vis form { margin: 0; }

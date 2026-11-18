@@ -7,6 +7,17 @@
   {% include "store_tabs.html" %}
   <p class="mc-how">How your store looks and how buyers reach you. Your pay details are shown only to a buyer whose reservation you've accepted.</p>
 
+  <div class="me-card st-form st-vis" id="visCard">
+    <h2 class="h2">Who can see your store</h2>
+    {% if p.m.store_hidden %}
+    <p class="me-how"><b>Your store is hidden.</b> Only you can see it and its cards. Buyers can't find it, order or make offers. Orders already placed carry on.</p>
+    <form method="post" action="/me/store/visibility"><input type="hidden" name="hidden" value="0"><input type="hidden" name="back" value="/me/settings"><button class="btn" type="submit">Show my store</button></form>
+    {% else %}
+    <p class="me-how">Everyone can see your store. Hide it while you get it ready or take a break: only you will see it and its cards, buyers can't find it, order or make offers, and orders already placed carry on.</p>
+    <form method="post" action="/me/store/visibility"><input type="hidden" name="hidden" value="1"><input type="hidden" name="back" value="/me/settings"><button class="btn ghost" type="submit">Hide my store</button></form>
+    {% endif %}
+  </div>
+
   <form class="me-card st-form" id="slugForm">
     <h2 class="h2">Store address</h2>
     <p class="me-how">Your store lives at <b>{{ site }}/store/<span id="slugNow">{{ p.m.slug }}</span></b>. Share that link anywhere.</p>

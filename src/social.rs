@@ -402,7 +402,7 @@ pub fn sync(c: &Connection, now: i64) -> rusqlite::Result<()> {
             "SELECT c.member_id, date(CASE WHEN c.updated_at>0 THEN c.updated_at ELSE m.created_at END, 'unixepoch', '+8 hours') d, COUNT(*),
                     MAX(CASE WHEN c.updated_at>0 THEN c.updated_at ELSE m.created_at END), group_concat(c.id)
              FROM member_cards c JOIN members m ON m.id=c.member_id
-             WHERE c.kind='sale' AND c.status='Active' AND c.qty>0 AND m.seller=1 AND m.blocked=0 AND m.profile_ok=1 AND m.status<>'Vacation'
+             WHERE c.kind='sale' AND c.status='Active' AND c.qty>0 AND m.seller=1 AND m.blocked=0 AND m.profile_ok=1 AND m.status<>'Vacation' AND m.store_hidden=0
              GROUP BY c.member_id, d",
         )?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))?
@@ -507,7 +507,7 @@ mod tests {
         let c = Connection::open_in_memory().unwrap();
         c.execute_batch(
             "CREATE TABLE products(id INTEGER PRIMARY KEY, title TEXT, variant TEXT NOT NULL DEFAULT '', price REAL, available INTEGER NOT NULL DEFAULT 1, image TEXT NOT NULL DEFAULT 'x.jpg', created_at TEXT NOT NULL DEFAULT '', api_id TEXT NOT NULL DEFAULT '', finish TEXT NOT NULL DEFAULT '');
-             CREATE TABLE members(id INTEGER PRIMARY KEY, name TEXT, avatar TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT '', seller INTEGER NOT NULL DEFAULT 0, blocked INTEGER NOT NULL DEFAULT 0, profile_ok INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'Active', created_at INTEGER NOT NULL DEFAULT 100);
+             CREATE TABLE members(id INTEGER PRIMARY KEY, name TEXT, avatar TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT '', seller INTEGER NOT NULL DEFAULT 0, blocked INTEGER NOT NULL DEFAULT 0, profile_ok INTEGER NOT NULL DEFAULT 1, status TEXT NOT NULL DEFAULT 'Active', store_hidden INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL DEFAULT 100);
              CREATE TABLE member_cards(id INTEGER PRIMARY KEY, member_id INTEGER, kind TEXT, status TEXT NOT NULL DEFAULT 'Active', qty INTEGER NOT NULL DEFAULT 1, updated_at INTEGER NOT NULL DEFAULT 0);
              CREATE TABLE vouches(id INTEGER PRIMARY KEY, member_id INTEGER, parent_id INTEGER, text TEXT, hidden INTEGER NOT NULL DEFAULT 0, created_at INTEGER);
              CREATE TABLE price_history(api_id TEXT, finish TEXT, day TEXT, php REAL, PRIMARY KEY(api_id, finish, day));

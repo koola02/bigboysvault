@@ -118,6 +118,9 @@ pub struct Member {
     pub seller: bool,
     /// The colour of the store's border on Stores and on its page: '' for gold, or "#rrggbb" (`sellers::border_ok`).
     pub store_border: String,
+    /// The seller hid their store: everyone else is shown nothing of it, as for a store that isn't approved
+    /// (`sellers::set_store_hidden`). Its owner and the vault's staff still see it all.
+    pub store_hidden: bool,
 }
 
 /// An admin's tags for a trainer, as a list.
@@ -193,6 +196,10 @@ impl Member {
     }
     pub fn on_vacation(&self) -> bool {
         self.status == "Vacation"
+    }
+    /// A store everyone may see and buy from: selling, approved, not blocked and not hidden by its seller.
+    pub fn store_open(&self) -> bool {
+        self.seller && self.profile_ok && !self.blocked && !self.store_hidden
     }
     /// The named links a seller added, as (label, address, the address in short: "facebook.com/vaultshop").
     pub fn social_links(&self) -> Vec<(String, String, String)> {
@@ -357,6 +364,8 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         ("status", "TEXT NOT NULL DEFAULT 'Active'"),
         // The colour of the store's border on Stores and on its page: '' is gold (everyone's to start with), or #rrggbb.
         ("store_border", "TEXT NOT NULL DEFAULT ''"),
+        // The seller hid their store (Store settings, 18 Nov 2026): only they and the vault's staff see it and its cards.
+        ("store_hidden", "INTEGER NOT NULL DEFAULT 0"),
     ] {
         let there: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('members') WHERE name=?1", [col], |r| r.get(0))?;
         if there == 0 {
@@ -699,8 +708,8 @@ pub struct Highlight {
     pub card: MemberCard,
 }
 
-const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags,m.slug,m.fb_url,m.tiktok_url,m.links,m.cover_photo,m.location,m.contact_info,m.contact_public,m.status,m.email,m.store_name,m.fb_group_url,m.ig_url,m.shopee_url,m.pay_info,m.pay_methods,m.notify_views,m.pay_public,m.seller,m.store_border");
-const MEMBER_COUNT: usize = 33;
+const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags,m.slug,m.fb_url,m.tiktok_url,m.links,m.cover_photo,m.location,m.contact_info,m.contact_public,m.status,m.email,m.store_name,m.fb_group_url,m.ig_url,m.shopee_url,m.pay_info,m.pay_methods,m.notify_views,m.pay_public,m.seller,m.store_border,m.store_hidden");
+const MEMBER_COUNT: usize = 34;
 
 fn map_member(r: &Row) -> rusqlite::Result<Member> {
     Ok(Member {
@@ -737,6 +746,7 @@ fn map_member(r: &Row) -> rusqlite::Result<Member> {
         pay_public: r.get::<_, i64>(30)? != 0,
         seller: r.get::<_, i64>(31)? != 0,
         store_border: r.get(32)?,
+        store_hidden: r.get::<_, i64>(33)? != 0,
     })
 }
 
@@ -1520,7 +1530,7 @@ pub fn vouchable_store(c: &Connection, store: i64) -> rusqlite::Result<bool> {
     if store == 0 {
         return Ok(true);
     }
-    let n: i64 = c.query_row("SELECT COUNT(*) FROM members WHERE id=?1 AND seller=1 AND profile_ok=1 AND blocked=0", [store], |r| r.get(0))?;
+    let n: i64 = c.query_row("SELECT COUNT(*) FROM members WHERE id=?1 AND seller=1 AND profile_ok=1 AND blocked=0 AND store_hidden=0", [store], |r| r.get(0))?;
     Ok(n > 0)
 }
 
@@ -1695,7 +1705,7 @@ pub fn approved_faces(c: &Connection, limit: i64) -> rusqlite::Result<Vec<Member
 
 pub fn approved_highlights(c: &Connection, limit: i64) -> rusqlite::Result<Vec<Highlight>> {
     let n = MEMBER_COUNT;
-    let sql = format!("SELECT {MEMBER_COLS},{CARD_COLS} FROM members m JOIN member_cards c ON c.id=m.highlight AND c.member_id=m.id WHERE m.profile_ok=1 AND m.blocked=0 AND (c.kind<>'sale' OR c.status IN ('Active','Out of stock','Reserved')) ORDER BY m.updated_at DESC, m.id DESC LIMIT ?1");
+    let sql = format!("SELECT {MEMBER_COLS},{CARD_COLS} FROM members m JOIN member_cards c ON c.id=m.highlight AND c.member_id=m.id WHERE m.profile_ok=1 AND m.blocked=0 AND (c.kind<>'sale' OR (c.status IN ('Active','Out of stock','Reserved') AND m.store_hidden=0)) ORDER BY m.updated_at DESC, m.id DESC LIMIT ?1");
     let mut st = c.prepare(&sql)?;
     let v = st.query_map([limit], |r| Ok(Highlight { member: map_member(r)?, card: map_card(r, n)? }))?.collect::<Result<Vec<_>, _>>()?;
     Ok(v)
