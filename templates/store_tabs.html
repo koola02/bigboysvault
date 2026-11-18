@@ -20,7 +20,7 @@
   <div class="mgr-bar-r">{% if p.tab != "listings" && p.tab != "add" %}<a class="btn mgr-create" href="/me/add"><span aria-hidden="true">+</span> Add cards</a>{% endif %}</div>
 </header>
 {% if !p.m.profile_ok && p.tab != "me" %}<p class="mgr-note">The vault owner still has to approve your page. Until then only you can see your store.</p>{% endif %}
-{% if p.m.on_vacation() %}<p class="mgr-note">Your store is on vacation: nobody can reserve or make offers. Change it in <a href="/me/settings">Store settings</a>.</p>{% endif %}
+{% if p.m.on_vacation() %}<p class="mgr-note">Your store is on vacation: nobody can order or make offers. Change it in <a href="/me/settings">Store settings</a>.</p>{% endif %}
 {% if p.m.store_hidden %}<div class="mgr-note mgr-hidden">Your store is hidden: only you can see it and its cards. <form method="post" action="/me/store/visibility"><input type="hidden" name="hidden" value="0"><input type="hidden" name="back" value="/me/store"><button class="linkbtn" type="submit">Show my store</button></form></div>{% endif %}
 {% else %}
 <header class="mgr-bar mgr-bar-solo">

@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Dashboard · Admin{% endblock %}
+{% block title %}Overview · Vault Manager{% endblock %}
 {% block head %}{% include "mgr_head.html" %}{% endblock %}
 {% block layout %}wide{% endblock %}
 {% block content %}
 <section class="wrap admin wide dash" id="dashRoot">
   {% include "admin_tabs.html" %}
-  <h1 class="h1 a-title">Dashboard</h1>
+  <h1 class="h1 a-title">Overview</h1>
   <p class="mc-how">How the vault is doing, worked out from your cards, your visitors and your trainers. Everything here is live.</p>
   {% if nav.applications > 0 %}<a class="ap-banner" href="/admin/sellers#applications"><b>{{ nav.applications }} trainer{% if nav.applications != 1 %}s{% endif %} applied to sell</b><span>See the applications →</span></a>{% endif %}
 

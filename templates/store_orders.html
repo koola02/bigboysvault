@@ -1,38 +1,74 @@
 {% extends "base.html" %}
-{% block title %}{% if p.m.seller %}Orders · My store{% else %}My orders{% endif %} · {{ nav.brand }}{% endblock %}
+{% block title %}{% if p.m.seller %}Orders · Store Manager{% else %}My orders{% endif %} · {{ nav.brand }}{% endblock %}
 {% block head %}{% include "mgr_head.html" %}{% endblock %}
 {% block layout %}wide{% endblock %}
 {% block content %}
+{#- Each fact on its own line, a label then its value (the owner, 18 Nov 2026: "linear and prettified"). Every order
+    has Message, for the buyer and for the seller. The cards a buyer sent one store together are one order: one heading
+    with Accept all, Mark all paid and Decline all, and each card can still be answered by itself. -#}
 <section class="wrap admin wide st" id="storeOrders">
   {% include "store_tabs.html" %}
   <div class="alerts-card" data-alerts="order" hidden></div>
   {% if p.m.seller %}
   <nav class="seg st-subtabs" aria-label="Orders">
     <a href="/me/orders" class="{% if tab == "selling" %}on{% endif %}">Selling{% if p.todo > 0 %} <span class="seg-n">{{ p.todo }}</span>{% endif %}</a>
-    <a href="/me/orders?tab=questions" class="{% if tab == "questions" %}on{% endif %}">Questions</a>
+    {% if has_questions || tab == "questions" %}<a href="/me/orders?tab=questions" class="{% if tab == "questions" %}on{% endif %}">Questions</a>{% endif %}
     <a href="/me/orders?tab=sales" class="{% if tab == "sales" %}on{% endif %}">Sales</a>
     <a href="/me/orders?tab=buying" class="{% if tab == "buying" %}on{% endif %}">My buying</a>
   </nav>
   {% endif %}
 
   {% if tab == "selling" %}
-  <h2 class="h2">Reservations</h2>
-  {% if selling.reservations.is_empty() %}<div class="me-empty st-empty"><b>No reservations yet.</b><span>When a buyer reserves one of your cards, it shows here with what to do next.</span></div>{% endif %}
+  <h2 class="h2">Orders</h2>
+  {% if groups.is_empty() %}<div class="me-empty st-empty"><b>No orders yet.</b><span>When a buyer orders one of your cards, it shows here with what to do next.</span></div>{% endif %}
   <ul class="st-orders">
-    {% for o in selling.reservations %}
+    {% for g in groups %}
+    {% if g.many() %}
+    <li class="st-group" data-batch="{{ g.first().batch }}"{% if g.has("Pending") %} data-status="Pending"{% endif %}>
+      <div class="st-group-h">
+        <b>Order from <a href="/trainers/{{ g.first().buyer_id }}" data-float>{{ g.first().buyer_name }}</a></b>
+        <dl class="sf-rows st-facts">
+          <div class="sf-row"><dt class="sf-row-l">Cards</dt><dd class="sf-row-v">{{ g.units() }}</dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Total</dt><dd class="sf-row-v"><b class="st-total">{{ g.total_text() }}</b></dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Sent</dt><dd class="sf-row-v">{{ g.first().when() }}</dd></div>
+          {% if !g.first().message.is_empty() %}<div class="sf-row"><dt class="sf-row-l">Note</dt><dd class="sf-row-v sf-text">“{{ g.first().message }}”</dd></div>{% endif %}
+        </dl>
+        <div class="st-order-acts">
+          {% if g.has("Pending") %}<button type="button" class="btn" data-batch-res="Confirmed">Accept all</button>{% endif %}
+          {% if g.has("Confirmed") %}<span class="st-paidvia"><select data-via aria-label="Paid how">{% for m in methods %}<option{% if p.m.has_pay(m) %} selected{% endif %}>{{ m }}</option>{% endfor %}</select><button type="button" class="btn" data-batch-res="Paid">Mark all paid ✓</button></span>{% endif %}
+          {% if g.has("Pending") || g.has("Confirmed") %}<button type="button" class="btn ghost" data-batch-res="Declined">Decline all</button>{% endif %}
+          <button type="button" class="btn ghost dm-add" data-dm-to="{{ g.first().buyer_id }}" data-dm-card="{{ g.first().card_id }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg><span>Message</span></button>
+        </div>
+      </div>
+      <ul class="st-orders st-group-rows">
+    {% endif %}
+    {% for o in g.rows %}
     <li class="st-order" data-kind="reservation" data-id="{{ o.id }}" data-status="{{ o.status }}">
       <a class="st-order-pic" href="/trainers/{{ o.seller_id }}/cards/{{ o.card_id }}" data-float>{% if !o.image.is_empty() %}<img src="{{ o.image }}" width="60" height="84" alt="" loading="lazy">{% endif %}</a>
       <div class="st-order-body">
-        <b>{{ o.title }}</b> <small>{{ o.cond }} · ×{{ o.qty }} · {{ o.price_text() }} each</small>
-        <p class="st-order-who"><a href="/trainers/{{ o.buyer_id }}" data-float>{{ o.buyer_name }}</a> · {{ o.when() }} · <span class="st-status" data-s="{{ o.status }}">{{ o.status }}</span>{% if !o.paid_via.is_empty() %} · {{ o.paid_via }}{% endif %}</p>
-        {% if !o.message.is_empty() %}<p class="st-order-msg">“{{ o.message }}”</p>{% endif %}
+        <b>{{ o.title }}</b>
+        <dl class="sf-rows st-facts">
+          {% if !g.many() %}<div class="sf-row"><dt class="sf-row-l">Buyer</dt><dd class="sf-row-v"><a href="/trainers/{{ o.buyer_id }}" data-float>{{ o.buyer_name }}</a></dd></div>{% endif %}
+          <div class="sf-row"><dt class="sf-row-l">Condition</dt><dd class="sf-row-v">{{ o.cond }}</dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Copies</dt><dd class="sf-row-v">{{ o.qty }} × {{ o.price_text() }}</dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Status</dt><dd class="sf-row-v"><span class="st-status" data-s="{{ o.status }}">{{ o.status_text() }}</span></dd></div>
+          {% if !g.many() %}<div class="sf-row"><dt class="sf-row-l">Sent</dt><dd class="sf-row-v">{{ o.when() }}</dd></div>{% endif %}
+          {% if !o.paid_via.is_empty() %}<div class="sf-row"><dt class="sf-row-l">Paid with</dt><dd class="sf-row-v">{{ o.paid_via }}</dd></div>{% endif %}
+          {% if !g.many() && !o.message.is_empty() %}<div class="sf-row"><dt class="sf-row-l">Note</dt><dd class="sf-row-v sf-text">“{{ o.message }}”</dd></div>{% endif %}
+        </dl>
         <div class="st-order-acts">
           <b class="st-total">{{ o.total_text() }}</b>
           {% if o.status == "Pending" %}<button type="button" class="btn" data-res="Confirmed">Accept</button><button type="button" class="btn ghost" data-res="Declined">Decline</button>
           {% else if o.status == "Confirmed" %}<span class="st-paidvia"><select data-via aria-label="Paid how">{% for m in methods %}<option{% if p.m.has_pay(m) %} selected{% endif %}>{{ m }}</option>{% endfor %}</select><button type="button" class="btn" data-res="Paid">Mark paid ✓</button></span><button type="button" class="btn ghost" data-res="Declined">Cancel</button>{% endif %}
+          {% if !g.many() %}<button type="button" class="btn ghost dm-add" data-dm-to="{{ o.buyer_id }}" data-dm-card="{{ o.card_id }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg><span>Message</span></button>{% endif %}
         </div>
       </div>
     </li>
+    {% endfor %}
+    {% if g.many() %}
+      </ul>
+    </li>
+    {% endif %}
     {% endfor %}
   </ul>
 
@@ -43,15 +79,25 @@
     <li class="st-order" data-kind="offer" data-id="{{ o.id }}" data-status="{{ o.status }}">
       <a class="st-order-pic" href="/trainers/{{ o.seller_id }}/cards/{{ o.card_id }}" data-float>{% if !o.image.is_empty() %}<img src="{{ o.image }}" width="60" height="84" alt="" loading="lazy">{% endif %}</a>
       <div class="st-order-body">
-        <b>{{ o.title }}</b> <small>{{ o.cond }} · ×{{ o.qty }}</small>
-        <p class="st-order-who"><a href="/trainers/{{ o.buyer_id }}" data-float>{{ o.buyer_name }}</a> offers <b>{{ o.price_text() }}</b>{% if o.counter > 0.0 %} · you countered {{ o.counter_text() }}{% endif %} · {{ o.when() }} · <span class="st-status" data-s="{{ o.status }}">{{ o.status }}</span></p>
-        {% if !o.message.is_empty() %}<p class="st-order-msg">“{{ o.message }}”</p>{% endif %}
-        {% if o.status == "Pending" %}
+        <b>{{ o.title }}</b>
+        <dl class="sf-rows st-facts">
+          <div class="sf-row"><dt class="sf-row-l">Buyer</dt><dd class="sf-row-v"><a href="/trainers/{{ o.buyer_id }}" data-float>{{ o.buyer_name }}</a></dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Condition</dt><dd class="sf-row-v">{{ o.cond }}</dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Copies</dt><dd class="sf-row-v">{{ o.qty }}</dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Offer</dt><dd class="sf-row-v"><b>{{ o.price_text() }}</b></dd></div>
+          {% if o.counter > 0.0 %}<div class="sf-row"><dt class="sf-row-l">Your counter</dt><dd class="sf-row-v">{{ o.counter_text() }}</dd></div>{% endif %}
+          <div class="sf-row"><dt class="sf-row-l">Status</dt><dd class="sf-row-v"><span class="st-status" data-s="{{ o.status }}">{{ o.status_text() }}</span></dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Sent</dt><dd class="sf-row-v">{{ o.when() }}</dd></div>
+          {% if !o.message.is_empty() %}<div class="sf-row"><dt class="sf-row-l">Note</dt><dd class="sf-row-v sf-text">“{{ o.message }}”</dd></div>{% endif %}
+        </dl>
         <div class="st-order-acts">
+          {% if o.status == "Pending" %}
           <button type="button" class="btn" data-offer="Accepted">Accept {{ o.price_text() }}</button>
           <span class="st-counter"><input type="number" min="1" step="1" inputmode="numeric" placeholder="₱ counter" data-counter aria-label="Counter price"><button type="button" class="btn ghost" data-offer="Countered">Counter</button></span>
           <button type="button" class="btn ghost" data-offer="Declined">Decline</button>
-        </div>{% endif %}
+          {% endif %}
+          <button type="button" class="btn ghost dm-add" data-dm-to="{{ o.buyer_id }}" data-dm-card="{{ o.card_id }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg><span>Message</span></button>
+        </div>
       </div>
     </li>
     {% endfor %}
@@ -59,13 +105,17 @@
 
   {% else if tab == "questions" %}
   <h2 class="h2">Questions from buyers</h2>
-  {% if selling.questions.is_empty() %}<div class="me-empty st-empty"><b>No questions yet.</b><span>Buyers can ask about a card or your store. Replies go to their Orders page.</span></div>{% endif %}
+  {% if selling.questions.is_empty() %}<div class="me-empty st-empty"><b>No questions.</b><span>Buyers ask with Message now: questions arrive in your Messages.</span></div>{% endif %}
   <ul class="st-orders">
     {% for q in selling.questions %}
     <li class="st-order st-q" data-id="{{ q.id }}">
       {% if !q.image.is_empty() %}<a class="st-order-pic" href="/trainers/{{ q.seller_id }}/cards/{{ q.card_id.unwrap_or(0) }}" data-float><img src="{{ q.image }}" width="60" height="84" alt="" loading="lazy"></a>{% endif %}
       <div class="st-order-body">
-        <p class="st-order-who"><a href="/trainers/{{ q.sender_id }}" data-float>{{ q.sender_name }}</a>{% if !q.title.is_empty() %} about <b>{{ q.title }}</b>{% endif %} · {{ q.when() }}</p>
+        <dl class="sf-rows st-facts">
+          <div class="sf-row"><dt class="sf-row-l">From</dt><dd class="sf-row-v"><a href="/trainers/{{ q.sender_id }}" data-float>{{ q.sender_name }}</a></dd></div>
+          {% if !q.title.is_empty() %}<div class="sf-row"><dt class="sf-row-l">About</dt><dd class="sf-row-v">{{ q.title }}</dd></div>{% endif %}
+          <div class="sf-row"><dt class="sf-row-l">Sent</dt><dd class="sf-row-v">{{ q.when() }}</dd></div>
+        </dl>
         <p class="st-order-msg">“{{ q.message }}”</p>
         {% if q.reply.is_empty() %}<form class="st-reply" data-reply><textarea rows="2" maxlength="500" placeholder="Your reply" required aria-label="Reply"></textarea><button class="btn" type="submit">Reply</button></form>
         {% else %}<p class="st-replied"><b>You:</b> {{ q.reply }} <small>{{ q.reply_when() }}</small></p>{% endif %}
@@ -76,7 +126,7 @@
 
   {% else if tab == "sales" %}
   <h2 class="h2">Sales</h2>
-  {% if sales.is_empty() %}<div class="me-empty st-empty"><b>No sales yet.</b><span>A sale is counted when you mark a reservation as paid.</span></div>{% else %}
+  {% if sales.is_empty() %}<div class="me-empty st-empty"><b>No sales yet.</b><span>A sale is counted when you mark an order as paid.</span></div>{% else %}
   <table class="st-table">
     <thead><tr><th>Card</th><th>Buyer</th><th>How</th><th>When</th><th class="num">Paid</th></tr></thead>
     <tbody>{% for s in sales %}<tr><td>{{ s.title }}{% if s.qty > 1 %} ×{{ s.qty }}{% endif %}</td><td><a href="/trainers/{{ s.buyer_id }}" data-float>{{ s.buyer_name }}</a></td><td>{{ s.paid_via }}</td><td>{{ s.when() }}</td><td class="num">{{ s.amount_text() }}</td></tr>{% endfor %}</tbody>
@@ -90,14 +140,19 @@
     <li class="st-order ao-order" data-kind="vault" data-id="{{ o.id }}" data-status="{{ o.status }}">
       <div class="ao-pics">{% for i in o.items.iter().take(3) %}{% if !i.image.is_empty() %}<img src="{{ i.image }}" width="60" height="84" alt="" loading="lazy">{% endif %}{% endfor %}</div>
       <div class="st-order-body">
-        <b>From {{ nav.brand }}</b> <small>{{ o.units() }} card{% if o.units() != 1 %}s{% endif %} · <b>{{ o.total_text() }}</b></small>
+        <b>From {{ nav.brand }}</b>
         <ul class="ao-lines">{% for i in o.items %}<li><a href="/products/{{ i.handle }}" data-float>{{ i.title }}</a> <span>×{{ i.qty }} · {{ i.price_text() }} each</span><b>{{ i.line_text() }}</b></li>{% endfor %}</ul>
-        <p class="st-order-who">{{ o.when() }} · <span class="st-status" data-s="{{ o.status }}">{{ o.status }}</span></p>
+        <dl class="sf-rows st-facts">
+          <div class="sf-row"><dt class="sf-row-l">Cards</dt><dd class="sf-row-v">{{ o.units() }}</dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Total</dt><dd class="sf-row-v"><b>{{ o.total_text() }}</b></dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Status</dt><dd class="sf-row-v"><span class="st-status" data-s="{{ o.status }}">{% if o.status == "Pending" %}New{% else if o.status == "Confirmed" %}Accepted{% else %}{{ o.status }}{% endif %}</span></dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Sent</dt><dd class="sf-row-v">{{ o.when() }}</dd></div>
+        </dl>
         <p class="st-line">{{ o.buyer_line() }}</p>
         {% if o.status == "Confirmed" %}
-        <div class="st-pay"><b>How to pay {{ nav.brand }}</b>{% if !vault_pay.0.is_empty() %}<span class="st-pay-m">{{ vault_pay.0.replace(",", " · ") }}</span>{% endif %}<p>{% if vault_pay.1.is_empty() %}The vault hasn't written pay details yet. Ask in the chat.{% else %}{{ vault_pay.1 }}{% endif %}</p><small>Pay in your own app, then wait for the vault to mark it paid.</small></div>
+        <div class="st-pay"><b>How to pay {{ nav.brand }}</b>{% if !vault_pay.0.is_empty() %}<span class="st-pay-m">{{ vault_pay.0.replace(",", " · ") }}</span>{% endif %}<p>{% if vault_pay.1.is_empty() %}The vault hasn't written pay details yet. Ask with Message.{% else %}{{ vault_pay.1 }}{% endif %}</p><small>Pay in your own app, then wait for the vault to mark it paid.</small></div>
         {% endif %}
-        {% if o.is_open() %}<div class="st-order-acts"><button type="button" class="btn ghost" data-vcancel>Cancel</button><a class="linkbtn inline" href="/chat">Ask the vault</a></div>{% endif %}
+        <div class="st-order-acts">{% if o.is_open() %}<button type="button" class="btn ghost" data-vcancel>Cancel</button>{% endif %}<button type="button" class="btn ghost dm-add"{% if let Some(i) = o.items.first() %} data-dm-vault="{{ i.product_id }}"{% else %} data-dm-to="0"{% endif %}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg><span>Message</span></button></div>
       </div>
     </li>
     {% endfor %}
@@ -105,13 +160,20 @@
     <li class="st-order" data-kind="reservation" data-id="{{ o.id }}" data-status="{{ o.status }}">
       <a class="st-order-pic" href="/trainers/{{ o.seller_id }}/cards/{{ o.card_id }}" data-float>{% if !o.image.is_empty() %}<img src="{{ o.image }}" width="60" height="84" alt="" loading="lazy">{% endif %}</a>
       <div class="st-order-body">
-        <b>{{ o.title }}</b> <small>{{ o.cond }} · ×{{ o.qty }} · {{ o.price_text() }} each · <b>{{ o.total_text() }}</b></small>
-        <p class="st-order-who">from <a href="/store/{{ o.seller_slug }}">{{ o.seller_name }}</a> · {{ o.when() }} · <span class="st-status" data-s="{{ o.status }}">{{ o.status }}</span></p>
+        <b>{{ o.title }}</b>
+        <dl class="sf-rows st-facts">
+          <div class="sf-row"><dt class="sf-row-l">Store</dt><dd class="sf-row-v"><a href="/store/{{ o.seller_slug }}">{{ o.seller_name }}</a></dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Condition</dt><dd class="sf-row-v">{{ o.cond }}</dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Copies</dt><dd class="sf-row-v">{{ o.qty }} × {{ o.price_text() }}</dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Total</dt><dd class="sf-row-v"><b>{{ o.total_text() }}</b></dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Status</dt><dd class="sf-row-v"><span class="st-status" data-s="{{ o.status }}">{{ o.status_text() }}</span></dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Sent</dt><dd class="sf-row-v">{{ o.when() }}</dd></div>
+        </dl>
         <p class="st-line">{{ o.buyer_line() }}</p>
         {% for (rid, methods, info) in pay %}{% if *rid == o.id %}
-        <div class="st-pay"><b>How to pay {{ o.seller_name }}</b>{% if !methods.is_empty() %}<span class="st-pay-m">{{ methods.replace(",", " · ") }}</span>{% endif %}<p>{% if info.is_empty() %}The seller hasn't written pay details yet. Ask them with the button below.{% else %}{{ info }}{% endif %}</p><small>Pay in your own app, then wait for the seller to mark it paid. {{ nav.brand }} never handles the money.</small></div>
+        <div class="st-pay"><b>How to pay {{ o.seller_name }}</b>{% if !methods.is_empty() %}<span class="st-pay-m">{{ methods.replace(",", " · ") }}</span>{% endif %}<p>{% if info.is_empty() %}The seller hasn't written pay details yet. Ask them with Message.{% else %}{{ info }}{% endif %}</p><small>Pay in your own app, then wait for the seller to mark it paid. {{ nav.brand }} never handles the money.</small></div>
         {% endif %}{% endfor %}
-        {% if o.is_open() %}<div class="st-order-acts"><button type="button" class="btn ghost" data-res="Cancelled">Cancel</button><a class="linkbtn inline" href="/store/{{ o.seller_slug }}#ask">Ask the seller</a></div>{% endif %}
+        <div class="st-order-acts">{% if o.is_open() %}<button type="button" class="btn ghost" data-res="Cancelled">Cancel</button>{% endif %}<button type="button" class="btn ghost dm-add" data-dm-card="{{ o.card_id }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg><span>Message</span></button></div>
       </div>
     </li>
     {% endfor %}
@@ -119,11 +181,22 @@
     <li class="st-order" data-kind="offer" data-id="{{ o.id }}" data-status="{{ o.status }}">
       <a class="st-order-pic" href="/trainers/{{ o.seller_id }}/cards/{{ o.card_id }}" data-float>{% if !o.image.is_empty() %}<img src="{{ o.image }}" width="60" height="84" alt="" loading="lazy">{% endif %}</a>
       <div class="st-order-body">
-        <b>{{ o.title }}</b> <small>{{ o.cond }} · ×{{ o.qty }} · your offer {{ o.price_text() }}{% if o.counter > 0.0 %} · seller asks <b>{{ o.counter_text() }}</b>{% endif %}</small>
-        <p class="st-order-who">to <a href="/store/{{ o.seller_slug }}">{{ o.seller_name }}</a> · {{ o.when() }} · <span class="st-status" data-s="{{ o.status }}">{{ o.status }}</span></p>
+        <b>{{ o.title }}</b>
+        <dl class="sf-rows st-facts">
+          <div class="sf-row"><dt class="sf-row-l">Store</dt><dd class="sf-row-v"><a href="/store/{{ o.seller_slug }}">{{ o.seller_name }}</a></dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Condition</dt><dd class="sf-row-v">{{ o.cond }}</dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Copies</dt><dd class="sf-row-v">{{ o.qty }}</dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Your offer</dt><dd class="sf-row-v">{{ o.price_text() }}</dd></div>
+          {% if o.counter > 0.0 %}<div class="sf-row"><dt class="sf-row-l">Seller asks</dt><dd class="sf-row-v"><b>{{ o.counter_text() }}</b></dd></div>{% endif %}
+          <div class="sf-row"><dt class="sf-row-l">Status</dt><dd class="sf-row-v"><span class="st-status" data-s="{{ o.status }}">{{ o.status_text() }}</span></dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Sent</dt><dd class="sf-row-v">{{ o.when() }}</dd></div>
+        </dl>
         <p class="st-line">{{ o.buyer_line() }}</p>
-        {% if o.status == "Countered" %}<div class="st-order-acts"><button type="button" class="btn" data-counter-answer="accept">Accept {{ o.counter_text() }}</button><button type="button" class="btn ghost" data-counter-answer="withdraw">No thanks</button></div>
-        {% else if o.status == "Pending" %}<div class="st-order-acts"><button type="button" class="btn ghost" data-counter-answer="withdraw">Take it back</button></div>{% endif %}
+        <div class="st-order-acts">
+          {% if o.status == "Countered" %}<button type="button" class="btn" data-counter-answer="accept">Accept {{ o.counter_text() }}</button><button type="button" class="btn ghost" data-counter-answer="withdraw">No thanks</button>
+          {% else if o.status == "Pending" %}<button type="button" class="btn ghost" data-counter-answer="withdraw">Take it back</button>{% endif %}
+          <button type="button" class="btn ghost dm-add" data-dm-card="{{ o.card_id }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg><span>Message</span></button>
+        </div>
       </div>
     </li>
     {% endfor %}
@@ -135,7 +208,11 @@
     {% for q in buying.questions %}
     <li class="st-order st-q">
       <div class="st-order-body">
-        <p class="st-order-who">to <b>{{ q.seller_name }}</b>{% if !q.title.is_empty() %} about {{ q.title }}{% endif %} · {{ q.when() }}</p>
+        <dl class="sf-rows st-facts">
+          <div class="sf-row"><dt class="sf-row-l">To</dt><dd class="sf-row-v">{{ q.seller_name }}</dd></div>
+          {% if !q.title.is_empty() %}<div class="sf-row"><dt class="sf-row-l">About</dt><dd class="sf-row-v">{{ q.title }}</dd></div>{% endif %}
+          <div class="sf-row"><dt class="sf-row-l">Sent</dt><dd class="sf-row-v">{{ q.when() }}</dd></div>
+        </dl>
         <p class="st-order-msg">“{{ q.message }}”</p>
         {% if q.reply.is_empty() %}<p class="st-line">No reply yet.</p>{% else %}<p class="st-replied"><b>{{ q.seller_name }}:</b> {{ q.reply }} <small>{{ q.reply_when() }}</small></p>{% endif %}
       </div>
@@ -150,7 +227,13 @@
     <li class="st-order" data-tx="{{ s.id }}">
       {% if !s.image.is_empty() %}<a class="st-order-pic" href="/trainers/{{ s.seller_id }}/cards/{{ s.card_id }}" data-float><img src="{{ s.image }}" width="60" height="84" alt="" loading="lazy"></a>{% endif %}
       <div class="st-order-body">
-        <b>{{ s.title }}</b> <small>×{{ s.qty }} · {{ s.amount_text() }} · from <a href="/trainers/{{ s.seller_id }}" data-float>{{ s.seller_name }}</a> · {{ s.when() }}</small>
+        <b>{{ s.title }}</b>
+        <dl class="sf-rows st-facts">
+          <div class="sf-row"><dt class="sf-row-l">From</dt><dd class="sf-row-v"><a href="/trainers/{{ s.seller_id }}" data-float>{{ s.seller_name }}</a></dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Copies</dt><dd class="sf-row-v">{{ s.qty }}</dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Paid</dt><dd class="sf-row-v">{{ s.amount_text() }}</dd></div>
+          <div class="sf-row"><dt class="sf-row-l">When</dt><dd class="sf-row-v">{{ s.when() }}</dd></div>
+        </dl>
         {% if s.reviewed %}<p class="st-line">✓ You reviewed this sale. Thank you!</p>{% else %}
         <form class="st-review" data-review="{{ s.id }}">
           <span class="st-stars" role="radiogroup" aria-label="Stars">{% for i in 1..6 %}<label><input type="radio" name="r{{ s.id }}" value="{{ i }}" class="sr" required><span>★</span></label>{% endfor %}</span>
@@ -165,5 +248,5 @@
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/admin-ui.js?v=10" defer></script>
-<script src="/static/store.js?v=11" defer></script>
+<script src="/static/store.js?v=12" defer></script>
 {% endblock %}

@@ -392,7 +392,7 @@ fn ring<T: Clone>(all: &[T], start: usize, n: usize) -> Vec<T> {
 /// A vault binder's set of cards the `round`-th time it comes up: the next cards each time, the first ones again after
 /// the last. A big binder is read a page at a time, each page going round before the next.
 fn vault_set(c: &rusqlite::Connection, handle: &str, round: usize) -> rusqlite::Result<Vec<Tile>> {
-    let page = |n: usize| db::list(c, &db::Query { collection: Some(handle.to_string()), q: String::new(), sort: String::new(), in_stock: true, page: n });
+    let page = |n: usize| db::list(c, &db::Query { collection: Some(handle.to_string()), in_stock: true, page: n, ..Default::default() });
     let (first, found) = page(0)?;
     let pages = usize::try_from(found).unwrap_or(0).div_ceil(db::PAGE_SIZE).max(1);
     let start = round * SET;

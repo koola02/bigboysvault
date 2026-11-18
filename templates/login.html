@@ -37,13 +37,14 @@
     message: 'Log in or register to send your message. You come straight back here after.',
     react: 'Log in or register to react and comment. You come straight back here after.',
     post: 'Log in or register to post. You come straight back here after.',
-    offer: 'Log in or register to reserve a card or make an offer. You come straight back here after.',
+    offer: 'Log in or register to order a card or make an offer. You come straight back here after.',
     bookmark: 'Log in or register to bookmark stores and cards. You come straight back here after.',
     follow: 'Log in or register to follow this store. You come straight back here after.',
     vouch: 'Log in or register to write a vouch. You come straight back here after.',
   };
+  let why = '';
   try {
-    const why = sessionStorage.getItem('bbv:login-why');
+    why = sessionStorage.getItem('bbv:login-why') || '';
     if (why) {
       sessionStorage.removeItem('bbv:login-why');
       const box = document.getElementById('loginWhy');
@@ -56,7 +57,8 @@
       sessionStorage.removeItem('bbv:after-login');
       if (safe(n)) {
         document.getElementById('loginNext').value = n;
-        document.getElementById('joinLink').href = '/join?next=' + encodeURIComponent(n);
+        // Registering to finish something (an order, a message) comes back to it; a plain Register lands on the new page.
+        if (why) document.getElementById('joinLink').href = '/join?next=' + encodeURIComponent(n);
       }
     }
   } catch (_) {}

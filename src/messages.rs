@@ -400,6 +400,8 @@ pub async fn open(State(app): State<App>, h: HeaderMap, Json(req): Json<OpenReq>
         let r = CardRef { vault: req.vault, card: req.card };
         let (to, card) = if r.vault.is_some() || r.card.is_some() {
             match card_copy(c, &r)? {
+                // A seller writing to the buyer of their own card (the Message button on an order): the card goes along.
+                Some((owner, copy)) if owner == m.id && req.to.is_some_and(|t| t != m.id && t != dm::VAULT) => (req.to.unwrap_or_default(), copy),
                 Some((owner, copy)) => (owner, copy),
                 None => return Ok(Err("That card isn't here any more.")),
             }

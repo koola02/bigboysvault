@@ -49,6 +49,7 @@
   <h2 class="h2" id="everything">Everything on sale</h2>
   <form class="filters vs-filters" action="{{ base }}#everything" hx-get="{{ base }}" hx-target="#grid" hx-select="#grid" hx-swap="outerHTML" hx-trigger="change, input from:.q delay:250ms" hx-push-url="true">
     <input class="q" type="search" name="q" value="{{ q }}" placeholder="Find a card in this store" aria-label="Find a card in this store" autocomplete="off" autocapitalize="off" spellcheck="false">
+    {% if !conds.is_empty() %}<select name="cond" aria-label="Condition"><option value="">Any condition</option>{% for o in conds %}<option{% if *o == cond %} selected{% endif %}>{{ o }}</option>{% endfor %}</select>{% endif %}
     <select name="sort" aria-label="Sort">
       <option value="" {% if sort == "" %}selected{% endif %}>Newest</option>
       <option value="price-asc" {% if sort == "price-asc" %}selected{% endif %}>Price: low to high</option>
@@ -58,7 +59,7 @@
   </form>
   <div id="grid" class="grid">
     {% include "grid.html" %}
-    {% if items.is_empty() %}<p class="empty">{% if q.is_empty() %}Nothing on sale right now.{% else %}No card for sale matches “{{ q }}”.{% endif %}</p>{% endif %}
+    {% if items.is_empty() %}<p class="empty">{% if q.is_empty() && cond.is_empty() %}Nothing on sale right now.{% else if q.is_empty() %}No card for sale in {{ cond }}.{% else %}No card for sale matches “{{ q }}”.{% endif %}</p>{% endif %}
   </div>
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

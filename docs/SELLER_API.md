@@ -82,7 +82,8 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 
 | Route | What |
 |---|---|
-| `GET /me/store` | Dashboard: on sale, stock value, sold, views (7/30 days, chart by day), followers, rating, to-do (open orders, questions, expiring), sales this week/month/ever, most looked at, popular binders, recent activity |
+| `GET /me/store` | The Store Manager's Overview: on sale, stock value, sold, views (7/30 days, chart by day), followers, rating, to-do (open orders, questions, expiring), sales this week/month/ever, most looked at, popular binders, recent activity. On sale, Sold and Binders open Listings, Sales and Binders |
+| `GET /me/store/page` | The seller's own store itself (the menu's "My store"): forwards to `/store/{slug}`; a trainer who doesn't sell goes to `/me/sell`, a visitor logs in first |
 | `GET /me/listings?q=&status=&binder=&sort=&id=` | Listings, filtered. `sort`: `newest`, `price-desc`, `price-asc`, `views`, `stock`, `title`, or the seller's order. `id` scrolls to a card |
 | `POST /me/listings/{id}` | Change one listing. JSON, any of: `price` (₱, 0 = follow the market), `cond`, `qty`, `status`, `finish`, `notes`, `binder_id` (null = none), `expires_days` (0 = no end), `title`/`set`/`number` (own-photo cards only), `flag` (ask the vault to check a custom card). Returns `card` |
 | `GET /me/listings/{id}` | One of the seller's cards (`{ ok, card }`, with `image_large`), so the "Add to your store" window can open filled in with it |
@@ -107,10 +108,10 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 | `GET /me/featured` | What the store shows on the Stores page: `binders` (those that can show, each with `on`), `cards` (highlighted, in order), `saved`, `max` (12) |
 | `GET /me/featured/choices?q=` | The seller's cards on sale now, to highlight |
 | `POST /me/featured` | `{ binders, cards }`: binder and card numbers, at most 12 of each; only the seller's own count. An empty choice shows nothing but the store's name. (Full admins: the same at `/admin/featured` for the vault, binders by handle, cards by product id) |
-| `GET /me/orders?tab=selling\|questions\|sales\|buying` | Orders page |
+| `GET /me/orders?tab=selling\|questions\|sales\|buying` | Orders page. Selling lists the cards one buyer sent together from one cart as one order (`reservations.batch`, the first card's id) with Accept all, Mark all paid and Decline all (each card's own route, in turn); every order has Message (to the buyer, with the card). The Questions tab shows only while the seller has questions from before asking became Message |
 | `POST /me/orders/reservations/{id}` | Seller: `{ status: "Confirmed" \| "Paid" \| "Declined", paid_via }`. Buyer: `{ status: "Cancelled" }`. `Paid` creates the sale, lowers stock |
 | `POST /me/orders/offers/{id}` | Seller: `{ status: "Accepted" \| "Declined" \| "Countered", counter }`. Buyer: `{ status: "accept" \| "withdraw" }` on a counter |
-| `POST /me/orders/questions/{id}/reply` | `{ text }` |
+| `POST /me/orders/questions/{id}/reply` | `{ text }` (old questions only: asking is Message now) |
 | `POST /me/reviews` | Buyer: `{ transaction_id, rating (1–5), text }`. Only the buyer of a finished sale, once; never the seller |
 | `POST /me/reviews/{id}/reply` | Seller: `{ text }` |
 | `GET /me/settings` | Store settings page |
@@ -142,7 +143,7 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 | `GET /store/{slug}/vouches` | The store's Vouches window: vouches written for it and, for a seller, the reviews from its finished sales |
 | `POST /store/{slug}/reserve` | `{ card_id, qty, message }`. Refused for the seller's own cards, on vacation, when not enough copies are free, or with an open reservation already |
 | `POST /store/{slug}/offer` | `{ card_id, qty, amount, message }` |
-| `POST /store/{slug}/ask` | `{ card_id?, message }` |
+| `POST /store/{slug}/ask` | `{ card_id?, message }`. Kept for old callers; nothing on the site asks this way any more (19 Nov 2026: Ask became Message) |
 | `GET /trainers/{id}/cards/{card}` | A card (the floating window). Counts one look per viewer per day, never the owner's |
 
 Reservations nobody answers, and accepted ones nobody pays, expire after 3 days (`sellers::RESERVATION_DAYS`)
@@ -157,7 +158,7 @@ There is no checkout and no payment: sending the cart places orders, and the sel
 | Route | What |
 |---|---|
 | `GET /cart/lines?v=1,2&c=3` | Fresh title, price, picture and availability for vault products (`v`) and sellers' cards (`c`) |
-| `POST /cart/checkout` | `{ items: [{ kind: "vault" \| "card", id, qty }], message }` → `{ placed, failed }`. The vault's lines become one `vault_orders` row; each seller's card becomes a reservation (`sellers::reserve`). 401 when signed out. |
+| `POST /cart/checkout` | `{ items: [{ kind: "vault" \| "card", id, qty }], message }` → `{ placed, failed }`. The vault's lines become one `vault_orders` row; each seller's card becomes a reservation (`sellers::reserve`), and one seller's cards share a `batch` (the first one's id): one order for that store. 401 when signed out. |
 | `GET /me/orders?tab=buying` | The buyer's reservations, offers and vault orders, with how to pay once accepted |
 | `POST /me/orders/vault/{id}` | `{ status: "Cancelled" }` while the order is still open |
 

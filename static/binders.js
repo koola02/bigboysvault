@@ -1,12 +1,11 @@
-/* Admin › Binders. Two grids that look exactly like the home page's Binders section:
-   "On your home page" (in order) and "Hidden". Drag a binder to move it (also between the two grids). Tap to edit.
+/* Admin › Binders. One grid in the order the vault's store page shows them. Drag a binder to move it. Tap to edit.
    Every change saves straight away. */
 (() => {
   const root = document.getElementById('bd'); if (!root || root.dataset.ready) return; root.dataset.ready = '1';
   const $ = (id) => document.getElementById(id);
   const A = window.Admin || { toast: () => {} };
-  const home = $('bdHome'), hidden = $('bdHidden'), sheet = $('bdSheet');
-  const f = { title: $('bdSheetT'), name: $('bdName'), onHome: $('bdOnHome'), file: $('bdFile'), auto: $('bdAuto'), state: $('bdState'), pick: $('bdPick'), del: $('bdDelete'), done: $('bdDone') };
+  const grid = $('bdGrid'), sheet = $('bdSheet');
+  const f = { title: $('bdSheetT'), name: $('bdName'), file: $('bdFile'), auto: $('bdAuto'), state: $('bdState'), pick: $('bdPick'), del: $('bdDelete'), done: $('bdDone') };
   let binders = JSON.parse(root.dataset.binders || '[]');
   let editing = null;          // handle being edited, or '' for a new binder
   let lastFocus = null;
@@ -21,7 +20,7 @@
   }
   const send = (h, body) => call('/admin/binders/' + encodeURIComponent(h), body);
 
-  /* ---------- the two grids ---------- */
+  /* ---------- the grid ---------- */
   function tile(b) {
     const li = document.createElement('li'); li.className = 'bd-tile'; li.dataset.h = b.handle;
     const btn = document.createElement('button'); btn.type = 'button'; btn.className = 'binder bd-card-btn';
@@ -42,21 +41,14 @@
     b.addEventListener('click', () => openEdit('')); li.append(b); return li;
   }
   function draw() {
-    const on = binders.filter((b) => b.on_home), off = binders.filter((b) => !b.on_home);
-    home.replaceChildren(...on.map(tile), addTile());
-    hidden.replaceChildren(...off.map(tile));
-    if (!off.length) { const p = document.createElement('li'); p.className = 'bd-empty'; p.textContent = 'Drag a binder here to hide it from the home page.'; hidden.append(p); }
-    $('bdHomeN').textContent = on.length; $('bdHiddenN').textContent = off.length;
+    grid.replaceChildren(...binders.map(tile), addTile());
+    $('bdN').textContent = binders.length;
   }
   draw();
 
-  if (window.dragSort) window.dragSort([home, hidden], { item: '.bd-tile', key: (li) => li.dataset.h, onDrop: async ([onList, offList], li) => {
-    const moved = binders.find((b) => b.handle === li.dataset.h);
-    try {
-      await call('/admin/binders/order', { handles: [...onList, ...offList], home: onList });
-      const nowOn = onList.includes(li.dataset.h);
-      A.toast(moved && moved.on_home !== nowOn ? (nowOn ? `“${moved.title}” is on the home page ✓` : `“${moved.title}” is hidden ✓`) : 'Order saved ✓', { kind: 'ok' });
-    } catch (err) { A.toast(err.message, { kind: 'err' }); draw(); }
+  if (window.dragSort) window.dragSort([grid], { item: '.bd-tile', key: (li) => li.dataset.h, onDrop: async ([list]) => {
+    try { await call('/admin/binders/order', { handles: list }); A.toast('Order saved ✓', { kind: 'ok' }); }
+    catch (err) { A.toast(err.message, { kind: 'err' }); draw(); }
   } });
 
   /* ---------- the edit sheet ---------- */
@@ -68,7 +60,7 @@
     f.title.textContent = isNew ? 'New binder' : 'Edit binder';
     f.name.value = b ? b.title : ''; f.name.placeholder = 'For example: Eeveelutions';
     f.done.textContent = isNew ? 'Create binder' : 'Done';
-    if (b) { f.onHome.checked = b.on_home; loadPicks(b); }
+    if (b) loadPicks(b);
     // Its cards are added, taken out and arranged on the binder's own page, in its editor (binder-tools.js).
     const cards = $('bdCards'); if (cards && b) cards.href = `/collections/${encodeURIComponent(b.handle)}#edit`;
     sheet.hidden = false; requestAnimationFrame(() => sheet.classList.add('open')); document.body.style.overflow = 'hidden';
@@ -100,7 +92,7 @@
     const v = f.name.value.trim();
     if (editing === '') {
       if (!v) { f.name.focus(); return A.toast('Type a name for the new binder.', { kind: 'err' }); }
-      try { await call('/admin/binders', { title: v }); A.toast(`“${v}” added. Add cards to it from Quick add or Add by set.`, { kind: 'ok', ms: 4500 }); closeEdit(); }
+      try { await call('/admin/binders', { title: v }); A.toast(`“${v}” added. Add its cards from Add cards.`, { kind: 'ok', ms: 4500 }); closeEdit(); }
       catch (err) { A.toast(err.message, { kind: 'err' }); }
       return;
     }
@@ -112,10 +104,6 @@
   f.name.addEventListener('change', () => { if (editing) saveName(); });
   f.name.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); if (editing === '') saveName(); else { f.name.blur(); } } });
   f.done.addEventListener('click', async () => { if (editing === '') return saveName(); await saveName(); closeEdit(); });
-  f.onHome.addEventListener('change', async () => {
-    try { await send(editing, { on_home: f.onHome.checked }); A.toast(f.onHome.checked ? 'Now on the home page ✓' : 'Hidden from the home page', { kind: 'ok' }); }
-    catch (err) { f.onHome.checked = !f.onHome.checked; A.toast(err.message, { kind: 'err' }); }
-  });
   f.auto.addEventListener('click', () => setPicture({ cover: 'auto' }, 'Picture set to the most valuable card ✓'));
   f.file.addEventListener('change', async () => {
     const file = f.file.files[0]; if (!file) return;

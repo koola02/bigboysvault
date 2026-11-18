@@ -309,7 +309,7 @@
       x.addEventListener('click', () => this.setCard(null));
       box.append(x);
       $('.dm-form', this.node).classList.add('has-text');
-      $('textarea', this.node).placeholder = 'Ask about this card…';
+      $('textarea', this.node).placeholder = 'Write about this card…';
     },
     minimise() {
       if (!this.node) return;
@@ -636,6 +636,8 @@
     const b = e.target.closest('[data-dm-vault], [data-dm-card], [data-dm-to]'); if (!b) return;
     e.preventDefault(); e.stopPropagation();
     const body = b.dataset.dmVault != null ? { vault: Number(b.dataset.dmVault) } : b.dataset.dmCard != null ? { card: Number(b.dataset.dmCard) } : { to: Number(b.dataset.dmTo) };
+    // A seller's Message on an order: to the buyer, with the card.
+    if (b.dataset.dmCard != null && b.dataset.dmTo != null) body.to = Number(b.dataset.dmTo);
     b.classList.add('busy');
     try {
       const j = await api('/dm/open', body);

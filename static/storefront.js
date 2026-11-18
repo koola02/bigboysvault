@@ -1,4 +1,4 @@
-// A seller's public store: find a card, reserve it or make an offer, ask the seller, follow, save.
+// A seller's public store: find a card, order it or make an offer, follow, save.
 (() => {
   const root = document.getElementById('storefront'); if (!root) return;
   const $ = (id) => document.getElementById(id);
@@ -46,50 +46,7 @@
 
   /* (Bookmarking a card is bookmarks.js's, the same on every page.) */
 
-  /* ----- the ask sheet (Offer and Message are in each card's window: offer.js, dm.js) ----- */
-  // A sheet slides up on phones and sits in the middle on big screens (the "open" class does that).
-  // While it's open, Tab stays inside it, and closing it puts the keyboard back on the button that opened it.
-  let back = null;
-  const focusables = (s) => [...s.querySelectorAll('.sheet-panel input, .sheet-panel textarea, .sheet-panel select, .sheet-panel button, .sheet-panel a[href]')]
-    .filter((n) => !n.disabled && !n.closest('[hidden]') && n.getClientRects().length > 0);
-  const open = (s) => {
-    if (!s) return;
-    clearTimeout(s._t);
-    back = document.activeElement;
-    s.hidden = false; document.body.style.overflow = 'hidden';
-    requestAnimationFrame(() => {
-      s.classList.add('open');
-      const first = focusables(s).find((n) => n.matches('input, textarea, select')) || focusables(s)[0];
-      first?.focus({ preventScroll: true });
-    });
-  };
-  const close = (s) => {
-    if (!s || s.hidden || !s.classList.contains('open')) return;
-    s.classList.remove('open'); document.body.style.overflow = '';
-    s._t = setTimeout(() => { s.hidden = true; }, 320);
-    if (back && back.isConnected) back.focus({ preventScroll: true });
-    back = null;
-  };
-  document.querySelectorAll('[data-close]').forEach((n) => n.addEventListener('click', () => close(n.closest('.sheet'))));
-  document.addEventListener('keydown', (e) => {
-    const s = document.querySelector('.sheet.open'); if (!s) return;
-    if (e.key === 'Escape') { e.preventDefault(); close(s); return; }
-    if (e.key !== 'Tab') return;
-    const f = focusables(s); if (!f.length) return;
-    const first = f[0], last = f[f.length - 1];
-    if (!s.contains(document.activeElement)) { e.preventDefault(); first.focus(); }
-    else if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-  });
-  /* ----- ask the seller ----- */
-  const askSheet = $('askSheet'), askForm = $('askForm');
-  $('askBtn')?.addEventListener('click', () => { if (!me) return signIn(); open(askSheet); });
-  if (location.hash === '#ask' && me && askSheet) open(askSheet);
-  askForm?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try { await send(`/store/${slug}/ask`, { message: askForm.message.value }); close(askSheet); askForm.reset(); toast('Sent ✓ The reply shows in My orders and the bell.'); }
-    catch (err) { toast(err.message, true); }
-  });
+  /* (Asking the seller is Message, in each card's window and on the store's header: dm.js. Offers: offer.js.) */
 
   /* (Replies to reviews are written in the Vouches window: store-head.js.) */
 

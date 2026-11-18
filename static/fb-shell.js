@@ -43,6 +43,11 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
       a.href = mine;
       if (a.id === 'mnMe') { if (here === mine) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }
     });
+    // "My store" opens the store itself, the same way (until then /me/store/page forwards).
+    if (me && me.store) document.querySelectorAll('[data-my-store]').forEach((a) => {
+      a.href = me.store;
+      if (a.classList.contains('mn-i')) { if (here === me.store || here.startsWith(`${me.store}/`)) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }
+    });
   };
   let last = null;
   try { last = JSON.parse(localStorage.getItem('bbv:me') || 'null'); } catch (_) {}
@@ -56,6 +61,13 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     document.querySelectorAll('[data-owner-only]').forEach((n) => { n.hidden = !(me && String(me.id) === n.dataset.ownerOnly); });
     if (admin) pencils();
     try { if (me || admin) localStorage.setItem('bbv:me', JSON.stringify({ me, admin })); else localStorage.removeItem('bbv:me'); } catch (_) {}
+  });
+
+  // A plain tap on Log in or Register comes back to this page afterwards, as the buttons that need an account already do.
+  document.addEventListener('click', (e) => {
+    const a = e.target.closest && e.target.closest('a[href="/login"], a[href="/join"]');
+    if (!a || e.button || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey || /^\/(login|join)(\/|$)/.test(here)) return;
+    try { sessionStorage.setItem('bbv:after-login', location.pathname + location.search); sessionStorage.removeItem('bbv:login-why'); } catch (_) {}
   });
 
   /* ---------- the site's name in the phone header: it shrinks until it fits beside the buttons, never cut ---------- */

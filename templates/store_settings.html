@@ -37,7 +37,7 @@
         <select name="status">
           <option value="Active"{% if p.m.status == "Active" %} selected{% endif %}>Active — open for orders</option>
           <option value="Away"{% if p.m.status == "Away" %} selected{% endif %}>Away — open, but replies may be slow</option>
-          <option value="Vacation"{% if p.m.status == "Vacation" %} selected{% endif %}>Vacation — nobody can reserve or make offers</option>
+          <option value="Vacation"{% if p.m.status == "Vacation" %} selected{% endif %}>Vacation — nobody can order or make offers</option>
         </select>
       </label>
       <label>Location <small>city or area, for meetups</small><input name="location" value="{{ p.m.location }}" maxlength="80" autocomplete="off"></label>
@@ -56,7 +56,7 @@
     </div>
 
     <h2 class="h2">Getting paid</h2>
-    <p class="me-how">{{ nav.brand }} never handles money. A buyer pays you directly, in their own app, once you accept their reservation. These details are shown only then.</p>
+    <p class="me-how">{{ nav.brand }} never handles money. A buyer pays you directly, in their own app, once you accept their order. These details are shown only then.</p>
     <div class="me-fields">
       <input type="hidden" name="pay_methods_sent" value="1">
       <div class="st-methods">{% for m in methods %}<label class="chk"><input type="checkbox" class="sr" name="pay_method" value="{{ m }}"{% if p.m.has_pay(m) %} checked{% endif %}><span class="chk-box"></span> {{ m }}</label>{% endfor %}</div>
@@ -74,5 +74,5 @@
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/admin-ui.js?v=10" defer></script>
-<script src="/static/store.js?v=11" defer></script>
+<script src="/static/store.js?v=12" defer></script>
 {% endblock %}

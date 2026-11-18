@@ -27,7 +27,7 @@ pub async fn guide(State(app): State<App>, h: HeaderMap) -> Res {
     }
     let (mut nav, items, autos) = with_db(&app, |c| {
         let nav = crate::chrome(c)?;
-        let q = db::Query { collection: None, q: String::new(), sort: String::new(), in_stock: true, page: 0 };
+        let q = db::Query { in_stock: true, ..Default::default() };
         let (items, _) = db::list(c, &q)?;
         let off = marcuru_rs::social::auto_off(c)?;
         let autos = marcuru_rs::social::AUTO.iter().map(|(k, label)| (k.to_string(), label.to_string(), !off.iter().any(|o| o == k))).collect::<Vec<_>>();

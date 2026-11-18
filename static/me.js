@@ -1,4 +1,4 @@
-// "My trainer": everything saves right here, on the page.
+// Account Settings: everything saves right here, on the page.
 (() => {
   const root = document.getElementById('me'); if (!root) return;
   const $ = (id) => document.getElementById(id);
@@ -183,7 +183,7 @@
     try { await send('/me/password', { current: pass.elements.current.value, new: pass.elements.new.value }); pass.reset(); say('Password changed ✓'); } catch (err) { say(err.message, true); }
   });
   $('meDelete').addEventListener('click', async () => {
-    if (!(await (window.bbvConfirm ? window.bbvConfirm('Delete your trainer, binder and vouch for good? This can’t be undone.', { yes: 'Delete my trainer', no: 'Keep it' }) : Promise.resolve(confirm('Delete your trainer, binder and vouch for good? This can’t be undone.'))))) return;
+    if (!(await (window.bbvConfirm ? window.bbvConfirm('Delete your trainer, cards and vouch for good? This can’t be undone.', { yes: 'Delete my trainer', no: 'Keep it' }) : Promise.resolve(confirm('Delete your trainer, cards and vouch for good? This can’t be undone.'))))) return;
     try { await send('/me/delete'); location.href = '/trainers'; } catch (err) { say(err.message, true); }
   });
 

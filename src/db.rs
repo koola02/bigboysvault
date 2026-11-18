@@ -675,6 +675,8 @@ pub struct Query {
     pub collection: Option<String>,
     pub q: String,
     pub sort: String,
+    /// One condition ("Near Mint"), or "Graded" for every graded slab; empty for any.
+    pub cond: String,
     pub in_stock: bool,
     pub page: usize,
 }
@@ -746,6 +748,18 @@ pub fn list(c: &Connection, q: &Query) -> rusqlite::Result<(Vec<Product>, i64)> 
 }
 
 /// `list` with the cards hidden in the binder too, for the owner's own pages (the Cards manager).
+/// The conditions the vault's cards for sale come in, best first, with "Graded" for the slabs: the Condition choices on
+/// its store page.
+pub fn conditions_for_sale(c: &Connection) -> rusqlite::Result<Vec<String>> {
+    let found: Vec<String> = c.prepare("SELECT DISTINCT variant FROM products WHERE available=1 AND variant<>''")?.query_map([], |r| r.get(0))?.collect::<Result<_, _>>()?;
+    let graded = |v: &str| ["PSA ", "CGC ", "BGS "].iter().any(|g| v.starts_with(g));
+    let mut out: Vec<String> = CONDITIONS.iter().filter(|k| !graded(k) && found.iter().any(|f| f == *k)).map(|k| k.to_string()).collect();
+    if found.iter().any(|f| graded(f)) {
+        out.push("Graded".into());
+    }
+    Ok(out)
+}
+
 pub fn list_with_hidden(c: &Connection, q: &Query) -> rusqlite::Result<(Vec<Product>, i64)> {
     list_n(c, q, PAGE_SIZE, true)
 }
@@ -774,6 +788,14 @@ fn list_n(c: &Connection, q: &Query, per_page: usize, hidden_too: bool) -> rusql
     }
     if q.in_stock {
         wh.push("p.available=1".into());
+    }
+    match q.cond.as_str() {
+        "" => {}
+        "Graded" => wh.push("(p.variant LIKE 'PSA %' OR p.variant LIKE 'CGC %' OR p.variant LIKE 'BGS %')".into()),
+        cond => {
+            wh.push("p.variant=?".into());
+            args.push(Value::Text(cond.to_string()));
+        }
     }
     let order = match q.sort.as_str() {
         "price-asc" => "p.price ASC, p.id",
@@ -2294,5 +2316,23 @@ mod vault_store_tests {
         assert_eq!(cards_in(&c, Some("trainers")).unwrap(), 1);
         // No binder may be called "order": that address saves the binders' order.
         assert_eq!(create_binder(&c, "Order").unwrap(), "order-2");
+    }
+
+    #[test]
+    fn the_vaults_cards_for_sale_filter_by_condition() {
+        let c = db();
+        for (id, variant, available) in [(1, "Near Mint", true), (2, "Lightly Played", true), (3, "PSA 10", true), (4, "Near Mint", true), (5, "Damaged", false)] {
+            c.execute("INSERT INTO products(id,handle,title,variant,price,available,created_at) VALUES(?1,?2,?2,?3,100,?4,'2026-01-01T00:00:00')", rusqlite::params![id, format!("c{id}"), variant, available]).unwrap();
+        }
+        let ids = |cond: &str| -> Vec<i64> {
+            let mut v: Vec<i64> = list(&c, &Query { cond: cond.into(), in_stock: true, ..Default::default() }).unwrap().0.iter().map(|p| p.id).collect();
+            v.sort_unstable();
+            v
+        };
+        assert_eq!(ids("Near Mint"), vec![1, 4]);
+        assert_eq!(ids("Graded"), vec![3]);
+        assert_eq!(ids(""), vec![1, 2, 3, 4]);
+        assert!(ids("Damaged").is_empty(), "only cards for sale");
+        assert_eq!(conditions_for_sale(&c).unwrap(), vec!["Near Mint".to_string(), "Lightly Played".into(), "Graded".into()], "best first, the slabs as one choice");
     }
 }

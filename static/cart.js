@@ -1,5 +1,6 @@
 // The cart: cards from the vault and from sellers' stores, kept in this browser until the order is sent.
-// Sending it makes one order for the vault's cards (the admins answer it) and a reservation per seller's card.
+// Sending it makes one order for the vault's cards (the admins answer it) and, for each store, one order of its cards
+// (a row per card, grouped by `reservations.batch`).
 (() => {
   const KEY = 'bbv:cart';
   const $ = (id) => document.getElementById(id);

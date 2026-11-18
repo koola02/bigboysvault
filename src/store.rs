@@ -791,6 +791,10 @@ struct OrdersPage {
     p: Panel,
     tab: String,
     selling: Orders,
+    /// The seller's orders as sent: the cards of one cart together (`sellers::order_groups`).
+    groups: Vec<sellers::OrderGroup>,
+    /// Questions from before asking became Message: the tab shows only while there are some.
+    has_questions: bool,
     buying: Orders,
     sales: Vec<Sale>,
     purchases: Vec<Sale>,
@@ -829,7 +833,9 @@ pub async fn orders(State(app): State<App>, h: HeaderMap, Query(q): Query<TabQs>
     })
     .await?;
     let (vault_orders, vault_pay) = with_db(&app, move |c| Ok((sellers::vault_orders_of_buyer(c, id)?, sellers::vault_pay(c)?))).await?;
-    Ok(html(render(OrdersPage { nav, p, tab, selling, buying, sales, purchases, pay, methods: sellers::PAY_METHODS, vault_orders, vault_pay })?))
+    let groups = sellers::order_groups(selling.reservations.clone());
+    let has_questions = !selling.questions.is_empty();
+    Ok(html(render(OrdersPage { nav, p, tab, selling, groups, has_questions, buying, sales, purchases, pay, methods: sellers::PAY_METHODS, vault_orders, vault_pay })?))
 }
 
 fn order_json(o: &Order) -> serde_json::Value {
@@ -852,7 +858,7 @@ pub async fn answer_reservation(State(app): State<App>, h: HeaderMap, Path(id): 
     let mid = m.id;
     if req.status == "Cancelled" {
         let done = with_db(&app, move |c| sellers::cancel_reservation(c, mid, id)).await?;
-        return Ok(if done { ok(json!({ "ok": true })) } else { fail(StatusCode::BAD_REQUEST, "That reservation can't be cancelled.") });
+        return Ok(if done { ok(json!({ "ok": true })) } else { fail(StatusCode::BAD_REQUEST, "That order can't be cancelled.") });
     }
     if let Err(r) = seller_only(&m) {
         return Ok(r);
@@ -1156,6 +1162,8 @@ struct NotificationsPage {
     has_email: bool,
     /// The site sends mail (RESEND_API_KEY): only then is there an Email choice.
     mail_on: bool,
+    /// The seller still has questions from before asking became Message: only then the Questions choice shows.
+    has_questions: bool,
 }
 
 pub async fn notifications(State(app): State<App>, h: HeaderMap, Query(q): Query<PageQs>) -> Res {
@@ -1165,17 +1173,18 @@ pub async fn notifications(State(app): State<App>, h: HeaderMap, Query(q): Query
     };
     let (id, page, has_email) = (m.id, q.page.unwrap_or(0).max(0), !m.email.is_empty());
     const PER: i64 = 30;
-    let (nav, p, notes, total, prefs) = with_db(&app, move |c| {
+    let (nav, p, notes, total, prefs, has_questions) = with_db(&app, move |c| {
         let (notes, total) = sellers::notifications_page(c, id, page, PER)?;
         let prefs = sellers::prefs_of(c, id)?;
+        let asked: i64 = c.query_row("SELECT COUNT(*) FROM inquiries WHERE seller_id=?1", [id], |r| r.get(0))?;
         // Opening the page reads what's on it.
         members::mark_notifications_read(c, id, notes.iter().map(|n| n.id).max())?;
-        Ok((chrome(c)?, panel(c, m, "notifications")?, notes, total, prefs))
+        Ok((chrome(c)?, panel(c, m, "notifications")?, notes, total, prefs, asked > 0))
     })
     .await?;
     let pages = (total + PER - 1) / PER;
     let mail_on = std::env::var("RESEND_API_KEY").is_ok_and(|k| !k.trim().is_empty());
-    Ok(html(render(NotificationsPage { nav, p, notes, page, pages, prefs, push_key: crate::push::public_key().to_string(), has_email, mail_on })?))
+    Ok(html(render(NotificationsPage { nav, p, notes, page, pages, prefs, push_key: crate::push::public_key().to_string(), has_email, mail_on, has_questions })?))
 }
 
 #[derive(Deserialize)]
@@ -1556,6 +1565,9 @@ struct VaultStorePage {
     base: String,
     q: String,
     sort: String,
+    /// The Condition filter, as a seller's store has: the one picked, and the choices.
+    cond: String,
+    conds: Vec<String>,
     in_stock: bool,
     items: Vec<Product>,
     next: Option<usize>,
@@ -1565,7 +1577,14 @@ struct VaultStorePage {
 /// (each opens its page at /collections/{handle}, the address everything else links to), then every card for sale.
 /// Every visitor gets the same page (the staff's "Manage binders" shows in the browser), so it is kept like the binders.
 pub async fn vault_store(State(app): State<App>, h: HeaderMap, Query(p): Query<crate::Params>) -> Res {
-    let q = db::Query { collection: None, q: p.q.clone().unwrap_or_default().trim().chars().take(80).collect(), sort: p.sort.clone().unwrap_or_default(), in_stock: true, page: p.page_no().min(500) };
+    let q = db::Query {
+        collection: None,
+        q: p.q.clone().unwrap_or_default().trim().chars().take(80).collect(),
+        sort: p.sort.clone().unwrap_or_default(),
+        cond: p.cond.clone().unwrap_or_default().trim().chars().take(30).collect(),
+        in_stock: true,
+        page: p.page_no().min(500),
+    };
     // Scrolling down only needs the next cards.
     let more = crate::is_htmx(&h) && q.page > 0;
     let key = format!("store/vault|{more}|{q:?}");
@@ -1575,7 +1594,7 @@ pub async fn vault_store(State(app): State<App>, h: HeaderMap, Query(p): Query<c
             let q2 = q.clone();
             let (items, found) = with_db(&a, move |c| db::list(c, &q2)).await?;
             let next = next_page(&q, found);
-            return render(crate::Grid { base: VAULT_STORE.into(), q: q.q, sort: q.sort, in_stock: true, items, next });
+            return render(crate::Grid { base: VAULT_STORE.into(), q: q.q, sort: q.sort, cond: q.cond, in_stock: true, items, next });
         }
         render(with_db(&a, move |c| vault_page(c, q)).await?)
     })
@@ -1596,6 +1615,7 @@ fn vault_page(c: &rusqlite::Connection, q: db::Query) -> rusqlite::Result<VaultS
     let n = vault_numbers(c, &tiles)?;
     let (since, border) = (vault_since(c)?, sellers::vault_border(c)?);
     let pay: Vec<String> = sellers::vault_pay(c)?.0.split(',').map(str::trim).filter(|m| !m.is_empty()).map(String::from).collect();
+    let conds = db::conditions_for_sale(c)?;
     let next = next_page(&q, found);
     let site = nav.site.clone();
     let url = format!("{site}{VAULT_STORE}");
@@ -1606,7 +1626,7 @@ fn vault_page(c: &rusqlite::Connection, q: db::Query) -> rusqlite::Result<VaultS
     nav.seo = crate::Seo {
         desc: crate::clip(&format!("{}'s store: {} Pokémon cards for sale{binders}. Real photos, condition and prices in pesos.", nav.brand, db::thousands(n.for_sale)), 165),
         // A typed search here isn't a page of its own.
-        path: if q.q.is_empty() { VAULT_STORE.into() } else { String::new() },
+        path: if q.q.is_empty() && q.cond.is_empty() { VAULT_STORE.into() } else { String::new() },
         kind: "website",
         ld: crate::ld(json!({ "@context": "https://schema.org", "@graph": [
             { "@type": "OnlineStore", "@id": format!("{site}/#org"), "name": nav.brand, "url": format!("{site}/"), "logo": format!("{site}/static/img/icon-512.png") },
@@ -1620,7 +1640,7 @@ fn vault_page(c: &rusqlite::Connection, q: db::Query) -> rusqlite::Result<VaultS
         title,
         ..Default::default()
     };
-    Ok(VaultStorePage { nav, tiles, n, since, bio: VAULT_BIO, pay, border, base: VAULT_STORE.into(), q: q.q, sort: q.sort, in_stock: true, items, next })
+    Ok(VaultStorePage { nav, tiles, n, since, bio: VAULT_BIO, pay, border, base: VAULT_STORE.into(), q: q.q, sort: q.sort, cond: q.cond, conds, in_stock: true, items, next })
 }
 
 /// GET /store/vault/binders/{handle}: a vault binder's address, should anyone write it like a seller's. Its page is /collections/{handle}.
@@ -1887,7 +1907,7 @@ pub async fn directory(State(app): State<App>, h: HeaderMap) -> Res {
     .await?;
     nav.seo = crate::Seo {
         title: format!("Stores · {}", nav.brand),
-        desc: format!("The Pokémon card stores on {}: browse each store's binders and cards for sale, then reserve a card or add it to your cart.", nav.brand),
+        desc: format!("The Pokémon card stores on {}: browse each store's binders and cards for sale, then add a card to your cart and send the order.", nav.brand),
         path: "/stores".into(),
         kind: "website",
         ..Default::default()
@@ -2388,6 +2408,8 @@ pub async fn checkout(State(app): State<App>, h: HeaderMap, Json(req): Json<Chec
             })),
         }
     }
+    // One store's cards from this cart are one order: each card's row carries the first one's id.
+    let mut batches: HashMap<i64, i64> = HashMap::new();
     for (cid, qty) in cards {
         let msg = message.clone();
         // Whose card it is, and whether their store is open (not blocked, approved, and not hidden by its seller).
@@ -2404,7 +2426,11 @@ pub async fn checkout(State(app): State<App>, h: HeaderMap, Json(req): Json<Chec
             continue;
         }
         match with_db(&app, move |c| sellers::reserve(c, me, sid, cid, qty, &msg)).await? {
-            Ok(id) => placed.push(json!({ "kind": "card", "id": cid, "reservation": id })),
+            Ok(id) => {
+                let first = *batches.entry(sid).or_insert(id);
+                with_db(&app, move |c| sellers::set_batch(c, id, first)).await?;
+                placed.push(json!({ "kind": "card", "id": cid, "reservation": id }))
+            }
             Err(e) => failed.push(json!({ "kind": "card", "id": cid, "error": e })),
         }
     }
@@ -2453,6 +2479,27 @@ impl AdminOrdersPage {
 }
 
 /// `GET /admin/orders`: orders for the vault's own cards, and how buyers pay the vault.
+/// GET /admin/orders/{id}/message: the vault's conversation with this order's buyer (made if new), open in Messages.
+/// Full admins answer for the vault.
+pub async fn admin_order_message(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -> Res {
+    if !matches!(admin::power(&app, &h), admin::Power::Admin(_)) {
+        return Ok(fail(StatusCode::NOT_FOUND, "Not found"));
+    }
+    let now = crate::unix_now();
+    let thread = with_db(&app, move |c| {
+        let buyer: Option<i64> = rusqlite::OptionalExtension::optional(c.query_row("SELECT buyer_id FROM vault_orders WHERE id=?1", [id], |r| r.get(0)))?;
+        Ok(match buyer {
+            Some(b) => Some(dm::thread_between(c, dm::VAULT, b, now)?.id),
+            None => None,
+        })
+    })
+    .await?;
+    let Some(t) = thread else { return Ok(fail(StatusCode::NOT_FOUND, "That order isn't here any more.")) };
+    // A full admin who is also a trainer answers in their own Messages; the owner's password alone has the admins' view.
+    let page = if crate::community::current(&app, &h).await?.is_some() { "/me/messages" } else { "/admin/messages" };
+    Ok(Redirect::to(&format!("{page}?t={t}")).into_response())
+}
+
 pub async fn admin_orders(State(app): State<App>, h: HeaderMap) -> Res {
     if !admin::authed(&app, &h) {
         return Ok(Redirect::to("/login").into_response());
@@ -3070,7 +3117,7 @@ mod tests {
         // A collector: the same page, without scanning; their own photo joins their binder.
         let t = members::create(&c, "Ash", "h").unwrap().unwrap();
         let html = add_page(&c, t, None, false);
-        assert!(!html.contains("data-way=\"scan\"") && html.contains("data-way=\"set\"") && html.contains("Add to my binder") && !html.contains("/static/add-card.js"));
+        assert!(!html.contains("data-way=\"scan\"") && html.contains("data-way=\"set\"") && html.contains("Add to My cards") && !html.contains("/static/add-card.js"));
         // Listings only manages listings: its Add cards is a link to this page.
         let lst = render(ListingsPage {
             nav: chrome(&c).unwrap(),

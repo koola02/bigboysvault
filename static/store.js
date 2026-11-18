@@ -97,7 +97,7 @@
       const late = card.status === 'Expired' || (card.expires_at > 0 && card.expires_at < Date.now() / 1000);
       const renew = tile.querySelector('[data-renew]'); renew.textContent = late ? 'Renew for 30 days' : card.expires_at > 0 ? 'Change end date' : 'Set an end date';
       const exp = tile.querySelector('.st-exp');
-      if (card.expires_text) { if (exp) exp.textContent = card.expires_text; else { const m = tile.querySelector('.st-meta'); m.append(' · '); const s = el('span', 'st-exp', card.expires_text); m.append(s); } }
+      if (card.expires_text) { if (exp) exp.textContent = card.expires_text; else { tile.querySelector('.st-meta').append(el('span', 'st-exp', card.expires_text)); } }
       else exp?.remove();
       paintSug(tile);
     }
@@ -324,12 +324,31 @@
   const oRoot = $('storeOrders');
   if (oRoot) {
     oRoot.addEventListener('click', async (e) => {
+      // One order of several cards: Accept all, Mark all paid, Decline all, each card on its own route, in turn.
+      const all = e.target.closest('[data-batch-res]');
+      if (all) {
+        const group = all.closest('.st-group'), status = all.dataset.batchRes;
+        const want = status === 'Paid' ? ['Confirmed'] : status === 'Confirmed' ? ['Pending'] : ['Pending', 'Confirmed'];
+        const rows = [...group.querySelectorAll('.st-order[data-kind="reservation"]')].filter((r) => want.includes(r.dataset.status));
+        if (!rows.length) return;
+        const n = rows.length === 1 ? 'this card' : `these ${rows.length} cards`;
+        if (status === 'Declined' && !(await (window.bbvConfirm ? window.bbvConfirm(`Decline ${n}? The buyer is told.`, { yes: 'Decline', no: 'Keep them' }) : Promise.resolve(confirm(`Decline ${n}? The buyer is told.`))))) return;
+        const via = group.querySelector('.st-group-h [data-via]')?.value || '';
+        all.disabled = true;
+        let done = 0;
+        for (const r of rows) {
+          try { await send(`/me/orders/reservations/${r.dataset.id}`, { status, paid_via: via }); done += 1; }
+          catch (err) { A.toast(err.message, { kind: 'err' }); break; }
+        }
+        if (done) { A.toast(status === 'Paid' ? 'Marked paid ✓ The sale is done.' : 'Saved ✓', { kind: 'ok' }); location.reload(); } else all.disabled = false;
+        return;
+      }
       const li = e.target.closest('.st-order'); if (!li) return;
       const res = e.target.closest('[data-res]');
       if (res) {
         const status = res.dataset.res;
-        if (status === 'Declined' && !(await (window.bbvConfirm ? window.bbvConfirm('Decline this reservation? The buyer is told.', { yes: 'Decline', no: 'Keep it' }) : Promise.resolve(confirm('Decline this reservation? The buyer is told.'))))) return;
-        if (status === 'Cancelled' && !(await (window.bbvConfirm ? window.bbvConfirm('Cancel this reservation?', { yes: 'Cancel it', no: 'Keep it' }) : Promise.resolve(confirm('Cancel this reservation?'))))) return;
+        if (status === 'Declined' && !(await (window.bbvConfirm ? window.bbvConfirm('Decline this order? The buyer is told.', { yes: 'Decline', no: 'Keep it' }) : Promise.resolve(confirm('Decline this order? The buyer is told.'))))) return;
+        if (status === 'Cancelled' && !(await (window.bbvConfirm ? window.bbvConfirm('Cancel this order?', { yes: 'Cancel it', no: 'Keep it' }) : Promise.resolve(confirm('Cancel this order?'))))) return;
         const via = li.querySelector('[data-via]')?.value || '';
         res.disabled = true;
         try { await send(`/me/orders/reservations/${li.dataset.id}`, { status, paid_via: via }); A.toast(status === 'Paid' ? 'Marked paid ✓ The sale is done.' : 'Saved ✓', { kind: 'ok' }); location.reload(); }

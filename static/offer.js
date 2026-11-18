@@ -42,7 +42,7 @@
     const noteL = make('label', 'sf-field'); noteL.append(make('span', null, 'A note for the seller (optional)'));
     const note = make('textarea', 'sheet-input'); note.rows = 2; note.maxLength = 300; note.placeholder = 'When can we meet? Can you ship?';
     noteL.append(note);
-    const hint = make('p', 'hint show', 'The seller can accept, counter or decline. If they accept, it becomes a reservation at your price.');
+    const hint = make('p', 'hint show', 'The seller can accept, counter or decline. If they accept, it becomes an order at your price.');
     const err = make('p', 'vc-err'); err.setAttribute('role', 'alert');
     const acts = make('div', 'sheet-acts');
     const cancel = make('button', 'btn ghost', 'Cancel'); cancel.type = 'button';

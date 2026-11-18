@@ -28,7 +28,7 @@
   <section class="me-card me-store">
     <div>
       <h2 class="h2">Buying</h2>
-      <p class="me-how">Reserve cards from the <a href="/stores">stores</a>. Your reservations, offers and questions are under My orders. Want to sell too? Ask the vault owner to switch your store on.</p>
+      <p class="me-how">Order cards from the <a href="/stores">stores</a>. Your orders and offers are under My orders. Want to sell too? Ask the vault owner to switch your store on.</p>
     </div>
     <div class="me-top-acts"><a class="btn ghost" href="/me/orders?tab=buying">My orders</a></div>
   </section>
@@ -51,7 +51,7 @@
   </form>
 
   <section class="me-card">
-    <h2 class="h2">My binder <small><span id="meCount">{{ p.m.cards }}</span> of {{ max }}</small></h2>
+    <h2 class="h2">My cards <small><span id="meCount">{{ p.m.cards }}</span> of {{ max }}</small></h2>
     <p class="me-how">Each card is a <b>Highlight</b> (one you have and show off){% if p.m.seller %}, <b>For sale</b> (in your store){% endif %} or on your <b>Wishlist</b> (one you're after). ★ picks the card shown at the top of your page. Drag to change the order. Values come from today's market prices; type your own if you know better.</p>
     <ul class="me-binder" id="meBinder">
       {% for c in cards %}
@@ -94,5 +94,5 @@
 </section>
 <script src="/static/dragsort.js?v=5" defer></script>
 <script src="/static/pricing.js?v=2" defer></script>
-<script src="/static/me.js?v=14" defer></script>
+<script src="/static/me.js?v=15" defer></script>
 {% endblock %}

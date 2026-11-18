@@ -23,7 +23,7 @@
 <script>
 (() => {
   // Came here from the log-in page that said why (sending an order, a message…): keep saying it.
-  const WHY = { order: 'Register to send your order. Your cart is saved and opens again right after.', message: 'Register to send your message. You come straight back after.', react: 'Register to react and comment. You come straight back after.', post: 'Register to post. You come straight back after.', offer: 'Register to reserve a card or make an offer. You come straight back after.', bookmark: 'Register to bookmark stores and cards. You come straight back after.', follow: 'Register to follow this store. You come straight back after.', vouch: 'Register to write a vouch. You come straight back after.' };
+  const WHY = { order: 'Register to send your order. Your cart is saved and opens again right after.', message: 'Register to send your message. You come straight back after.', react: 'Register to react and comment. You come straight back after.', post: 'Register to post. You come straight back after.', offer: 'Register to order a card or make an offer. You come straight back after.', bookmark: 'Register to bookmark stores and cards. You come straight back after.', follow: 'Register to follow this store. You come straight back after.', vouch: 'Register to write a vouch. You come straight back after.' };
   try { const w = sessionStorage.getItem('bbv:join-why'); if (w && WHY[w]) { const b = document.getElementById('joinWhy'); b.textContent = WHY[w]; b.hidden = false; } } catch (_) {}
 })();
 </script>

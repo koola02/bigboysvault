@@ -40,8 +40,8 @@
       <a class="ct-img" href="/trainers/{{ c.member_id }}/cards/{{ c.id }}" data-float aria-label="See {{ c.title }}">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="">{% else %}<span class="thumb-empty">No photo</span>{% endif %}</a>
       <div class="ct-info">
         <b class="ct-t">{{ c.title }}</b>
-        <small class="ct-set">{{ c.card_set }}{% if !c.number.is_empty() %} · {{ c.number }}{% endif %}{% if !c.finish.is_empty() %} · {{ c.finish }}{% endif %}</small>
-        <small class="st-meta">{{ c.view_n }} view{% if c.view_n != 1 %}s{% endif %}{% if c.save_n > 0 %} · {{ c.save_n }} saved{% endif %}{% if c.sold > 0 %} · {{ c.sold }} sold{% endif %}{% if !c.expires_text().is_empty() %} · <span class="st-exp">{{ c.expires_text() }}</span>{% endif %}</small>
+        <small class="ct-set"><span>{{ c.card_set }}</span>{% if !c.number.is_empty() %}<span>#{{ c.number }}</span>{% endif %}{% if !c.finish_text().is_empty() %}<span>{{ c.finish_text() }}</span>{% endif %}</small>
+        <small class="st-meta"><span>{{ c.view_n }} view{% if c.view_n != 1 %}s{% endif %}</span>{% if c.save_n > 0 %}<span>{{ c.save_n }} saved</span>{% endif %}{% if c.sold > 0 %}<span>{{ c.sold }} sold</span>{% endif %}{% if !c.expires_text().is_empty() %}<span class="st-exp">{{ c.expires_text() }}</span>{% endif %}</small>
       </div>
       <label class="ct-pricebox"><span aria-hidden="true">₱</span><input type="text" inputmode="decimal" autocomplete="off" value="{{ c.own_text() }}" placeholder="{% if c.value > 0.0 %}{{ c.price_text() }}{% else %}Price{% endif %}" data-price aria-label="Price of {{ c.title }}"></label>
       <p class="me-c-sug st-sug"></p>
@@ -85,6 +85,6 @@
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/pricing.js?v=2" defer></script>
 <script src="/static/admin-ui.js?v=10" defer></script>
-<script src="/static/store.js?v=11" defer></script>
+<script src="/static/store.js?v=12" defer></script>
 <script src="/static/mgr-table.js?v=2" defer></script>
 {% endblock %}

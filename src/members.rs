@@ -644,6 +644,13 @@ impl MemberCard {
             format!("{} days left", left / 86400)
         }
     }
+    /// The finish in words ("Reverse Holo"), or nothing for a plain one.
+    pub fn finish_text(&self) -> String {
+        match self.finish.trim() {
+            "" | "market" | "normal" | "Normal" => String::new(),
+            f => crate::market::label(f),
+        }
+    }
     pub fn qty_text(&self) -> String {
         match self.qty {
             0 => "Sold out".into(),

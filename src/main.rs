@@ -253,6 +253,7 @@ struct CollectionPage {
     base: String,
     q: String,
     sort: String,
+    cond: String,
     in_stock: bool,
     total: i64,
     items: Vec<Product>,
@@ -277,6 +278,7 @@ struct Grid {
     base: String,
     q: String,
     sort: String,
+    cond: String,
     in_stock: bool,
     items: Vec<Product>,
     next: Option<usize>,
@@ -321,6 +323,8 @@ pub(crate) struct Params {
     q: Option<String>,
     sort: Option<String>,
     stock: Option<String>,
+    /// One condition, or "Graded" (the vault's store).
+    cond: Option<String>,
     /// Text, so a bad page number (?page=abc) opens the first page instead of an error.
     page: Option<String>,
 }
@@ -345,6 +349,7 @@ async fn browse(app: App, headers: HeaderMap, collection: Option<String>, p: Par
         collection: collection.clone(),
         q: p.q.clone().unwrap_or_default().trim().chars().take(80).collect(),
         sort: p.sort.clone().unwrap_or_default(),
+        cond: p.cond.clone().unwrap_or_default().trim().chars().take(30).collect(),
         in_stock: p.stock.as_deref() == Some("1"),
         page: p.page_no().min(500),
     };
@@ -375,7 +380,7 @@ async fn browse(app: App, headers: HeaderMap, collection: Option<String>, p: Par
         };
         let next = ((q.page + 1) * PAGE_SIZE < tiles as usize).then_some(q.page + 1);
         if htmx && q.page > 0 {
-            render(Grid { base, q: q.q, sort: q.sort, in_stock: q.in_stock, items, next })
+            render(Grid { base, q: q.q, sort: q.sort, cond: q.cond, in_stock: q.in_stock, items, next })
         } else {
             let mut nav = nav;
             // A binder and All cards are pages worth finding. A typed search isn't; its cards are found through these.
@@ -406,7 +411,7 @@ async fn browse(app: App, headers: HeaderMap, collection: Option<String>, p: Par
                     path,
                 };
             }
-            render(CollectionPage { title, base, q: q.q, sort: q.sort, in_stock: q.in_stock, total, items, next, nav })
+            render(CollectionPage { title, base, q: q.q, sort: q.sort, cond: q.cond, in_stock: q.in_stock, total, items, next, nav })
         }
     })
     .await
@@ -845,7 +850,7 @@ mod tests {
         members::migrate(&c).unwrap();
         db::migrate(&c).unwrap();
         let page = |base: &str, title: &str, total: i64| {
-            let html = CollectionPage { title: title.into(), base: base.into(), q: String::new(), sort: String::new(), in_stock: false, total, items: vec![], next: None, nav: chrome(&c).unwrap() }.render().unwrap();
+            let html = CollectionPage { title: title.into(), base: base.into(), q: String::new(), sort: String::new(), cond: String::new(), in_stock: false, total, items: vec![], next: None, nav: chrome(&c).unwrap() }.render().unwrap();
             html
         };
         let binder = page("/collections/affordable-common-uncommon", "Affordable Common/Uncommon", 1117);
@@ -1101,6 +1106,7 @@ async fn main() {
         .route("/trainers/{id}/cards/{card}", get(community::member_card))
         .route("/me", get(community::me))
         .route("/me/page", get(community::my_page))
+        .route("/me/store/page", get(community::my_store_page))
         // the seller panel
         .route("/me/store", get(store::dash))
         .route("/me/store/visibility", post(store::set_visibility))
@@ -1264,6 +1270,7 @@ async fn main() {
         .route("/me/bookmarks", get(store::bookmarks_page).post(store::bookmark))
         .route("/me/bookmarks/ids", get(store::bookmark_ids))
         .route("/admin/orders/{id}", post(store::admin_answer_order))
+        .route("/admin/orders/{id}/message", get(store::admin_order_message))
         .route("/admin/sellers/announce", post(store::announce))
         .route("/admin/sellers/reviews/{id}", post(store::admin_review))
         .route("/admin/sellers/flag/{id}/clear", post(store::admin_clear_flag))

@@ -24,13 +24,19 @@
     <li class="st-order ao-order" data-id="{{ o.id }}" data-status="{{ o.status }}">
       <div class="ao-pics">{% for i in o.items.iter().take(3) %}{% if !i.image.is_empty() %}<img src="{{ i.image }}" width="60" height="84" alt="" loading="lazy">{% endif %}{% endfor %}</div>
       <div class="st-order-body">
-        <p class="st-order-who"><a href="/trainers/{{ o.buyer_id }}" data-float><b>{{ o.buyer_name }}</b></a> · {{ o.when() }} · <span class="st-status" data-s="{{ o.status }}">{{ o.status }}</span>{% if !o.paid_via.is_empty() %} · {{ o.paid_via }}{% endif %}</p>
+        <dl class="sf-rows st-facts">
+          <div class="sf-row"><dt class="sf-row-l">Buyer</dt><dd class="sf-row-v"><a href="/trainers/{{ o.buyer_id }}" data-float><b>{{ o.buyer_name }}</b></a></dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Status</dt><dd class="sf-row-v"><span class="st-status" data-s="{{ o.status }}">{% if o.status == "Pending" %}New{% else if o.status == "Confirmed" %}Accepted{% else %}{{ o.status }}{% endif %}</span></dd></div>
+          <div class="sf-row"><dt class="sf-row-l">Sent</dt><dd class="sf-row-v">{{ o.when() }}</dd></div>
+          {% if !o.paid_via.is_empty() %}<div class="sf-row"><dt class="sf-row-l">Paid with</dt><dd class="sf-row-v">{{ o.paid_via }}</dd></div>{% endif %}
+          {% if !o.message.is_empty() %}<div class="sf-row"><dt class="sf-row-l">Note</dt><dd class="sf-row-v sf-text">“{{ o.message }}”</dd></div>{% endif %}
+        </dl>
         <ul class="ao-lines">{% for i in o.items %}<li><a href="/products/{{ i.handle }}" data-float>{{ i.title }}</a> <span>×{{ i.qty }} · {{ i.price_text() }} each</span><b>{{ i.line_text() }}</b></li>{% endfor %}</ul>
-        {% if !o.message.is_empty() %}<p class="st-order-msg">“{{ o.message }}”</p>{% endif %}
         <div class="st-order-acts">
           <b class="st-total">{{ o.total_text() }}</b>
           {% if o.status == "Pending" %}<button type="button" class="btn" data-ans="Confirmed">Accept</button><button type="button" class="btn ghost" data-ans="Declined">Decline</button>
           {% else if o.status == "Confirmed" %}<span class="st-paidvia"><select data-via aria-label="Paid how">{% for m in methods %}<option{% if self.has_pay(m) %} selected{% endif %}>{{ m }}</option>{% endfor %}</select><button type="button" class="btn" data-ans="Paid">Mark paid ✓</button></span><button type="button" class="btn ghost" data-ans="Declined">Cancel</button>{% endif %}
+          <a class="btn ghost dm-add" href="/admin/orders/{{ o.id }}/message" data-full-only><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg><span>Message</span></a>
         </div>
       </div>
     </li>

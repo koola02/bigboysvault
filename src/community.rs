@@ -253,6 +253,8 @@ struct MemberCardPage {
     nav: Chrome,
     t: Member,
     c: MemberCard,
+    /// Copies a buyer can still order (those in open orders are spoken for).
+    left: i64,
     /// "More like this": cards for sale in the vault and the open stores (`sellers::related`).
     related: Vec<Like>,
     /// How the market price of this card moved lately, as on a vault card's page.
@@ -267,6 +269,7 @@ struct MemberCardPage {
 struct MemberCardPart {
     t: Member,
     c: MemberCard,
+    left: i64,
     related: Vec<Like>,
     trend: Option<marcuru_rs::history::Trend>,
     viewer: i64,
@@ -318,9 +321,10 @@ pub struct JoinQs {
     next: String,
 }
 
-/// The page to land on after logging in or joining.
+/// The page to land on after logging in: where they were, or Home (the owner's plan, 18 Nov 2026: a tap goes to the
+/// thing itself, never to the settings).
 fn landing(next: &str) -> String {
-    safe_next(next).unwrap_or("/me").to_string()
+    safe_next(next).unwrap_or("/").to_string()
 }
 
 /// Makes a path safe to put after "?next=": letters, digits and "/-_.~" stay, everything else is %-coded.
@@ -444,7 +448,9 @@ pub async fn join(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm>)
     over_limit(&app, format!("joined|{ip}"), u32::MAX);
     let n3 = name.clone();
     with_db(&app, move |c| tell_staff_waiting(c, id, &format!("{n3} joined and waits for approval."))).await?;
-    signed_in(&app, &h, id, members::REMEMBER_SECS, &landing(&f.next)).await
+    // A new trainer lands on their new page, unless they came to finish something (an order, a message).
+    let to = safe_next(&f.next).map(str::to_string).unwrap_or_else(|| format!("/trainers/{id}"));
+    signed_in(&app, &h, id, members::REMEMBER_SECS, &to).await
 }
 
 pub async fn signin(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm>) -> Res {
@@ -703,12 +709,13 @@ pub async fn member_card(State(app): State<App>, h: HeaderMap, Path((id, cid)): 
     // A look at a card in a store counts for its seller (once a day per viewer, never the owner). Under the card, as
     // under a vault card: similar cards for sale anywhere on the site, and how its market price moved.
     let (cid2, who, viewer, card) = (c.id, crate::store::viewer_hash(&h), me.as_ref().map(|m| m.id), c.clone());
-    let (related, trend) = with_db(&app, move |db| {
+    let (related, trend, held) = with_db(&app, move |db| {
         marcuru_rs::sellers::count_view(db, cid2, &who, viewer).ok();
-        Ok((marcuru_rs::sellers::related(db, &card, 12)?, marcuru_rs::history::listing_trend(db, &card.card_id, &card.finish)?))
+        Ok((marcuru_rs::sellers::related(db, &card, 12)?, marcuru_rs::history::listing_trend(db, &card.card_id, &card.finish)?, marcuru_rs::sellers::held(db, cid2)?))
     })
     .await?;
-    Ok(html(if q.part.is_some() { render(MemberCardPart { t, c, related, trend, viewer: viewer.unwrap_or(0) })? } else { render(MemberCardPage { nav, t, c, related, trend, viewer: viewer.unwrap_or(0) })? }))
+    let left = (c.qty - held).max(0);
+    Ok(html(if q.part.is_some() { render(MemberCardPart { t, c, left, related, trend, viewer: viewer.unwrap_or(0) })? } else { render(MemberCardPage { nav, t, c, left, related, trend, viewer: viewer.unwrap_or(0) })? }))
 }
 
 // ---------- my trainer ----------
@@ -730,6 +737,16 @@ pub async fn my_page(State(app): State<App>, h: HeaderMap) -> Res {
     Ok(match current(&app, &h).await? {
         Some(m) => Redirect::to(&format!("/trainers/{}", m.id)).into_response(),
         None => Redirect::to("/login?next=/me/page").into_response(),
+    })
+}
+
+/// GET /me/store/page: your own store, the page itself (the menu's "My store"; the Store Manager is a button on it).
+/// Someone who doesn't sell yet goes to Apply as a seller; signed out, log in first.
+pub async fn my_store_page(State(app): State<App>, h: HeaderMap) -> Res {
+    Ok(match current(&app, &h).await? {
+        Some(m) if m.seller => Redirect::to(&m.store_url()).into_response(),
+        Some(_) => Redirect::to("/me/sell").into_response(),
+        None => Redirect::to("/login?next=/me/store/page").into_response(),
     })
 }
 
@@ -966,7 +983,8 @@ pub async fn who(State(app): State<App>, h: HeaderMap) -> Res {
     Ok(ok(json!({
         "admin": p != admin::Power::Nothing,
         "full": matches!(p, admin::Power::Admin(_)),
-        "member": m.map(|m| json!({ "id": m.id, "name": m.name, "locked": m.locked(), "lock_left": m.lock_left(), "avatar": m.avatar, "initial": m.initial(), "seller": m.seller, "role": m.role, "approved": m.profile_ok })),
+        // "store": a seller's own store, where the menu's "My store" goes.
+        "member": m.map(|m| json!({ "id": m.id, "name": m.name, "locked": m.locked(), "lock_left": m.lock_left(), "avatar": m.avatar, "initial": m.initial(), "seller": m.seller, "role": m.role, "approved": m.profile_ok, "store": if m.seller { m.store_url() } else { String::new() } })),
         // The key a browser turns alerts on with (static/alerts.js).
         "push_key": crate::push::public_key(),
         "bookmarks": bookmarks,
@@ -2281,6 +2299,27 @@ mod tests {
         members::migrate(&c).unwrap();
         marcuru_rs::db::migrate(&c).unwrap();
         c
+    }
+
+    #[test]
+    fn a_store_card_says_who_sells_it_and_shows_finish_note_and_copies_left() {
+        let c = db();
+        let s = members::create(&c, "Ash", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        c.execute("UPDATE members SET store_name='Pallet Cards' WHERE id=?1", [s]).unwrap();
+        let members::Added::Yes(id) = marcuru_rs::sellers::add_listing(&c, s, "tcgdex:base1-58", "Pikachu - 058/102 - Base Set", "58/102", "Base Set", "", "").unwrap() else { panic!() };
+        c.execute("UPDATE member_cards SET kind='sale', status='Active', qty=3, value_own=500, finish='reverseHolofoil', notes='Light whitening on the back.' WHERE id=?1", [id]).unwrap();
+        let t = members::get(&c, s).unwrap().unwrap();
+        let card = members::card(&c, s, id).unwrap().unwrap();
+        let html = render(MemberCardPart { t: t.clone(), c: card.clone(), left: 2, related: vec![], trend: None, viewer: 0 }).unwrap();
+        assert!(html.contains("<small>Sold by</small><b class=\"mco-name\">Pallet Cards</b>") && html.contains(&format!("href=\"{}\"", t.store_url())), "{html}");
+        assert!(html.contains("<dt>Finish</dt><dd>Reverse Holo</dd>") && html.contains("<dd>2 left</dd>") && html.contains("<dt>Seller's note</dt><dd>Light whitening on the back.</dd>"), "{html}");
+        assert!(!html.contains("Ask in the store"), "asking is Message");
+        // A card that isn't for sale belongs to its trainer: "Owned by", and the box opens their page.
+        c.execute("UPDATE member_cards SET kind='own' WHERE id=?1", [id]).unwrap();
+        let html = render(MemberCardPart { t, c: members::card(&c, s, id).unwrap().unwrap(), left: 0, related: vec![], trend: None, viewer: 0 }).unwrap();
+        assert!(html.contains("<small>Owned by</small><b class=\"mco-name\">Ash</b>") && html.contains(&format!("href=\"/trainers/{s}\"")) && !html.contains("left</dd>"), "{html}");
     }
 
     #[test]

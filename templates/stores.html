@@ -4,7 +4,7 @@
 <section class="wrap trainers stores-page">
   <div class="tr-head">
     <h1 class="h1">Stores</h1>
-    {% if let Some(u) = me %}{% if u.seller %}<a class="btn" href="/me/store">My store</a>{% else %}<a class="btn" href="/me/sell">Apply as a seller</a>{% endif %}{% else %}<a class="btn" href="/join">Open a store</a><a class="linkbtn" href="/login">Log in</a>{% endif %}
+    {% if let Some(u) = me %}{% if u.seller %}<a class="btn" href="{{ u.store_url() }}">My store</a>{% else %}<a class="btn" href="/me/sell">Apply as a seller</a>{% endif %}{% else %}<a class="btn" href="/join">Open a store</a><a class="linkbtn" href="/login">Log in</a>{% endif %}
   </div>
   {#- Every store the same way, the vault's among them: the one that last put up or changed a card comes first. -#}
   {% if stores.is_empty() %}
