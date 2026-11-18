@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Store settings · Vault Manager{% endblock %}
+{% block head %}{% include "mgr_head.html" %}{% endblock %}
+{% block layout %}wide{% endblock %}
+{% block content %}
+{#- The vault's own store, set up like a seller's Store settings (the owner, 19 Nov 2026): its cover photo, its words,
+    its links, how buyers pay and its border colour, on one page. Its name is the site's own name. -#}
+<section class="wrap admin wide st" id="vaultStore">
+  {% include "admin_tabs.html" %}
+
+  <form class="me-card st-form" id="vaultStoreForm" enctype="multipart/form-data">
+    <h2 class="h2">The store</h2>
+    <div class="me-fields">
+      <div class="st-fixed"><span class="st-fixed-l">Store name</span><b>{{ nav.brand }}</b><small>the site's own name</small></div>
+      <label class="st-cover-pick">Cover photo <small>wide, like a banner</small>
+        <span class="st-cover-prev" id="coverPrev"{% if s.cover.is_empty() %} hidden{% endif %}><img src="{{ s.cover }}" alt="" id="coverImg"></span>
+        <input type="file" name="cover" accept="image/*" id="coverFile">
+        <label class="chk"><input type="checkbox" class="sr" name="drop_cover" value="1"><span class="chk-box"></span> Remove the cover photo</label>
+      </label>
+      <label>About <small>shown under the name</small><textarea name="bio" rows="3" maxlength="300">{{ bio }}</textarea></label>
+    </div>
+
+    <h2 class="h2">Links</h2>
+    <div class="me-fields st-links">
+      <label>Facebook page<input type="url" name="fb_url" value="{{ s.fb_url }}" placeholder="https://facebook.com/…" maxlength="300"></label>
+      <label>Facebook group<input type="url" name="fb_group_url" value="{{ s.fb_group_url }}" placeholder="https://facebook.com/groups/…" maxlength="300"></label>
+      <label>Instagram<input type="url" name="ig_url" value="{{ s.ig_url }}" placeholder="https://instagram.com/…" maxlength="300"></label>
+      <label>TikTok<input type="url" name="tiktok_url" value="{{ s.tiktok_url }}" placeholder="https://tiktok.com/@…" maxlength="300"></label>
+      <label>Shopee<input type="url" name="shopee_url" value="{{ s.shopee_url }}" placeholder="https://shopee.ph/…" maxlength="300"></label>
+      <label>Other links <small>one per line: <code>Carousell | https://…</code>, or just the address</small><textarea name="links" rows="3" placeholder="Carousell | https://carousell.ph/u/…">{{ s.links }}</textarea></label>
+    </div>
+
+    <h2 class="h2">How buyers pay</h2>
+    <div class="me-fields">
+      <div class="st-methods">{% for m in methods %}<label class="chk"><input type="checkbox" class="sr" name="pay_method" value="{{ m }}"{% if self.has_pay(m) %} checked{% endif %}><span class="chk-box"></span> {{ m }}</label>{% endfor %}</div>
+      <label>How to pay <small>shown to a buyer once you accept their order</small><textarea name="pay_info" rows="4" maxlength="600" placeholder="GCash: Juan D. · 0917 123 4567&#10;Meetups: SM North, weekends">{{ pay_info }}</textarea></label>
+    </div>
+
+    <h2 class="h2">Border colour</h2>
+    <div class="st-borders" role="radiogroup" aria-label="Border colour">
+      {% for (name, col) in borders %}<label class="st-border"><input type="radio" class="sr" name="border" value="{{ col }}"{% if *col == border %} checked{% endif %}><span class="st-sw" style="--sw:{% if col.is_empty() %}#efc873{% else %}{{ col }}{% endif %}"></span><span>{{ name }}</span></label>{% endfor %}
+      {% if !named_border %}<label class="st-border"><input type="radio" class="sr" name="border" value="{{ border }}" checked><span class="st-sw" style="--sw:{{ border }}"></span><span>Your own colour</span></label>{% endif %}
+    </div>
+
+    <div class="me-save-row"><button class="btn" type="submit">Save</button><a class="linkbtn" href="/store/vault" target="_blank" rel="noopener">See the store ↗</a></div>
+  </form>
+</section>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<script src="/static/admin-ui.js?v=10" defer></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const A = window.Admin;
+  const form = document.getElementById('vaultStoreForm'), file = document.getElementById('coverFile');
+  file.addEventListener('change', () => { const f = file.files[0]; if (!f) return; document.getElementById('coverImg').src = URL.createObjectURL(f); document.getElementById('coverPrev').hidden = false; });
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('button[type=submit]'); btn.disabled = true;
+    try {
+      const fd = new FormData(form);
+      const f = file.files[0];
+      if (f) fd.set('cover', A.resize ? await A.resize(f, 1600).catch(() => f) : f, 'cover.jpg'); else fd.delete('cover');
+      const r = await fetch('/admin/store', { method: 'POST', body: fd, credentials: 'same-origin', headers: { Accept: 'application/json' } });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || !j.ok) throw new Error(j.error || 'That didn’t save. Please try again.');
+      if (j.cover) { document.getElementById('coverImg').src = j.cover; document.getElementById('coverPrev').hidden = false; } else document.getElementById('coverPrev').hidden = true;
+      form.elements.drop_cover.checked = false; file.value = '';
+      A.toast('Saved ✓', { kind: 'ok' });
+    } catch (err) { A.toast(err.message, { kind: 'err' }); }
+    btn.disabled = false;
+  });
+});
+</script>
+{% endblock %}

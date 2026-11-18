@@ -103,7 +103,7 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     }
     if (root.classList.contains('menu-open') && (!t.closest('#fbMenu') || t.closest('#fbMenu a'))) setMenu(false);
     if (t.closest('#barMe')) { setMe(mePop.hidden); return; }
-    if (mePop && !mePop.hidden && !t.closest('#meMenu')) setMe(false);
+    if (mePop && !mePop.hidden && (!t.closest('#meMenu') || t.closest('#meMenu [data-cart-open]'))) setMe(false);
     if (t.closest('[data-search-open]')) { root.classList.add('search-open'); document.querySelector('.hd-search input')?.focus(); return; }
     if (t.closest('[data-search-close]')) root.classList.remove('search-open');
   });

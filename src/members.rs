@@ -203,11 +203,7 @@ impl Member {
     }
     /// The named links a seller added, as (label, address, the address in short: "facebook.com/vaultshop").
     pub fn social_links(&self) -> Vec<(String, String, String)> {
-        let short = |u: &str| -> String {
-            let t = u.trim_start_matches("https://").trim_start_matches("www.").trim_end_matches('/');
-            let t = t.split(['?', '#']).next().unwrap_or(t);
-            if t.chars().count() > 38 { t.chars().take(37).collect::<String>() + "…" } else { t.to_string() }
-        };
+        let short = short_link;
         let mut v = vec![];
         for (label, url) in [("Facebook", &self.fb_url), ("Facebook group", &self.fb_group_url), ("Instagram", &self.ig_url), ("TikTok", &self.tiktok_url), ("Shopee", &self.shopee_url)] {
             if !url.is_empty() {
@@ -542,6 +538,13 @@ impl MemberBinder {
     pub fn has_image(&self) -> bool {
         !self.cover_image.is_empty()
     }
+}
+
+/// A link's address in short, for the title of its chip: "facebook.com/vaultshop".
+pub fn short_link(u: &str) -> String {
+    let t = u.trim_start_matches("https://").trim_start_matches("www.").trim_end_matches('/');
+    let t = t.split(['?', '#']).next().unwrap_or(t);
+    if t.chars().count() > 38 { t.chars().take(37).collect::<String>() + "…" } else { t.to_string() }
 }
 
 pub fn initial(name: &str) -> String {

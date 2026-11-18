@@ -93,19 +93,21 @@ small { font-size: max(.75rem, .85em); }
 .hd-ib[aria-expanded="true"], .hd-ib[aria-current="page"] { background: var(--gold-tint); color: var(--gold); }
 .hd-ib svg { width: 20px; height: 20px; }
 .hd-badge, .notif-badge { position: absolute; top: -4px; right: -4px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px; background: var(--red); color: #fff; font: 700 .75rem/19px var(--font); text-align: center; pointer-events: none; }
-/* The cart: a row in the menu under Orders, with its number (cart.js); the menu buttons show the number too. */
+/* The cart: a row in the menu under Orders, with its number (cart.js); from 700px also a button in the header while it
+   holds cards, so anyone (a visitor too) can open it. */
+.hd-cart { position: relative; }
+@media (max-width: 699px) { .hd-cart { display: none !important; } }
 #cartFab[hidden] { display: flex !important; }
 .mn-cart { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
 .mn-n { margin-left: auto; min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px; background: var(--red); color: #fff; font: 700 .75rem/24px var(--font); text-align: center; }
 #cartFab:not(.has) .mn-n { display: none; }
-.hd-menu-btn { position: relative; }
 .bt-n { position: absolute; top: -4px; right: calc(50% - 26px); min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px; background: var(--red); color: #fff; font: 700 .75rem/19px var(--font); text-align: center; pointer-events: none; }
 .bt-n[hidden], .hd-badge[hidden] { display: none; }
 #btMenu .bt-pill { position: relative; }
 .hd-pop { position: relative; display: flex; }
 .hd-me { flex: none; display: block; padding: 0; border: 0; border-radius: 50%; background: none; }
 .hd-login, .hd-reg { flex: none; }
-.hd-menu-btn, .hd-search-btn { display: none; }
+.hd-search-btn { display: none; }
 html[data-me] .hd-login { display: none; }
 
 /* ---------- 4. Frame ---------- */
@@ -128,15 +130,9 @@ body[data-layout="page"] main:has(> .storefront, > .mk) { max-width: none; paddi
   body[data-layout="feed"] .fb-app { grid-template-columns: minmax(0, 1fr) clamp(232px, calc(100vw - 1136px), 300px); }
   body[data-layout="feed"] .fb-right { display: block; }
 }
-@media (min-width: 1536px) {
-  body[data-layout="feed"] .fb-app { --rail: clamp(208px, calc((100vw - 1120px) / 2), 300px); grid-template-columns: var(--rail) minmax(0, 1fr) var(--rail); }
-  body[data-layout="page"] .fb-app { grid-template-columns: var(--rail) minmax(0, 1fr); }
-  body:is([data-layout="feed"], [data-layout="page"]) .fb-left { display: block; position: sticky; top: calc(var(--hd-h) + var(--sat)); height: calc(100dvh - var(--hd-h) - var(--sat)); padding: 12px 4px 16px 8px; overflow-y: auto; scrollbar-width: thin; }
-  body:is([data-layout="feed"], [data-layout="page"]) .fb-foot { display: none; }
-  body:is([data-layout="feed"], [data-layout="page"]) .hd-menu-btn { display: none !important; }
-}
+/* (A wide screen had a left column with the menu in it: since 19 Nov 2026 the menu under your picture is the only one.) */
 
-/* ---------- 5. Menu: the left column on a wide screen, a sheet everywhere else ---------- */
+/* ---------- 5. Menu: the phone's sheet (from 700px the menu is the one under your picture, .me-pop) ---------- */
 .mn-head { display: none; }
 .mn { display: flex; flex-direction: column; }
 .mn-i { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 6px 8px; border-radius: var(--r); color: var(--text); font-weight: 600; }
@@ -170,12 +166,6 @@ html[data-me] [data-guest-only] { display: none !important; }
   html.menu-open { overflow: hidden; }
   html.menu-open .fb-left { display: block; position: fixed; z-index: 950; top: calc(var(--hd-h) + var(--sat)); bottom: 0; left: 0; width: min(360px, 100%); padding: 8px 8px calc(16px + var(--sab)); overflow-y: auto; background: var(--surface); box-shadow: var(--shadow-pop); }
   html.menu-open::after { content: ""; position: fixed; inset: calc(var(--hd-h) + var(--sat)) 0 0 0; z-index: 940; background: rgba(3,4,10,.6); }
-}
-@media (max-width: 1535px) and (min-width: 700px) { .hd-menu-btn { display: inline-grid; } }
-body:is([data-layout="wide"], [data-layout="plain"]) .hd-menu-btn { display: inline-grid; }
-@media (min-width: 1536px) {
-  body:is([data-layout="wide"], [data-layout="plain"]) .fb-app { grid-template-columns: minmax(0, 1fr); }
-  html.menu-open body:is([data-layout="wide"], [data-layout="plain"]) .fb-left { display: block; position: fixed; z-index: 950; top: calc(var(--hd-h) + var(--sat)); bottom: 0; left: 0; width: 360px; padding: 8px 8px 16px; overflow-y: auto; background: var(--surface); box-shadow: var(--shadow-pop); }
 }
 
 /* ---------- 6. Right column ---------- */
@@ -1007,26 +997,14 @@ img.av { object-fit: cover; }
 .sf-filter input[type="search"] { flex: 1 1 220px; }
 .sf-filter select { flex: 0 1 190px; width: auto; }
 .sf-n { margin-left: auto; color: var(--muted); }
-.sf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
-.sf-card { display: flex; flex-direction: column; min-width: 0; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); overflow: hidden; }
-.sf-pic { position: relative; display: block; aspect-ratio: 63 / 88; background: var(--surface-2); overflow: hidden; }
-.sf-pic img { width: 100%; height: 100%; object-fit: cover; }
-.sf-flag { position: absolute; left: 8px; top: 8px; padding: 3px 10px; border-radius: var(--pill); background: rgba(11,13,20,.88); color: var(--gold-hi); font: 700 .75rem/1.3 var(--font); }
-.sf-flag.sold { color: #ffb4ad; }
-.sf-flag.sf-qty { left: auto; right: 8px; color: var(--text); }
-.sf-card:is([data-status="Out of stock"], [data-status="Sold"]) .sf-pic img { opacity: .45; }
-.sf-body { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; padding: 10px 12px 4px; }
-.sf-price { order: -1; color: var(--gold-hi); font: 800 1.125rem/1.2 var(--display); }
-.sf-title { font-weight: 600; overflow-wrap: anywhere; }
-.sf-set { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: .8125rem; }
-.sf-note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; margin: 2px 0 0; color: var(--text); font-size: .8125rem; overflow: hidden; }
-.sf-buy { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: auto; padding: 8px 12px 12px; }
-.sf-buy .btn { flex: 1 1 auto; min-height: 36px; padding: 0 10px; font-size: .8125rem; }
-.sf-buy .cart-add { flex: 1 1 100%; }
-.sf-buy .btn svg { width: 16px; height: 16px; }
-.sf-own .btn { flex: 1 1 0; }
-.sf-save { flex: none; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; background: var(--surface-3); color: var(--muted); font-size: 1rem; }
-.sf-save[aria-pressed="true"] { background: rgba(255,122,138,.14); color: #ff7a8a; }
+/* A seller's cards: the same tile and grid as the vault's store (section 9), the owner's small Edit under each. */
+.sf-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 16px 12px; margin: 0; padding: 0; list-style: none; }
+@media (max-width: 699px) { .sf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 8px; } }
+.sf-card { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.sf-card:is([data-status="Out of stock"], [data-status="Sold"], [data-status="Hidden"]) .card-img img { opacity: .45; }
+.grade.sf-off { color: #ffb4ad; box-shadow: none; }
+.sf-edit { align-self: flex-start; min-height: 32px; padding: 0 12px; font-size: .8125rem; }
+.sf-edit svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .sf-held { flex: 1; color: var(--muted); font: 600 .8125rem/1.2 var(--font); }
 .sf-reviews { display: flex; flex-direction: column; gap: 12px; }
 .sf-review-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
@@ -1064,9 +1042,6 @@ img.av { object-fit: cover; }
   .sf-who { flex: none; } .sf-sub { justify-content: center; }
   .sf-acts { width: 100%; }
   .pf-tabs { padding: 0 4px; border-radius: 0; }
-  .sf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .sf-buy .btn { flex: 1 1 100%; }
-  .sf-own .btn { flex: 1 1 0; }
   .sf-filter select { flex: 1 1 140px; }
   /* The store's header on a phone: the picture small on the left with the name beside it, the buttons in one row,
      the four numbers in one row. */
@@ -1406,7 +1381,6 @@ a.card:hover .card-pen, .card-pen:focus-visible { opacity: 1; }
   .hd-reg { display: none; }
 }
 /* Phones have Menu in the bottom bar, so the header never needs a second menu button there (it only crowded the name). */
-@media (max-width: 699px) { .hd-menu-btn { display: none !important; } }
 
 /* ---------- 32. A card, opened in a window over the page ---------- */
 html.cardwin-open { overflow: hidden; }

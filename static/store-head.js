@@ -166,27 +166,5 @@
   }
   window.bbvBorder = { picker };
 
-  // The vault's store has no seller: a full admin edits it here (its border; its binders have their own button).
-  document.querySelector('[data-vault-store-edit]')?.addEventListener('click', (e) => {
-    const btn = e.currentTarget;
-    const d = make('dialog', 'float');
-    const form = make('form', 'float-panel bp-form'); form.noValidate = true;
-    const h = make('h2', 'vc-h', 'Edit store');
-    const p = picker(btn.dataset.border || '');
-    const err = make('p', 'vc-err'); err.setAttribute('role', 'alert');
-    const acts = make('div', 'sheet-acts');
-    const cancel = button('btn ghost', 'Cancel', () => { p.undo(); done(); });
-    const save = make('button', 'btn', 'Save'); save.type = 'submit';
-    acts.append(cancel, save);
-    form.append(h, p.node, err, acts); d.append(form); document.body.append(d);
-    const done = () => { d.close(); d.remove(); };
-    d.addEventListener('cancel', (ev) => { ev.preventDefault(); p.undo(); done(); });
-    form.addEventListener('submit', async (ev) => {
-      ev.preventDefault();
-      save.disabled = true; save.textContent = 'Saving…'; err.textContent = '';
-      try { await send('/admin/store/border', { border: p.value() }); btn.dataset.border = p.value(); done(); toast('Saved ✓'); }
-      catch (x) { err.textContent = x.message; save.disabled = false; save.textContent = 'Save'; }
-    });
-    d.showModal();
-  });
+  // (The vault's store is set up in Vault Manager › Store settings, /admin/store, like a seller's Store settings.)
 })();

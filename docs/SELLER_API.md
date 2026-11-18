@@ -164,6 +164,7 @@ There is no checkout and no payment: sending the cart places orders, and the sel
 | `GET /cart/lines?v=1,2&c=3` | Fresh title, price, picture and availability for vault products (`v`) and sellers' cards (`c`) |
 | `POST /cart/checkout` | `{ items: [{ kind: "vault" \| "card", id, qty }], message }` → `{ placed, failed }`. The vault's lines become one `vault_orders` row; each seller's card becomes a reservation (`sellers::reserve`), and one seller's cards share a `batch` (the first one's id): one order for that store. 401 when signed out. |
 | `GET /me/orders?tab=buying` | The buyer's reservations, offers and vault orders, with how to pay once accepted |
+| `GET /admin/store`, `POST /admin/store` | The vault's own Store settings (full admins): a form with `cover` (or `drop_cover`), `bio`, `fb_url`, `fb_group_url`, `ig_url`, `tiktok_url`, `shopee_url`, `links`, `pay_method` ×n, `pay_info`, `border`. Answers `{ ok, cover }` |
 | `POST /me/orders/vault/{id}` | `{ status: "Cancelled" }` while the order is still open; `{ status: "BuyerPaid" }` once it is accepted (`vault_orders.buyer_paid_at`; the admins hear) |
 
 Open vault orders (`Pending`, `Confirmed`) hold the vault's copies (`db::vault_left`), oldest first, so two buyers

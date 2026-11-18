@@ -1271,6 +1271,7 @@ async fn main() {
         .route("/admin/sellers", get(store::admin_sellers))
         .route("/admin/orders", get(store::admin_orders))
         .route("/admin/orders/pay", post(store::admin_vault_pay))
+        .route("/admin/store", get(store::admin_store).post(store::admin_store_save).layer(axum::extract::DefaultBodyLimit::max(20 * 1024 * 1024)))
         .route("/admin/store/border", post(store::vault_border_save))
         .route("/admin/applications/{id}", post(store::apply_decide))
         .route("/me/bookmarks", get(store::bookmarks_page).post(store::bookmark))

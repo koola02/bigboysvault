@@ -1,8 +1,9 @@
-{# The new look's frame, top half: the header, then the menu (left column on a wide screen, a sheet elsewhere).
-   The menu lists a place only where the screen has no other button for it (data-mn, see fb.css section 5): Stores,
-   with the logo, is a header tab from 700px and in the phone's bottom bar, where Ask is too. The Vault has no button
-   anywhere (the owner, 17 Nov 2026): its cards are found through Stores and the search. Log out ends the menu on
-   every screen: a phone has no account button, and the menu should read the same everywhere.
+{# The new look's frame, top half: the header, then the phone's menu (a sheet the Menu tab opens).
+   One menu on every screen (the owner, 19 Nov 2026): from 700px it is the one under your picture (#meMenu,
+   fb_bottom.html); the ☰ button and the wide screen's left column went. On a phone the sheet below is the menu, and it
+   lists a place only where the phone has no other button for it (data-mn, see fb.css section 5). The Vault has no
+   button anywhere (the owner, 17 Nov 2026): its cards are found through Stores and the search. The cart has its own
+   button in the header from 700px, shown while it holds cards (cart.js), so a visitor can open it too.
    The first line (your picture and name) opens your own page, not its settings (the owner, 18 Nov 2026): /me/page
    forwards there, and fb-shell.js points the link straight at /trainers/{id} once it knows who is signed in.
    "Account Settings" on that page opens /me. Scan a card has no line here: it is a tab of Add cards.
@@ -27,7 +28,7 @@
   </nav>
   <div class="hd-r">
     <button type="button" class="hd-ib hd-search-btn" data-search-open aria-label="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></button>
-    <button type="button" class="hd-ib hd-menu-btn" data-menu-toggle aria-label="Menu" aria-controls="fbMenu" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span class="hd-badge" data-cart-count hidden></span></button>
+    <button type="button" class="hd-ib hd-cart" data-cart-open aria-label="Cart" title="Cart" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg><span class="hd-badge" data-cart-count hidden></span></button>
     <div class="hd-pop" id="dmDropdown" hidden>
       <a class="hd-ib" id="barDm" href="/me/messages" hidden aria-label="Messages" title="Messages" aria-expanded="false" aria-controls="dmMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg><span class="notif-badge" id="dmBadge" hidden>0</span></a>
       <div class="notif-menu dm-menu" id="dmMenu" hidden>

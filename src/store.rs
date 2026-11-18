@@ -1563,9 +1563,12 @@ struct VaultStorePage {
     nav: Chrome,
     tiles: Vec<BinderTile>,
     n: VaultNumbers,
-    /// What a seller's store header shows too: when it opened, its words, how to pay it and its border colour.
+    /// What a seller's store header shows too: when it opened, its words, how to pay it and its border colour; and,
+    /// set in Vault Manager › Store settings, its cover photo and links.
     since: String,
-    bio: &'static str,
+    bio: String,
+    cover: String,
+    links: Vec<(String, String, String)>,
     pay: Vec<String>,
     border: String,
     /// "Everything in the vault": its cards for sale, as `grid.html` draws them.
@@ -1623,6 +1626,9 @@ fn vault_page(c: &rusqlite::Connection, q: db::Query) -> rusqlite::Result<VaultS
     let (since, border) = (vault_since(c)?, sellers::vault_border(c)?);
     let pay: Vec<String> = sellers::vault_pay(c)?.0.split(',').map(str::trim).filter(|m| !m.is_empty()).map(String::from).collect();
     let conds = db::conditions_for_sale(c)?;
+    let vs = sellers::vault_store(c)?;
+    let links = vs.social_links();
+    let bio = if vs.bio.trim().is_empty() { VAULT_BIO.to_string() } else { vs.bio.clone() };
     let next = next_page(&q, found);
     let site = nav.site.clone();
     let url = format!("{site}{VAULT_STORE}");
@@ -1647,7 +1653,7 @@ fn vault_page(c: &rusqlite::Connection, q: db::Query) -> rusqlite::Result<VaultS
         title,
         ..Default::default()
     };
-    Ok(VaultStorePage { nav, tiles, n, since, bio: VAULT_BIO, pay, border, base: VAULT_STORE.into(), q: q.q, sort: q.sort, cond: q.cond, conds, in_stock: true, items, next })
+    Ok(VaultStorePage { nav, tiles, n, since, bio, cover: vs.cover, links, pay, border, base: VAULT_STORE.into(), q: q.q, sort: q.sort, cond: q.cond, conds, in_stock: true, items, next })
 }
 
 /// GET /store/vault/binders/{handle}: a vault binder's address, should anyone write it like a seller's. Its page is /collections/{handle}.
@@ -1798,6 +1804,7 @@ fn vault_card(c: &rusqlite::Connection, brand: &str) -> rusqlite::Result<StoreCa
     };
     let (on_sale, _, _) = admin::in_vault(c)?;
     let (methods, _) = sellers::vault_pay(c)?;
+    let vs = sellers::vault_store(c)?;
     let cards = cards
         .iter()
         .map(|p| Highlight {
@@ -1817,8 +1824,8 @@ fn vault_card(c: &rusqlite::Connection, brand: &str) -> rusqlite::Result<StoreCa
         avatar: "/static/img/logo-sm-144.png?v=1".into(),
         initial: String::new(),
         logo: true,
-        cover: String::new(),
-        bio: VAULT_BIO.into(),
+        cover: vs.cover.clone(),
+        bio: if vs.bio.trim().is_empty() { VAULT_BIO.into() } else { vs.bio.clone() },
         on_sale,
         sold: sellers::vault_sold(c)?,
         followers: sellers::followers(c, 0)?,
@@ -2240,6 +2247,113 @@ pub struct BorderReq {
     border: String,
 }
 
+#[derive(Template)]
+#[template(path = "admin_store.html")]
+struct AdminStorePage {
+    nav: Chrome,
+    tab: &'static str,
+    s: sellers::VaultStore,
+    /// Its words as shown (the standing words until the admins write their own).
+    bio: String,
+    methods: [&'static str; 6],
+    pay_methods: String,
+    pay_info: String,
+    border: String,
+    borders: [(&'static str, &'static str); 10],
+    /// The border colour is one of the named ones (otherwise it shows as "Your own colour").
+    named_border: bool,
+}
+
+impl AdminStorePage {
+    fn has_pay(&self, m: &str) -> bool {
+        self.pay_methods.split(',').any(|x| x.trim() == m)
+    }
+}
+
+/// GET /admin/store: Vault Manager › Store settings, the vault's own store set up like a seller's: its cover photo, its
+/// words, its links, how buyers pay and its border colour (the owner, 19 Nov 2026).
+pub async fn admin_store(State(app): State<App>, h: HeaderMap) -> Res {
+    if !admin::authed(&app, &h) {
+        return Ok(Redirect::to("/login").into_response());
+    }
+    let (nav, s, (pay_methods, pay_info), border) = with_db(&app, |c| Ok((chrome(c)?, sellers::vault_store(c)?, sellers::vault_pay(c)?, sellers::vault_border(c)?))).await?;
+    let bio = if s.bio.trim().is_empty() { VAULT_BIO.to_string() } else { s.bio.clone() };
+    let named_border = sellers::BORDERS.iter().any(|(_, c)| *c == border);
+    Ok(html(render(AdminStorePage { nav, tab: "store", s, bio, methods: sellers::PAY_METHODS, pay_methods, pay_info, border, borders: sellers::BORDERS, named_border })?))
+}
+
+/// POST /admin/store: a form with the cover photo (`cover`, or `drop_cover`), `bio`, the links, `pay_method` ×n and
+/// `pay_info`, and `border`. Answers with the cover now in use.
+pub async fn admin_store_save(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> Res {
+    if !admin::authed(&app, &h) {
+        return Ok(fail(StatusCode::FORBIDDEN, "Only the vault's admins can change its store."));
+    }
+    let mut s = sellers::VaultStore::default();
+    let (mut methods, mut pay_info, mut border, mut cover, mut drop_cover) = (Vec::<String>::new(), String::new(), String::new(), None::<Vec<u8>>, false);
+    while let Some(f) = mp.next_field().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))? {
+        let key = f.name().unwrap_or("").to_string();
+        if key == "cover" {
+            let b = f.bytes().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
+            if !b.is_empty() {
+                cover = Some(b.to_vec());
+            }
+            continue;
+        }
+        let v = f.text().await.unwrap_or_default();
+        match key.as_str() {
+            "bio" => s.bio = v,
+            "fb_url" => s.fb_url = v,
+            "fb_group_url" => s.fb_group_url = v,
+            "ig_url" => s.ig_url = v,
+            "tiktok_url" => s.tiktok_url = v,
+            "shopee_url" => s.shopee_url = v,
+            "links" => s.links = v,
+            "pay_method" => methods.push(v),
+            "pay_info" => pay_info = v,
+            "border" => border = v,
+            "drop_cover" => drop_cover = v == "1" || v == "on",
+            _ => {}
+        }
+    }
+    let Some(border) = sellers::border_ok(&border) else { return Ok(fail(StatusCode::BAD_REQUEST, BORDER_BAD)) };
+    let mut new_cover = None;
+    if let Some(bytes) = cover {
+        let dir = PathBuf::from(&*app.uploads);
+        let stem = format!("vcover-{}", members::temp_password());
+        match gated(move || store_photo(bytes, dir, stem)).await? {
+            Ok((large, small, _, _, _)) => {
+                admin::remove_upload(&app.uploads, &small);
+                new_cover = Some(large);
+            }
+            Err(e) if e == crate::community::TOO_BIG => return Ok(fail(StatusCode::BAD_REQUEST, "That photo is too big. Please use a smaller one (under 16 megapixels).")),
+            Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "That cover photo couldn't be read. Try a JPEG or PNG.")),
+        }
+    }
+    let (pay, info, next_cover) = (methods.join(","), pay_info, new_cover.clone());
+    let (old_cover, cover_now) = with_db(&app, move |c| {
+        let old = sellers::vault_store(c)?.cover;
+        sellers::set_vault_store(c, &s)?;
+        sellers::set_vault_pay(c, &pay, &info)?;
+        sellers::set_vault_border(c, &border)?;
+        let now = match (&next_cover, drop_cover) {
+            (Some(p), _) => p.clone(),
+            (None, true) => String::new(),
+            (None, false) => old.clone(),
+        };
+        if now != old {
+            sellers::set_vault_cover(c, &now)?;
+        }
+        Ok((old, now))
+    })
+    .await?;
+    // A replaced or removed cover leaves the disk.
+    if !old_cover.is_empty() && old_cover != cover_now {
+        admin::remove_upload(&app.uploads, &old_cover);
+    }
+    app.forget();
+    Ok(ok(json!({ "ok": true, "cover": cover_now })))
+}
+
 /// POST /admin/store/border: the vault's store border colour (a full admin, from "Edit store" on the vault's page).
 /// Sellers set theirs in their own "Edit store" (`save_settings`, field store_border).
 pub async fn vault_border_save(State(app): State<App>, h: HeaderMap, Json(req): Json<BorderReq>) -> Res {
@@ -2488,8 +2602,10 @@ struct AdminOrdersPage {
     orders: Vec<sellers::VaultOrder>,
     open: i64,
     methods: [&'static str; 6],
+    /// The ways the vault takes payment: "Mark paid" starts on one of them.
     pay_methods: String,
-    pay_info: String,
+    /// The vault hasn't written how to pay it: a buyer whose order is accepted would see no way to pay.
+    pay_missing: bool,
 }
 
 impl AdminOrdersPage {
@@ -2498,7 +2614,6 @@ impl AdminOrdersPage {
     }
 }
 
-/// `GET /admin/orders`: orders for the vault's own cards, and how buyers pay the vault.
 /// GET /admin/orders/{id}/message: the vault's conversation with this order's buyer (made if new), open in Messages.
 /// Full admins answer for the vault.
 pub async fn admin_order_message(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -> Res {
@@ -2520,12 +2635,14 @@ pub async fn admin_order_message(State(app): State<App>, h: HeaderMap, Path(id):
     Ok(Redirect::to(&format!("{page}?t={t}")).into_response())
 }
 
+/// `GET /admin/orders`: orders for the vault's own cards. (How buyers pay the vault is in Store settings.)
 pub async fn admin_orders(State(app): State<App>, h: HeaderMap) -> Res {
     if !admin::authed(&app, &h) {
         return Ok(Redirect::to("/login").into_response());
     }
     let (nav, orders, open, (pay_methods, pay_info)) = with_db(&app, |c| Ok((chrome(c)?, sellers::vault_orders_all(c)?, sellers::vault_orders_open(c)?, sellers::vault_pay(c)?))).await?;
-    Ok(html(render(AdminOrdersPage { nav, tab: "orders", orders, open, methods: sellers::PAY_METHODS, pay_methods, pay_info })?))
+    let pay_missing = pay_info.trim().is_empty() || pay_methods.trim().is_empty();
+    Ok(html(render(AdminOrdersPage { nav, tab: "orders", orders, open, methods: sellers::PAY_METHODS, pay_methods, pay_missing })?))
 }
 
 #[derive(Deserialize)]
@@ -3280,6 +3397,40 @@ mod tests {
     }
 
     #[test]
+    fn the_vaults_store_settings_show_on_its_store_and_a_sellers_tiles_are_the_vaults() {
+        let c = db();
+        vault(&c);
+        // Store settings: a cover photo, its own words, links (a bad one is dropped), how to pay, a border colour.
+        let s = sellers::VaultStore { bio: "Graded slabs and sealed, from our own vault.".into(), fb_url: "https://facebook.com/bbv".into(), ig_url: "http://not-https.example".into(), links: "Carousell | https://carousell.ph/u/bbv\njavascript:alert(1)".into(), ..Default::default() };
+        sellers::set_vault_store(&c, &s).unwrap();
+        sellers::set_vault_cover(&c, "/uploads/vcover-x_l.jpg").unwrap();
+        let saved = sellers::vault_store(&c).unwrap();
+        assert_eq!((saved.ig_url.as_str(), saved.links.as_str()), ("", "Carousell | https://carousell.ph/u/bbv"));
+        assert_eq!(saved.social_links().iter().map(|l| l.0.as_str()).collect::<Vec<_>>(), vec!["Facebook", "Carousell"]);
+        let html = vault_html(&c, "");
+        assert!(html.contains("<p class=\"sf-bio\">Graded slabs and sealed, from our own vault.</p>") && html.contains("sf-head has-cover") && html.contains("src=\"/uploads/vcover-x_l.jpg\""), "{html}");
+        assert!(html.contains("<dt class=\"sf-row-l\">Find us on</dt>") && html.contains("href=\"https://facebook.com/bbv\""));
+        assert!(html.contains("<a class=\"btn ghost\" href=\"/admin/store\" data-staff-only data-full-only>") && !html.contains("data-vault-store-edit"), "Edit store is Store settings now");
+        // The vault's card on Stores says the same.
+        let card = vault_card(&c, "Big Boys Vault").unwrap();
+        assert_eq!((card.bio.as_str(), card.cover.as_str()), ("Graded slabs and sealed, from our own vault.", "/uploads/vcover-x_l.jpg"));
+        // A seller's store draws its cards with the vault's tile: price with Message and +, and the owner's small Edit.
+        let m = members::create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, m, true).unwrap();
+        members::set_profile_ok(&c, m, true).unwrap();
+        let Added::Yes(id) = sellers::add_listing(&c, m, "tcgdex:base1-58", "Pikachu", "58/102", "Base Set", "/p/pika.webp", "").unwrap() else { panic!() };
+        c.execute("UPDATE member_cards SET kind='sale', status='Active', qty=2, value_own=500, notes='Clean corners', finish='holofoil' WHERE id=?1", [id]).unwrap();
+        let slug = members::get(&c, m).unwrap().unwrap().slug;
+        let visitor = page_as(&c, &slug, None, false);
+        assert!(visitor.contains(&format!("<a class=\"card\" href=\"/trainers/{m}/cards/{id}\" data-float")) && visitor.contains("<span class=\"qty\""), "{visitor}");
+        assert!(visitor.contains(&format!("data-dm-card=\"{id}\"")) && visitor.contains(&format!("data-cart-card=\"{id}\"")) && visitor.contains("<div class=\"card-note\">Clean corners</div>"));
+        assert!(visitor.contains("Pikachu - 58/102") && visitor.contains("Holofoil"), "the name with its number, and the finish beside the condition");
+        assert!(!visitor.contains("sf-buy") && !visitor.contains("data-own-edit"));
+        let own = page_as(&c, &slug, None, true);
+        assert!(own.contains("data-own-edit") && !own.contains(&format!("data-cart-card=\"{id}\"")), "the owner edits, and doesn't buy their own card");
+    }
+
+    #[test]
     fn the_vault_has_its_own_store_with_its_binders() {
         let c = db();
         vault(&c);
@@ -3290,7 +3441,9 @@ mod tests {
         // A store like every other: no "official" badge anywhere, and the same buttons as a trainer's store.
         assert!(html.contains("<h1 class=\"h1\">Big Boys Vault</h1>") && !html.to_lowercase().contains("official"));
         assert!(html.contains("id=\"followBtn\"") && html.contains("data-dm-to=\"0\"") && html.contains("data-bm=\"store\" data-id=\"0\""));
-        assert!(!html.contains("href=\"/ask\"><svg") && !html.contains("<a class=\"btn ghost\" href=\"/chat\">"), "Ask the Vault and Vault chat live in the menu, not on a store");
+        let store_part = &html[html.find("id=\"storefront\"").unwrap()..];
+        let store_part = &store_part[..store_part.find("</section>").unwrap()];
+        assert!(!store_part.contains("href=\"/ask\"") && !store_part.contains("href=\"/chat\""), "Ask the Vault and Vault chat live in the menu, not on a store");
         assert!(html.contains("data-vouches=\"vault\"") && html.contains("<b id=\"followerN\">0</b>") && html.contains("<dt class=\"sf-row-l\">Open since</dt><dd class=\"sf-row-v sf-text\">Jan 2026</dd>"));
         // The staff's link is in every visitor's page, hidden unless a full admin is signed in: the page can be kept.
         assert!(html.contains("<a class=\"btn ghost\" href=\"/admin/binders\" data-staff-only data-full-only>"));

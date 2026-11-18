@@ -23,6 +23,7 @@
     const c = count();
     n.textContent = c; fab.hidden = c === 0 && drawer.hidden;
     fab.classList.toggle('has', c > 0);
+    document.querySelectorAll('.hd-cart').forEach((b) => { b.hidden = c === 0 && drawer.hidden; });
     // The cart lives in the menu (under Orders): the menu buttons carry its number on every screen.
     document.querySelectorAll('[data-cart-count]').forEach((b) => { b.textContent = c; b.hidden = c === 0; });
     document.querySelectorAll('[data-cart-vault], [data-cart-card]').forEach((b) => {
@@ -94,6 +95,11 @@
     if (inside && !back.hidden) back.focus();
   };
   fab.addEventListener('click', () => { if (drawer.hidden) { opener = fab; open(); } else close(); });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('[data-cart-open]'); if (!b) return;
+    e.preventDefault();
+    if (drawer.hidden) { opener = b.closest('#meMenu') ? document.getElementById('barMe') || b : b; open(); } else close();
+  });
   drawer.querySelectorAll('[data-cart-close]').forEach((b) => b.addEventListener('click', close));
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !drawer.hidden) close(); });
 

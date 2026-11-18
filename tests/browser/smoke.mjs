@@ -204,8 +204,9 @@ for (const [size, viewport] of Object.entries(SIZES)) {
   });
 
   // 6. The cart. The first card that can really be bought is used: a copy held by someone's open order can't be.
-  // The cart is a row in the menu, under Orders (17 Nov 2026): on a phone or tablet the menu opens first.
+  // The cart: from a tablet up, its own button in the header (19 Nov 2026); on a phone, a row in the Menu, which opens first.
   const openCart = async () => {
+    if (await shown('.hd-cart')) { await page.click('.hd-cart'); return; }
     if (!(await shown('#cartFab'))) {
       const at = await page.evaluate(() => { const b = [...document.querySelectorAll('[data-menu-toggle]')].find((x) => x.getClientRects().length && getComputedStyle(x).visibility !== 'hidden'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
       if (at) { await page.mouse.click(at.x, at.y); await until(() => shown('#cartFab'), 3000); }

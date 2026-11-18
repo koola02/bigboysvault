@@ -286,6 +286,8 @@ struct MePage {
     stats: members::SellerStats,
     max: i64,
     conditions: [&'static str; 10],
+    /// A seller's cards by what they are: for sale, highlights, on the wishlist (their My cards shows the numbers).
+    kinds: (usize, usize, usize),
 }
 
 #[derive(Template)]
@@ -727,7 +729,8 @@ pub async fn me(State(app): State<App>, h: HeaderMap) -> Res {
         Ok((chrome(c)?, crate::store::panel(c, m, "me")?, members::cards_of(c, id)?, members::binders_of(c, id)?, members::seller_stats(c, id)?, marcuru_rs::sellers::max_cards(c)))
     })
     .await?;
-    Ok(html(render(MePage { nav: titled(nav, "Account Settings"), p, cards, binders, stats, max, conditions: members::CONDITIONS })?))
+    let kinds = (cards.iter().filter(|c| c.is_sale()).count(), cards.iter().filter(|c| c.is_own()).count(), cards.iter().filter(|c| c.is_wish()).count());
+    Ok(html(render(MePage { nav: titled(nav, "Account Settings"), p, cards, binders, stats, max, conditions: members::CONDITIONS, kinds })?))
 }
 
 /// GET /me/page: your own trainer page. The menu's first line (your name) opens this: the page itself, not its
@@ -2351,6 +2354,31 @@ mod tests {
         members::migrate(&c).unwrap();
         marcuru_rs::db::migrate(&c).unwrap();
         c
+    }
+
+    #[test]
+    fn a_seller_changes_cards_in_listings_and_a_collector_here() {
+        let c = db();
+        let s = members::create(&c, "Ash", "h").unwrap().unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        let members::Added::Yes(id) = marcuru_rs::sellers::add_listing(&c, s, "tcgdex:base1-58", "Pikachu", "58/102", "Base Set", "/p/pika.webp", "").unwrap() else { panic!() };
+        c.execute("UPDATE member_cards SET kind='own' WHERE id=?1", [id]).unwrap();
+        let page = |c: &rusqlite::Connection| {
+            let m = members::get(c, s).unwrap().unwrap();
+            let cards = members::cards_of(c, s).unwrap();
+            let kinds = (cards.iter().filter(|k| k.is_sale()).count(), cards.iter().filter(|k| k.is_own()).count(), cards.iter().filter(|k| k.is_wish()).count());
+            render(MePage { nav: chrome(c).unwrap(), p: crate::store::panel(c, m, "me").unwrap(), cards, binders: vec![], stats: members::seller_stats(c, s).unwrap(), max: 100, conditions: members::CONDITIONS, kinds }).unwrap()
+        };
+        // A trainer without a store changes their cards right here, as before.
+        let html = page(&c);
+        assert!(html.contains("data-kind") && html.contains("data-cond") && !html.contains("Manage them in Listings"));
+        // A seller: the pictures, ★ and their order here; everything else in Listings.
+        members::set_seller(&c, s, true).unwrap();
+        let html = page(&c);
+        assert!(html.contains("<a class=\"btn\" href=\"/me/listings\">Manage them in Listings</a>") && html.contains("data-star") && !html.contains("data-kind") && !html.contains("data-cond"), "{html}");
+        assert!(html.contains("<span><b>0</b> for sale</span><span><b>1</b> highlight</span>"));
+        // One menu from a tablet up: the account menu has the cart, the header has no ☰.
+        assert!(html.contains("data-cart-open") && html.contains("class=\"hd-ib hd-cart\"") && !html.contains("hd-menu-btn"));
     }
 
     #[test]

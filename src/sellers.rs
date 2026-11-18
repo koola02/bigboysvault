@@ -2960,6 +2960,71 @@ pub fn cancel_vault_order(c: &Connection, buyer: i64, id: i64) -> rusqlite::Resu
     Ok(n == 1)
 }
 
+/// The vault's own store as its admins set it in Vault Manager › Store settings (19 Nov 2026): a cover photo, its words
+/// and its links, the same as a seller's store has. Kept in `settings`; how buyers pay and the border colour have their
+/// own keys (`vault_pay`, `vault_border`).
+#[derive(Clone, Debug, Default)]
+pub struct VaultStore {
+    pub cover: String,
+    pub bio: String,
+    pub fb_url: String,
+    pub fb_group_url: String,
+    pub ig_url: String,
+    pub tiktok_url: String,
+    pub shopee_url: String,
+    pub links: String,
+}
+
+impl VaultStore {
+    /// Its links as (label, address, the address in short), as a seller's store shows them.
+    pub fn social_links(&self) -> Vec<(String, String, String)> {
+        let mut v: Vec<(String, String, String)> = [("Facebook", &self.fb_url), ("Facebook group", &self.fb_group_url), ("Instagram", &self.ig_url), ("TikTok", &self.tiktok_url), ("Shopee", &self.shopee_url)]
+            .into_iter()
+            .filter(|(_, u)| !u.is_empty())
+            .map(|(l, u)| (l.to_string(), u.clone(), members::short_link(u)))
+            .collect();
+        for line in self.links.lines().filter(|l| !l.trim().is_empty()) {
+            let (label, url) = link_parts(line);
+            if url.starts_with("https://") {
+                let s = members::short_link(&url);
+                v.push((label, url, s));
+            }
+        }
+        v
+    }
+}
+
+pub fn vault_store(c: &Connection) -> rusqlite::Result<VaultStore> {
+    let get = |k: &str| -> rusqlite::Result<String> { Ok(crate::blocks::setting(c, k)?.unwrap_or_default()) };
+    Ok(VaultStore {
+        cover: get("vault_cover")?,
+        bio: get("vault_bio")?,
+        fb_url: get("vault_fb_url")?,
+        fb_group_url: get("vault_fb_group_url")?,
+        ig_url: get("vault_ig_url")?,
+        tiktok_url: get("vault_tiktok_url")?,
+        shopee_url: get("vault_shopee_url")?,
+        links: get("vault_links")?,
+    })
+}
+
+/// Saves the vault store's words and links, cleaned the way a seller's are (links must be https://). The cover photo is
+/// saved by itself (`set_vault_cover`), once the picture is stored.
+pub fn set_vault_store(c: &Connection, s: &VaultStore) -> rusqlite::Result<()> {
+    let set = |k: &str, v: String| crate::blocks::set_setting(c, k, &v);
+    set("vault_bio", members::clean_text(&s.bio, 300))?;
+    set("vault_fb_url", members::clean_https_url(&s.fb_url))?;
+    set("vault_fb_group_url", members::clean_https_url(&s.fb_group_url))?;
+    set("vault_ig_url", members::clean_https_url(&s.ig_url))?;
+    set("vault_tiktok_url", members::clean_https_url(&s.tiktok_url))?;
+    set("vault_shopee_url", members::clean_https_url(&s.shopee_url))?;
+    set("vault_links", clean_link_lines(&s.links))
+}
+
+pub fn set_vault_cover(c: &Connection, path: &str) -> rusqlite::Result<()> {
+    crate::blocks::set_setting(c, "vault_cover", path)
+}
+
 /// How buyers pay the vault: (ways to pay, how to pay), from the admin's settings.
 pub fn vault_pay(c: &Connection) -> rusqlite::Result<(String, String)> {
     Ok((crate::blocks::setting(c, "vault_pay_methods")?.unwrap_or_default(), crate::blocks::setting(c, "vault_pay_info")?.unwrap_or_default()))

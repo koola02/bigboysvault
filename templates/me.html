@@ -50,6 +50,27 @@
     </div>
   </form>
 
+  {% if p.m.seller %}
+  {#- A seller changes prices, condition and copies in Listings, the one place (the owner, 19 Nov 2026). Here: the
+      cards as pictures, ★ for the card at the top of their page, and drag for the order there. -#}
+  <section class="me-card me-mine">
+    <h2 class="h2">My cards <small><span id="meCount">{{ p.m.cards }}</span> of {{ max }}</small></h2>
+    <p class="me-kinds"><span><b>{{ kinds.0 }}</b> for sale</span><span><b>{{ kinds.1 }}</b> highlight{% if kinds.1 != 1 %}s{% endif %}</span><span><b>{{ kinds.2 }}</b> on the wishlist</span></p>
+    <ul class="me-binder me-pics" id="meBinder">
+      {% for c in cards %}
+      <li class="me-c" data-id="{{ c.id }}">
+        <span class="me-c-pic">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" alt="" draggable="false">{% endif %}
+          <button type="button" class="me-star" data-nodrag data-star aria-label="Show {{ c.title }} at the top of your page">★</button>
+        </span>
+        <b class="me-c-t">{{ c.title }}</b>
+      </li>
+      {% endfor %}
+    </ul>
+    <p class="me-none" id="meEmpty"{% if !cards.is_empty() %} hidden{% endif %}>No cards yet. Tap Add cards to put in your first card.</p>
+    <p class="me-hint">★ puts a card at the top of your page. Drag the cards to order them there.</p>
+    <div class="me-acts"><a class="btn" href="/me/listings">Manage them in Listings</a><a class="btn ghost" href="/me/add"><span aria-hidden="true">+</span> Add cards</a></div>
+  </section>
+  {% else %}
   <section class="me-card">
     <h2 class="h2">My cards <small><span id="meCount">{{ p.m.cards }}</span> of {{ max }}</small></h2>
     <p class="me-how">Each card is a <b>Highlight</b> (one you have and show off){% if p.m.seller %}, <b>For sale</b> (in your store){% endif %} or on your <b>Wishlist</b> (one you're after). ★ picks the card shown at the top of your page. Drag to change the order. Values come from today's market prices; type your own if you know better.</p>
@@ -75,6 +96,7 @@
     {#- Adding a card has one page: Add cards (/me/add), with Search, By set and Not in the list (and Scan a card for sellers). -#}
     <p class="me-add"><a class="btn" href="/me/add"><span aria-hidden="true">+</span> Add cards</a></p>
   </section>
+  {% endif %}
 
   <section class="me-card">
     <h2 class="h2">My vouches</h2>
