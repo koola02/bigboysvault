@@ -20,8 +20,8 @@
 //!
 //! Settings: ANTHROPIC_API_KEY (a Fly secret; without it the page says scanning isn't on yet), SCAN_MODEL (default
 //! below), SCAN_EFFORT (how hard the model thinks: low, medium, high, xhigh or max; default high, the owner's choice on
-//! 18 Nov 2026), SCAN_DAILY_MAX (scans a day across the site, default 300), SCAN_PER_SELLER (a day, for each seller, default
-//! 30), ANTHROPIC_WORKSPACE_ID (the workspace to bill, needed when the key is an all-workspaces key; not secret),
+//! 18 Nov 2026), SCAN_PER_SELLER (scans a day for each seller, default 30), SCAN_DAILY_MAX (a fixed total a day for the
+//! whole site; unset, the total follows the number of sellers: `site_max`), ANTHROPIC_WORKSPACE_ID (the workspace to bill, needed when the key is an all-workspaces key; not secret),
 //! ANTHROPIC_BASE_URL (a stand-in server, only for trying this out). The owner sees how it is going at
 //! /admin/scan/status, and can try a photo at POST /admin/scan/try.
 use crate::community::{acting, check_size, current, fail, html, ok, over_limit, render};
@@ -89,8 +89,21 @@ fn env_num(name: &str, default: i64) -> i64 {
     std::env::var(name).ok().and_then(|v| v.trim().parse().ok()).filter(|n: &i64| *n >= 0).unwrap_or(default)
 }
 
-fn daily_max() -> i64 {
-    env_num("SCAN_DAILY_MAX", 300)
+/// The site's scans a day: SCAN_DAILY_MAX when it is set; otherwise each seller's share for every seller (not blocked),
+/// plus one share for the vault's own scans (the owner's tries at /admin/scan/try). It grows by itself as sellers join, so
+/// every seller can always use their whole day's share (the owner, 18 Nov 2026: "adjust limits accordingly, right now we
+/// just 10 sellers"), and the most a day can cost stays in step with the number of sellers.
+fn site_max(c: &rusqlite::Connection, per: i64) -> rusqlite::Result<i64> {
+    let fixed = std::env::var("SCAN_DAILY_MAX").ok().and_then(|v| v.trim().parse::<i64>().ok()).filter(|n| *n >= 0);
+    site_max_with(c, per, fixed)
+}
+
+fn site_max_with(c: &rusqlite::Connection, per: i64, fixed: Option<i64>) -> rusqlite::Result<i64> {
+    if let Some(n) = fixed {
+        return Ok(n);
+    }
+    let sellers: i64 = c.query_row("SELECT COUNT(*) FROM members WHERE seller=1 AND blocked=0", [], |r| r.get(0))?;
+    Ok(per * (sellers + 1))
 }
 
 fn per_seller() -> i64 {
@@ -509,9 +522,9 @@ pub async fn page(State(app): State<App>, h: HeaderMap) -> Res {
     let Some(m) = current(&app, &h).await? else { return Ok(Redirect::to("/login?next=/me/scan").into_response()) };
     let (id, seller) = (m.id, m.seller);
     let day = crate::vault_ai::today(crate::unix_now());
-    let (per, max) = (per_seller(), daily_max());
+    let per = per_seller();
     let (mut nav, scans_left) = with_db(&app, move |c| {
-        let (mine, site) = left(c, id, &day, per, max)?;
+        let (mine, site) = left(c, id, &day, per, site_max(c, per)?)?;
         Ok((chrome(c)?, mine.min(site)))
     })
     .await?;
@@ -565,9 +578,9 @@ async fn scan(app: &App, who: i64, mut mp: Multipart) -> Res {
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of scans in a short time. Please take a short break and try again."));
     }
     let day = crate::vault_ai::today(now);
-    let (per, max) = (per_seller(), daily_max());
+    let per = per_seller();
     let d2 = day.clone();
-    let (mine, site) = with_db(app, move |c| left(c, who, &d2, per, max)).await?;
+    let (mine, site) = with_db(app, move |c| left(c, who, &d2, per, site_max(c, per)?)).await?;
     if site <= 0 {
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "The site has used today's scans. They start again at midnight. Use Add cards in My store for now."));
     }
@@ -625,14 +638,15 @@ pub async fn status(State(app): State<App>, h: HeaderMap) -> Res {
         return Ok((StatusCode::NOT_FOUND, "Not found").into_response());
     }
     let day = crate::vault_ai::today(crate::unix_now());
-    let (today, last_ok, last_error, usage) = with_db(&app, move |c| {
-        Ok((used(c, "scan_day", &day)?, blocks::setting(c, "scan_last_ok")?, blocks::setting(c, "scan_last_error")?, blocks::setting(c, "scan_last_usage")?))
+    let per = per_seller();
+    let (today, last_ok, last_error, usage, daily_max) = with_db(&app, move |c| {
+        Ok((used(c, "scan_day", &day)?, blocks::setting(c, "scan_last_ok")?, blocks::setting(c, "scan_last_error")?, blocks::setting(c, "scan_last_usage")?, site_max(c, per)?))
     })
     .await?;
     // "1234|56": the last scan's tokens in and out.
     let (tokens_in, tokens_out) = usage.as_deref().and_then(|u| u.split_once('|')).map_or((0, 0), |(i, o)| (i.parse().unwrap_or(0), o.parse().unwrap_or(0)));
     Ok(ok(json!({
-        "on": enabled(), "model": model(), "effort": effort(), "workspace": workspace(), "today": today, "daily_max": daily_max(), "per_seller": per_seller(),
+        "on": enabled(), "model": model(), "effort": effort(), "workspace": workspace(), "today": today, "daily_max": daily_max, "per_seller": per,
         "last_ok": last_ok, "last_error": last_error, "last_tokens_in": tokens_in, "last_tokens_out": tokens_out,
         "paused_until": PAUSED_UNTIL.load(Ordering::Relaxed)
     })))
@@ -801,6 +815,28 @@ mod tests {
         ] }] });
         assert_eq!(finishes(&price), json!([{ "key": "normal", "label": "Normal", "php": 26.0 }, { "key": "reverse-holofoil", "label": "Reverse Holo", "php": 350.0 }]));
         assert_eq!(finishes(&json!({ "matches": [] })), json!([]));
+    }
+
+    #[test]
+    fn the_sites_day_follows_the_number_of_sellers() {
+        let c = rusqlite::Connection::open_in_memory().unwrap();
+        c.execute_batch(marcuru_rs::members::SCHEMA).unwrap();
+        marcuru_rs::members::migrate(&c).unwrap();
+        let add = |name: &str, seller: i64, blocked: i64| {
+            c.execute(
+                "INSERT INTO members(name, name_key, pass, created_at, updated_at, seller, blocked) VALUES(?1, ?1, 'x', 0, 0, ?2, ?3)",
+                rusqlite::params![name, seller, blocked],
+            )
+            .unwrap();
+        };
+        assert_eq!(site_max_with(&c, 30, None).unwrap(), 30, "no sellers yet: the vault's own share");
+        for i in 0..10 {
+            add(&format!("seller{i}"), 1, 0);
+        }
+        add("trainer", 0, 0);
+        add("blocked", 1, 1);
+        assert_eq!(site_max_with(&c, 30, None).unwrap(), 330, "ten sellers: 30 each, and 30 for the vault; trainers and blocked sellers don't count");
+        assert_eq!(site_max_with(&c, 30, Some(500)).unwrap(), 500, "SCAN_DAILY_MAX fixes it");
     }
 
     #[test]
