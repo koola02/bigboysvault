@@ -23,58 +23,13 @@
         <option value="title"{% if f.sort == "title" %} selected{% endif %}>A to Z</option>
       </select>
     </form>
-    <button type="button" class="btn" id="addOpen">+ Add cards</button>
+    <a class="btn" href="/me/add">+ Add cards</a>
   </div>
 
-  <section class="ls-add" id="addPanel" hidden>
-    <div class="st-add-head"><h2 class="h2">Add cards</h2><button type="button" class="ibtn" id="addClose" aria-label="Close">✕</button></div>
-    <div class="seg st-add-tabs" role="tablist">
-      <button type="button" class="on" data-add="search" role="tab" aria-selected="true">Search</button>
-      {% if scan_on %}<button type="button" data-add="scan" role="tab" aria-selected="false">Scan a card</button>{% endif %}
-      <button type="button" data-add="own" role="tab" aria-selected="false">Not in the list</button>
-    </div>
-    <div class="st-add-pane" data-pane="search">
-      <div class="me-find">
-        <input type="search" id="addQ" placeholder="Card name, like Pikachu 58" aria-label="Find a card" autocomplete="off" enterkeyhint="search">
-        <div class="lang-sw me-lang" id="addLang" role="group" aria-label="Card language">
-          <button type="button" data-lang="en" aria-pressed="true">English</button>
-          <button type="button" data-lang="ja" aria-pressed="false">日本語</button>
-          <button type="button" data-lang="zh" aria-pressed="false">中文</button>
-        </div>
-      </div>
-      <p class="me-state" id="addState" aria-live="polite">Type a name and tap the card you're selling. You can add the same card twice, in different conditions.</p>
-      <div class="me-results" id="addResults"></div>
-    </div>
-    {#- Scan a card (static/scan.js, src/scan.rs): Claude reads the photo. The one place to scan: the address
-        /me/listings#scan opens this tab (store.js), and the old /me/scan page forwards here. -#}
-    {% if scan_on %}
-    <div class="st-add-pane st-scan" data-pane="scan" hidden>
-      <div class="sc-go">
-        <label class="btn sc-shoot"><input type="file" accept="image/*" class="sr" id="scanFile" data-card-cam="scan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span id="scanWord">Take a photo of the card</span></label>
-        <p class="sc-left" id="scanLeft">{{ scan_left }} of {{ scan_per }} scans left today</p>
-      </div>
-      <div class="sc-out" id="scanOut" aria-live="polite"></div>
-    </div>
-    {% endif %}
-    <div class="st-add-pane" data-pane="own" hidden>
-      <form id="ownForm" class="me-up">
-        <label class="me-up-pic"><input type="file" name="photo" accept="image/*" required class="sr" id="ownPhoto" data-card-cam><img id="ownShot" alt="" hidden><span id="ownHint"><b>Add a photo</b><small>Take one or choose one</small></span></label>
-        <div class="me-fields">
-          <label>Card name<input name="name" maxlength="120" required placeholder="Like Charizard ex" autocomplete="off"></label>
-          <label>Set <small>if you know it</small><input name="set" maxlength="80" autocomplete="off"></label>
-          <label>Condition<select name="cond">{% for o in conditions %}<option>{{ o }}</option>{% endfor %}</select></label>
-          <label>Price ₱<input name="value" type="number" min="0" step="1" inputmode="numeric"></label>
-          <label class="chk"><input type="checkbox" class="sr" name="flag" value="1"><span class="chk-box"></span> Ask the vault to check this card</label>
-          <button class="btn" type="submit">Add to my store</button>
-          <p class="me-how">A card from your own photo. It shows in your store, not in the vault.</p>
-        </div>
-      </form>
-    </div>
-  </section>
 
   <p class="st-count"><span><b id="shownN">{{ cards.len() }}</b> of {{ total }} card{% if total != 1 %}s{% endif %}</span><label class="chk"><input type="checkbox" class="sr" id="selAll"><span class="chk-box"></span> Select all shown</label></p>
   {% if cards.is_empty() %}
-  <div class="me-empty st-empty" id="listEmpty">{% if total == 0 %}<b>Your store is empty.</b><span>Tap <b>+ Add cards</b> to list your first card. Prices are suggested from today's market.</span>{% else %}<b>No cards match.</b><span>Try another word, or clear the filters.</span>{% endif %}</div>
+  <div class="me-empty st-empty" id="listEmpty">{% if total == 0 %}<b>Your store is empty.</b><span>Tap <b>+ Add cards</b> to list your first card.</span>{% else %}<b>No cards match.</b><span>Try another word, or clear the filters.</span>{% endif %}</div>
   {% endif %}
   <div class="mgr-scroll"><div class="mgr-thead" data-sort="{{ f.sort }}"><span></span><span>On / off</span><span></span><span data-col="card" data-min="170" data-up="A to Z" data-down="Z to A">Card</span><span data-col="status" data-name="Delivery" data-min="104" data-up="active first" data-down="sold first">Delivery</span><span class="num" data-col="price" data-min="130" data-first="desc" data-up="lowest first" data-down="highest first">Price</span><span data-col="stock" data-min="112" data-first="desc" data-up="lowest first" data-down="highest first">Stock</span><span data-col="kind" data-name="What it is" data-min="216" data-up="for sale first" data-down="wishlist first">What it is</span><span data-col="cond" data-name="Condition" data-min="124" data-up="best first" data-down="worst first">Condition</span><span data-col="binder" data-min="120" data-up="A to Z" data-down="Z to A">Binder</span><span data-col="note" data-name="Note" data-min="130" data-up="A to Z" data-down="Z to A">Note for buyers</span></div>
   <ul class="rows mc-grid ls-grid" id="rows">
@@ -130,8 +85,6 @@
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/pricing.js?v=2" defer></script>
 <script src="/static/admin-ui.js?v=10" defer></script>
-<script src="/static/add-card.js?v=5" defer></script>
-<script src="/static/store.js?v=9" defer></script>
-{% if scan_on %}<script src="/static/scan.js?v=5" defer></script>{% endif %}
+<script src="/static/store.js?v=10" defer></script>
 <script src="/static/mgr-table.js?v=2" defer></script>
 {% endblock %}

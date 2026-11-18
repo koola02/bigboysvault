@@ -1,7 +1,7 @@
 //! Scan a card, for sellers. It began as its own page with a menu line marked "Try it" (the owner, 18 Nov 2026:
 //! "scanning for sellers only and it should be separate first since it's not perfect yet"). Later that day the owner
-//! asked for one way to add a card: the menu line and the page are gone, and scanning is the Scan tab of Add cards.
-//! The old address /me/scan forwards there.
+//! asked for one way to add a card: the menu line and the page are gone, and scanning is one of the four ways on the
+//! Add cards page (/me/add). The old address /me/scan forwards there.
 //!
 //! The seller photographs a card with the card camera (static/card-cam.js, `data-card-cam="scan"`). Claude reads it:
 //! the photo goes to Anthropic's Messages API (raw HTTP: there is no Rust SDK), to Claude Sonnet 5.5 at high effort (the
@@ -506,7 +506,7 @@ async fn look_up(app: &App, r: &Reading) -> Value {
 // ---------- the page and the scan ----------
 
 /// Scans this seller has left today (the smaller of their own and the site's), and how many a day each seller gets.
-/// For the Scan tab of Add cards in My store.
+/// For Scan a card on the Add cards page.
 pub fn left_today(c: &rusqlite::Connection, id: i64) -> rusqlite::Result<(i64, i64)> {
     let per = per_seller();
     let day = crate::vault_ai::today(crate::unix_now());
@@ -514,10 +514,10 @@ pub fn left_today(c: &rusqlite::Connection, id: i64) -> rusqlite::Result<(i64, i
     Ok((mine.min(site), per))
 }
 
-/// Where the old Scan a card address sends someone: a seller to Add cards, opened on its Scan tab; a trainer who
+/// Where the old Scan a card address sends someone: a seller to Add cards, opened on Scan a card; a trainer who
 /// doesn't sell to Apply as a seller.
 fn door(seller: bool) -> &'static str {
-    if seller { "/me/listings#scan" } else { "/me/sell" }
+    if seller { "/me/add#scan" } else { "/me/sell" }
 }
 
 /// GET /me/scan: the page this once was, kept as an address so old links still work. Signed out: the log-in page,
@@ -549,11 +549,11 @@ pub async fn try_it(State(app): State<App>, h: HeaderMap, mp: Multipart) -> Res 
 
 async fn scan(app: &App, who: i64, mut mp: Multipart) -> Res {
     let Some(key) = key() else {
-        return Ok(fail(StatusCode::SERVICE_UNAVAILABLE, "Scanning isn't switched on yet. Use Add cards in My store for now."));
+        return Ok(fail(StatusCode::SERVICE_UNAVAILABLE, "Scanning isn't switched on yet. Use Search for now."));
     };
     let now = crate::unix_now();
     if PAUSED_UNTIL.load(Ordering::Relaxed) > now {
-        return Ok(fail(StatusCode::SERVICE_UNAVAILABLE, "The card reader is resting for a few minutes. Please try again soon, or use Add cards in My store."));
+        return Ok(fail(StatusCode::SERVICE_UNAVAILABLE, "The card reader is resting for a few minutes. Please try again soon, or use Search."));
     }
     let mut photo = None;
     while let Some(f) = mp.next_field().await.map_err(|_| (StatusCode::BAD_REQUEST, "The photo didn't upload. Please try again.".to_string()))? {
@@ -577,10 +577,10 @@ async fn scan(app: &App, who: i64, mut mp: Multipart) -> Res {
     let d2 = day.clone();
     let (mine, site) = with_db(app, move |c| left(c, who, &d2, per, site_max(c, per)?)).await?;
     if site <= 0 {
-        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "The site has used today's scans. They start again at midnight. Use Add cards in My store for now."));
+        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "The site has used today's scans. They start again at midnight. Use Search for now."));
     }
     if mine <= 0 {
-        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, &format!("You've used today's {per} scans. They start again at midnight. Use Add cards in My store for now.")));
+        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, &format!("You've used today's {per} scans. They start again at midnight. Use Search for now.")));
     }
     let b64 = base64::engine::general_purpose::STANDARD.encode(&photo);
     drop(photo); // read, not kept
@@ -616,7 +616,7 @@ async fn scan(app: &App, who: i64, mut mp: Multipart) -> Res {
             return Ok(if unreadable {
                 fail(StatusCode::UNPROCESSABLE_ENTITY, "That photo couldn't be read. Try again with the card filling the frame.")
             } else {
-                fail(StatusCode::SERVICE_UNAVAILABLE, "The card reader isn't answering right now. Please try again in a moment, or use Add cards in My store.")
+                fail(StatusCode::SERVICE_UNAVAILABLE, "The card reader isn't answering right now. Please try again in a moment, or use Search.")
             });
         }
     };
@@ -650,6 +650,12 @@ pub async fn status(State(app): State<App>, h: HeaderMap) -> Res {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_old_scan_address_goes_to_add_cards() {
+        assert_eq!(door(true), "/me/add#scan", "a seller: Add cards, on Scan a card");
+        assert_eq!(door(false), "/me/sell", "anyone else: how to become a seller");
+    }
 
     fn card(id: &str, name: &str, number: &str, set: &str, total: u64) -> Value {
         json!({ "id": id, "name": name, "number": number, "set": set, "total": total, "lang": "en", "en": null, "image": "", "image_large": "" })

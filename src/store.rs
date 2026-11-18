@@ -139,11 +139,6 @@ struct ListingsPage {
     max: i64,
     total: i64,
     focus: i64,
-    /// Add cards' Scan tab reads the photo with Claude (src/scan.rs), as the Scan a card page does: shown when the
-    /// site has a key, with this seller's scans left today and the daily number.
-    scan_on: bool,
-    scan_left: i64,
-    scan_per: i64,
 }
 
 pub async fn listings(State(app): State<App>, h: HeaderMap, Query(q): Query<ListQs>) -> Res {
@@ -157,14 +152,53 @@ pub async fn listings(State(app): State<App>, h: HeaderMap, Query(q): Query<List
     let sort = if by_column.is_empty() { q.sort.chars().take(24).collect() } else { by_column };
     let f = ListFilter { q: q.q.chars().take(60).collect(), status: q.status, binder: q.binder, sort, kind: q.kind };
     let f2 = f.clone();
-    let (nav, p, cards, binders, max, total, (scan_left, scan_per)) = with_db(&app, move |c| {
+    let (nav, p, cards, binders, max, total) = with_db(&app, move |c| {
         sellers::expire_due(c)?;
         let total: i64 = c.query_row("SELECT COUNT(*) FROM member_cards WHERE member_id=?1", [id], |r| r.get(0))?;
-        Ok((chrome(c)?, panel(c, m, "listings")?, sellers::listings(c, id, &f2)?, members::binders_of(c, id)?, sellers::max_cards(c), total, crate::scan::left_today(c, id)?))
+        Ok((chrome(c)?, panel(c, m, "listings")?, sellers::listings(c, id, &f2)?, members::binders_of(c, id)?, sellers::max_cards(c), total))
     })
     .await?;
-    let scan_on = crate::scan::enabled();
-    Ok(html(render(ListingsPage { nav, p, cards, binders, f, conditions: members::CONDITIONS, statuses: sellers::STATUSES, max, total, focus: q.id.unwrap_or(0), scan_on, scan_left, scan_per })?))
+    Ok(html(render(ListingsPage { nav, p, cards, binders, f, conditions: members::CONDITIONS, statuses: sellers::STATUSES, max, total, focus: q.id.unwrap_or(0) })?))
+}
+
+// ---------- Add cards: the one place a card is added ----------
+
+#[derive(Template)]
+#[template(path = "store_add.html")]
+struct AddPage {
+    nav: Chrome,
+    p: Panel,
+    /// Adding into one of the seller's binders (its "Add cards" button): the binder, and the way back to it.
+    binder: Option<MemberBinder>,
+    back: String,
+    conditions: [&'static str; 10],
+    /// Scan a card (sellers): shown when the site has a key, with this seller's scans left today and the daily number.
+    scan_on: bool,
+    scan_left: i64,
+    scan_per: i64,
+}
+
+#[derive(Deserialize)]
+pub struct AddQs {
+    #[serde(default, deserialize_with = "empty_or_number")]
+    binder: Option<i64>,
+}
+
+/// GET /me/add: Add cards, the one place a card is added (the owner, 18 Nov 2026: "keep the add a card tool in a
+/// dedicated single page and not in multiple tabs corners and pages"). Four ways, the same for everyone: Search, Scan a
+/// card (sellers), By set and Not in the list. A seller's card opens "Add to your store" (add-card.js); a collector's
+/// joins their binder. From one of a seller's binders (?binder=id) the cards go into it, the store's own cards come
+/// first, and Done goes back to the binder.
+pub async fn add_page(State(app): State<App>, h: HeaderMap, Query(q): Query<AddQs>) -> Res {
+    let Some(m) = crate::community::current(&app, &h).await? else { return Ok(Redirect::to("/login?next=/me/add").into_response()) };
+    let (id, seller, store) = (m.id, m.seller, m.store_url());
+    let (mut nav, p, binders, (scan_left, scan_per)) = with_db(&app, move |c| Ok((chrome(c)?, panel(c, m, "add")?, members::binders_of(c, id)?, crate::scan::left_today(c, id)?))).await?;
+    nav.seo.title = format!("Add cards · {}", nav.brand);
+    let binder = if seller { q.binder.and_then(|b| binders.into_iter().find(|x| x.id == b)) } else { None };
+    // Back to the binder's page with its editor open, where the new cards now are.
+    let back = binder.as_ref().map(|b| format!("{store}/binders/{}#edit", b.slug)).unwrap_or_default();
+    let scan_on = seller && crate::scan::enabled();
+    Ok(html(render(AddPage { nav, p, binder, back, conditions: members::CONDITIONS, scan_on, scan_left, scan_per })?))
 }
 
 /// GET /me/listings/{id}: one of the seller's cards, for the "Add to your store" window to open filled in with it.
@@ -2983,6 +3017,54 @@ mod tests {
     use super::*;
     use marcuru_rs::members::Added;
 
+    /// Add cards (/me/add) as `who` sees it: from one of their binders or not, with scanning on or off.
+    fn add_page(c: &rusqlite::Connection, who: i64, binder: Option<&str>, scan_on: bool) -> String {
+        let m = members::get(c, who).unwrap().unwrap();
+        let binder = binder.map(|b| members::binder_by_slug(c, who, b).unwrap().unwrap());
+        let back = binder.as_ref().map(|b| format!("{}/binders/{}#edit", m.store_url(), b.slug)).unwrap_or_default();
+        render(AddPage { nav: chrome(c).unwrap(), p: panel(c, m, "add").unwrap(), binder, back, conditions: members::CONDITIONS, scan_on, scan_left: 40, scan_per: 40 }).unwrap()
+    }
+
+    #[test]
+    fn adding_a_card_is_one_page_with_four_ways() {
+        let c = db();
+        let s = members::create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        let b = members::create_member_binder(&c, s, "Fire").unwrap();
+        let html = add_page(&c, s, None, true);
+        for way in ["data-way=\"search\"", "data-way=\"scan\"", "data-way=\"set\"", "data-way=\"own\""] {
+            assert!(html.contains(way), "{way}");
+        }
+        assert!(html.contains("<h1 class=\"mgr-title\">Add cards</h1>") && html.contains("Add to my store") && html.contains("/static/add-card.js") && html.contains("/static/scan.js"));
+        assert!(!html.contains("class=\"btn mgr-create\""), "no button to the page it is already on");
+        // From a binder: the store's own cards come first, and Done goes back to the binder's editor.
+        let store = members::get(&c, s).unwrap().unwrap().store_url();
+        let html = add_page(&c, s, Some(&b.slug), true);
+        assert!(html.contains(&format!("data-binder=\"{}\"", b.id)) && html.contains("id=\"adMine\"") && html.contains(&format!("href=\"{store}/binders/fire#edit\">Done</a>")), "{html}");
+        // Scanning shows only while the site has a key.
+        assert!(!add_page(&c, s, None, false).contains("data-way=\"scan\""));
+        // A collector: the same page, without scanning; their own photo joins their binder.
+        let t = members::create(&c, "Ash", "h").unwrap().unwrap();
+        let html = add_page(&c, t, None, false);
+        assert!(!html.contains("data-way=\"scan\"") && html.contains("data-way=\"set\"") && html.contains("Add to my binder") && !html.contains("/static/add-card.js"));
+        // Listings only manages listings: its Add cards is a link to this page.
+        let lst = render(ListingsPage {
+            nav: chrome(&c).unwrap(),
+            p: panel(&c, members::get(&c, s).unwrap().unwrap(), "listings").unwrap(),
+            cards: vec![],
+            binders: vec![],
+            f: ListFilter::default(),
+            conditions: members::CONDITIONS,
+            statuses: sellers::STATUSES,
+            max: 500,
+            total: 0,
+            focus: 0,
+        })
+        .unwrap();
+        assert!(lst.contains("<a class=\"btn\" href=\"/me/add\">+ Add cards</a>") && !lst.contains("id=\"addPanel\"") && !lst.contains("ownForm"));
+    }
+
     fn db() -> rusqlite::Connection {
         let c = rusqlite::Connection::open_in_memory().unwrap();
         marcuru_rs::db::register_set_code(&c).unwrap();
@@ -3213,7 +3295,7 @@ mod tests {
         let slug = members::get(&c, s).unwrap().unwrap().slug;
         // No binders yet: the owner still gets the heading, the button and a word on what binders are for.
         let own = page_as(&c, &slug, None, true);
-        assert!(own.contains("data-bt-edit=\"seller\"") && own.contains("class=\"bt-none\"") && own.contains("/static/binder-tools.js?v=5"), "{own}");
+        assert!(own.contains("data-bt-edit=\"seller\"") && own.contains("class=\"bt-none\"") && own.contains("/static/binder-tools.js?v=6"), "{own}");
         let visitor = page(&c, &slug, None);
         assert!(!visitor.contains("data-bt-edit") && !visitor.contains("binder-tools.js") && !visitor.contains(">Binders<"));
         let b = members::create_member_binder(&c, s, "Fire").unwrap();

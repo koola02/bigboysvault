@@ -214,6 +214,8 @@
         const shown = (j.card && (j.card.price_text || j.card.price)) || peso(p);
         say(old ? (binder.value ? `${card.name || 'Card'} is in the binder at ${shown} ✓` : `${card.name || 'Card'} saved at ${shown} ✓`) : `${card.name || 'Card'} is in your store at ${shown} ✓`);
         if (onAdded) onAdded(j.card);
+        // The Add cards page lists what was added on this visit, whichever way it came.
+        document.dispatchEvent(new CustomEvent('bbv:added', { detail: j.card }));
       } catch (x2) { err.textContent = x2.message; go.disabled = false; go.textContent = goWord; }
     });
     d.showModal();

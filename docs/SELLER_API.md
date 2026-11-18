@@ -94,7 +94,9 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 | `POST /me/cards/new` | Multipart: the card's `id`, `image`, `image_large`, `en`, `cond`, `price`, `qty` (1–99), `notes`, `binder_id`, optional `photo`, optional `finish` (a version key from the card list's prices, like `reverse-holofoil`, sent when the window came from Scan a card; empty is the card's usual version). A seller's new card goes on sale through the "Add to your store" window (store Add cards, a binder's Add, `/me`, Scan a card); nothing is priced for them |
 | `POST /me/cards/upload` | Add a card from the seller's own photo (multipart: `photo`, `name`, `set`, `cond`, `value`) |
 | `GET /me/search?q=&lang=` | The card catalogue, as before |
-| `GET /me/scan` | The old Scan a card page's address: forwards a seller to Add cards on its Scan tab (`/me/listings#scan`), a trainer who doesn't sell to `/me/sell`, a visitor to log in first (`docs/OPERATIONS.md` 4e) |
+| `GET /me/add?binder=` | Add cards, for every signed-in trainer: Search, Scan a card (sellers), By set, Not in the list. `binder` (one of the seller's binders): its page lists the store's other cards first, and new cards go into it |
+| `GET /me/sets/search?q=&lang=`, `GET /me/sets/cards?id=&lang=` | By set on Add cards: the card list's sets, newest first (`{ sets, ready }`), and one set's cards (`{ set, cards }`; a vintage set split into its printings). Signed in; the same limit as `/me/search` |
+| `GET /me/scan` | The old Scan a card page's address: forwards a seller to Add cards on Scan a card (`/me/add#scan`), a trainer who doesn't sell to `/me/sell`, a visitor to log in first (`docs/OPERATIONS.md` 4e) |
 | `POST /me/scan` | Multipart `photo` (JPEG, PNG or WebP, 5 MB at most). Answers `{read, exact, versions, versions_total, family, left}`: what Claude read (`read.problem` when the photo can't be used), the card itself with its `finishes` (versions with market prices), its other printings (the best guess marked `guess` when the number couldn't be read), and its evolution family. 403 for a trainer who isn't a seller, 429 past the day's scans, 503 when scanning is off or resting |
 | `GET /me/binders` | Binders page |
 | `POST /me/binders` | `{ title }` makes one |
@@ -206,7 +208,7 @@ Settings the owner can add in the admin settings table: `seller_max_cards` (how 
   subscription. Limits worth knowing: iPhone and iPad need the site added to the Home Screen first; Android may hold
   alerts while the phone sleeps unless Chrome's battery use is set to Unrestricted; a ring is the phone's normal
   notification sound, repeated, not a ringtone.
-- **Scan a card** is the Scan tab of the Store Manager's Add cards (its menu line and page went on 18 Nov 2026, the
+- **Scan a card** is one of the four ways on Add cards (`/me/add#scan`; its menu line and page went on 18 Nov 2026, the
   owner asking for one way to add a card): the photo goes to `POST /me/scan`, Claude reads it on any device, and `static/scan.js` shows the card,
   its versions, other printings and evolutions (18 Nov 2026; before, this tab used Chrome's on-device `LanguageModel`,
   so on an iPhone it only said "This browser can't read cards yet"). The tab shows only while scanning is switched on,
@@ -226,7 +228,7 @@ New: `reservations`, `offers`, `inquiries`, `transactions`, `reviews`, `store_fo
 
 1. `cargo run`, open http://localhost:3000/join and make two trainers (approve them on Admin › Trainers, or they
    see only their own store).
-2. As the seller: Account Settings › **Open my store** › Listings › **+ Add cards**; set stock, prices, a binder; Store
+2. As the seller: Store Manager › **+ Add cards** (`/me/add`), Search, tap a card, fill in the window; set stock, prices, a binder; Store
    settings: name, address, ways to pay, how to pay.
 3. As the buyer: `/stores` › the store › **Reserve** (or **Offer**, **Ask a question**, **Follow**, ♥).
 4. As the seller: Orders › **Accept** › the buyer's Orders › My buying now shows how to pay › seller **Mark paid**.

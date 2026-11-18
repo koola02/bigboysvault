@@ -855,7 +855,7 @@ mod tests {
         assert!(binder.contains("class=\"wrap mk mk-bpage\"") && binder.contains("<form class=\"filters\"") && binder.contains("id=\"grid\""), "its search and cards stay");
         assert!(!binder.contains("<p class=\"sub\">"));
         // Full admins arrange its cards right there: the button is in every visitor's page (it is kept), hidden unless they are signed in.
-        assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=5"));
+        assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=6"));
         // The Vault (all cards) and a search: no bar.
         for (base, title) in [("/search", "All cards"), ("/search", "Results for “pika”")] {
             let other = page(base, title, 3);
@@ -1100,6 +1100,9 @@ async fn main() {
         .route("/me/store", get(store::dash))
         .route("/me/store/visibility", post(store::set_visibility))
         .route("/me/listings", get(store::listings))
+        .route("/me/add", get(store::add_page))
+        .route("/me/sets/search", get(community::my_set_search))
+        .route("/me/sets/cards", get(community::my_set_cards))
         .route("/me/listings/bulk", post(store::bulk_listings))
         .route("/me/listings/move", post(store::move_cards))
         .route("/me/listings/{id}", get(store::listing_one).post(store::edit_listing))

@@ -207,9 +207,10 @@ automatic posts.
 ## 4e. Scan a card with Claude (sellers)
 
 `src/scan.rs`, `static/scan.js`; for sellers only. The owner asked for it on 18 Nov 2026 as its own menu item marked
-"Try it"; later that day they asked for one way to add a card, so the menu line and the page went: scanning is the Scan
-tab of Add cards (`/me/listings#scan` opens it; the old `/me/scan` address forwards there, a visitor first to log in,
-a trainer who doesn't sell to Apply as a seller). The card camera's scan mode sends a
+"Try it"; later that day they asked for one way to add a card, so the menu line and the page went: scanning is a
+way on the Add cards page (`/me/add#scan` opens it; the old `/me/scan` address forwards there, a visitor first to log in,
+a trainer who doesn't sell to Apply as a seller; the vault's own Add cards has it too, `/admin/quick?by=scan`, putting
+the card in the tray and counting the vault's scans). The card camera's scan mode sends a
 photo of one card (`POST /me/scan`); Claude Sonnet 5.5 (Anthropic's Messages API, API version `2026-10-21`, high effort
 (the owner's choice), a fixed JSON answer) reads its name, Pokémon, collector number, set (a best guess) and language, or says what is wrong
 with the photo (the back of a card, several cards, too blurry, not a card). The site then searches the card list by the

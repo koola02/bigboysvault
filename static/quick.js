@@ -40,6 +40,10 @@
 
   /* ---------- search ---------- */
   const setMode = root.dataset.mode === 'set';
+  const scanMode = root.dataset.mode === 'scan';
+  // Opened from a vault binder's "Add cards": what is saved goes into that binder, and every way keeps it.
+  const BH = root.dataset.binder || '';
+  const withBinder = (u) => (BH ? `${u}${u.includes('?') ? '&' : '?'}binder=${encodeURIComponent(BH)}` : u);
   let seq = 0, t, openSet = null, setQuery = '';   // set mode: the set being shown, and the set search to return to
   const onType = () => (setMode ? (openSet ? filterSet() : searchSets()) : search());
   el.q.addEventListener('input', () => { clearTimeout(t); t = setTimeout(onType, openSet ? 120 : 320); });
@@ -115,7 +119,7 @@
     openSet = { id, cat, cards: [] }; S.list.hidden = true; S.head.hidden = false; el.grid.replaceChildren(); el.q.value = '';
     el.q.placeholder = placeholder(); S.name.textContent = 'Loading…'; S.meta.textContent = ''; S.logo.hidden = true;
     el.state.textContent = 'Loading every card in this set…';
-    if (push) history.pushState({ set: id }, '', '/admin/sets?set=' + encodeURIComponent(id) + '&cat=' + encodeURIComponent(cat) + L());
+    if (push) history.pushState({ set: id }, '', withBinder('/admin/quick?by=set&set=' + encodeURIComponent(id) + '&cat=' + encodeURIComponent(cat) + L()));
     window.scrollTo({ top: 0 });
     try {
       const j = await getJSON('/admin/sets/cards?id=' + encodeURIComponent(id) + '&lang=' + encodeURIComponent(cat)); if (my !== seq) return;
@@ -146,7 +150,7 @@
   function backToSets(push) {
     ++seq; openSet = null; S.head.hidden = true; S.list.hidden = false; el.grid.replaceChildren(); shown.clear(); edBar?.remove(); edBar = null; edPick = '';
     el.q.placeholder = placeholder(); el.q.value = setQuery;
-    if (push) history.pushState({}, '', '/admin/sets' + (lang === 'en' ? '' : '?lang=' + lang));
+    if (push) history.pushState({}, '', withBinder('/admin/quick?by=set' + (lang === 'en' ? '' : '&lang=' + lang)));
     searchSets();
   }
   if (setMode) {
@@ -407,7 +411,7 @@
       try {
         const j = await getJSON('/admin/sets/search?q=' + L());
         $('qsSets').replaceChildren(...(j.sets || []).slice(0, 8).map((st) => {
-          const a = document.createElement('a'); a.className = 'qs-set'; a.href = `/admin/sets?set=${encodeURIComponent(st.id)}&cat=${encodeURIComponent(st.cat)}&lang=${lang}`;
+          const a = document.createElement('a'); a.className = 'qs-set'; a.href = withBinder(`/admin/quick?by=set&set=${encodeURIComponent(st.id)}&cat=${encodeURIComponent(st.cat)}&lang=${lang}`);
           const pic = document.createElement('span'); pic.className = 'qs-set-pic';
           if (st.logo) { const i = document.createElement('img'); i.src = st.logo; i.alt = ''; i.loading = 'lazy'; i.onerror = () => { i.remove(); pic.textContent = st.name; }; pic.append(i); } else pic.textContent = st.name;
           const t = document.createElement('span'); t.className = 'qs-t'; t.textContent = st.en_name ? `${st.name} · ${st.en_name}` : st.name;
@@ -417,8 +421,64 @@
     })();
   }
 
+  /* ---------- Scan a card (scan.js): a card it finds goes into the tray, in the version tapped ---------- */
+  if (scanMode) {
+    window.bbvAddCard = { open: ({ card: c, onAdded }) => {
+      add({ ...c, finish: c.finish || '' }, null);
+      A.toast(`${c.name || 'Card'} is in your tray`, { kind: 'ok' });
+      if (onAdded) onAdded(c);
+    } };
+  }
+
+  /* ---------- from a binder: its tray ticks it, and the vault's own cards come first ---------- */
+  if (BH && !st.binders.includes(BH)) { st.binders.push(BH); persist(); }
+  const mineBox = $('qaMine');
+  if (mineBox && BH) {
+    const mq = $('qaMineQ'), list = $('qaMineList'), mstate = $('qaMineState'), go = $('qaMineGo');
+    const chosen = new Set();
+    let mseq = 0, mt = 0;
+    const paintGo = () => { go.disabled = !chosen.size; go.textContent = chosen.size ? `Add ${chosen.size} card${chosen.size === 1 ? '' : 's'} to this binder` : 'Add to this binder'; };
+    const mineTile = (c) => {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'me-res';
+      const on = chosen.has(c.id); b.classList.toggle('in', on); b.setAttribute('aria-pressed', String(on));
+      const pic = document.createElement('span'); pic.className = 'me-res-pic';
+      if (c.image) { const i = document.createElement('img'); i.src = c.image; i.alt = ''; i.loading = 'lazy'; i.onerror = () => i.remove(); pic.append(i); }
+      const t = document.createElement('b'); t.textContent = c.title || 'Card';
+      const s = document.createElement('small'); s.textContent = [c.sub, c.price, c.note].filter(Boolean).join(' · ');
+      b.append(pic, t, s);
+      b.addEventListener('click', () => { if (chosen.has(c.id)) chosen.delete(c.id); else chosen.add(c.id); const now = chosen.has(c.id); b.classList.toggle('in', now); b.setAttribute('aria-pressed', String(now)); paintGo(); });
+      return b;
+    };
+    const mine = async () => {
+      const text = mq.value.trim(), my = ++mseq;
+      mstate.textContent = 'Looking…';
+      try {
+        const j = await getJSON(`/admin/binders/${encodeURIComponent(BH)}/choices?q=${encodeURIComponent(text)}`);
+        if (my !== mseq) return;
+        const rows = j.cards || [];
+        mstate.textContent = rows.length ? 'Tap the cards to add, then Add.' : text ? `No card outside this binder matches “${text}”.` : 'Every card in the vault is in this binder already.';
+        list.replaceChildren(...rows.map(mineTile));
+      } catch (_) { if (my === mseq) mstate.textContent = 'Couldn’t load the vault’s cards just now.'; }
+    };
+    go.addEventListener('click', async () => {
+      if (!chosen.size) return;
+      go.disabled = true;
+      try {
+        const r = await fetch(`/admin/binders/${encodeURIComponent(BH)}/cards`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ add: [...chosen] }) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) throw new Error(j.error || 'That didn’t save. Please try again.');
+        A.toast(`Added ${j.added ?? chosen.size} card${(j.added ?? chosen.size) === 1 ? '' : 's'} to the binder ✓`, { kind: 'ok' });
+        chosen.clear(); paintGo(); mine();
+      } catch (e) { A.toast(e.message, { kind: 'err' }); paintGo(); }
+    });
+    mq.addEventListener('input', () => { clearTimeout(mt); mt = setTimeout(mine, 250); });
+    mq.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(mt); mine(); } });
+    mine();
+  }
+
   paintLang();
-  const qs = new URLSearchParams(location.search), q0 = qs.get('q');   // /admin/quick?q=slaking or /admin/sets?set=sv08 open straight onto results
+  const qs = new URLSearchParams(location.search), q0 = qs.get('q');   // /admin/quick?q=slaking or ?by=set&set=sv08 open straight onto results
   if (setMode) { if (qs.get('set')) showSet(qs.get('set'), false, qs.get('cat')); else { if (q0) el.q.value = q0; searchSets(); } }
-  else if (q0) { el.q.value = q0; search(); } else if (!st.tray.length) el.q.focus({ preventScroll: true });
+  else if (scanMode) el.state.textContent = '';
+  else if (q0) { el.q.value = q0; search(); } else if (!st.tray.length && !BH && matchMedia('(pointer: fine)').matches) el.q.focus({ preventScroll: true });
 })();

@@ -62,7 +62,7 @@
 
     <article class="dash-panel dash-wide">
       <h2 class="dash-h">Recent activity</h2>
-      {% if d.recent.is_empty() %}<p class="dash-sub">Nothing yet. <a href="/me/listings">Add your first cards</a>.</p>{% else %}
+      {% if d.recent.is_empty() %}<p class="dash-sub">Nothing yet. <a href="/me/add">Add your first cards</a>.</p>{% else %}
       <ul class="dash-list st-activity">{% for a in d.recent %}<li data-k="{{ a.kind }}"><a href="{{ a.link }}"><span class="db-t">{{ a.text }}</span><span class="db-n">{{ a.when() }}</span></a></li>{% endfor %}</ul>{% endif %}
     </article>
   </div>

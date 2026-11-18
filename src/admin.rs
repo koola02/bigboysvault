@@ -897,40 +897,87 @@ pub async fn price(State(app): State<App>, h: HeaderMap, Qs(q): Qs<PriceQs>) -> 
     }
 }
 
-// ---------- quick add: search by picture, tap into a tray, save all ----------
+// ---------- Add cards: search by picture, by set or by a photo, tap into a tray, save all ----------
 #[derive(Template)]
 #[template(path = "admin_quick.html")]
 struct QuickPage {
     nav: Chrome,
     tab: &'static str,
-    /// "card": search all printings by name. "set": pick a set, then tap cards from its full list.
+    /// The way chosen at the top. "card": search all printings by name. "set": pick a set, then tap cards from its
+    /// full list. "scan": a photo of a card, read by Claude (src/scan.rs, the vault's own daily scans).
     mode: &'static str,
     total: i64,
     binders: Vec<BinderOpt>,
+    /// From a vault binder's "Add cards": the binder (handle, name). The vault's other cards come first, what is saved
+    /// goes into it, and Done goes back to it.
+    binder: Option<(String, String)>,
+    scan_on: bool,
+    scan_left: i64,
+    scan_per: i64,
 }
 
 impl QuickPage {
     fn total_text(&self) -> String {
         db::thousands(self.total)
     }
+    /// The address of one of the ways at the top ("" is Search), keeping the binder it was opened for.
+    fn way(&self, by: &str) -> String {
+        quick_way(by, self.binder.as_ref().map(|(h, _)| h.as_str()))
+    }
 }
 
-async fn quick_page(app: &App, h: &HeaderMap, mode: &'static str) -> Res {
+/// The address of one of Add cards' ways ("" is Search, "set", "scan"), keeping the binder it was opened for.
+fn quick_way(by: &str, binder: Option<&str>) -> String {
+    let mut q: Vec<String> = vec![];
+    if !by.is_empty() {
+        q.push(format!("by={by}"));
+    }
+    if let Some(h) = binder {
+        q.push(format!("binder={h}"));
+    }
+    if q.is_empty() { "/admin/quick".into() } else { format!("/admin/quick?{}", q.join("&")) }
+}
+
+#[derive(Deserialize, Default)]
+pub struct QuickQs {
+    #[serde(default)]
+    by: String,
+    #[serde(default)]
+    binder: String,
+}
+
+async fn quick_page(app: &App, h: &HeaderMap, mode: &'static str, binder: &str) -> Res {
     if !authed(app, h) {
         return login_page(app, false).await;
     }
     // Copies still for sale: the same number as My cards and All cards show.
-    let (nav, total) = with_db(app, |c| Ok((chrome(c)?, in_vault(c)?.0))).await?;
+    let (nav, total, (scan_left, scan_per)) = with_db(app, |c| Ok((chrome(c)?, in_vault(c)?.0, crate::scan::left_today(c, 0)?))).await?;
+    // Only one of the vault's own binders: its handle is checked against the list, so it can go into the page as is.
+    let binder = nav.links.iter().find(|b| b.handle == binder).map(|b| (b.handle.clone(), b.title.clone()));
     let binders = binder_opts(&nav.links, &[]);
-    rd(QuickPage { nav, tab: if mode == "set" { "sets" } else { "quick" }, mode, total, binders })
+    let scan_on = crate::scan::enabled();
+    let mode = if mode == "scan" && !scan_on { "card" } else { mode };
+    rd(QuickPage { nav, tab: "quick", mode, total, binders, binder, scan_on, scan_left, scan_per })
 }
 
-pub async fn quick(State(app): State<App>, h: HeaderMap) -> Res {
-    quick_page(&app, &h, "card").await
+/// GET /admin/quick?by=set|scan&binder=handle: the vault's Add cards. One page with four ways (the owner, 18 Nov 2026:
+/// "keep the add a card tool in a dedicated single page"): Search, Scan a card, By set, and Not in the list (the form,
+/// /admin/new). The tray keeps what was tapped across the ways.
+pub async fn quick(State(app): State<App>, h: HeaderMap, Qs(q): Qs<QuickQs>) -> Res {
+    let mode = match q.by.as_str() {
+        "set" => "set",
+        "scan" => "scan",
+        _ => "card",
+    };
+    quick_page(&app, &h, mode, &q.binder).await
 }
 
-pub async fn by_set(State(app): State<App>, h: HeaderMap) -> Res {
-    quick_page(&app, &h, "set").await
+/// GET /admin/sets: Add by set is one of the ways on Add cards now. Old links (a set open, a language) go there.
+pub async fn by_set(axum::extract::RawQuery(q): axum::extract::RawQuery) -> Redirect {
+    match q.filter(|q| !q.is_empty()) {
+        Some(q) => Redirect::to(&format!("/admin/quick?by=set&{q}")),
+        None => Redirect::to("/admin/quick?by=set"),
+    }
 }
 
 /// Adds `owned`: how many of each card the collection already holds. A vintage card split into printings
@@ -1032,8 +1079,13 @@ pub struct UnlimitedQs {
 
 /// Admin › Add by set: the Unlimited picture of a vintage card.
 pub async fn cardimg_unlimited(State(app): State<App>, h: HeaderMap, Qs(q): Qs<UnlimitedQs>) -> Res {
+    // Full admins, and signed-in sellers: Add cards shows them the same vintage printings (each picture is made once,
+    // then kept), within a generous limit.
     if !authed(&app, &h) {
-        return Ok(deny(&h));
+        let seller = crate::community::current(&app, &h).await?.filter(|m| m.seller && !m.blocked);
+        if !seller.is_some_and(|m| !crate::community::over_limit(&app, format!("unl|{}", m.id), 600)) {
+            return Ok(deny(&h));
+        }
     }
     let src = q.src.replace("%3A", ":").replace("%2F", "/");
     match unlimited_bytes(&app, &src, q.size == "low").await {
@@ -2076,6 +2128,12 @@ pub async fn order(State(app): State<App>, h: HeaderMap, Json(req): Json<OrderRe
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_vaults_add_cards_ways_keep_the_binder() {
+        assert_eq!((quick_way("", None), quick_way("set", None), quick_way("scan", None)), ("/admin/quick".to_string(), "/admin/quick?by=set".to_string(), "/admin/quick?by=scan".to_string()));
+        assert_eq!((quick_way("", Some("pikachu-set")), quick_way("set", Some("pikachu-set"))), ("/admin/quick?binder=pikachu-set".to_string(), "/admin/quick?by=set&binder=pikachu-set".to_string()));
+    }
 
     fn png(w: u32, h: u32) -> Vec<u8> {
         let img = image::GrayImage::new(w, h);

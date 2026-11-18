@@ -255,78 +255,8 @@
     filters.addEventListener('change', () => filters.requestSubmit());
     let ft; filters.q.addEventListener('input', () => { clearTimeout(ft); ft = setTimeout(() => filters.requestSubmit(), 500); });
 
-    /* ----- adding cards ----- */
-    const panel = $('addPanel');
-    const openAdd = (show) => { panel.hidden = !show; if (show) { $('addQ').focus(); panel.scrollIntoView({ block: 'start', behavior: 'smooth' }); } };
-    $('addOpen').onclick = () => openAdd(panel.hidden);
-    $('addClose').onclick = () => openAdd(false);
-    panel.querySelectorAll('[data-add]').forEach((b) => b.onclick = () => {
-      panel.querySelectorAll('[data-add]').forEach((x) => { const on = x === b; x.classList.toggle('on', on); x.setAttribute('aria-selected', String(on)); });
-      panel.querySelectorAll('.st-add-pane').forEach((p) => p.hidden = p.dataset.pane !== b.dataset.add);
-    });
-    if (Number(root.dataset.total) === 0) openAdd(true);
-    // Add cards opens by itself only when the address asks for it: #add (every "Add cards" button), or #scan, which
-    // also opens the Scan tab (where the old Scan a card page now sends people).
-    const asked = location.hash;
-    if (asked === '#add' || asked === '#scan') {
-      openAdd(true);
-      if (asked === '#scan') panel.querySelector('[data-add="scan"]')?.click();
-    }
-
-    let lang = 'en', timer, seq = 0, added = 0;
-    const q = $('addQ'), results = $('addResults'), state = $('addState');
-    $('addLang').addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; lang = b.dataset.lang; $('addLang').querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); search(); });
-    q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(search, 320); });
-    q.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(timer); search(); q.blur(); } });
-    async function search(text = q.value.trim(), into = results, say = state) {
-      const mine = ++seq;
-      if (text.length < 2) { into.replaceChildren(); say.textContent = 'Type a name and tap the card you’re selling.'; return; }
-      say.textContent = 'Searching…';
-      try {
-        const r = await fetch(`/me/search?q=${encodeURIComponent(text)}&lang=${lang}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
-        const j = await r.json(); if (mine !== seq) return;
-        const cards = j.cards || [];
-        const more = (j.total ?? cards.length) > cards.length ? ' Showing the first 120: type more of the name or the card number.' : '';
-        say.textContent = j.error && !cards.length ? j.error : cards.length ? `${j.total ?? cards.length} found. Tap the one you’re selling.${more}` : `No cards called “${text}”. Check the spelling.`;
-        into.replaceChildren(...cards.slice(0, 120).map(result));
-      } catch (_) { if (mine === seq) say.textContent = 'Couldn’t search just now. Check your connection.'; }
-    }
-    function result(c) {
-      const b = el('button', 'me-res'); b.type = 'button'; b.dataset.id = c.id;
-      const pic = el('span', 'me-res-pic');
-      if (c.image) { const i = el('img'); i.src = c.image; i.alt = ''; i.loading = 'lazy'; i.width = 245; i.height = 342; i.onerror = () => i.remove(); pic.append(i); }
-      b.append(pic, el('b', null, c.name), el('small', null, [c.en, c.set, c.number].filter(Boolean).join(' · ')));
-      // Tapping a card opens "Add to your store": condition, price, picture and the rest are chosen there (add-card.js).
-      b.addEventListener('click', () => {
-        if (!window.bbvAddCard) { A.toast('Please reload the page and try again.', { kind: 'err' }); return; }
-        window.bbvAddCard.open({ card: c, onAdded: () => {
-          added++; b.classList.add('in'); b.querySelector('b').textContent = `${c.name} ✓ added`;
-          root.dataset.total = Number(root.dataset.total) + 1;
-        } });
-      });
-      return b;
-    }
-    // Leaving the add panel with new cards (searched, or scanned: the Scan tab is scan.js): show them.
-    $('addClose').addEventListener('click', () => { if (added || panel.querySelector('.sc-tile.in')) location.reload(); });
-
-    /* ----- a card from your own photo ----- */
-    const own = $('ownForm');
-    if (own) {
-      const file = $('ownPhoto');
-      file.addEventListener('change', () => { const f = file.files[0]; if (!f) return; $('ownShot').src = URL.createObjectURL(f); $('ownShot').hidden = false; $('ownHint').hidden = true; });
-      own.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const f = file.files[0]; if (!f) { A.toast('Add a photo of the card first.', { kind: 'err' }); return; }
-        const btn = own.querySelector('button[type=submit]'); btn.disabled = true; btn.textContent = 'Adding…';
-        try {
-          const fd = new FormData(own); fd.set('photo', await shrink(f, 1600), 'card.jpg');
-          const j = await send('/me/cards/upload', fd);
-          if (fd.get('flag')) await send(`/me/listings/${j.card.id}`, { flag: true });
-          added++; A.toast('Added ✓', { kind: 'ok' }); own.reset(); $('ownShot').hidden = true; $('ownHint').hidden = false;
-        } catch (err) { A.toast(err.message, { kind: 'err' }); }
-        btn.disabled = false; btn.textContent = 'Add to my store';
-      });
-    }
+    /* ----- adding cards: their own page now (/me/add); an old link to Listings' add panel goes there ----- */
+    if (location.hash === '#add' || location.hash === '#scan') { location.replace('/me/add' + (location.hash === '#scan' ? '#scan' : '')); return; }
 
     paintAll(); sync();
     const focus = root.dataset.focus;

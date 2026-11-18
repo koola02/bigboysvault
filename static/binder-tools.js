@@ -4,10 +4,12 @@
      away; a finger presses and holds first; the arrow keys move the binder whose handle has focus). "+ New binder", and
      on every binder Rename, Cover and Delete. Tapping a binder's picture opens it, ready to add cards.
    - A binder's own page: "Edit binder" lists its cards with Cover, Hide and Remove (Remove can be undone), drag to put
-     them in order, or Sort them all at once (A to Z, Z to A, by set, by number, by evolution; Undo puts them back), and
-     "Add cards": a picker of the owner's cards (the vault's cards; a seller's cards on sale, where a card in another
-     binder moves here, and the picker says so). Hide keeps a card in the binder but out of sight: a seller's card is
-     hidden everywhere (its listing is Hidden), a vault card only in that binder. Hidden cards show faded, with Show.
+     them in order, or Sort them all at once (A to Z, Z to A, by set, by number, by evolution; Undo puts them back).
+     "Add cards" opens the one Add cards page with this binder chosen (the owner, 18 Nov 2026: one page for adding):
+     a seller's /me/add?binder=id, the vault's /admin/quick?binder=handle. There the owner's own cards come first, then
+     every way to add a new card, and Done comes back here. Hide keeps a card in the binder but out of sight: a
+     seller's card is hidden everywhere (its listing is Hidden), a vault card only in that binder. Hidden cards show
+     faded, with Show.
    - Store Manager › Binders: each binder has a handle to drag it into place.
    - The Stores page: "Choose what shows" on the owner's own store picks which binders show there and which cards are
      highlighted (a full admin does the same for the vault's store).
@@ -486,8 +488,7 @@
       const top = el('div', 'bt-ed-top');
       const how = el('p', 'bt-hint', coarse ? 'Press and hold a card, then drag it to change the order, or sort them all below. Everything saves by itself.'
         : 'Drag a card to change the order, or sort them all below. Everything saves by itself.');
-      const add = button('btn', null, 'plus', 'Add cards'); add.dataset.add = '';
-      add.addEventListener('click', picker);
+      const add = addLink(); add.dataset.add = '';
       top.append(how, add);
       sortBar = el('div', 'bt-sort'); sortBar.setAttribute('role', 'group'); sortBar.setAttribute('aria-label', 'Sort the cards');
       sortBar.append(el('span', 'bt-sort-t', 'Sort:'));
@@ -499,7 +500,7 @@
       count = el('p', 'bt-count'); count.setAttribute('aria-live', 'polite');
       list = el('ul', 'bt-cards');
       empty = el('div', 'bt-empty');
-      const add2 = button('btn', null, 'plus', 'Add cards'); add2.addEventListener('click', picker);
+      const add2 = addLink();
       empty.append(el('p', '', 'No cards in this binder yet.'), add2);
       s.append(top, sortBar, count, list, empty);
       list.addEventListener('keydown', (e) => {
@@ -626,131 +627,12 @@
       } catch (e) { say(e.message, { bad: true }); }
     }
 
-    function picker() {
-      const g = dialog(`Add cards to “${title}”`, { wide: true });
-      const find = el('input', 'bt-find'); find.type = 'search'; find.placeholder = api.find; find.setAttribute('aria-label', api.find);
-      find.autocomplete = 'off'; find.enterKeyHint = 'search'; find.spellcheck = false;
-      const state = el('p', 'bt-state'); state.setAttribute('aria-live', 'polite');
-      const results = el('ul', 'bt-picks');
-      g.body.append(find, state, results);
-      // A seller can also put up a card they don't have in the store yet: the card list, right here. Tapping one opens
-      // the "Add to your store" window (add-card.js): the seller chooses its condition, price and picture, and it goes
-      // into this binder. Nothing is priced for them.
-      const fresh = el('div', 'bt-fresh'); fresh.hidden = true;
-      const freshList = el('ul', 'bt-picks');
-      const freshState = el('p', 'bt-how');
-      fresh.append(el('h3', 'bt-sec', 'New cards'), freshState, freshList);
-      if (kind === 'seller') g.body.append(fresh);
-      let freshSeq = 0;
-      async function catalogue(q) {
-        const my = ++freshSeq;
-        if (kind !== 'seller' || q.length < 2) { fresh.hidden = true; return; }
-        fresh.hidden = false; freshState.textContent = 'Looking in the card list…'; freshList.replaceChildren();
-        try {
-          const j = await req(`/me/search?q=${enc(q)}&lang=en`); if (my !== freshSeq) return;
-          const found = (j.cards || []).slice(0, 24);
-          freshState.textContent = found.length ? 'Cards you don’t have yet. Tap one to choose its condition, your price and its picture, then add it to this binder.' : (j.error || `Nothing called “${q}” in the card list. Check the spelling.`);
-          freshList.replaceChildren(...found.map(newRow));
-        } catch (e) { if (my === freshSeq) freshState.textContent = e.message; }
-      }
-      function newRow(c) {
-        const li = el('li');
-        const b = button('bt-pc bt-pick bt-new-pick', null);
-        const pic = el('span', 'bt-pc-pic');
-        if (c.image) { const im = el('img'); im.src = c.image; im.alt = ''; im.loading = 'lazy'; im.onerror = () => im.remove(); pic.append(im); }
-        const tick = el('span', 'bt-tick'); tick.append(icon('check')); pic.append(tick);
-        const t = el('span', 'bt-pc-t'); t.append(el('b', '', c.name));
-        const sub = [c.en, c.set, c.number].filter(Boolean).join(' · ');
-        if (sub) t.append(el('small', '', sub));
-        const how = el('small', 'bt-price', '+ Add to this binder'); t.append(how);
-        b.append(pic, t);
-        b.addEventListener('click', () => {
-          if (b.getAttribute('aria-pressed') === 'true') return;
-          if (!window.bbvAddCard) { how.textContent = 'Please reload the page and try again.'; return; }
-          window.bbvAddCard.open({ card: c, binderId: key, onAdded: async (card) => {
-            dirty = true;
-            b.setAttribute('aria-pressed', 'true'); how.textContent = `Added${card && card.price ? ` for ${card.price}` : ''} ✓`;
-            await load(); draw();
-          } });
-        });
-        li.append(b); return li;
-      }
-      const chosen = new Map();
-      const tally = el('span', 'bt-tally'); tally.setAttribute('aria-live', 'polite');
-      const no = button('btn ghost', null, null, 'Cancel'), go = button('btn', null, null, 'Add');
-      go.disabled = true;
-      g.foot.append(tally, no, go);
-      no.addEventListener('click', g.close);
-      const sync = () => {
-        const n = chosen.size, moving = [...chosen.values()].filter((c) => c.inside).length;
-        go.disabled = !n; go.textContent = n ? `Add ${plural(n, 'card')}` : 'Add';
-        if (kind === 'seller') return;
-        tally.textContent = !n ? 'Tap the cards to add.' : moving ? `${plural(moving, 'card')} will move here from ${moving === 1 ? 'another binder' : 'other binders'}.` : `${plural(n, 'card')} chosen`;
-      };
-      sync();
-      // A seller adds each card through its own window, so this window just closes when they are done.
-      if (kind === 'seller') { go.hidden = true; no.textContent = 'Done'; tally.textContent = 'Tap a card to check its condition, price and picture, then add it.'; }
-      function row(c) {
-        const li = el('li');
-        const b = button('bt-pc bt-pick', null);
-        b.setAttribute('aria-pressed', String(chosen.has(c.id)));
-        const pic = el('span', 'bt-pc-pic');
-        if (c.image) { const im = el('img'); im.src = c.image; im.alt = ''; im.loading = 'lazy'; pic.append(im); }
-        const tick = el('span', 'bt-tick'); tick.append(icon('check')); pic.append(tick);
-        const t = el('span', 'bt-pc-t'); t.append(el('b', '', c.title));
-        if (c.sub) t.append(el('small', '', c.sub));
-        t.append(el('small', 'bt-price', c.note ? `${c.price} · ${c.note}` : c.price));
-        if (c.inside) t.append(el('small', 'bt-moves', `In “${c.inside}” · moves here`));
-        b.append(pic, t);
-        b.addEventListener('click', async () => {
-          // A seller checks a card's condition, price and picture in the "Add to this binder" window before it goes in
-          // (add-card.js), as with a new card. The vault's binders pick several cards at once.
-          if (kind === 'seller' && window.bbvAddCard) {
-            if (b.getAttribute('aria-pressed') === 'true') return;
-            b.disabled = true;
-            try {
-              const j = await req(`/me/listings/${enc(c.id)}`);
-              window.bbvAddCard.open({ listing: j.card, binderId: key, onAdded: async () => {
-                dirty = true; b.setAttribute('aria-pressed', 'true');
-                await load(); draw();
-              } });
-            } catch (e) { state.textContent = e.message; }
-            b.disabled = false;
-            return;
-          }
-          if (chosen.has(c.id)) chosen.delete(c.id); else chosen.set(c.id, c);
-          b.setAttribute('aria-pressed', String(chosen.has(c.id))); sync();
-        });
-        li.append(b); return li;
-      }
-      let seq = 0, wait = 0;
-      async function search() {
-        const my = ++seq, q = clean(find.value);
-        state.textContent = 'Looking…';
-        try {
-          const j = await api.choices(key, q); if (my !== seq) return;
-          const rows = j.cards || [];
-          state.textContent = rows.length ? (kind === 'vault' && !q ? 'The vault’s dearest cards not in this binder yet. Type to find any card.' : '')
-            : q ? (kind === 'seller' && q.length >= 2 ? `None of your other cards match “${q}”. New ones are below.` : `No card outside this binder matches “${q}”.`) : api.none;
-          results.replaceChildren(...rows.map(row));
-          catalogue(q);
-        } catch (e) { if (my === seq) state.textContent = e.message; }
-      }
-      find.addEventListener('input', () => { clearTimeout(wait); wait = setTimeout(search, 250); });
-      find.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); clearTimeout(wait); search(); } });
-      go.addEventListener('click', async () => {
-        go.disabled = true;
-        try {
-          const j = await api.change(key, { add: [...chosen.keys()] }); dirty = true;
-          g.close();
-          const a = j.added || 0, m = j.moved || 0;
-          say(`Added ${plural(a, 'card')}${m ? ` · ${m} moved here from ${m === 1 ? 'another binder' : 'other binders'}` : ''} ✓`);
-          await load(); draw();
-          list.lastElementChild?.scrollIntoView({ block: 'nearest' });
-        } catch (e) { go.disabled = false; state.textContent = e.message; }   // said in the window: a message under it would be hidden
-      });
-      search();
-      find.focus();
+    // "Add cards": the Add cards page, with this binder chosen.
+    function addLink() {
+      const a = el('a', 'btn');
+      a.href = kind === 'seller' ? `/me/add?binder=${enc(key)}` : `/admin/quick?binder=${enc(key)}`;
+      a.append(icon('plus'), el('span', '', 'Add cards'));
+      return a;
     }
 
     // Arriving from a binder tile in edit mode, or the Manager's "Add or remove cards": open the editor at once.

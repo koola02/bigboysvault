@@ -8,7 +8,7 @@
   </div>
   {#- Every store the same way, the vault's among them: the one that last put up or changed a card comes first. -#}
   {% if stores.is_empty() %}
-  <p class="empty">No store has cards on sale yet. {% if me.is_some() %}<a href="/me/listings">Be the first.</a>{% else %}<a href="/join">Register</a> and be the first.{% endif %}</p>
+  <p class="empty">No store has cards on sale yet. {% if me.is_some() %}<a href="/me/add">Be the first.</a>{% else %}<a href="/join">Register</a> and be the first.{% endif %}</p>
   {% else %}
   <div class="sellers-list">
     {% for s in stores %}{% include "stores_card.html" %}{% endfor %}
@@ -16,5 +16,5 @@
   {% endif %}
 </section>
 {#- Each store's owner (a full admin, for the vault's) chooses what it shows here: static/binder-tools.js. -#}
-{% if me.is_some() %}<script src="/static/binder-tools.js?v=5" defer></script>{% endif %}
+{% if me.is_some() %}<script src="/static/binder-tools.js?v=6" defer></script>{% endif %}
 {% endblock %}

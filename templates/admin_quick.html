@@ -1,16 +1,43 @@
 {% extends "base.html" %}
-{% block title %}{% if mode == "set" %}Add by set{% else %}Quick add{% endif %} · Admin{% endblock %}
+{% block title %}Add cards · Admin{% endblock %}
 {% block head %}{% include "mgr_head.html" %}{% endblock %}
 {% block layout %}wide{% endblock %}
 {% block content %}
-<section class="wrap admin qa" id="qa" data-total="{{ total }}" data-mode="{{ mode }}">
+<section class="wrap admin qa" id="qa" data-total="{{ total }}" data-mode="{{ mode }}"{% if let Some((h, _)) = binder %} data-binder="{{ h }}"{% endif %}>
   {% include "admin_tabs.html" %}
+  {% if let Some((h, t)) = binder %}
+  {#- From a vault binder's "Add cards": the vault's own cards first (pick several, then add them), then new cards, which
+      are saved into this binder (quick.js ticks it in the tray). Done goes back to the binder's editor. -#}
+  <div class="ad-into">
+    <span class="ad-into-t">Adding to the binder <b>{{ t }}</b></span>
+    <a class="btn" href="/collections/{{ h }}#edit">Done</a>
+  </div>
+  <section class="ad-mine" id="qaMine" aria-labelledby="qaMineH">
+    <h2 class="h2" id="qaMineH">From the vault</h2>
+    <input type="search" id="qaMineQ" placeholder="Find one of the vault's cards: name, number or tag" aria-label="Find one of the vault's cards" autocomplete="off" enterkeyhint="search">
+    <p class="me-state" id="qaMineState" aria-live="polite"></p>
+    <div class="me-results" id="qaMineList"></div>
+    <div><button type="button" class="btn" id="qaMineGo" disabled>Add to this binder</button></div>
+  </section>
+  <h2 class="h2 ad-new-h">New cards</h2>
+  {% endif %}
+  {#- The four ways to add a card, the same as a seller's Add cards (store_add.html); each keeps the binder it was opened for. -#}
+  <nav class="ad-ways" aria-label="How to add a card">
+    <a href="{{ self.way("") }}"{% if mode == "card" %} class="on" aria-current="page"{% endif %}>Search</a>
+    {% if scan_on %}<a href="{{ self.way("scan") }}"{% if mode == "scan" %} class="on" aria-current="page"{% endif %}>Scan a card</a>{% endif %}
+    <a href="{{ self.way("set") }}"{% if mode == "set" %} class="on" aria-current="page"{% endif %}>By set</a>
+    <a href="/admin/new">Not in the list</a>
+  </nav>
   <header class="qa-hero">
     <div class="qa-hero-copy">
       {% if mode == "set" %}
       <p class="eyebrow plate">Add a whole set</p>
       <h1 class="qa-hero-t">Add by set</h1>
       <p class="qa-hero-s">Pick a set, then tap the cards you have. <b>−</b> and <b>＋</b> under a card change how many.</p>
+      {% else if mode == "scan" %}
+      <p class="eyebrow plate">Read a photo</p>
+      <h1 class="qa-hero-t">Scan a card</h1>
+      <p class="qa-hero-s">Take a photo of one card. Tap the right version to put it in your tray.</p>
       {% else %}
       <p class="eyebrow plate">Fastest way to add</p>
       <h1 class="qa-hero-t">Quick add</h1>
@@ -21,14 +48,23 @@
     <img class="qa-hero-art" src="/static/img/{% if mode == "set" %}slaking{% else %}snorlax{% endif %}.png?v=5" alt="" width="220" height="176">
   </header>
 
-  <div class="qa-search">
+  {% if mode == "scan" %}
+  <section class="st-scan qa-scan">
+    <div class="sc-go">
+      <label class="btn sc-shoot"><input type="file" accept="image/*" class="sr" id="scanFile" data-card-cam="scan" data-scan="/admin/scan/try"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span id="scanWord">Take a photo of the card</span></label>
+      <p class="sc-left" id="scanLeft">{{ scan_left }} of {{ scan_per }} scans left today</p>
+    </div>
+    <div class="sc-out" id="scanOut" aria-live="polite"></div>
+  </section>
+  {% endif %}
+  <div class="qa-search"{% if mode == "scan" %} hidden{% endif %}>
     {% if mode == "set" %}
     <input id="qaQ" type="search" placeholder="Set name, e.g. 30th, Ascended Heroes, Pitch Black" aria-label="Search sets" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="search">
     {% else %}
     <input id="qaQ" type="search" placeholder="Card name, e.g. Slaking or Pikachu 57" aria-label="Search all Pokémon cards" autocomplete="off" autocapitalize="words" spellcheck="false" enterkeyhint="search">
     {% endif %}
   </div>
-  <div class="qa-lang" id="qaLang" role="group" aria-label="Card language">
+  <div class="qa-lang" id="qaLang" role="group" aria-label="Card language"{% if mode == "scan" %} hidden{% endif %}>
     <span class="qa-lang-l">Cards in</span>
     <button type="button" data-l="en" aria-pressed="true">English</button>
     <button type="button" data-l="ja" aria-pressed="false">Japanese <span lang="ja">日本語</span></button>
@@ -44,7 +80,7 @@
   {% else %}
   <p class="qa-state" id="qaState" role="status" aria-live="polite">Every printing shows up with its picture, newest sets first. Add a number to narrow it down.</p>
   {% endif %}
-  {% if mode != "set" %}
+  {% if mode == "card" %}
   <div class="qa-start" id="qaStart">
     <div class="qs-block">
       <h2 class="qs-h">Try a name</h2>
@@ -64,7 +100,6 @@
   {% endif %}
   <div class="qa-grid" id="qaGrid"></div>
   <p class="qa-more" id="qaMore" hidden></p>
-  <p class="qa-manual"><a href="/admin/new">Card not listed? Add it by hand →</a></p>
 </section>
 
 <div class="qa-bar" id="qaBar" hidden>
@@ -100,5 +135,6 @@
 </div>
 <script src="/static/pricing.js?v=2" defer></script>
 <script src="/static/admin-ui.js?v=10" defer></script>
-<script src="/static/quick.js?v=19" defer></script>
+<script src="/static/quick.js?v=20" defer></script>
+{% if mode == "scan" %}<script src="/static/scan.js?v=6" defer></script>{% endif %}
 {% endblock %}

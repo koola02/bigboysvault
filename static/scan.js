@@ -1,15 +1,17 @@
-// Scan a card (sellers, /me/scan; src/scan.rs). The card camera (card-cam.js, data-card-cam="scan") hands back a photo of
-// the card; the site reads it (POST /me/scan) and this page shows what the card list has for it: the card itself, one
-// tile per version (Normal, Holo, Reverse Holo...), the same card in other sets, and its evolution family. A tile opens
-// "Add to your store" (add-card.js) with that version chosen; the seller still picks the condition, the price and how
-// many. Everything comes from the full online card list Add cards searches, not only the vault's cards. Nothing is
-// added by itself. The Scan tab of Add cards in My store (store_listings.html) is this same scanner; there, the way out
-// when a scan can't help is the Search tab.
+// Scan a card, one of the four ways on the Add cards page (sellers: /me/add; the vault: /admin/quick?by=scan; src/scan.rs).
+// The card camera (card-cam.js, data-card-cam="scan") hands back a photo of the card; the site reads it (POST to the
+// file input's data-scan address, /me/scan by default) and this shows what the card list has for it: the card itself,
+// one tile per version (Normal, Holo, Reverse Holo...), the same card in other sets, and its evolution family. A tile
+// opens "Add to your store" (add-card.js; on the vault's page, quick.js puts it in the tray) with that version chosen:
+// the seller still picks the condition, the price and how many, and from a binder the card goes into it. Everything
+// comes from the full online card list, not only the vault's cards. Nothing is added by itself. When a scan can't help,
+// the way out is Search.
 (() => {
   const file = document.getElementById('scanFile');
   if (!file) return;
-  const inAdd = !!file.closest('#addPanel');
-  const words = (t) => (inAdd ? String(t).replace(/Add cards in My store/g, 'the Search tab') : t);
+  const url = file.dataset.scan || '/me/scan';
+  // From a binder's Add cards: the card goes into that binder.
+  const binderId = Number(document.getElementById('addPage')?.dataset.binder || 0) || null;
   const out = document.getElementById('scanOut'), word = document.getElementById('scanWord'), leftLine = document.getElementById('scanLeft');
   const shoot = file.closest('label');
   const make = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -33,12 +35,12 @@
     out.scrollIntoView({ block: 'start', behavior: 'smooth' });
     const fd = new FormData(); fd.append('photo', f, 'card.jpg');
     try {
-      const r = await fetch('/me/scan', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' }, body: fd });
+      const r = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' }, body: fd });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || 'That didn’t work. Please try again.');
       show(j);
     } catch (e) {
-      out.replaceChildren(card(null, words(e.message || 'That didn’t work. Please try again.')));
+      out.replaceChildren(card(null, e.message || 'That didn’t work. Please try again.'));
     } finally {
       busy = false; shoot.classList.remove('off'); shoot.removeAttribute('aria-disabled');
       file.value = '';
@@ -95,7 +97,7 @@
       if (!window.bbvAddCard) { out.prepend(note('Please reload the page and try again.')); return; }
       const pick = { ...c };
       if (fin) { pick.finish = fin.key; pick.finishLabel = fin.label; }
-      window.bbvAddCard.open({ card: pick, versions: true, onAdded: () => {
+      window.bbvAddCard.open({ card: pick, versions: true, binderId, onAdded: () => {
         b.classList.add('in'); plus.textContent = '✓';
         added++;
         const done = out.querySelector('.sc-added');
@@ -130,11 +132,10 @@
     const name = r.name_en || r.name || 'this card';
     const exact = j.exact || [], versions = j.versions || [], family = j.family || [];
     if (!exact.length && !versions.length && !family.length) {
-      parts.push(note(j.error ? 'The card list isn’t answering right now. Please try again in a moment.' : words(`We couldn’t find “${name}” in the card list. Try again, or use Add cards in My store.`)));
+      parts.push(note(j.error ? 'The card list isn’t answering right now. Please try again in a moment.' : `We couldn’t find “${name}” in the card list. Try again, or use Search.`));
       out.replaceChildren(...parts);
       return;
     }
-    if (!inAdd) parts.push(make('p', 'sc-src', 'From the full Pokémon card list, the same one Add cards searches: every card printed, not only the vault’s.'));
     if (exact.length) {
       const tiles = exact.flatMap((c) => {
         const fins = (c.finishes || []).filter((f) => f.key && f.key !== 'market');

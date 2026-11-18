@@ -5,11 +5,13 @@
 {% block content %}
 <section class="wrap admin" data-editing="{% if editing %}1{% else %}0{% endif %}" data-id="{{ id }}">
   {% include "admin_tabs.html" %}
+  {% if !editing %}
+  <nav class="ad-ways" aria-label="How to add a card"><a href="/admin/quick">Search</a>{% if crate::scan::enabled() %}<a href="/admin/quick?by=scan">Scan a card</a>{% endif %}<a href="/admin/quick?by=set">By set</a><a href="/admin/new" class="on" aria-current="page">Not in the list</a></nav>
+  {% endif %}
   <header class="a-head">
-    <a class="a-back" href="{% if editing %}/admin{% else %}/admin/quick{% endif %}" data-back>‹ Back{% if editing %} to My cards{% else %} to Quick add{% endif %}</a>
+    {% if editing %}<a class="a-back" href="/admin" data-back>‹ Back to My cards</a>{% endif %}
     <h1 class="h1">{% if editing %}Edit card{% else %}Add a card{% endif %}</h1>
     <p class="sub"><span id="total">{{ total }}</span> in your collection{% if !saved.is_empty() %} · <strong class="ok">Saved “{{ saved }}”</strong>{% endif %}</p>
-    {% if !editing %}<p class="a-faster">Faster: find the card by name in <a href="/admin/quick">Quick add</a>, or tick a whole set in <a href="/admin/sets">Add by set</a>. Use this page for cards that aren’t listed there.</p>{% endif %}
   </header>
 
   <div class="a-grid">

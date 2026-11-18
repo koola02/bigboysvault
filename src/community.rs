@@ -1139,6 +1139,45 @@ pub async fn search_cards(State(app): State<App>, h: HeaderMap, Query(q): Query<
 }
 
 #[derive(Deserialize)]
+pub struct SetsQs {
+    #[serde(default)]
+    q: String,
+    #[serde(default)]
+    lang: String,
+}
+
+/// GET /me/sets/search?q=&lang=: the card list's sets, newest first, for "By set" on Add cards (anyone signed in).
+pub async fn my_set_search(State(app): State<App>, h: HeaderMap, Query(q): Query<SetsQs>) -> Res {
+    let Some(m) = current(&app, &h).await? else { return Ok(fail(StatusCode::UNAUTHORIZED, "Please log in again.")) };
+    if over_limit(&app, format!("search|{}", m.id), 120) {
+        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of searching. Please wait a few minutes."));
+    }
+    let typed: String = q.q.chars().take(60).collect();
+    Ok(ok(market::set_search(&app.http, &typed, &q.lang).await))
+}
+
+#[derive(Deserialize)]
+pub struct SetCardsQs {
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    lang: String,
+}
+
+/// GET /me/sets/cards?id=&lang=: every card in one set (a vintage set split into its printings), for "By set".
+pub async fn my_set_cards(State(app): State<App>, h: HeaderMap, Query(q): Query<SetCardsQs>) -> Res {
+    let Some(m) = current(&app, &h).await? else { return Ok(fail(StatusCode::UNAUTHORIZED, "Please log in again.")) };
+    if over_limit(&app, format!("search|{}", m.id), 120) {
+        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of searching. Please wait a few minutes."));
+    }
+    let id: String = q.id.chars().take(40).collect();
+    Ok(ok(match market::set_cards(&app.http, &id, &q.lang).await {
+        Ok(v) => v,
+        Err(e) => json!({ "cards": [], "error": e }),
+    }))
+}
+
+#[derive(Deserialize)]
 pub struct AddReq {
     id: String,
     /// Pictures from the search result, used only when the catalogue has none and only from known card-picture sites.

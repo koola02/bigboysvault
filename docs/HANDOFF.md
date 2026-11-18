@@ -27,7 +27,8 @@ owner has approved, shown and sold in pesos (₱). It is laid out the way a soci
 messages and calls, and, once the owner switches it on, a store with its own Store Manager.
 
 **The owner and staff** (roles: admin, moderator): the Vault Manager under `/admin` (Overview, Cards, Add cards,
-Add by set, Binders, Showcase, Orders, Trainers, Sellers). The Overview counts **visitors** beside orders.
+Binders, Showcase, Orders, Trainers, Sellers; Add cards has Search, Scan a card, By set and Not in the list). The Overview
+counts **visitors** beside orders.
 
 ## 2. Stack
 
@@ -58,13 +59,13 @@ one file on its volume. Don't add a second machine without moving those first.
 | `store.rs`, `sellers.rs` | Stores: the Store Manager, the public store pages, the cart and orders, alerts, mail (see `docs/SELLER_API.md`) |
 | `community.rs`, `members.rs` | Trainers: join, log in, Account Settings (`/me`), your own page (`/me/page` forwards to `/trainers/{id}`), trainer pages, vouches, chat, moderation; accounts, sessions, roles |
 | `messages.rs`, `dm.rs`, `push.rs` | Private messages and calls (long-poll), Web Push |
-| `admin.rs` | The Vault Manager: access (`power()`, `authed()`), cards, Add cards, Add by set, binders, showcase, Overview |
+| `admin.rs` | The Vault Manager: access (`power()`, `authed()`), cards, Add cards (`/admin/quick?by=set\|scan&binder=`; `/admin/sets` forwards there), binders, showcase, Overview |
 | `db.rs` | Cards and binders, list queries, the catalogue files (`/cards.tsv`, `/vault.tsv`), migrations |
 | `market.rs`, `pricing.rs`, `history.rs` | Card data and market prices, the suggested price by condition, price history |
 | `visits.rs` | Visitors per day: who counts, the table, the totals the Overview shows |
 | `ops.rs` | Speed and upkeep: picture formats, cache headers, `/healthz`, and the routes the VM's jobs call |
 | `ask.rs`, `vault_ai.rs` | Ask the Vault: the built-in rules, and Gemini when its key is set |
-| `scan.rs` | Scan a card (sellers; the Scan tab of Add cards, `/me/listings#scan`; the old `/me/scan` forwards there): Claude reads a card photo; the card, its versions, other printings and evolution family from the card list (see `docs/OPERATIONS.md` 4e) |
+| `scan.rs` | Scan a card (one of the ways on Add cards: a seller's `/me/add#scan`, the vault's `/admin/quick?by=scan`; the old `/me/scan` forwards): Claude reads a card photo; the card, its versions, other printings and evolution family from the card list (see `docs/OPERATIONS.md` 4e) |
 | `blocks.rs` | Site settings (name, welcome line) and the showcase's cards |
 | `binder_sort.rs` | A binder's one-tap Sort (A to Z, Z to A, by set, by number, by evolution) and the TCGdex details it keeps in `card_dex` |
 | `look.rs` | The style guide page (`/admin/look`) with the feed's automatic-post switches |
@@ -80,6 +81,7 @@ one file on its volume. Don't add a second machine without moving those first.
 | `product.html`, `product_body.html`, `product_part.html` | A card: its page, and the part the card window loads |
 | `store*.html`, `stores*.html`, `binder_tile.html` | Stores, a store, the vault's store, the Store Manager's pages (`store_tabs.html` is its frame) |
 | `me.html` | Account Settings (picture, name, cards, password), inside the Manager's frame |
+| `store_add.html` | Add cards (`/me/add`): the one place a seller or a collector adds a card; four ways at the top (Search, Scan a card for sellers, By set, Not in the list); `?binder=id` adds into one of a seller's binders, its own cards first |
 | `admin_*.html` | The Vault Manager (`admin_tabs.html` is its frame; `mgr_head.html` loads `mgr.css`) |
 | Others | `trainers.html`, `trainer_body.html`, `login.html`, `join.html`, `ask*.html`, `chat*.html`, `vouch*.html`, `messages.html`, `look_guide.html` |
 
@@ -93,7 +95,7 @@ one file on its volume. Don't add a second machine without moving those first.
 | `store-head.js`, `bookmarks.js`, `apply.js` | Every store page's top (Follow, the Vouches window, the border colour picker), Bookmark buttons and the Bookmarks page, Apply as a seller |
 | `quick.js`, `my-cards.js`, `admin-float.js`, `admin-ui.js`, `mgr-table.js`, `showcase.js`, `binders.js`, `edit-card.js` | The Vault Manager |
 | `me.js`, `pricing.js`, `dragsort.js`, `card-cam.js`, `holo.js`, `suggest.js`, `tiles.js` | Account Settings, the suggested-price line, drag and drop, the card camera (`data-card-cam="scan"`: Scan a card's sharper photo, sent at the shutter), a card's shine, search suggestions, card tiles |
-| `add-card.js`, `scan.js` | The "Add to your store" window every seller's new card goes through (from Scan a card it also offers the version: Normal, Holo, Reverse Holo...), and Scan a card's page |
+| `add-page.js`, `add-card.js`, `scan.js` | The Add cards page (its four ways, "Added just now"); the "Add to your store" window every seller's new card goes through (from Scan a card it also offers the version: Normal, Holo, Reverse Holo...; it announces each card with a `bbv:added` event); and Scan a card |
 | `sw.js`, `push-sw.js` | The service worker (alerts with the site closed) |
 | `wasm/` | The built card finder (made by `build-wasm.sh`; don't edit) |
 
@@ -119,7 +121,7 @@ one file on its volume. Don't add a second machine without moving those first.
   of address and browser. Search engines, scripts, the owner, staff and pages fetched ahead of time aren't counted.
 - **Lite mode:** `<html data-lite>` is set in `base.html` for phones and low-power devices; `holo.js` leaves a
   card's shine off there. Add `?lite=1` to test it on a computer.
-- **Vintage printings:** in Add by set and Add cards, cards from Base Set to Neo 4 come split into 1st Edition,
+- **Vintage printings:** in Add cards (Search and By set, the vault's and the sellers'), cards from Base Set to Neo 4 come split into 1st Edition,
   Unlimited, Shadowless and the rarer prints. Unlimited pictures are the 1st Edition scan with the seal painted
   out (`stamp.rs`, kept in `/data/uploads/unl/`).
 
@@ -222,6 +224,7 @@ A small Google VM runs the backups, prices, picture formats and an uptime check 
 
 | When | What changed |
 |---|---|
+| 19 Nov 2026 (flow, release 2) | **One Add cards page** (the owner: "keep the add a card tool in a dedicated single page and not in multiple tabs corners and pages"; "keep listings for just managing listings"). Sellers and collectors: `/me/add` (`store_add.html`, `add-page.js`), four ways at the top: Search, Scan a card (sellers, while scanning is on), By set (new for them: `GET /me/sets/search`, `/me/sets/cards`, on `market::set_search` / `set_cards`, the same limit as `/me/search`), Not in the list; the card language for Search and By set; "Added just now" (every card the add window adds, through its `bbv:added` event). A seller's card goes through "Add to your store"; a collector's joins their binder. `?binder=id` (a seller's binder's Add cards): the store's own cards first (`/me/binders/{id}/choices`, each opens the window filled in), new cards go into it, Done goes back to the binder's editor (`#edit`). Every Add cards door goes there (the Manager's bar and rail, the store page, Account Settings, Stores, the Overview, a binder's editor: its own add window is gone); Listings lost its add panel (`/me/listings#add` and `#scan` forward). Sellers may load the vintage Unlimited pictures (`/admin/cardimg/unlimited`, within a limit), which Search and By set show them. The vault: Add cards, Add by set and Add by hand are one page with the same four ways (`/admin/quick`, `?by=set`, `?by=scan` with the vault's own scans going into the tray, Not in the list is `/admin/new` with the ways on top; `/admin/sets` forwards); `?binder=handle` ticks that binder in the tray and lists the vault's other cards first to add in one go, Done goes back. |
 | 19 Nov 2026 (flow, release 1) | From the owner's review of how the site flows (18 Nov 2026), the first of five releases. **Your name opens your page**: the menu's first line and "See your profile" go to `/me/page` (forwards to `/trainers/{id}`; `fb-shell.js` points them there once it knows who you are); `/me` is now called **Account Settings** everywhere, and your own page's "Edit profile" button reads Account Settings. **Scan a card** lost its menu line and page: it is the Scan tab of Add cards (`/me/listings#scan` opens it; `/me/scan` forwards). **Easy to read**: `--muted` `#c9cbd8` and `--faint`/`--steel` `#a3a7b9` (were `#aeb0c0`, `#7d8194`), no font under 12px in any stylesheet, people's own words in `--text`; a store's details one per line (`.sf-rows`: Location, Open since, Find me on, Pay with, How to pay, Contact), the vault's store and a trainer's "Find me on" alike; a store's card on Stores and a binder's bar without dot-strings. The smoke check measures contrast and size on every page and in the card window, and now also opens a trainer's store and a trainer's page. **Prices only where cards are shopped**: none in the feed (posts, the stores row, the sets of cards), price moves gone (the weekly post and the right column; `social::AUTO` lost "prices", old ones hidden), none on trainers' pages (a highlight card's window shows no value; a trainer's cards for sale are one line to the store), none in the search box's suggestions (the set instead). |
 | 18 Nov 2026 (sort) | **Sort and Hide in a binder's editor** (sellers' binders and the vault's): "Sort:" A to Z · Z to A · By set · By number · By evolution, worked out on the site (`src/binder_sort.rs`, `POST /me/binders/{id}/sort`, `POST /admin/binders/{handle}/sort`) and saved like a drag, with Undo. By evolution asks TCGdex once per card (six at a time) and keeps the answer in the new `card_dex` table. Each card has Hide / Show: a seller's card becomes Hidden (the listing's own status); a vault card is hidden in that binder only (new column `collection_products.hidden`, `POST /admin/binders/{handle}/hide`), so the binder's page, count, tile, cover, the finder and the card's "binders" list leave it out. Saving, copying or bulk-moving a card keeps it hidden there. |
 | 18 Nov 2026 | **Every store alike** (the owner: "all stores are official"): the vault's store is listed and drawn like trainers' stores on /stores (one card, `stores_card.html`; no "Official" badge anywhere; the store that last put up or changed a card comes first, `sellers::last_active`). Every store page has Follow, Message and Bookmark and the same four numbers (cards for sale, binders, followers, Vouches); **Vouches** opens a window (`store-head.js`, `GET /store/{slug}/vouches`): vouches now belong to a store (`vouches.store_id`, 0 the vault's, the older ones the vault's) and a seller's reviews from finished sales are listed there too (the Reviews section moved into it). A **border colour** per store (Edit store; `members.store_border`, setting `vault_store_border`, gold by default; `sellers::border_ok` refuses colours too dark to see). The store header is compact and side by side. **Apply as a seller** (`/me/sell`, menu): an optional note and photos go into the trainer's chat with the vault, where the whole application goes on; admins answer under Admin › Sellers › Applications (a number on the tab and a banner on the Overview), and the answer is written into that chat. **Bookmarks** (`/me/bookmarks`, menu, with a number): stores and vault cards (`bookmarks`) and sellers' cards (the old ♥ Save, `listing_saves`), each card under its store, with Add to cart and "Add all". The **cart** is a row in the menu under Orders (its number on the Menu buttons); the top bar has no cart. "Top of the vault" is off the home page. A seller's binder **Add cards** also finds new cards from the card list; the Store Manager's binders page can **Delete** picked cards (with Undo). The VM: flyctl never holds a job's lock (it kept the picture job stopped 14-17 Nov), "More like this" asks the site again when it is slow |

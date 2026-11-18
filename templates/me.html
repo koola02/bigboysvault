@@ -70,34 +70,10 @@
       </li>
       {% endfor %}
     </ul>
-    <p class="me-none" id="meEmpty"{% if !cards.is_empty() %} hidden{% endif %}>Your binder is empty. Find your first card below.</p>
+    <p class="me-none" id="meEmpty"{% if !cards.is_empty() %} hidden{% endif %}>Your binder is empty. Tap Add cards to put in your first card.</p>
 
-    <h3 class="me-add-h">Add a card you own</h3>
-    <div class="me-find">
-      <input type="search" id="meQ" placeholder="Card name, like Pikachu" aria-label="Find a card" autocomplete="off" enterkeyhint="search">
-      <div class="lang-sw me-lang" id="meLang" role="group" aria-label="Card language">
-        <button type="button" data-lang="en" aria-pressed="true">English</button>
-        <button type="button" data-lang="ja" aria-pressed="false">日本語</button>
-        <button type="button" data-lang="zh" aria-pressed="false">中文</button>
-      </div>
-    </div>
-    <p class="me-state" id="meState" aria-live="polite">Type a name and tap the card you own.</p>
-    <div class="me-results" id="meResults"></div>
-
-    <details class="me-own" id="meOwn">
-      <summary>Not in the list? Add your own photo of a card</summary>
-      <form id="meUpload" class="me-up">
-        <label class="me-up-pic"><input type="file" name="photo" accept="image/*" required class="sr" id="meUpPhoto" data-card-cam><img id="meUpShot" alt="" hidden><span id="meUpHint"><b>Add a photo</b><small>Take one or choose one</small></span></label>
-        <div class="me-fields">
-          <label>Card name<input name="name" maxlength="120" required placeholder="Like Charizard ex" autocomplete="off"></label>
-          <label>Set <small>if you know it</small><input name="set" maxlength="80" autocomplete="off"></label>
-          <label>Condition<select name="cond">{% for o in conditions %}<option>{{ o }}</option>{% endfor %}</select></label>
-          <label>Value ₱ <small>if you like</small><input name="value" type="number" min="0" step="1" inputmode="numeric"></label>
-          <button class="btn" type="submit">Add to my binder</button>
-          <p class="me-how">It shows on your page with your binder. It isn't added to the vault.</p>
-        </div>
-      </form>
-    </details>
+    {#- Adding a card has one page: Add cards (/me/add), with Search, By set and Not in the list (and Scan a card for sellers). -#}
+    <p class="me-add"><a class="btn" href="/me/add"><span aria-hidden="true">+</span> Add cards</a></p>
   </section>
 
   <section class="me-card">
@@ -118,6 +94,5 @@
 </section>
 <script src="/static/dragsort.js?v=5" defer></script>
 <script src="/static/pricing.js?v=2" defer></script>
-<script src="/static/add-card.js?v=5" defer></script>
-<script src="/static/me.js?v=13" defer></script>
+<script src="/static/me.js?v=14" defer></script>
 {% endblock %}
