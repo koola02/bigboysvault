@@ -4,7 +4,6 @@
 <section class="wrap admin st" id="storeNotifs" data-push-key="{{ push_key }}">
   <header class="nt-head"><h1 class="h1">Notifications</h1>{% if p.m.seller %}<a class="btn ghost sm" href="/me/store">My store</a>{% endif %}</header>
   <div class="st-bar">
-    <p class="mc-how">{% if p.m.seller %}What's happened in your store and your orders.{% else %}Replies, accepted orders and sales show up here.{% endif %} Opening this page marks them read.</p>
     <button type="button" class="btn ghost" id="readAll">Mark all read</button>
   </div>
 
@@ -48,5 +47,5 @@
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/admin-ui.js?v=10" defer></script>
-<script src="/static/store.js?v=7" defer></script>
+<script src="/static/store.js?v=8" defer></script>
 {% endblock %}

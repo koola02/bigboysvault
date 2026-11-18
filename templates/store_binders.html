@@ -5,7 +5,6 @@
 {% block content %}
 <section class="wrap admin wide st" id="storeBinders" data-store="{{ p.m.store_url() }}" data-site="{{ nav.site }}">
   {% include "store_tabs.html" %}
-  <p class="mc-how">Binders group your cards: by set, by Pokémon, by price, however you like. <b>Public</b> binders show in your store, <b>Unlisted</b> ones only to people with the link, <b>Private</b> ones only to you. Drag a binder by its handle (or use the arrow keys on it) to put your binders in the order your store shows them.</p>
 
   <form class="st-newbinder" id="newBinder">
     <input name="title" maxlength="60" placeholder="New binder, like “Base Set” or “Under ₱100”" aria-label="New binder name" required autocomplete="off">
@@ -77,6 +76,6 @@
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/dragsort.js?v=5" defer></script>
 <script src="/static/admin-ui.js?v=10" defer></script>
-<script src="/static/store.js?v=7" defer></script>
+<script src="/static/store.js?v=8" defer></script>
 <script src="/static/binder-tools.js?v=5" defer></script>
 {% endblock %}

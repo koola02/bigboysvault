@@ -518,17 +518,20 @@ struct ScanPage {
     per: i64,
 }
 
+/// Scans this seller has left today (the smaller of their own and the site's), and how many a day each seller gets.
+/// For the Scan a card page and the Scan tab of Add cards in My store.
+pub fn left_today(c: &rusqlite::Connection, id: i64) -> rusqlite::Result<(i64, i64)> {
+    let per = per_seller();
+    let day = crate::vault_ai::today(crate::unix_now());
+    let (mine, site) = left(c, id, &day, per, site_max(c, per)?)?;
+    Ok((mine.min(site), per))
+}
+
 /// GET /me/scan: the page. Signed out: the log-in page, which comes back here.
 pub async fn page(State(app): State<App>, h: HeaderMap) -> Res {
     let Some(m) = current(&app, &h).await? else { return Ok(Redirect::to("/login?next=/me/scan").into_response()) };
     let (id, seller) = (m.id, m.seller);
-    let day = crate::vault_ai::today(crate::unix_now());
-    let per = per_seller();
-    let (mut nav, scans_left) = with_db(&app, move |c| {
-        let (mine, site) = left(c, id, &day, per, site_max(c, per)?)?;
-        Ok((chrome(c)?, mine.min(site)))
-    })
-    .await?;
+    let (mut nav, (scans_left, per)) = with_db(&app, move |c| Ok((chrome(c)?, left_today(c, id)?))).await?;
     nav.seo.title = format!("Scan a card · {}", nav.brand);
     Ok(html(render(ScanPage { nav, seller, on: enabled(), left: scans_left, per })?))
 }

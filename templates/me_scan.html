@@ -4,7 +4,7 @@
 {#- Scan a card (src/scan.rs, static/scan.js), for sellers: a photo from the card camera is read by Claude, and the page
     shows that card from the card list (one tile per version), the same card in other sets, and its evolution family.
     A tile opens "Add to your store" (add-card.js): nothing is added or priced by itself. Its own page while it is new
-    ("Try it" in the menu); Add cards in My store stays as it is. -#}
+    ("Try it" in the menu); the Scan tab of Add cards in My store is the same scanner. -#}
 <section class="wrap sc-page" id="scanPage">
   <div class="tr-head">
     <h1 class="h1">Scan a card <span class="sc-try">Try it</span></h1>
@@ -25,7 +25,7 @@
 </section>
 {% if seller && on %}
 <script src="/static/pricing.js?v=2" defer></script>
-<script src="/static/add-card.js?v=4" defer></script>
-<script src="/static/scan.js?v=4" defer></script>
+<script src="/static/add-card.js?v=5" defer></script>
+<script src="/static/scan.js?v=5" defer></script>
 {% endif %}
 {% endblock %}

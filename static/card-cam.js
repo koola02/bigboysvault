@@ -52,7 +52,8 @@
         <button type="button" class="cc-side" data-cam hidden>${svg(ICON.cam)}<span>Camera</span></button>
         <button type="button" class="btn cc-use" data-use hidden>${free ? 'Send photo' : scan ? 'Scan this card' : 'Use photo'}</button>
       </footer>`;
-    document.body.append(o);
+    // Inside an open window (the Add window is a modal <dialog>, which keeps everything outside it out of reach).
+    (target.closest('dialog[open]') || document.body).append(o);
     document.documentElement.classList.add('cc-on');
     const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*'; pick.hidden = true; o.append(pick);
     ui = { o, target, pick, free: !!free, scan: !!scan, file: null, stream: null, facing: 'environment', img: null, x: 0, y: 0, s: 1, base: 1 };
@@ -63,7 +64,8 @@
     o.querySelector('[data-shoot]').addEventListener('click', shoot);
     o.querySelector('[data-use]').addEventListener('click', use);
     pick.addEventListener('change', () => { const f = pick.files[0]; pick.value = ''; if (f) edit(f); });
-    o.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+    // Escape closes only the camera, not a window it was opened from (the Add window).
+    o.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); } });
     addEventListener('resize', layout);
     gestures(o.querySelector('.cc-stage'));
     if (window.ResizeObserver) { ui.ro = new ResizeObserver(() => layout()); ui.ro.observe(o.querySelector('.cc-stage')); }

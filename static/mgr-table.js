@@ -85,12 +85,16 @@
         const back = el('button', 'linkbtn', select && select.options[0] ? `Back to ${select.options[0].textContent.trim().replace(/\s*\(.*\)$/, '').toLowerCase()}` : 'Clear'); back.type = 'button';
         back.onclick = () => go([]);
         line.append(back);
-      } else line.append('Tap a column’s name to sort by it. Tap a second one and the two sort together. Drag the line beside a name to change the column’s width.');
+      }
+      // No how-to words (the owner, 18 Nov 2026: "no need to have these descriptions"): the line only says how the
+      // table is sorted, with the way back, and offers to reset widths that were changed; otherwise it isn't shown.
       if (hasWidths()) {
         const reset = el('button', 'linkbtn', 'Reset column widths'); reset.type = 'button';
         reset.onclick = () => { w = {}; keep(root, w); apply(root, head, w); drawLine(); };
-        line.append(' · ', reset);
+        if (state.length) line.append(' · ');
+        line.append(reset);
       }
+      line.hidden = !line.childNodes.length;
     }
     (head.closest('.mgr-scroll') || head).before(line);
 

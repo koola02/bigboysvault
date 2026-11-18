@@ -3,10 +3,13 @@
 // tile per version (Normal, Holo, Reverse Holo...), the same card in other sets, and its evolution family. A tile opens
 // "Add to your store" (add-card.js) with that version chosen; the seller still picks the condition, the price and how
 // many. Everything comes from the full online card list Add cards searches, not only the vault's cards. Nothing is
-// added by itself.
+// added by itself. The Scan tab of Add cards in My store (store_listings.html) is this same scanner; there, the way out
+// when a scan can't help is the Search tab.
 (() => {
   const file = document.getElementById('scanFile');
   if (!file) return;
+  const inAdd = !!file.closest('#addPanel');
+  const words = (t) => (inAdd ? String(t).replace(/Add cards in My store/g, 'the Search tab') : t);
   const out = document.getElementById('scanOut'), word = document.getElementById('scanWord'), leftLine = document.getElementById('scanLeft');
   const shoot = file.closest('label');
   const make = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -35,7 +38,7 @@
       if (!r.ok) throw new Error(j.error || 'That didn’t work. Please try again.');
       show(j);
     } catch (e) {
-      out.replaceChildren(card(null, e.message || 'That didn’t work. Please try again.'));
+      out.replaceChildren(card(null, words(e.message || 'That didn’t work. Please try again.')));
     } finally {
       busy = false; shoot.classList.remove('off'); shoot.removeAttribute('aria-disabled');
       file.value = '';
@@ -127,11 +130,11 @@
     const name = r.name_en || r.name || 'this card';
     const exact = j.exact || [], versions = j.versions || [], family = j.family || [];
     if (!exact.length && !versions.length && !family.length) {
-      parts.push(note(j.error ? 'The card list isn’t answering right now. Please try again in a moment.' : `We couldn’t find “${name}” in the card list. Try again, or use Add cards in My store.`));
+      parts.push(note(j.error ? 'The card list isn’t answering right now. Please try again in a moment.' : words(`We couldn’t find “${name}” in the card list. Try again, or use Add cards in My store.`)));
       out.replaceChildren(...parts);
       return;
     }
-    parts.push(make('p', 'sc-src', 'From the full Pokémon card list, the same one Add cards searches: every card printed, not only the vault’s.'));
+    if (!inAdd) parts.push(make('p', 'sc-src', 'From the full Pokémon card list, the same one Add cards searches: every card printed, not only the vault’s.'));
     if (exact.length) {
       const tiles = exact.flatMap((c) => {
         const fins = (c.finishes || []).filter((f) => f.key && f.key !== 'market');

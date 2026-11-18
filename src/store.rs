@@ -139,6 +139,11 @@ struct ListingsPage {
     max: i64,
     total: i64,
     focus: i64,
+    /// Add cards' Scan tab reads the photo with Claude (src/scan.rs), as the Scan a card page does: shown when the
+    /// site has a key, with this seller's scans left today and the daily number.
+    scan_on: bool,
+    scan_left: i64,
+    scan_per: i64,
 }
 
 pub async fn listings(State(app): State<App>, h: HeaderMap, Query(q): Query<ListQs>) -> Res {
@@ -152,13 +157,14 @@ pub async fn listings(State(app): State<App>, h: HeaderMap, Query(q): Query<List
     let sort = if by_column.is_empty() { q.sort.chars().take(24).collect() } else { by_column };
     let f = ListFilter { q: q.q.chars().take(60).collect(), status: q.status, binder: q.binder, sort, kind: q.kind };
     let f2 = f.clone();
-    let (nav, p, cards, binders, max, total) = with_db(&app, move |c| {
+    let (nav, p, cards, binders, max, total, (scan_left, scan_per)) = with_db(&app, move |c| {
         sellers::expire_due(c)?;
         let total: i64 = c.query_row("SELECT COUNT(*) FROM member_cards WHERE member_id=?1", [id], |r| r.get(0))?;
-        Ok((chrome(c)?, panel(c, m, "listings")?, sellers::listings(c, id, &f2)?, members::binders_of(c, id)?, sellers::max_cards(c), total))
+        Ok((chrome(c)?, panel(c, m, "listings")?, sellers::listings(c, id, &f2)?, members::binders_of(c, id)?, sellers::max_cards(c), total, crate::scan::left_today(c, id)?))
     })
     .await?;
-    Ok(html(render(ListingsPage { nav, p, cards, binders, f, conditions: members::CONDITIONS, statuses: sellers::STATUSES, max, total, focus: q.id.unwrap_or(0) })?))
+    let scan_on = crate::scan::enabled();
+    Ok(html(render(ListingsPage { nav, p, cards, binders, f, conditions: members::CONDITIONS, statuses: sellers::STATUSES, max, total, focus: q.id.unwrap_or(0), scan_on, scan_left, scan_per })?))
 }
 
 /// GET /me/listings/{id}: one of the seller's cards, for the "Add to your store" window to open filled in with it.

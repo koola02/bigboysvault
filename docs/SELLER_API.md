@@ -206,11 +206,12 @@ Settings the owner can add in the admin settings table: `seller_max_cards` (how 
   subscription. Limits worth knowing: iPhone and iPad need the site added to the Home Screen first; Android may hold
   alerts while the phone sleeps unless Chrome's battery use is set to Unrestricted; a ring is the phone's normal
   notification sound, repeated, not a ringtone.
-- **Scan a card** inside the Store Manager's Add cards uses the browser's on-device model (`LanguageModel` with image
-  input, Chrome desktop) to read the name and number off a photo, then searches the catalogue and lets the seller pick.
-  Browsers without it ask the seller to type the name under the photo. Nothing is ever added without a tap. The menu's
-  own **Scan a card** page (`/me/scan`, 18 Nov 2026) reads the photo with Claude on any device instead; see
-  `docs/OPERATIONS.md` 4e.
+- **Scan a card** inside the Store Manager's Add cards is the same scanner as the menu's own **Scan a card** page
+  (`/me/scan`): the photo goes to `POST /me/scan`, Claude reads it on any device, and `static/scan.js` shows the card,
+  its versions, other printings and evolutions (18 Nov 2026; before, this tab used Chrome's on-device `LanguageModel`,
+  so on an iPhone it only said "This browser can't read cards yet"). The tab shows only while scanning is switched on,
+  with the seller's scans left today; in it, "use Add cards" reads "use the Search tab". Nothing is ever added without
+  a tap. See `docs/OPERATIONS.md` 4e.
 
 ## Tables added (all `CREATE … IF NOT EXISTS` / `ADD COLUMN`, never dropped)
 

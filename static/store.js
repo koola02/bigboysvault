@@ -299,39 +299,8 @@
       });
       return b;
     }
-    // Leaving the add panel with new cards: show them.
-    $('addClose').addEventListener('click', () => { if (added) location.reload(); });
-
-    /* ----- scan: a photo, read on the device when the browser can, then the card list ----- */
-    const scanFile = $('scanFile');
-    if (scanFile) scanFile.addEventListener('change', async () => {
-      const f = scanFile.files[0]; if (!f) return;
-      const shot = $('scanShot'); shot.src = URL.createObjectURL(f); shot.hidden = false; $('scanHint').hidden = true;
-      const say = $('scanState'), into = $('scanResults');
-      say.textContent = 'Reading the card…';
-      let guess = '';
-      try {
-        if ('LanguageModel' in self) {
-          const opts = { expectedInputs: [{ type: 'image' }, { type: 'text', languages: ['en'] }], expectedOutputs: [{ type: 'text', languages: ['en'] }] };
-          if ((await LanguageModel.availability(opts)) !== 'unavailable') {
-            const session = await LanguageModel.create(opts);
-            const bmp = await createImageBitmap(await shrink(f, 800));
-            const out = await session.prompt([{ role: 'user', content: [{ type: 'text', value: 'This is a Pokémon trading card. Reply with only the Pokémon or card name printed at the top, then a space, then the card number printed at the bottom (like 58/102). Nothing else.' }, { type: 'image', value: bmp }] }]);
-            guess = String(out || '').split('\n')[0].replace(/[^\w\s/'-]/g, ' ').trim().slice(0, 60);
-            session.destroy?.();
-          }
-        }
-      } catch (_) {}
-      if (!guess) {
-        say.textContent = 'This browser can’t read cards yet. Type the name under the photo and tap the right card.';
-        const inp = el('input', 'sheet-input'); inp.placeholder = 'Card name and number, like Pikachu 58'; inp.autocomplete = 'off';
-        let t; inp.addEventListener('input', () => { clearTimeout(t); t = setTimeout(() => search(inp.value.trim(), into, say), 320); });
-        say.after(inp); inp.focus();
-        return;
-      }
-      say.textContent = `Looks like “${guess}”. Tap the right card, or search again.`;
-      q.value = guess; await search(guess, into, say);
-    });
+    // Leaving the add panel with new cards (searched, or scanned: the Scan tab is scan.js): show them.
+    $('addClose').addEventListener('click', () => { if (added || panel.querySelector('.sc-tile.in')) location.reload(); });
 
     /* ----- a card from your own photo ----- */
     const own = $('ownForm');

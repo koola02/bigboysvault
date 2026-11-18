@@ -360,6 +360,8 @@ body:has(.selbar:not([hidden])) .toast { bottom: calc(84px + var(--sab)); }
 /* Adding cards to a store: search the card list, scan one, or bring your own photo. */
 .ls-add { display: flex; flex-direction: column; gap: 12px; padding: 16px; border-radius: var(--r); background: var(--surface); box-shadow: inset 0 0 0 1px var(--gold-edge); }
 .ls-add[hidden] { display: none; }
+/* Opening it scrolls it to the top: clear of the fixed header and the Store Manager bar, so its tabs can be tapped. */
+.ls-add { scroll-margin-top: calc(var(--hd-h) + var(--sat) + 76px); }
 .st-add-head { display: flex; align-items: center; justify-content: space-between; }
 .st-add-tabs { align-self: flex-start; }
 .me-find { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
@@ -375,7 +377,7 @@ body:has(.selbar:not([hidden])) .toast { bottom: calc(84px + var(--sab)); }
 .me-up-pic { position: relative; display: grid; place-items: center; aspect-ratio: 63 / 88; padding: 8px; border-radius: var(--r-sm); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line-2); color: var(--muted); text-align: center; cursor: pointer; overflow: hidden; }
 .me-up-pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
 .me-up-pic b, .me-up-pic small { display: block; }
-.st-scan-pic { max-width: 220px; }
+.st-scan:not([hidden]) { display: flex; flex-direction: column; gap: 16px; }
 .me-fields { display: flex; flex-direction: column; gap: 10px; }
 .me-fields label:not(.chk) { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font: 600 .8125rem/1.2 var(--font); }
 .me-fields small { font-weight: 400; }

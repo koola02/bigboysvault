@@ -1,6 +1,6 @@
 // "Add a card" for sellers (the owner, 18 Nov 2026: nothing is added or priced automatically). Tapping a card from the
 // card list opens this window: the seller picks the condition, types their own price (the market price is only a
-// hint), chooses the card list's picture or a photo of their own card, how many, a note and the binder. Only "Add to my
+// hint), chooses the picture (the card list's online one, a photo taken now, or one uploaded), how many, a note and the binder. Only "Add to my
 // store" makes the listing (POST /me/cards/new). Used by the Store Manager's Add cards (store.js) and a binder's Add
 // cards (binder-tools.js): window.bbvAddCard.open({ card, binderId, onAdded }). Scan a card (scan.js) also passes
 // `versions: true`, and the window then lets the seller choose the version (Normal, Holo, Reverse Holo...), starting
@@ -66,24 +66,37 @@
     const who = make('div', 'ac-who'); who.append(make('b', null, card.name || 'Card'), make('small', null, [card.en, card.set, card.number].filter(Boolean).join(' · ')));
     top.append(pic, who);
 
-    // Which picture: the card list's, or a photo of the seller's own card.
+    // Which picture (the owner, 18 Nov 2026): the card list's own picture from online, a photo taken now with the card
+    // camera (card-cam.js: card-shaped and straight), or a photo uploaded from the phone or computer.
     const picBox = make('fieldset', 'ac-f ac-pics');
     picBox.append(make('legend', null, 'Picture'));
-    const useList = make('button', 'ac-opt', old ? 'Keep this picture' : 'Use this picture'); useList.type = 'button'; useList.setAttribute('aria-pressed', 'true');
-    const upLabel = make('label', 'ac-opt'); upLabel.append(make('span', null, 'Upload a photo of my card'));
-    const file = make('input', 'sr'); file.type = 'file'; file.accept = 'image/*'; upLabel.append(file);
-    const row = make('div', 'ac-opts'); row.append(useList, upLabel);
-    picBox.append(row, make('small', 'ac-how', 'A photo of your own card shows buyers exactly what they get.'));
-    let photo = null;
-    const showChoice = () => { useList.setAttribute('aria-pressed', String(!photo)); upLabel.classList.toggle('on', !!photo); };
+    const icon = (d) => { const s = make('span', 'ac-ico'); s.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`; return s; };
+    const useList = make('button', 'ac-opt ac-src'); useList.type = 'button'; useList.setAttribute('aria-pressed', 'true');
+    const thumb = make('span', 'ac-ico ac-thumb');
+    if (card.image) { const t = make('img'); t.src = card.image; t.alt = ''; t.onerror = () => t.remove(); thumb.append(t); }
+    useList.append(thumb, make('span', null, old ? 'Keep this picture' : 'Online picture'));
+    const choice = (word, d, cam) => {
+      const l = make('label', 'ac-opt ac-src'); l.append(icon(d), make('span', null, word));
+      const f = make('input', 'sr'); f.type = 'file'; f.accept = 'image/*'; if (cam) f.dataset.cardCam = ''; l.append(f);
+      return [l, f];
+    };
+    const [takeL, takeIn] = choice('Take a photo', '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>', true);
+    const [upL, upIn] = choice('Upload a photo', '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>', false);
+    const row = make('div', 'ac-opts ac-srcs'); row.append(useList, takeL, upL);
+    picBox.append(row);
+    let photo = null, from = null;
+    const showChoice = () => {
+      useList.setAttribute('aria-pressed', String(!photo));
+      takeL.classList.toggle('on', !!photo && from === takeIn); upL.classList.toggle('on', !!photo && from === upIn);
+    };
     useList.addEventListener('click', () => { photo = null; img.src = card.image || ''; showChoice(); });
     let preparing = false;
-    file.addEventListener('change', async () => {
-      const f = file.files && file.files[0]; if (!f) return;
+    [takeIn, upIn].forEach((input) => input.addEventListener('change', async () => {
+      const f = input.files && input.files[0]; if (!f) return;
       preparing = true; go.disabled = true; go.textContent = 'Getting the photo ready…';
-      photo = await shrink(f); img.src = URL.createObjectURL(photo); showChoice(); file.value = '';
+      photo = await shrink(f); from = input; img.src = URL.createObjectURL(photo); showChoice(); input.value = '';
       preparing = false; go.disabled = false; go.textContent = goWord;
-    });
+    }));
 
     // Version: only from Scan a card, and only when the card list prices more than one.
     const verBox = make('fieldset', 'ac-f'); verBox.hidden = true; verBox.append(make('legend', null, 'Version'));

@@ -5,7 +5,6 @@
 {% block content %}
 <section class="wrap admin wide st" id="listings" data-max="{{ max }}" data-total="{{ total }}" data-focus="{{ focus }}" data-store="{{ p.m.store_url() }}">
   {% include "store_tabs.html" %}
-  <p class="mc-how">Your cards. Each one is a <b>Highlight</b> (shown off), <b>For sale</b> (in your store, with stock and a price) or on your <b>Wishlist</b>. Change the price, condition or stock right here; it saves by itself. Tick cards to change many at once.</p>
 
   <div class="st-bar">
     <form class="st-filters" method="get" action="/me/listings" id="listFilters">
@@ -31,7 +30,7 @@
     <div class="st-add-head"><h2 class="h2">Add cards</h2><button type="button" class="ibtn" id="addClose" aria-label="Close">✕</button></div>
     <div class="seg st-add-tabs" role="tablist">
       <button type="button" class="on" data-add="search" role="tab" aria-selected="true">Search</button>
-      <button type="button" data-add="scan" role="tab" aria-selected="false">Scan a card</button>
+      {% if scan_on %}<button type="button" data-add="scan" role="tab" aria-selected="false">Scan a card</button>{% endif %}
       <button type="button" data-add="own" role="tab" aria-selected="false">Not in the list</button>
     </div>
     <div class="st-add-pane" data-pane="search">
@@ -46,11 +45,16 @@
       <p class="me-state" id="addState" aria-live="polite">Type a name and tap the card you're selling. You can add the same card twice, in different conditions.</p>
       <div class="me-results" id="addResults"></div>
     </div>
-    <div class="st-add-pane" data-pane="scan" hidden>
-      <label class="me-up-pic st-scan-pic"><input type="file" accept="image/*" capture="environment" class="sr" id="scanFile" data-card-cam><img id="scanShot" alt="" hidden><span id="scanHint"><b>📷 Take a photo of the card</b><small>We'll look for it in the card list. You pick the right one.</small></span></label>
-      <p class="me-state" id="scanState" aria-live="polite"></p>
-      <div class="me-results" id="scanResults"></div>
+    {#- Scan a card: the same Claude reader and results as the menu's Scan a card page (static/scan.js, src/scan.rs). -#}
+    {% if scan_on %}
+    <div class="st-add-pane st-scan" data-pane="scan" hidden>
+      <div class="sc-go">
+        <label class="btn sc-shoot"><input type="file" accept="image/*" class="sr" id="scanFile" data-card-cam="scan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span id="scanWord">Take a photo of the card</span></label>
+        <p class="sc-left" id="scanLeft">{{ scan_left }} of {{ scan_per }} scans left today</p>
+      </div>
+      <div class="sc-out" id="scanOut" aria-live="polite"></div>
     </div>
+    {% endif %}
     <div class="st-add-pane" data-pane="own" hidden>
       <form id="ownForm" class="me-up">
         <label class="me-up-pic"><input type="file" name="photo" accept="image/*" required class="sr" id="ownPhoto" data-card-cam><img id="ownShot" alt="" hidden><span id="ownHint"><b>Add a photo</b><small>Take one or choose one</small></span></label>
@@ -126,7 +130,8 @@
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/pricing.js?v=2" defer></script>
 <script src="/static/admin-ui.js?v=10" defer></script>
-<script src="/static/add-card.js?v=4" defer></script>
-<script src="/static/store.js?v=7" defer></script>
-<script src="/static/mgr-table.js?v=1" defer></script>
+<script src="/static/add-card.js?v=5" defer></script>
+<script src="/static/store.js?v=8" defer></script>
+{% if scan_on %}<script src="/static/scan.js?v=5" defer></script>{% endif %}
+<script src="/static/mgr-table.js?v=2" defer></script>
 {% endblock %}
