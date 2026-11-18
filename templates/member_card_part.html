@@ -9,7 +9,7 @@
     <dl class="facts">
       <div class="fact fact-cond"><dt>Condition</dt><dd>{{ c.cond }}</dd></div>
       {% if c.own_photo() %}<div class="fact"><dt>Photo</dt><dd>{{ t.name }}'s own photo<small>Not part of the vault</small></dd></div>{% endif %}
-      {% if c.worth() > 0.0 %}<div class="fact fact-worth"><dt>Value</dt><dd><span class="worth worth-lg">{{ c.worth_text() }}</span><small>{% if c.value_own > 0.0 %}Set by {{ t.name }}{% else %}Today's market price for this condition{% endif %}</small></dd></div>{% endif %}
+      {% if c.worth() > 0.0 && c.is_sale() && t.seller %}<div class="fact fact-worth"><dt>Price</dt><dd><span class="worth worth-lg">{{ c.worth_text() }}</span><small>{% if c.value_own > 0.0 %}Set by {{ t.name }}{% else %}Today's market price for this condition{% endif %}</small></dd></div>{% endif %}
       {% if !c.card_set.is_empty() %}<div class="fact"><dt>Set</dt><dd><span class="fact-set">{% if !c.symbol().is_empty() %}<img class="card-sym" src="{{ c.symbol() }}" width="16" height="16" loading="lazy" decoding="async" alt="">{% endif %}<span>{{ c.card_set }}</span></span>{% if !c.number.is_empty() %}<small>#{{ c.number }}</small>{% endif %}</dd></div>{% endif %}
     </dl>
     {% if let Some(tr) = trend %}<p class="trend" data-dir="{{ tr.dir() }}"><svg viewBox="0 0 120 32" width="96" height="26" aria-hidden="true" focusable="false"><polyline points="{{ tr.points }}" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></svg><span>{{ tr.text() }}</span></p>{% endif %}

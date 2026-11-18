@@ -45,7 +45,8 @@
       <p class="me-state" id="addState" aria-live="polite">Type a name and tap the card you're selling. You can add the same card twice, in different conditions.</p>
       <div class="me-results" id="addResults"></div>
     </div>
-    {#- Scan a card: the same Claude reader and results as the menu's Scan a card page (static/scan.js, src/scan.rs). -#}
+    {#- Scan a card (static/scan.js, src/scan.rs): Claude reads the photo. The one place to scan: the address
+        /me/listings#scan opens this tab (store.js), and the old /me/scan page forwards here. -#}
     {% if scan_on %}
     <div class="st-add-pane st-scan" data-pane="scan" hidden>
       <div class="sc-go">
@@ -111,7 +112,6 @@
     {% endfor %}
   </ul>
   </div>
-  <script>addEventListener("load", function () { if (location.hash === "#add") { var b = document.getElementById("addOpen"); if (b) b.click(); } });</script>
 </section>
 <div class="selbar" id="selbar" hidden role="toolbar" aria-label="Bulk actions">
   <span class="selbar-n" id="selCount">0 selected</span>
@@ -131,7 +131,7 @@
 <script src="/static/pricing.js?v=2" defer></script>
 <script src="/static/admin-ui.js?v=10" defer></script>
 <script src="/static/add-card.js?v=5" defer></script>
-<script src="/static/store.js?v=8" defer></script>
+<script src="/static/store.js?v=9" defer></script>
 {% if scan_on %}<script src="/static/scan.js?v=5" defer></script>{% endif %}
 <script src="/static/mgr-table.js?v=2" defer></script>
 {% endblock %}

@@ -27,10 +27,6 @@
 {% endblock %}
 {% block right %}
 <a class="rr-ask" href="/ask"><span class="rr-ask-t"><img src="/static/img/logo-sm-144.png?v=1" width="44" height="44" alt=""><span><b>Ask the Vault</b><small>Prices, stock, ideas</small></span></span><span class="rr-ask-go"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg>Ask a question</span></a>
-{% if !moves.is_empty() %}<section class="rr-sec">
-  <h2 class="rr-h">Price moves</h2>
-  {% for m in moves %}<a class="rr-i" href="{{ m.url }}"><span class="av mv {% if m.up %}up{% else %}down{% endif %}">{% if m.up %}↑{% else %}↓{% endif %}</span><span><b>{{ m.title }}</b><small>{{ m.pct }} this month · {{ m.price }}</small></span></a>{% endfor %}
-</section>{% endif %}
 {% if !stores.is_empty() %}<section class="rr-sec">
   <h2 class="rr-h">Stores <a href="/stores">See all</a></h2>
   {% for s in stores %}<a class="rr-i" href="{{ s.url }}"><span class="av">{% if s.avatar.is_empty() %}{{ s.initial }}{% else %}<img src="{{ s.avatar }}" alt="" loading="lazy" decoding="async">{% endif %}</span><span><b>{{ s.name }}</b><small>{{ s.sub }}</small></span></a>{% endfor %}

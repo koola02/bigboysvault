@@ -8,7 +8,8 @@
               <a class="svh-name" href="{{ s.url }}">{{ s.name }}</a>
               {% if !s.badge.is_empty() %}<span class="seller-badge">{{ s.badge }}</span>{% endif %}
             </div>
-            <p class="svh-worth">{{ s.on_sale_text() }} on sale · {{ s.sold }} sold · {{ s.followers }} follower{% if s.followers != 1 %}s{% endif %}{% if !s.location.is_empty() %} · 📍 {{ s.location }}{% endif %}</p>
+            <ul class="svh-facts"><li><b>{{ s.on_sale_text() }}</b> on sale</li><li><b>{{ s.sold }}</b> sold</li><li><b>{{ s.followers }}</b> follower{% if s.followers != 1 %}s{% endif %}</li></ul>
+            {% if !s.location.is_empty() %}<p class="svh-place">📍 {{ s.location }}</p>{% endif %}
             {% if !s.bio.is_empty() %}<p class="svh-bio">{{ s.bio }}</p>{% endif %}
             {% if !s.pay.is_empty() %}<div class="svh-tags">{% for pm in s.pay %}<span class="sf-pay">{{ pm }}</span>{% endfor %}</div>{% endif %}
           </div>

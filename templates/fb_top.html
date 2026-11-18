@@ -3,6 +3,9 @@
    with the logo, is a header tab from 700px and in the phone's bottom bar, where Ask is too. The Vault has no button
    anywhere (the owner, 17 Nov 2026): its cards are found through Stores and the search. Log out ends the menu on
    every screen: a phone has no account button, and the menu should read the same everywhere.
+   The first line (your picture and name) opens your own page, not its settings (the owner, 18 Nov 2026): /me/page
+   forwards there, and fb-shell.js points the link straight at /trainers/{id} once it knows who is signed in.
+   "Account Settings" on that page opens /me. Scan a card has no line here: it is a tab of Add cards.
    The bell is a link: on a phone it opens the Notifications page, from 700px fb-shell.js drops the list down instead.
    base.html opens <main> right after this; fb_bottom.html closes the frame. Ids match today's header, so the cart,
    messages and notifications scripts work unchanged. #}
@@ -50,7 +53,7 @@
 <aside class="fb-left" id="fbMenu" aria-label="Menu">
   <div class="mn-head"><b>Menu</b></div>
   <nav class="mn" aria-label="Places">
-    <a class="mn-i" href="/me" id="mnMe" data-me-only><span class="av sm" id="mnMeAv"></span><span id="mnMeT">My profile</span></a>
+    <a class="mn-i" href="/me/page" id="mnMe" data-me-only><span class="av sm" id="mnMeAv"></span><span id="mnMeT">My profile</span></a>
     <a class="mn-i" href="/login" data-guest-only><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg><span>Log in or register</span></a>
     <a class="mn-i" href="/trainers" data-mn="tab"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg><span>Trainers</span></a>
     <a class="mn-i mn-ask" href="/ask" data-mn="ask"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg><span>Ask the Vault</span></a>
@@ -58,7 +61,6 @@
     <a class="mn-i" href="/vouches"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.500l6.100-.900z"/></svg><span>Vouches</span></a>
     <a class="mn-i" href="/me/sell" data-me-only data-buyer-only><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9M4 9v11h16V9M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0M10 20v-6h4v6"/></svg><span>Apply as a seller</span></a>
     <a class="mn-i" href="/me/store" data-seller-only><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 7h8M8 11h8M8 15h5"/></svg><span>My store</span></a>
-    <a class="mn-i" href="/me/scan" data-seller-only><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Scan a card</span><span class="mn-try">Try it</span></a>
     <a class="mn-i" href="/me/orders" data-me-only><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2zM9 7h6M9 11h6M9 15h4"/></svg><span>Orders</span></a>
     <button type="button" class="mn-i mn-cart" id="cartFab" aria-label="Cart" aria-expanded="false" aria-controls="cartDrawer"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg><span>Cart</span><span class="mn-n cart-n" id="cartN">0</span></button>
     <a class="mn-i" href="/me/bookmarks" data-me-only><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg><span>Bookmarks</span><span class="mn-n mn-n-soft" data-bm-count hidden></span></a>

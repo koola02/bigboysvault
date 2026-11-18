@@ -12,7 +12,6 @@
       <div class="sf-who">
         <p class="eyebrow">Store</p>
         <h1 class="h1">{{ nav.brand }}</h1>
-        {% if !since.is_empty() %}<p class="sf-sub">since {{ since }}</p>{% endif %}
         <p class="sf-bio">{{ bio }}</p>
       </div>
       <div class="sf-acts">
@@ -29,10 +28,13 @@
       <li><b id="followerN">{{ n.followers }}</b><span>follower{% if n.followers != 1 %}s{% endif %}</span></li>
       <li class="sf-vli"><button type="button" class="sf-vouches" data-vouches="vault" aria-haspopup="dialog"><b data-vouch-n>{{ n.vouches }}</b><span>Vouches <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></span></button></li>
     </ul>
-    {% if !pay.is_empty() %}
-    <div class="sf-rows">
-      <div class="sf-row"><span class="sf-row-l">Pay with</span>{% for pm in pay %}<span class="sf-pay">{{ pm }}</span>{% endfor %}<small class="sf-note-l">Pay details are shown once {{ nav.brand }} accepts your order.</small></div>
-    </div>
+    {#- The same details as every store, one per line (store.html). -#}
+    {% if !since.is_empty() || !pay.is_empty() %}
+    <dl class="sf-rows">
+      {% if !since.is_empty() %}<div class="sf-row"><dt class="sf-row-l">Open since</dt><dd class="sf-row-v sf-text">{{ since }}</dd></div>{% endif %}
+      {% if !pay.is_empty() %}<div class="sf-row"><dt class="sf-row-l">Pay with</dt><dd class="sf-row-v">{% for pm in pay %}<span class="sf-pay">{{ pm }}</span>{% endfor %}</dd></div>
+      <div class="sf-row"><dt class="sf-row-l">How to pay</dt><dd class="sf-row-v sf-text"><span class="sf-note-l">Shown once {{ nav.brand }} accepts your order</span></dd></div>{% endif %}
+    </dl>
     {% endif %}
   </header>
 

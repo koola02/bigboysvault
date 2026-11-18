@@ -3073,7 +3073,7 @@ mod tests {
         // A binder: a bar with an X back to the store, its name and count; no store header, no way back by crumbs, no reviews.
         let fire = page(&c, &slug, Some(&binders[0].slug));
         assert!(fire.contains(&format!("<a class=\"sf-bx\" href=\"/store/{slug}\" aria-label=\"Close\"")), "{fire}");
-        assert!(fire.contains("<h1 class=\"sf-bh\">Fire</h1>") && fire.contains("3 cards · by"));
+        assert!(fire.contains("<h1 class=\"sf-bh\">Fire</h1>") && fire.contains("<span>3 cards</span><span>by"));
         assert!(!fire.contains("class=\"sf-head") && !fire.contains("data-vouches") && !fire.contains("← All of"));
         assert_eq!(fire.matches("class=\"sf-card\"").count(), 3, "the binder's cards, with their buttons");
         assert!(!fire.contains("data-offer") && !fire.contains("id=\"buySheet\"") && fire.contains("storefront.js"), "Offer and Message live in each card's window");
@@ -3119,7 +3119,7 @@ mod tests {
         assert!(html.contains("<h1 class=\"h1\">Big Boys Vault</h1>") && !html.to_lowercase().contains("official"));
         assert!(html.contains("id=\"followBtn\"") && html.contains("data-dm-to=\"0\"") && html.contains("data-bm=\"store\" data-id=\"0\""));
         assert!(!html.contains("href=\"/ask\"><svg") && !html.contains("<a class=\"btn ghost\" href=\"/chat\">"), "Ask the Vault and Vault chat live in the menu, not on a store");
-        assert!(html.contains("data-vouches=\"vault\"") && html.contains("<b id=\"followerN\">0</b>") && html.contains("since Jan 2026"));
+        assert!(html.contains("data-vouches=\"vault\"") && html.contains("<b id=\"followerN\">0</b>") && html.contains("<dt class=\"sf-row-l\">Open since</dt><dd class=\"sf-row-v sf-text\">Jan 2026</dd>"));
         // The staff's link is in every visitor's page, hidden unless a full admin is signed in: the page can be kept.
         assert!(html.contains("<a class=\"btn ghost\" href=\"/admin/binders\" data-staff-only data-full-only>"));
         // Every binder with cards for sale, in the owner's order, menu or not, home page or not; no other.
@@ -3340,7 +3340,7 @@ mod tests {
         let html = stores_html(&c);
         assert!(!html.to_lowercase().contains("official") && !html.contains("vault-card") && !html.contains("The vault and its trainers"));
         assert_eq!(html.matches("<article class=\"seller-card").count(), 1);
-        assert!(html.contains("href=\"/store/vault\"") && html.contains("3 on sale · 0 sold · 0 followers"), "{html}");
+        assert!(html.contains("href=\"/store/vault\"") && html.contains("<li><b>3</b> on sale</li><li><b>0</b> sold</li><li><b>0</b> followers</li>"), "{html}");
         assert!(html.contains("<a class=\"btn\" href=\"/store/vault\">Visit store →</a>"));
         assert_eq!(html.matches("class=\"sf-btile\" href=\"/collections/").count(), 2, "its binders with cards for sale, not a row of cards");
         assert_eq!(html.matches("<a class=\"card\" href=\"/products/").count(), 0, "no highlighted cards until an admin picks some");

@@ -206,8 +206,10 @@ automatic posts.
 
 ## 4e. Scan a card with Claude (sellers)
 
-`src/scan.rs`, `static/scan.js`, `templates/me_scan.html`; the owner asked for it on 18 Nov 2026 as its own menu item,
-"Scan a card" marked "Try it", for sellers only, next to (not instead of) Add cards. The card camera's scan mode sends a
+`src/scan.rs`, `static/scan.js`; for sellers only. The owner asked for it on 18 Nov 2026 as its own menu item marked
+"Try it"; later that day they asked for one way to add a card, so the menu line and the page went: scanning is the Scan
+tab of Add cards (`/me/listings#scan` opens it; the old `/me/scan` address forwards there, a visitor first to log in,
+a trainer who doesn't sell to Apply as a seller). The card camera's scan mode sends a
 photo of one card (`POST /me/scan`); Claude Sonnet 5.5 (Anthropic's Messages API, API version `2026-10-21`, high effort
 (the owner's choice), a fixed JSON answer) reads its name, Pokémon, collector number, set (a best guess) and language, or says what is wrong
 with the photo (the back of a card, several cards, too blurry, not a card). The site then searches the card list by the
@@ -218,8 +220,7 @@ with the best guess first and marked. A tile opens the "Add to your store" windo
 (`finish` on `POST /me/cards/new`); the seller still chooses the condition, types the price and says how many. Every
 result comes from the full online card list Add cards searches (TCGdex), never only the vault's cards; the page says
 so. (A search box under the results was tried and taken out at the owner's word: "no need to add a search box".) The
-photo isn't kept. The Scan tab of Add cards in My store (`templates/store_listings.html`) is the same scanner and
-counts against the same daily scans; it used Chrome's on-device model until 18 Nov 2026, which iPhones don't have.
+photo isn't kept. The Scan tab used Chrome's on-device model until 18 Nov 2026, which iPhones don't have.
 
 - Key: platform.claude.com → API keys, then `fly secrets set ANTHROPIC_API_KEY=... -a bigboysvault` (the owner's own
   step; never paste it anywhere else). The owner's key is an all-workspaces key, so every request also names the

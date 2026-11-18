@@ -2,7 +2,8 @@
 //!
 //! A post is written by a trainer (`kind` "post", "share") or made by the site from what already happens
 //! (`sync`): the day's new cards in the vault ("arrivals"), a seller's new listings ("listing"), a vouch ("vouch"),
-//! the week's price moves ("prices"), a trainer joining ("joined"). Automatic posts carry a `ref` (what they stand
+//! a trainer joining ("joined"). (The week's price moves, "prices", left the feed on 18 Nov 2026: the owner wants
+//! prices only where cards are shopped.) Automatic posts carry a `ref` (what they stand
 //! for), so each is made once and brought up to date on later syncs. Reactions and comments hang off the post's id,
 //! whatever its kind. `member_id` 0 is the vault itself.
 use rusqlite::{params, Connection, OptionalExtension, Row};
@@ -18,11 +19,10 @@ pub const REACTIONS: [(&str, &str); 6] = [("like", "👍"), ("love", "❤️"), 
 /// The posts the site writes by itself, each with a switch for the admins (`set_auto`). "vault" is not a stored
 /// post: it is the sets of cards from the stores' binders (the vault's and the trainers', taking turns) that keep the
 /// feed going after the posts run out. (Its name is from when they were the vault's binders only.)
-pub const AUTO: [(&str, &str); 6] = [
+pub const AUTO: [(&str, &str); 5] = [
     ("arrivals", "New cards in the vault (one post a day)"),
     ("listing", "Sellers' new listings"),
     ("vouch", "Vouches"),
-    ("prices", "The week's price moves"),
     ("joined", "New trainers joining"),
     ("vault", "Sets of cards from the stores' binders after the posts run out (this keeps the feed endless)"),
 ];
@@ -99,6 +99,8 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
             c.execute(&format!("ALTER TABLE {table} ADD COLUMN {col} {kind}"), [])?;
         }
     }
+    // Price moves left the feed (18 Nov 2026): the posts already written stay, out of sight, with their likes.
+    c.execute("UPDATE posts SET hidden=3 WHERE kind='prices' AND hidden IN (0,1)", [])?;
     Ok(())
 }
 
@@ -470,32 +472,6 @@ pub fn sync(c: &Connection, now: i64) -> rusqlite::Result<()> {
         }
     }
 
-    // 5. The week's biggest price moves (needs about a month of price history).
-    let latest: Option<String> = if !on("prices") { None } else { c.query_row("SELECT MAX(day) FROM price_history", [], |r| r.get(0)).optional()?.flatten() };
-    if let Some(latest) = latest {
-        let base: Option<String> = c.query_row("SELECT MAX(day) FROM price_history WHERE day<=date(?1, '-27 days')", [&latest], |r| r.get(0)).optional()?.flatten();
-        if let Some(base) = base {
-            let moves: Vec<(i64, i64)> = c
-                .prepare(
-                    "SELECT (SELECT MIN(p.id) FROM products p WHERE p.api_id=n.api_id AND p.finish=n.finish AND p.available=1) pid,
-                            CAST(ROUND((n.php - o.php) * 100.0 / o.php) AS INTEGER) pct
-                     FROM price_history n JOIN price_history o ON o.api_id=n.api_id AND o.finish=n.finish AND o.day=?2
-                     WHERE n.day=?1 AND o.php>=20 AND ABS(n.php - o.php) * 100.0 / o.php >= 15
-                     ORDER BY ABS(n.php - o.php) * 1.0 / o.php DESC LIMIT 40",
-                )?
-                .query_map([&latest, &base], |r| Ok((r.get::<_, Option<i64>>(0)?.unwrap_or(0), r.get(1)?)))?
-                .collect::<Result<Vec<_>, _>>()?
-                .into_iter()
-                .filter(|(pid, _)| *pid > 0)
-                .take(5)
-                .collect();
-            if !moves.is_empty() {
-                let week: String = c.query_row("SELECT strftime('%Y-%W', ?1)", [&latest], |r| r.get(0))?;
-                let list: Vec<Value> = moves.iter().map(|(id, pct)| json!({ "id": id, "pct": pct })).collect();
-                upsert(c, 0, "prices", &format!("prices:{week}"), "", &json!({ "moves": list, "since": base }), now, false)?;
-            }
-        }
-    }
     Ok(())
 }
 

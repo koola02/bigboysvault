@@ -52,7 +52,7 @@
         panel.append(el('div', 'sg-sec', 'Cards'));
         for (const c of data.cards) {
           const a = el('a', 'sg-card'); a.href = '/products/' + c.handle; a.setAttribute('role', 'option');
-          const im = el('img'); im.src = c.img; im.alt = ''; im.width = 36; im.height = 50; const s = el('span', 'sg-ct'); s.append(el('b', null, c.title), el('small', null, c.price)); a.append(im, s); panel.append(a);
+          const im = el('img'); im.src = c.img; im.alt = ''; im.width = 36; im.height = 50; const s = el('span', 'sg-ct'); s.append(el('b', null, c.title)); if (c.set) s.append(el('small', null, c.set)); a.append(im, s); panel.append(a);
         }
       }
       panel.append(el('p', 'sg-note', 'The percentage is the estimated chance that this is what you mean, learned from your collection and past searches.'));

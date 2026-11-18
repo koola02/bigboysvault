@@ -1,4 +1,5 @@
-//! The home feed: posts from marcuru_rs::social, drawn with live cards and prices, ten or so at a time.
+//! The home feed: posts from marcuru_rs::social, drawn with live cards, ten or so at a time. No prices: the owner
+//! (18 Nov 2026) wants prices only where cards are shopped (stores, their binders, the search, a card's window).
 //! It never ends: when the posts run out, the feed goes on with sets of cards from the stores' binders, the stores
 //! taking turns (the vault's store is one of them, like any other), round and round. Between posts sit the stores
 //! carousel and, at the very top, the showcase as a row of stories.
@@ -37,20 +38,10 @@ pub struct Who {
 pub struct Tile {
     pub title: String,
     pub img: String,
-    pub price: String,
     pub url: String,
     pub cond: String,
     pub c: String,
     pub sub: String,
-}
-
-pub struct Move {
-    pub title: String,
-    pub url: String,
-    pub img: String,
-    pub pct: String,
-    pub up: bool,
-    pub price: String,
 }
 
 pub struct PostView {
@@ -70,7 +61,6 @@ pub struct PostView {
     pub member: i64,
     pub edited: bool,
     pub attach: Option<Tile>,
-    pub moves: Vec<Move>,
     /// The trainers a welcome post is about.
     pub people: Vec<Who>,
     pub like_n: i64,
@@ -108,7 +98,6 @@ pub struct StoreView {
     pub avatar: String,
     pub initial: String,
     pub pic: String,
-    pub price: String,
     pub sub: String,
 }
 
@@ -168,7 +157,6 @@ struct FeedPage {
     items: Vec<Item>,
     next: String,
     tagline: String,
-    moves: Vec<Move>,
     stores: Vec<StoreView>,
     /// Only one post is shown (its own page), with its comments open.
     single: bool,
@@ -185,12 +173,12 @@ struct FeedPart {
 }
 
 fn product_tile(p: &db::Product) -> Tile {
-    Tile { title: p.short_title(), img: p.img(360), price: if p.price > 0.0 { p.price_text() } else { String::new() }, url: format!("/products/{}", p.handle), cond: p.tile_cond(), c: p.cond_class().to_string(), sub: p.set_text() }
+    Tile { title: p.short_title(), img: p.img(360), url: format!("/products/{}", p.handle), cond: p.tile_cond(), c: p.cond_class().to_string(), sub: p.set_text() }
 }
 
 /// A seller's card for sale. Its link opens it in the card window.
 fn listing_tile(seller: i64, k: &MemberCard) -> Tile {
-    Tile { title: k.title.clone(), img: k.image.clone(), price: if k.has_price() { k.price_text() } else { "Ask".into() }, url: format!("/trainers/{seller}/cards/{}", k.id), c: k.cond_class().to_string(), cond: k.cond.clone(), sub: k.card_set.clone() }
+    Tile { title: k.title.clone(), img: k.image.clone(), url: format!("/trainers/{seller}/cards/{}", k.id), c: k.cond_class().to_string(), cond: k.cond.clone(), sub: k.card_set.clone() }
 }
 
 /// Who wrote a post (0: the vault itself). `store`: the post is about a store's cards, so the name is the store's and
@@ -227,7 +215,6 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
         member: p.member_id,
         edited: p.edited_at > 0,
         attach: None,
-        moves: vec![],
         people: vec![],
         like_n: p.like_n,
         comment_n: p.comment_n,
@@ -288,18 +275,9 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
                 v.photos = c.prepare_cached("SELECT path, thumb FROM vouch_images WHERE vouch_id=?1 ORDER BY id LIMIT 4")?.query_map([vid], |r| Ok((0, r.get(0)?, r.get(1)?)))?.collect::<Result<_, _>>()?;
             }
         }
-        "prices" => {
-            v.headline = "Price moves this week".into();
-            for m in p.payload["moves"].as_array().cloned().unwrap_or_default() {
-                let (Some(id), Some(pct)) = (m["id"].as_i64(), m["pct"].as_i64()) else { continue };
-                if let Some(pr) = db::product_by_id(c, id)?.filter(|x| x.available) {
-                    v.moves.push(Move { title: pr.short_title(), url: format!("/products/{}", pr.handle), img: pr.img(360), pct: format!("{} {}%", if pct >= 0 { "Up" } else { "Down" }, pct.abs()), up: pct >= 0, price: pr.price_text() });
-                }
-            }
-            if v.moves.is_empty() {
-                return Ok(None);
-            }
-        }
+        // Price moves left the feed on 18 Nov 2026 (prices only where cards are shopped). Old ones are hidden by
+        // social::migrate; this keeps any left from being drawn.
+        "prices" => return Ok(None),
         "joined" => {
             for id in ids("members") {
                 if let Some(w) = who(c, id, brand, false)? {
@@ -317,7 +295,7 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
             let card = &p.payload["card"];
             if let Some(title) = card["title"].as_str() {
                 let s = |k: &str| card[k].as_str().unwrap_or("").to_string();
-                v.attach = Some(Tile { title: title.to_string(), img: s("image"), price: s("price"), url: s("url"), c: vault_search::cond_class(&s("cond")).to_string(), cond: s("cond"), sub: s("set") });
+                v.attach = Some(Tile { title: title.to_string(), img: s("image"), url: s("url"), c: vault_search::cond_class(&s("cond")).to_string(), cond: s("cond"), sub: s("set") });
                 v.headline = "shared a card".into();
             }
         }
@@ -335,8 +313,8 @@ fn shops(c: &rusqlite::Connection, nav: &Chrome) -> rusqlite::Result<Vec<Shop>> 
     Ok(out)
 }
 
-/// A store's tile in the carousel: its first card for sale (`pic`, `price`, `title`; no picture: its cover photo).
-fn store_view(s: &StoreCard, pic: String, price: String, title: &str) -> StoreView {
+/// A store's tile in the carousel: its first card for sale (`pic`, `title`; no picture: its cover photo). No price.
+fn store_view(s: &StoreCard, pic: String, title: &str) -> StoreView {
     StoreView {
         id: s.owner,
         name: s.name.clone(),
@@ -344,7 +322,6 @@ fn store_view(s: &StoreCard, pic: String, price: String, title: &str) -> StoreVi
         avatar: s.avatar.clone(),
         initial: s.initial.clone(),
         pic: if pic.is_empty() { s.cover.clone() } else { pic },
-        price,
         sub: format!("{} on sale{}", s.on_sale_text(), if title.is_empty() { String::new() } else { format!(" · {title}") }),
     }
 }
@@ -354,8 +331,8 @@ fn store_view(s: &StoreCard, pic: String, price: String, title: &str) -> StoreVi
 fn vault_shop(c: &rusqlite::Connection, links: &[db::Collection], s: &StoreCard) -> rusqlite::Result<Shop> {
     let first: Option<i64> = rusqlite::OptionalExtension::optional(c.query_row("SELECT id FROM products WHERE available=1 AND image<>'' ORDER BY position, created_at DESC, id DESC LIMIT 1", [], |r| r.get(0)))?;
     let view = match first.map(|id| db::product_by_id(c, id)).transpose()?.flatten() {
-        Some(p) => store_view(s, p.img(360), if p.price > 0.0 { p.price_text() } else { String::new() }, &p.short_title()),
-        None => store_view(s, String::new(), String::new(), ""),
+        Some(p) => store_view(s, p.img(360), &p.short_title()),
+        None => store_view(s, String::new(), ""),
     };
     // A binder has a set in the feed while one of its cards for sale has a picture.
     let peeks = db::binder_peeks(c, 1)?;
@@ -371,8 +348,8 @@ fn vault_shop(c: &rusqlite::Connection, links: &[db::Collection], s: &StoreCard)
 fn seller_shop(c: &rusqlite::Connection, s: &StoreCard) -> rusqlite::Result<Shop> {
     let listings = sellers::storefront_listings(c, s.owner)?;
     let view = match listings.first() {
-        Some(k) => store_view(s, k.image.clone(), if k.has_price() { k.price_text() } else { String::new() }, &k.title),
-        None => store_view(s, String::new(), String::new(), ""),
+        Some(k) => store_view(s, k.image.clone(), &k.title),
+        None => store_view(s, String::new(), ""),
     };
     let mut shelves = vec![];
     for b in members::binders_of(c, s.owner)?.into_iter().filter(|b| b.visibility == "Public") {
@@ -599,7 +576,7 @@ fn seo(nav: &Chrome) -> Seo {
     let site = nav.site.clone();
     Seo {
         title: format!("{} · Pokémon cards, graded slabs & collectibles in the Philippines", nav.brand),
-        desc: crate::clip(&format!("{}: Pokémon cards and collectibles in one vault, priced in pesos. New arrivals, trainers' stores, vouches and price moves, every day.", nav.brand), 158),
+        desc: crate::clip(&format!("{}: Pokémon cards and collectibles in one vault, priced in pesos. New arrivals, trainers' stores and vouches, every day.", nav.brand), 158),
         path: "/".into(),
         kind: "website",
         ld: crate::ld(json!({ "@context": "https://schema.org", "@graph": [
@@ -631,17 +608,10 @@ async fn feed_html(app: &App, viewer: i64, only: Option<i64>) -> Result<String, 
         let stories = if single { vec![] } else { stories(c)? };
         // The welcome line can hold "{count}": the number of cards for sale on the site.
         let tagline = blocks::welcome(c)?.replace("{count}", &db::thousands(cards_for_sale(c)?));
-        let moves = match c.query_row("SELECT id FROM posts WHERE kind='prices' AND hidden=0 ORDER BY created_at DESC LIMIT 1", [], |r| r.get::<_, i64>(0)) {
-            Ok(id) => match social::post(c, 0, id)? {
-                Some(p) => post_view(c, &p, &nav.brand, 0)?.map(|v| v.moves).unwrap_or_default(),
-                None => vec![],
-            },
-            Err(_) => vec![],
-        };
         let stores = store_views(shops.all()?, 0).into_iter().take(6).collect();
         nav.seo = if single { Seo { title: format!("A post · {}", nav.brand), ..Default::default() } } else { seo(&nav) };
         let end = !single && next.is_empty();
-        Ok(FeedPage { nav, stories, items, next, tagline, moves: moves.into_iter().take(4).collect(), stores, single, end })
+        Ok(FeedPage { nav, stories, items, next, tagline, stores, single, end })
     })
     .await?;
     render(t)
@@ -1196,6 +1166,7 @@ mod tests {
         let pika = items[1].binder.as_ref().unwrap();
         assert_eq!(pika.tiles.iter().map(|t| t.url.as_str()).collect::<Vec<_>>(), vec!["/products/c2", "/products/c1"], "cards for sale only");
         let html = feed_part(items, next);
+        assert!(!html.contains('₱'), "the sets of cards show no prices: only where cards are shopped");
         assert!(html.contains(&format!("<a href=\"/store/{slug}/binders/fire\">See all 2</a>")), "{html}");
         assert!(html.contains(&format!("<a class=\"vu\" href=\"/trainers/{ash}/cards/{}\"", ids[0])));
         assert!(html.contains("<h2 class=\"h2\">From Big Boys Vault · Pikachu Set</h2>") && html.contains("<a href=\"/collections/pikachu-set\">See all 3</a>"));
@@ -1220,7 +1191,7 @@ mod tests {
         let url = |id: i64| members::get(&c, id).unwrap().unwrap().store_url();
         assert_eq!(views.iter().map(|s| (s.id, s.name.clone(), s.url.clone())).collect::<Vec<_>>(), vec![(ash, "Ash".to_string(), url(ash)), (0, "Big Boys Vault".into(), "/store/vault".into()), (brock, "Brock".into(), url(brock))], "the Stores page's order");
         let v = &views[1];
-        assert_eq!((v.avatar.as_str(), v.pic.as_str(), v.price.as_str()), ("/static/img/logo-sm-144.png?v=1", "/uploads/c0-5_s.jpg", "₱9,000"));
+        assert_eq!((v.avatar.as_str(), v.pic.as_str()), ("/static/img/logo-sm-144.png?v=1", "/uploads/c0-5_s.jpg"));
         assert!(v.sub.starts_with("3 on sale · "), "{}", v.sub);
         assert_eq!(store_views(shops.all().unwrap(), 1)[0].id, 0, "a later carousel starts further along");
         // In the feed, after the second post: the vault's store is one of the stores, its Message button hidden from the
@@ -1233,6 +1204,7 @@ mod tests {
         assert_eq!(items[3].binder.as_ref().map(|u| u.title.as_str()), Some("From Ash · Fire"), "the posts are done: the sets begin");
         assert_eq!(next, "v:1");
         let html = feed_part(items, next);
+        assert!(!html.contains('₱'), "no prices in the feed: only where cards are shopped");
         assert!(html.contains("<section class=\"box\" aria-label=\"Stores\">") && html.contains("<h2 class=\"h2\">Stores</h2>") && !html.contains("Trainers' stores"));
         assert!(html.contains("<a class=\"caro-pic\" href=\"/store/vault\">") && html.contains("data-dm-to=\"0\" data-not-full>Message</button>"), "{html}");
         assert!(html.contains(&format!("data-dm-to=\"{ash}\">Message</button>")));

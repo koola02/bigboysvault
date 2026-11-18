@@ -35,8 +35,14 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     const name = me ? me.name : admin ? 'Admin' : '';
     ['mnMeT', 'meMenuT'].forEach((id) => { const n = $(id); if (n && name) n.textContent = name; });
     const login = $('barLogin'); if (login) login.hidden = on;
-    // The owner signed in with the admin password alone has no trainer page: "my profile" goes to Admin.
-    if (!me && admin) document.querySelectorAll('#mnMe, #meMenu a[href="/me"]').forEach((a) => { a.href = '/admin'; });
+    // Your name opens your own page (not its settings): straight to it once the site knows who you are, so the line
+    // lights up while you are there. Until then the link is /me/page, which forwards. The owner signed in with the
+    // admin password alone has no trainer page: there it goes to Admin.
+    const mine = me && me.id ? `/trainers/${me.id}` : (!me && admin) ? '/admin' : '';
+    if (mine) document.querySelectorAll('#mnMe, #meMenuMe').forEach((a) => {
+      a.href = mine;
+      if (a.id === 'mnMe') { if (here === mine) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); }
+    });
   };
   let last = null;
   try { last = JSON.parse(localStorage.getItem('bbv:me') || 'null'); } catch (_) {}
@@ -59,7 +65,7 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     word.style.fontSize = '';
     if (getComputedStyle(word).display === 'none') return;
     let px = parseFloat(getComputedStyle(word).fontSize);
-    while (word.scrollWidth > word.clientWidth + 0.5 && px > 10.5) { px -= 0.5; word.style.fontSize = `${px}px`; }
+    while (word.scrollWidth > word.clientWidth + 0.5 && px > 12) { px -= 0.5; word.style.fontSize = `${px}px`; }
   };
   fitName();
   addEventListener('resize', fitName);

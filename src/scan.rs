@@ -1,6 +1,7 @@
-//! Scan a card, for sellers (the owner, 18 Nov 2026: "scanning for sellers only and it should be separate first since
-//! it's not perfect yet. put it in the menu like scan a card, don't replace the add a card with it"). It is its own page,
-//! /me/scan, marked "Try it" in the menu; Add cards in the Store Manager is untouched.
+//! Scan a card, for sellers. It began as its own page with a menu line marked "Try it" (the owner, 18 Nov 2026:
+//! "scanning for sellers only and it should be separate first since it's not perfect yet"). Later that day the owner
+//! asked for one way to add a card: the menu line and the page are gone, and scanning is the Scan tab of Add cards.
+//! The old address /me/scan forwards there.
 //!
 //! The seller photographs a card with the card camera (static/card-cam.js, `data-card-cam="scan"`). Claude reads it:
 //! the photo goes to Anthropic's Messages API (raw HTTP: there is no Rust SDK), to Claude Sonnet 5.5 at high effort (the
@@ -24,9 +25,8 @@
 //! whole site; unset, the total follows the number of sellers: `site_max`), ANTHROPIC_WORKSPACE_ID (the workspace to bill, needed when the key is an all-workspaces key; not secret),
 //! ANTHROPIC_BASE_URL (a stand-in server, only for trying this out). The owner sees how it is going at
 //! /admin/scan/status, and can try a photo at POST /admin/scan/try.
-use crate::community::{acting, check_size, current, fail, html, ok, over_limit, render};
-use crate::{chrome, with_db, App, Chrome, Res};
-use askama::Template;
+use crate::community::{acting, check_size, current, fail, ok, over_limit};
+use crate::{with_db, App, Res};
 use axum::{
     extract::{Multipart, State},
     http::{HeaderMap, StatusCode},
@@ -505,21 +505,8 @@ async fn look_up(app: &App, r: &Reading) -> Value {
 
 // ---------- the page and the scan ----------
 
-#[derive(Template)]
-#[template(path = "me_scan.html")]
-struct ScanPage {
-    nav: Chrome,
-    /// Only sellers scan; anyone else is shown how to become one.
-    seller: bool,
-    /// The site has a key (ANTHROPIC_API_KEY).
-    on: bool,
-    /// Scans this seller has left today, and how many a day each seller gets.
-    left: i64,
-    per: i64,
-}
-
 /// Scans this seller has left today (the smaller of their own and the site's), and how many a day each seller gets.
-/// For the Scan a card page and the Scan tab of Add cards in My store.
+/// For the Scan tab of Add cards in My store.
 pub fn left_today(c: &rusqlite::Connection, id: i64) -> rusqlite::Result<(i64, i64)> {
     let per = per_seller();
     let day = crate::vault_ai::today(crate::unix_now());
@@ -527,13 +514,17 @@ pub fn left_today(c: &rusqlite::Connection, id: i64) -> rusqlite::Result<(i64, i
     Ok((mine.min(site), per))
 }
 
-/// GET /me/scan: the page. Signed out: the log-in page, which comes back here.
+/// Where the old Scan a card address sends someone: a seller to Add cards, opened on its Scan tab; a trainer who
+/// doesn't sell to Apply as a seller.
+fn door(seller: bool) -> &'static str {
+    if seller { "/me/listings#scan" } else { "/me/sell" }
+}
+
+/// GET /me/scan: the page this once was, kept as an address so old links still work. Signed out: the log-in page,
+/// which comes back here.
 pub async fn page(State(app): State<App>, h: HeaderMap) -> Res {
     let Some(m) = current(&app, &h).await? else { return Ok(Redirect::to("/login?next=/me/scan").into_response()) };
-    let (id, seller) = (m.id, m.seller);
-    let (mut nav, (scans_left, per)) = with_db(&app, move |c| Ok((chrome(c)?, left_today(c, id)?))).await?;
-    nav.seo.title = format!("Scan a card · {}", nav.brand);
-    Ok(html(render(ScanPage { nav, seller, on: enabled(), left: scans_left, per })?))
+    Ok(Redirect::to(door(m.seller)).into_response())
 }
 
 /// POST /me/scan (a form with the photo): a seller's scan. Answers with what was read and what the card list has.

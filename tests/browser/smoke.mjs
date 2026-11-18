@@ -2,7 +2,9 @@
 //
 // It opens the site in a real browser at three sizes and walks the path a buyer takes: home, The Vault, a search,
 // a card (in its window and on its own page), the cart, and "Send order". Then it looks at the other main pages.
-// On every page it checks: the page opened, nothing sticks out sideways, no script broke, nothing failed to load.
+// On every page it checks: the page opened, nothing sticks out sideways, no script broke, nothing failed to load,
+// and every word is easy to read: never smaller than 12px, never too dim against what is behind it (4.5 to 1, or 3 to
+// 1 for big words; the owner, 18 Nov 2026: "fix contrast so everything is easy to read").
 //
 //   node tests/browser/smoke.mjs                         the local site, http://localhost:3000
 //   node tests/browser/smoke.mjs https://www.bigboysvault.com
@@ -68,6 +70,60 @@ for (const [size, viewport] of Object.entries(SIZES)) {
     broke.push(`${r.status()} ${path.slice(0, 90)}`);
   });
 
+  // Every word on the screen: big enough (12px or more) and bright enough against what is behind it. The colour behind
+  // is worked out from the word's own box and the boxes around it, see-through ones blended in; words lying over a
+  // picture are skipped (a picture has no one colour). Answers what is wrong, as short notes naming the words.
+  const readable = (within = 'body') => page.evaluate((root) => {
+    const parse = (c) => { const m = /rgba?\(([^)]+)\)/.exec(c || ''); if (!m) return null; const p = m[1].split(/[\s,/]+/).filter(Boolean).map(Number); return { r: p[0], g: p[1], b: p[2], a: p.length > 3 ? p[3] : 1 }; };
+    const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+    const lum = (c) => 0.2126 * lin(c.r) + 0.7152 * lin(c.g) + 0.0722 * lin(c.b);
+    const ratio = (a, b) => { const x = lum(a), y = lum(b); return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05); };
+    const over = (top, under) => ({ r: top.r * top.a + under.r * (1 - top.a), g: top.g * top.a + under.g * (1 - top.a), b: top.b * top.a + under.b * (1 - top.a), a: 1 });
+    const pageBg = parse(getComputedStyle(document.documentElement).backgroundColor) || { r: 11, g: 13, b: 20, a: 1 };
+    // The colour behind an element: its own and its parents', blended, down to the first solid one. None: a picture.
+    const behind = (el) => {
+      const layers = [];
+      for (let n = el; n && n.nodeType === 1; n = n.parentElement) {
+        const cs = getComputedStyle(n);
+        if (cs.backgroundImage && cs.backgroundImage !== 'none') return null;
+        const c = parse(cs.backgroundColor);
+        if (c && c.a > 0) { layers.push(c); if (c.a >= 0.999) break; }
+      }
+      let bg = pageBg; for (let i = layers.length - 1; i >= 0; i--) bg = over(layers[i], bg);
+      return bg;
+    };
+    const pics = [...document.querySelectorAll('img, video, canvas, picture')].map((n) => n.getBoundingClientRect()).filter((q) => q.width > 4 && q.height > 4);
+    const meets = (r, q) => r.left < q.right && r.right > q.left && r.top < q.bottom && r.bottom > q.top;
+    const out = [], seen = new Set(), top = document.querySelector(root) || document.body;
+    const walk = document.createTreeWalker(top, NodeFilter.SHOW_TEXT);
+    for (let t = walk.nextNode(); t; t = walk.nextNode()) {
+      const words = t.data.replace(/\s+/g, ' ').trim();
+      const el = t.parentElement;
+      if (!words || !/[\p{L}\p{N}₱]/u.test(words) || !el || seen.has(el)) continue;
+      seen.add(el);
+      // Not words a person reads: drawings, scripts, closed lists, words for screen readers only, switched-off buttons.
+      if (el.closest('svg, script, style, noscript, template, option, .sr, :disabled, [aria-disabled="true"]')) continue;
+      const range = document.createRange(); range.selectNodeContents(t);
+      const r = [...range.getClientRects()].find((x) => x.width > 1 && x.height > 1);
+      if (!r || r.right < 0) continue; // not drawn, or parked off the screen (the skip link)
+      const cs = getComputedStyle(el);
+      if (cs.visibility !== 'visible') continue;
+      let seenAt = 1; for (let n = el; n && n.nodeType === 1; n = n.parentElement) seenAt *= Number(getComputedStyle(n).opacity);
+      if (seenAt < 0.1) continue; // fading in or out
+      const size = parseFloat(cs.fontSize), cls = typeof el.className === 'string' && el.className.trim() ? '.' + el.className.trim().split(/\s+/)[0] : '';
+      const what = `“${words.slice(0, 36)}” (${el.tagName.toLowerCase()}${cls})`;
+      if (size < 11.95) out.push(`too small, ${Math.round(size * 10) / 10}px: ${what}`);
+      if (pics.some((q) => meets(r, q))) continue; // words over a picture
+      const fg = parse(cs.color), bg = behind(el);
+      if (!fg || fg.a === 0 || !bg) continue;
+      const ink = over({ ...over(fg, bg), a: seenAt }, bg);
+      const big = size >= 24 || (size >= 18.66 && Number(cs.fontWeight) >= 700), need = big ? 3 : 4.5, got = ratio(ink, bg);
+      if (got < need) out.push(`too dim, ${got.toFixed(1)} to 1: ${what}`);
+    }
+    return out;
+  }, within);
+  const hard = (list) => (list.length ? `hard to read: ${list.slice(0, 6).join(' | ')}${list.length > 6 ? ` (+${list.length - 6} more)` : ''}` : '');
+
   // Opens a page and checks the things every page must get right.
   const open = async (path, name, extra) => {
     broke = [];
@@ -85,6 +141,8 @@ for (const [size, viewport] of Object.entries(SIZES)) {
     if (seen.sideways) problems.push('sticks out sideways: ' + seen.out.join(', '));
     if (!seen.bar) problems.push('no bar of tabs at the bottom');
     if (extra) { const why = await extra(); if (why) problems.push(why); }
+    const unread = hard(await readable().catch(() => []));
+    if (unread) problems.push(unread);
     if (broke.length) problems.push(broke.slice(0, 4).join(' | '));
     say(!problems.length, size, name, problems.join('; '));
     return !problems.length;
@@ -124,8 +182,9 @@ for (const [size, viewport] of Object.entries(SIZES)) {
     await tap('.fd-grid a.card');
     const opened = await until(async () => (await shown('.cardwin')) && /₱/.test(await text('.cardwin .price, .cardwin .worth')), 15000);
     let closed = false;
-    if (opened) { await page.click('.cardwin [data-cw-x]'); closed = await until(async () => !(await shown('.cardwin')), 8000); }
-    say(opened && closed && !broke.length, size, 'A card opens in its window', !opened ? 'the window or its price did not show' : !closed ? 'the window did not close' : broke.slice(0, 3).join(' | '));
+    let unread = '';
+    if (opened) { await sleep(600); unread = hard(await readable('.cardwin').catch(() => [])); await page.click('.cardwin [data-cw-x]'); closed = await until(async () => !(await shown('.cardwin')), 8000); }
+    say(opened && closed && !broke.length && !unread, size, 'A card opens in its window', !opened ? 'the window or its price did not show' : !closed ? 'the window did not close' : unread || broke.slice(0, 3).join(' | '));
   }
 
   // 4. Searching finds cards.
@@ -209,9 +268,15 @@ for (const [size, viewport] of Object.entries(SIZES)) {
   }
 
   // 7. The other places a visitor goes.
+  let store = '', trainer = '';
   for (const [path, name] of [['/stores', 'Stores'], ['/store/vault', 'The vault’s store'], ['/trainers', 'Trainers'], ['/vouches', 'Vouches'], ['/ask', 'Ask the Vault'], ['/chat', 'Vault chat'], ['/login', 'Log in'], ['/join', 'Register']]) {
     await open(path, name);
+    if (path === '/stores') store = await page.evaluate(() => [...document.querySelectorAll('.seller-card a.svh-name')].map((a) => a.getAttribute('href')).find((h) => h && h !== '/store/vault') || '');
+    if (path === '/trainers') trainer = await page.evaluate(() => document.querySelector('.tr-grid a.tr-tile')?.getAttribute('href') || '');
   }
+  // A trainer's store, and a trainer's page: what a visitor sees of the people selling.
+  if (store) await open(store, 'A trainer’s store');
+  if (trainer) await open(trainer, 'A trainer’s page');
   await ctx.close();
 }
 

@@ -265,6 +265,13 @@
       panel.querySelectorAll('.st-add-pane').forEach((p) => p.hidden = p.dataset.pane !== b.dataset.add);
     });
     if (Number(root.dataset.total) === 0) openAdd(true);
+    // Add cards opens by itself only when the address asks for it: #add (every "Add cards" button), or #scan, which
+    // also opens the Scan tab (where the old Scan a card page now sends people).
+    const asked = location.hash;
+    if (asked === '#add' || asked === '#scan') {
+      openAdd(true);
+      if (asked === '#scan') panel.querySelector('[data-add="scan"]')?.click();
+    }
 
     let lang = 'en', timer, seq = 0, added = 0;
     const q = $('addQ'), results = $('addResults'), state = $('addState');

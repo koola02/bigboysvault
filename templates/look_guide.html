@@ -42,14 +42,14 @@
   <section class="box">
     <div class="caro-h"><h2 class="h2">Stores</h2><small>Suggested for you</small></div>
     <div class="caro">
-      {% for p in items.iter().take(5) %}<div class="caro-i"><div class="caro-pic"><img src="{{ p.img(360) }}" loading="lazy" alt=""><span class="av"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span><span class="price">{{ p.price_text() }}</span></div><div class="caro-t"><b>{% if loop.first %}Hayme's store{% else if loop.index == 2 %}Selhio pop-up store{% else %}A trainer's store{% endif %}</b><small>{{ loop.index + 1 }} on sale · {{ p.short_title() }}</small></div><div class="caro-acts"><button type="button" class="btn soft">Follow</button><button type="button" class="btn ghost">Visit</button></div></div>{% endfor %}
+      {% for p in items.iter().take(5) %}<div class="caro-i"><div class="caro-pic"><img src="{{ p.img(360) }}" loading="lazy" alt=""><span class="av"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span></div><div class="caro-t"><b>{% if loop.first %}Hayme's store{% else if loop.index == 2 %}Selhio pop-up store{% else %}A trainer's store{% endif %}</b><small>{{ loop.index + 1 }} on sale · {{ p.short_title() }}</small></div><div class="caro-acts"><button type="button" class="btn soft">Follow</button><button type="button" class="btn ghost">Visit</button></div></div>{% endfor %}
     </div>
   </section>
 
   <article class="box post">
     <header class="post-h"><span class="av">B</span><div class="post-who"><b><a href="#">Buyer Bob</a></b> shared a card<small>Yesterday at 8:14 PM</small></div><button type="button" class="ibtn" aria-label="More">⋯</button></header>
     <p class="post-text">Finally found this one. Anyone else chasing the set?</p>
-    {% if let Some(p) = items.get(1) %}<a class="attach" href="#"><img src="{{ p.img(360) }}" loading="lazy" alt=""><span><b>{{ p.short_title() }}</b><small>{{ p.set_text() }} · {{ p.tile_cond() }}</small><span class="price">{{ p.price_text() }}</span></span></a>{% endif %}
+    {% if let Some(p) = items.get(1) %}<a class="attach" href="#"><img src="{{ p.img(360) }}" loading="lazy" alt=""><span><b>{{ p.short_title() }}</b><small>{{ p.set_text() }} · {{ p.tile_cond() }}</small></span></a>{% endif %}
     <div class="post-stats"><span class="reacts"><i>👍</i><span>3</span></span><span>1 comment</span></div>
     <div class="post-acts">
       <button type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v11H3V10zM7 10l4-8a2.500 2.500 0 0 1 2.500 3L13 9h6a2 2 0 0 1 2 2.300l-1.300 8A2 2 0 0 1 17.700 21H7"/></svg>Like</button>
@@ -94,10 +94,6 @@
 <section class="rr-sec">
   <h2 class="rr-h">Featured</h2>
   {% if let Some(p) = items.first() %}<a class="rr-top" href="#"><span class="rr-top-pic"><img src="{{ p.img(360) }}" alt=""></span><span class="rr-top-t"><b>{{ p.short_title() }}</b><small>{{ p.set_text() }}</small><b class="card-p">{{ p.price_text() }}</b></span></a>{% endif %}
-</section>
-<section class="rr-sec">
-  <h2 class="rr-h">Price moves</h2>
-  {% for p in items.iter().skip(1).take(3) %}<a class="rr-i" href="#"><span class="av">{% if loop.index == 2 %}↓{% else %}↑{% endif %}</span><span><b>{{ p.short_title() }}</b><small>{% if loop.index == 2 %}Down 9%{% else %}Up {{ loop.index * 6 }}%{% endif %} this month</small></span></a>{% endfor %}
 </section>
 <section class="rr-sec">
   <h2 class="rr-h">Contacts</h2>

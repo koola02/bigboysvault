@@ -26,7 +26,7 @@ One list of colours and sizes ("tokens") drives everything, in a new stylesheet 
 | Hover / input fill | `#1d2233` |
 | Blue (active tab, links, primary button) | **gold `#efc873`** with dark ink text |
 | Grey secondary button | flat `#262b3d` |
-| Text | primary `#f6f2e8`, secondary `#aeb0c0` |
+| Text | primary `#f6f2e8`, secondary `#c9cbd8` (was `#aeb0c0` until 19 Nov 2026: too dim on the lighter panels); nothing under 12px |
 | Red badge | unchanged red count badges |
 
 - **Type:** system font for all body text (fast, feels like Facebook). The brand font "Anybody" stays for the wordmark, prices and page titles.
@@ -113,7 +113,7 @@ Order: welcome banner (signed-out only: logo, one line, Join / Log in) → **Sto
 - **Vouches:** shown as posts ("vouched for Big Boys Vault").
 - **New in the vault:** one post per day from Big Boys Vault with that day's new cards as a photo grid. It reads like any store's listing post: "listed 12 cards for sale", the name and "Visit the store" open `/store/vault`.
 - **New store listings:** one post per seller per day.
-- **Price moves:** "Charizard ex is up 18% this month" with the small chart.
+- **Price moves** (removed 19 Nov 2026: the owner wants prices only where cards are shopped).
 - **Announcements** from admins (can be pinned to the top).
 - **Shares** of a card, listing or store with the sharer's words.
 

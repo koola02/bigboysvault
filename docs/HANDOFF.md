@@ -12,7 +12,8 @@ Big Boys Vault ("BBV") is a Pokémon card vault in the Philippines: the owner's 
 owner has approved, shown and sold in pesos (₱). It is laid out the way a social app is, in the vault's dark and gold.
 
 **Visitors:**
-- read the **feed** at `/` (new cards, listings, vouches, price moves, trainers' posts), with the showcase's cards
+- read the **feed** at `/` (new cards, listings, vouches, trainers' posts; no prices: those are where cards are
+  shopped), with the showcase's cards
   as the row at the top;
 - search **every card for sale** (`/all`, the page once called The Vault; since 17 Nov 2026 it has no tab and is
   reached through the search and Stores), the vault's and the stores', with filters;
@@ -55,7 +56,7 @@ one file on its volume. Don't add a second machine without moving those first.
 | `main.rs` | App state (`App`), every route, The Vault and binder pages, card pages, SEO, `robots.txt`, `sitemap.xml`, `with_db`, `cached`, the visitor counter's step (`count_visit`) |
 | `feed.rs`, `social.rs` | The home feed: posts, reactions, comments, the automatic posts and their switches |
 | `store.rs`, `sellers.rs` | Stores: the Store Manager, the public store pages, the cart and orders, alerts, mail (see `docs/SELLER_API.md`) |
-| `community.rs`, `members.rs` | Trainers: join, log in, My trainer (`/me`), trainer pages, vouches, chat, moderation; accounts, sessions, roles |
+| `community.rs`, `members.rs` | Trainers: join, log in, Account Settings (`/me`), your own page (`/me/page` forwards to `/trainers/{id}`), trainer pages, vouches, chat, moderation; accounts, sessions, roles |
 | `messages.rs`, `dm.rs`, `push.rs` | Private messages and calls (long-poll), Web Push |
 | `admin.rs` | The Vault Manager: access (`power()`, `authed()`), cards, Add cards, Add by set, binders, showcase, Overview |
 | `db.rs` | Cards and binders, list queries, the catalogue files (`/cards.tsv`, `/vault.tsv`), migrations |
@@ -63,7 +64,7 @@ one file on its volume. Don't add a second machine without moving those first.
 | `visits.rs` | Visitors per day: who counts, the table, the totals the Overview shows |
 | `ops.rs` | Speed and upkeep: picture formats, cache headers, `/healthz`, and the routes the VM's jobs call |
 | `ask.rs`, `vault_ai.rs` | Ask the Vault: the built-in rules, and Gemini when its key is set |
-| `scan.rs` | Scan a card (sellers, `/me/scan`, "Try it"): Claude reads a card photo; the card, its versions, other printings and evolution family from the card list (see `docs/OPERATIONS.md` 4e) |
+| `scan.rs` | Scan a card (sellers; the Scan tab of Add cards, `/me/listings#scan`; the old `/me/scan` forwards there): Claude reads a card photo; the card, its versions, other printings and evolution family from the card list (see `docs/OPERATIONS.md` 4e) |
 | `blocks.rs` | Site settings (name, welcome line) and the showcase's cards |
 | `binder_sort.rs` | A binder's one-tap Sort (A to Z, Z to A, by set, by number, by evolution) and the TCGdex details it keeps in `card_dex` |
 | `look.rs` | The style guide page (`/admin/look`) with the feed's automatic-post switches |
@@ -78,8 +79,7 @@ one file on its volume. Don't add a second machine without moving those first.
 | `collection.html`, `card.html`, `grid.html` | The Vault, a search, one of the vault's binders |
 | `product.html`, `product_body.html`, `product_part.html` | A card: its page, and the part the card window loads |
 | `store*.html`, `stores*.html`, `binder_tile.html` | Stores, a store, the vault's store, the Store Manager's pages (`store_tabs.html` is its frame) |
-| `me.html` | My trainer, inside the Manager's frame |
-| `me_scan.html` | Scan a card (sellers): the card camera button, then the tiles `scan.js` draws |
+| `me.html` | Account Settings (picture, name, cards, password), inside the Manager's frame |
 | `admin_*.html` | The Vault Manager (`admin_tabs.html` is its frame; `mgr_head.html` loads `mgr.css`) |
 | Others | `trainers.html`, `trainer_body.html`, `login.html`, `join.html`, `ask*.html`, `chat*.html`, `vouch*.html`, `messages.html`, `look_guide.html` |
 
@@ -92,7 +92,7 @@ one file on its volume. Don't add a second machine without moving those first.
 | `storefront.js`, `store.js`, `binder-tools.js`, `edit-listing.js` | A store's page, the Store Manager, arranging binders, editing a listing in place |
 | `store-head.js`, `bookmarks.js`, `apply.js` | Every store page's top (Follow, the Vouches window, the border colour picker), Bookmark buttons and the Bookmarks page, Apply as a seller |
 | `quick.js`, `my-cards.js`, `admin-float.js`, `admin-ui.js`, `mgr-table.js`, `showcase.js`, `binders.js`, `edit-card.js` | The Vault Manager |
-| `me.js`, `pricing.js`, `dragsort.js`, `card-cam.js`, `holo.js`, `suggest.js`, `tiles.js` | My trainer, the suggested-price line, drag and drop, the card camera (`data-card-cam="scan"`: Scan a card's sharper photo, sent at the shutter), a card's shine, search suggestions, card tiles |
+| `me.js`, `pricing.js`, `dragsort.js`, `card-cam.js`, `holo.js`, `suggest.js`, `tiles.js` | Account Settings, the suggested-price line, drag and drop, the card camera (`data-card-cam="scan"`: Scan a card's sharper photo, sent at the shutter), a card's shine, search suggestions, card tiles |
 | `add-card.js`, `scan.js` | The "Add to your store" window every seller's new card goes through (from Scan a card it also offers the version: Normal, Holo, Reverse Holo...), and Scan a card's page |
 | `sw.js`, `push-sw.js` | The service worker (alerts with the site closed) |
 | `wasm/` | The built card finder (made by `build-wasm.sh`; don't edit) |
@@ -149,6 +149,13 @@ one file on its volume. Don't add a second machine without moving those first.
     symbols, prices).
   - The look is in `docs/REDESIGN.md` §1: flat, dark and gold, the system font for text and "Anybody" for the
     name, prices and titles. There is one look; the older one was removed on 2026-11-14.
+  - Easy to read (the owner, 18 Nov 2026): no text under 12px; the grey (`--muted`) is for labels and hints, and
+    what a person wrote (a description, a note, a post) is in `--text`; details go one per line, a label then its
+    value (`.sf-rows`), never strung together with dots. `tests/browser/smoke.mjs` measures every word it sees
+    (12px or more, 4.5 to 1 against what is behind it, 3 to 1 for big words) and fails the release otherwise.
+  - A tap opens the thing itself, not its settings: your name in the menu opens your page, where "Account
+    Settings" is a button. Prices show only where cards are shopped: stores, their binders, the Stores page, the
+    search and a card's window (not the feed, trainers' pages or the search suggestions).
 
 ## 6. Run, test, deploy
 
@@ -215,6 +222,7 @@ A small Google VM runs the backups, prices, picture formats and an uptime check 
 
 | When | What changed |
 |---|---|
+| 19 Nov 2026 (flow, release 1) | From the owner's review of how the site flows (18 Nov 2026), the first of five releases. **Your name opens your page**: the menu's first line and "See your profile" go to `/me/page` (forwards to `/trainers/{id}`; `fb-shell.js` points them there once it knows who you are); `/me` is now called **Account Settings** everywhere, and your own page's "Edit profile" button reads Account Settings. **Scan a card** lost its menu line and page: it is the Scan tab of Add cards (`/me/listings#scan` opens it; `/me/scan` forwards). **Easy to read**: `--muted` `#c9cbd8` and `--faint`/`--steel` `#a3a7b9` (were `#aeb0c0`, `#7d8194`), no font under 12px in any stylesheet, people's own words in `--text`; a store's details one per line (`.sf-rows`: Location, Open since, Find me on, Pay with, How to pay, Contact), the vault's store and a trainer's "Find me on" alike; a store's card on Stores and a binder's bar without dot-strings. The smoke check measures contrast and size on every page and in the card window, and now also opens a trainer's store and a trainer's page. **Prices only where cards are shopped**: none in the feed (posts, the stores row, the sets of cards), price moves gone (the weekly post and the right column; `social::AUTO` lost "prices", old ones hidden), none on trainers' pages (a highlight card's window shows no value; a trainer's cards for sale are one line to the store), none in the search box's suggestions (the set instead). |
 | 18 Nov 2026 (sort) | **Sort and Hide in a binder's editor** (sellers' binders and the vault's): "Sort:" A to Z · Z to A · By set · By number · By evolution, worked out on the site (`src/binder_sort.rs`, `POST /me/binders/{id}/sort`, `POST /admin/binders/{handle}/sort`) and saved like a drag, with Undo. By evolution asks TCGdex once per card (six at a time) and keeps the answer in the new `card_dex` table. Each card has Hide / Show: a seller's card becomes Hidden (the listing's own status); a vault card is hidden in that binder only (new column `collection_products.hidden`, `POST /admin/binders/{handle}/hide`), so the binder's page, count, tile, cover, the finder and the card's "binders" list leave it out. Saving, copying or bulk-moving a card keeps it hidden there. |
 | 18 Nov 2026 | **Every store alike** (the owner: "all stores are official"): the vault's store is listed and drawn like trainers' stores on /stores (one card, `stores_card.html`; no "Official" badge anywhere; the store that last put up or changed a card comes first, `sellers::last_active`). Every store page has Follow, Message and Bookmark and the same four numbers (cards for sale, binders, followers, Vouches); **Vouches** opens a window (`store-head.js`, `GET /store/{slug}/vouches`): vouches now belong to a store (`vouches.store_id`, 0 the vault's, the older ones the vault's) and a seller's reviews from finished sales are listed there too (the Reviews section moved into it). A **border colour** per store (Edit store; `members.store_border`, setting `vault_store_border`, gold by default; `sellers::border_ok` refuses colours too dark to see). The store header is compact and side by side. **Apply as a seller** (`/me/sell`, menu): an optional note and photos go into the trainer's chat with the vault, where the whole application goes on; admins answer under Admin › Sellers › Applications (a number on the tab and a banner on the Overview), and the answer is written into that chat. **Bookmarks** (`/me/bookmarks`, menu, with a number): stores and vault cards (`bookmarks`) and sellers' cards (the old ♥ Save, `listing_saves`), each card under its store, with Add to cart and "Add all". The **cart** is a row in the menu under Orders (its number on the Menu buttons); the top bar has no cart. "Top of the vault" is off the home page. A seller's binder **Add cards** also finds new cards from the card list; the Store Manager's binders page can **Delete** picked cards (with Undo). The VM: flyctl never holds a job's lock (it kept the picture job stopped 14-17 Nov), "More like this" asks the site again when it is slow |
 | 17 Nov 2026 (later) | The Vault's tab is gone on every screen and Stores is the highlighted place (the logo in a gold ring, in the header and the phone's bar; lit wherever cards are shopped); "Browse stores" on the home banner and the 404 page, "‹ Back" on a card's page; Register beside Log in at the top from 700px; one word per action: Register (Trainers, Vouches, Vault chat, Ask's answers and its AI's instructions) and Log in (Stores); the name boxes on log in and register match the password box |

@@ -718,7 +718,17 @@ pub async fn me(State(app): State<App>, h: HeaderMap) -> Res {
         Ok((chrome(c)?, crate::store::panel(c, m, "me")?, members::cards_of(c, id)?, members::binders_of(c, id)?, members::seller_stats(c, id)?, marcuru_rs::sellers::max_cards(c)))
     })
     .await?;
-    Ok(html(render(MePage { nav: titled(nav, "My trainer"), p, cards, binders, stats, max, conditions: members::CONDITIONS })?))
+    Ok(html(render(MePage { nav: titled(nav, "Account Settings"), p, cards, binders, stats, max, conditions: members::CONDITIONS })?))
+}
+
+/// GET /me/page: your own trainer page. The menu's first line (your name) opens this: the page itself, not its
+/// settings (the owner, 18 Nov 2026: "it should lead directly to your page, not the settings"). "Account Settings" on
+/// that page opens `/me`. Signed out: log in, then come back here.
+pub async fn my_page(State(app): State<App>, h: HeaderMap) -> Res {
+    Ok(match current(&app, &h).await? {
+        Some(m) => Redirect::to(&format!("/trainers/{}", m.id)).into_response(),
+        None => Redirect::to("/login?next=/me/page").into_response(),
+    })
 }
 
 /// Signed in and really from this site, whatever their lock says. For things a locked trainer may still do: their password, deleting what's theirs.

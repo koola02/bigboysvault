@@ -9,13 +9,16 @@
   color-scheme: dark;
   --bg: #0b0d14; --surface: #141826; --surface-2: #1d2233; --surface-3: #262b3d;
   --line: rgba(255,255,255,.09); --line-2: rgba(255,255,255,.16); --fill: rgba(255,255,255,.06);
-  --text: #f6f2e8; --muted: #aeb0c0; --faint: #7d8194;
+  /* Text: the bright one for what people read; the grey for labels and hints. Both pass easily on every panel
+     (the owner, 18 Nov 2026: "fix contrast so everything is easy to read"); the release check measures them. */
+  --text: #f6f2e8; --muted: #c9cbd8; --faint: #a3a7b9;
   --gold: #efc873; --gold-hi: #fcefc9; --gold-lo: #8e7038; --gold-ink: #150e02;
   --gold-tint: rgba(239,200,115,.12); --gold-edge: rgba(239,200,115,.45);
   --brass: linear-gradient(180deg, #f4d58d, #e3b95f);
-  --steel: #7d8194; --steel-hi: #b8bacb; --steel-lo: #33364a; --teal: #6fd8e8;
+  --steel: #a3a7b9; --steel-hi: #b8bacb; --steel-lo: #33364a; --teal: #6fd8e8;
   --steel-plate: linear-gradient(160deg, rgba(255,255,255,.05), rgba(255,255,255,.015));
-  --ok: #7ee2a8; --bad: #ff8a7a; --red: #e5484d;
+  /* --red is behind white count bubbles and danger buttons (white reads 4.7 to 1 on it); --bad is red words on the dark. */
+  --ok: #7ee2a8; --bad: #ff8a7a; --red: #d93338;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, Roboto, "Helvetica Neue", Arial, sans-serif;
   --display: "Anybody", "Arial Black", "Helvetica Neue", Arial, sans-serif;
   --cond: var(--font); --mono: var(--font);
@@ -51,6 +54,8 @@ button { cursor: pointer; }
 .h2, h2 { font: 700 1.0625rem/1.25 var(--font); color: var(--text); }
 .h2 small { color: var(--muted); font-weight: 500; font-size: .8125rem; }
 .eyebrow { color: var(--muted); font: 600 .8125rem/1.2 var(--font); }
+/* Small print never goes under 12px, whatever size the words around it are (a plain <small> is "smaller"). */
+small { font-size: max(.75rem, .85em); }
 .muted { color: var(--muted); }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
 
@@ -87,14 +92,14 @@ button { cursor: pointer; }
 .hd-ib:hover { background: #30364b; text-decoration: none; }
 .hd-ib[aria-expanded="true"], .hd-ib[aria-current="page"] { background: var(--gold-tint); color: var(--gold); }
 .hd-ib svg { width: 20px; height: 20px; }
-.hd-badge, .notif-badge { position: absolute; top: -4px; right: -4px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px; background: var(--red); color: #fff; font: 700 .6875rem/19px var(--font); text-align: center; pointer-events: none; }
+.hd-badge, .notif-badge { position: absolute; top: -4px; right: -4px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px; background: var(--red); color: #fff; font: 700 .75rem/19px var(--font); text-align: center; pointer-events: none; }
 /* The cart: a row in the menu under Orders, with its number (cart.js); the menu buttons show the number too. */
 #cartFab[hidden] { display: flex !important; }
 .mn-cart { width: 100%; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; }
 .mn-n { margin-left: auto; min-width: 24px; height: 24px; padding: 0 7px; border-radius: 12px; background: var(--red); color: #fff; font: 700 .75rem/24px var(--font); text-align: center; }
 #cartFab:not(.has) .mn-n { display: none; }
 .hd-menu-btn { position: relative; }
-.bt-n { position: absolute; top: -4px; right: calc(50% - 26px); min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px; background: var(--red); color: #fff; font: 700 .6875rem/19px var(--font); text-align: center; pointer-events: none; }
+.bt-n { position: absolute; top: -4px; right: calc(50% - 26px); min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px; background: var(--red); color: #fff; font: 700 .75rem/19px var(--font); text-align: center; pointer-events: none; }
 .bt-n[hidden], .hd-badge[hidden] { display: none; }
 #btMenu .bt-pill { position: relative; }
 .hd-pop { position: relative; display: flex; }
@@ -218,7 +223,7 @@ body:is([data-layout="wide"], [data-layout="plain"]) .hd-menu-btn { display: inl
 /* With less room the word goes under its icon, the way the tabs at the bottom of a phone are drawn. */
 @media (max-width: 1279px) {
   .hd-tabs { gap: 2px; }
-  .hd-tabs a { flex-direction: column; gap: 3px; padding: 0 2px; font-size: .6875rem; }
+  .hd-tabs a { flex-direction: column; gap: 3px; padding: 0 2px; font-size: .75rem; }
   .hd-tabs svg { width: 22px; height: 22px; }
   .hd-tabs .tab-logo { width: 24px; height: 24px; }
 }
@@ -280,7 +285,7 @@ label.f { display: flex; flex-direction: column; gap: 6px; color: var(--muted); 
 .chip[aria-pressed="true"], .chip.on { background: var(--gold-tint); color: var(--gold-hi); box-shadow: inset 0 0 0 1px var(--gold-edge); }
 .chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px; }
 .chips::-webkit-scrollbar { display: none; }
-.tag { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: var(--pill); background: rgba(var(--tone), .16); color: rgb(var(--tone)); font: 700 .6875rem/1 var(--font); white-space: nowrap; }
+.tag { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: var(--pill); background: rgba(var(--tone), .16); color: rgb(var(--tone)); font: 700 .75rem/1 var(--font); white-space: nowrap; }
 .tag.gold { background: var(--gold-tint); color: var(--gold-hi); }
 .av { display: inline-grid; place-items: center; flex: none; width: 40px; height: 40px; border-radius: 50%; background: var(--surface-3); color: var(--gold-hi); font: 700 1rem/1 var(--font); overflow: hidden; }
 .av img { width: 100%; height: 100%; object-fit: cover; }
@@ -316,11 +321,11 @@ a.card { position: relative; display: flex; flex-direction: column; min-width: 0
 .card-m { order: 3; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 4px; color: var(--muted); font-size: .8125rem; }
 .card-set { display: inline-flex; align-items: center; gap: 4px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .card-sym { width: 14px; height: 14px; object-fit: contain; }
-.card-cond { display: inline-block; max-width: 100%; height: 18px; padding: 0 7px; border-radius: var(--pill); background: rgba(var(--tone), .16); color: rgb(var(--tone)); font: 700 .6875rem/18px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
+.card-cond { display: inline-block; max-width: 100%; height: 18px; padding: 0 7px; border-radius: var(--pill); background: rgba(var(--tone), .16); color: rgb(var(--tone)); font: 700 .75rem/18px var(--font); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
 .card-tags { order: 4; display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
-.tag-hl { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: var(--pill); background: var(--gold-tint); color: var(--gold-hi); font: 700 .6875rem/1 var(--font); }
-.card-note { order: 5; margin-top: 4px; color: var(--muted); font-size: .8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.grade, .qty { position: absolute; top: 6px; padding: 0 7px; height: 20px; border-radius: var(--pill); background: rgba(11,13,20,.86); font: 700 .6875rem/20px var(--font); }
+.tag-hl { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: var(--pill); background: var(--gold-tint); color: var(--gold-hi); font: 700 .75rem/1 var(--font); }
+.card-note { order: 5; margin-top: 4px; color: var(--text); font-size: .8125rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grade, .qty { position: absolute; top: 6px; padding: 0 7px; height: 20px; border-radius: var(--pill); background: rgba(11,13,20,.86); font: 700 .75rem/20px var(--font); }
 .grade { left: 6px; color: var(--gold-hi); box-shadow: inset 0 0 0 1px var(--gold-edge); } .qty { right: 6px; color: var(--text); }
 .cart-mini, html[data-look="fb"] .dm-mini { flex: none; position: relative; display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: var(--surface-3); color: var(--text); font-size: 0; box-shadow: none; cursor: pointer; }
 html[data-look="fb"] .dm-mini { margin-left: auto; }
@@ -434,7 +439,7 @@ html[data-look="fb"] .dm-mini { margin-left: auto; }
 .notif-list { display: flex; flex-direction: column; gap: 2px; }
 .notif-item { position: relative; display: grid; grid-template-columns: 1fr; gap: 2px; padding: 10px 28px 10px 10px; border-radius: var(--r); color: var(--text); }
 .notif-item:hover { background: var(--fill); text-decoration: none; }
-.notif-k { color: var(--gold); font: 700 .6875rem/1.2 var(--font); text-transform: uppercase; letter-spacing: .04em; }
+.notif-k { color: var(--gold); font: 700 .75rem/1.2 var(--font); text-transform: uppercase; letter-spacing: .04em; }
 .notif-m { line-height: 1.35; overflow-wrap: anywhere; }
 .notif-t { color: var(--muted); font-size: .8125rem; }
 .notif-item.unread .notif-t { color: var(--gold); font-weight: 600; }
@@ -616,7 +621,7 @@ html.sheet-open { overflow: hidden; }
 .fd-b.on { background: var(--gold-tint); color: var(--gold-hi); box-shadow: inset 0 0 0 1px var(--gold-edge); }
 .fd-b-pic { flex: none; width: 32px; height: 32px; border-radius: 50%; background: var(--surface-2); overflow: hidden; }
 .fd-b-pic img { width: 100%; height: 100%; object-fit: cover; }
-.fd-b small { color: var(--muted); font-weight: 500; }
+.fd-b small { color: var(--muted); font-weight: 500; font-size: .75rem; }
 /* "Sold by": everyone, the vault, then each store. Each tile says whose card it is. */
 .fd-sold { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .fd-b-t { min-width: 0; max-width: 168px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -625,7 +630,7 @@ html.sheet-open { overflow: hidden; }
 .fd-b.on .fd-b-all { fill: var(--gold-hi); }
 .fd-grid .card-p.card-ask { color: var(--text); font: 700 .875rem/1.2 var(--font); }
 .fd-grid .card-by { order: 6; display: flex; align-items: center; gap: 6px; min-width: 0; margin-top: 6px; color: var(--muted); font-size: .75rem; }
-.card-by-av { flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--surface-3); color: var(--text); font: 700 .5625rem/1 var(--font); object-fit: cover; }
+.card-by-av { flex: none; display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--surface-3); color: var(--text); font: 700 .75rem/1 var(--font); object-fit: cover; }
 .card-by-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .fd-adv { position: relative; display: flex; flex-direction: column; gap: 6px; margin: 0; }
 .fd-adv-h { font: 600 .9375rem/1.2 var(--font); }
@@ -829,7 +834,7 @@ html.sheet-open { overflow: hidden; }
 .ce-photo { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
 .ce-thumb { position: relative; flex: none; width: 56px; height: 78px; border-radius: var(--r-sm); background: var(--surface-2); overflow: hidden; box-shadow: 0 0 0 2px var(--gold-edge); }
 .ce-thumb img { width: 100%; height: 100%; object-fit: cover; }
-.ce-thumb .ibtn { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; background: rgba(11,13,20,.85); font-size: .6875rem; }
+.ce-thumb .ibtn { position: absolute; top: 2px; right: 2px; width: 22px; height: 22px; background: rgba(11,13,20,.85); font-size: .75rem; }
 .ce-photo small { flex: 1 1 160px; }
 .ce-err { margin: 0; padding: 10px 12px; border-radius: var(--r-sm); background: rgba(229,72,77,.14); color: #ffb4ad; font-weight: 600; }
 .ce-acts { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; gap: 8px; margin: 0 -16px -16px; padding: 12px 16px; border-top: 1px solid var(--line); border-radius: 0 0 var(--r) var(--r); background: var(--surface); }
@@ -838,7 +843,7 @@ html.sheet-open { overflow: hidden; }
 @media (max-width: 699px) { .ce-acts { bottom: calc(var(--bt-h) + var(--sab)); } }
 
 /* ---------- 20. People: the chips that say who someone is ---------- */
-.role { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: var(--pill); background: var(--surface-3); color: var(--text); font: 800 .6875rem/1 var(--font); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; vertical-align: middle; }
+.role { display: inline-flex; align-items: center; height: 20px; padding: 0 8px; border-radius: var(--pill); background: var(--surface-3); color: var(--text); font: 800 .75rem/1 var(--font); letter-spacing: .06em; text-transform: uppercase; white-space: nowrap; vertical-align: middle; }
 .role[data-role="admin"] { background: var(--brass); color: var(--gold-ink); }
 .role[data-role="mod"] { background: rgba(96,165,250,.2); color: #a9cdfd; box-shadow: inset 0 0 0 1px rgba(96,165,250,.55); }
 .stars, .worth { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 8px; border-radius: var(--pill); font: 700 .75rem/1 var(--font); white-space: nowrap; vertical-align: middle; }
@@ -884,7 +889,6 @@ img.av { object-fit: cover; }
 .svh-meta { min-width: 0; padding-top: 8px; }
 .svh-name-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .svh-name { color: var(--text); font: 700 1.125rem/1.25 var(--font); overflow-wrap: anywhere; }
-.svh-worth { margin: 2px 0 0; color: var(--muted); font-size: .8125rem; }
 .svh-bio { margin: 6px 0 0; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .svh-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
 .svh-act { flex: none; padding-top: 12px; }
@@ -913,7 +917,7 @@ img.av { object-fit: cover; }
 .tp-who .eyebrow, .sf-who .eyebrow { display: none; }
 .tp-who .h1, .sf-who .h1 { flex: 1 1 100%; font: 800 2rem/1.15 var(--font); overflow-wrap: anywhere; }
 .tp-stars { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px; margin: 2px 0 0; }
-.tp-bio, .sf-bio { flex: 1 1 100%; max-width: 70ch; margin: 4px 0 0; color: var(--muted); overflow-wrap: anywhere; }
+.tp-bio, .sf-bio { flex: 1 1 100%; max-width: 70ch; margin: 4px 0 0; color: var(--text); overflow-wrap: anywhere; }
 .svh-links { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .pf-acts { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .pf-tabs { margin-top: -16px; padding: 0 16px; border-top: 1px solid var(--line); border-radius: 0 0 var(--r) var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
@@ -931,7 +935,7 @@ img.av { object-fit: cover; }
 .sf-id { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 20px; }
 .sf-id > .av { position: relative; z-index: 1; margin-top: -56px; }
 .sf-who { flex: 1 1 300px; min-width: 0; }
-.sf-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 4px 0 0; color: var(--muted); }
+.sf-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 4px 0 0; color: var(--muted); }
 .sf-sub a { color: var(--text); font-weight: 600; }
 .sf-acts { display: flex; flex-wrap: wrap; gap: 8px; }
 .sf-acts .btn svg, .pf-acts .btn svg { width: 16px; height: 16px; }
@@ -955,12 +959,28 @@ img.av { object-fit: cover; }
 .sf-vouches svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
 .sf-vouches:hover { background: rgba(239,200,115,.2); }
 .sf-vouches:focus-visible { outline: 2px solid var(--gold-hi); outline-offset: 2px; }
-.sf-rows { display: flex; flex-direction: column; gap: 8px; }
-.sf-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
-.sf-row-l { flex: none; min-width: 84px; color: var(--muted); font: 600 .8125rem/1 var(--font); }
+/* A store's details, one per line: the label, then its value beside it. Chips wrap inside their own column, never
+   under the label (the owner, 18 Nov 2026: "it should be linear and prettified"). Also a trainer's "Find me on". */
+.sf-rows { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 2px 0 0; }
+.sf-row { display: grid; grid-template-columns: 6rem minmax(0, 1fr); align-items: baseline; gap: 4px 12px; margin: 0; }
+.sf-row-l { margin: 0; color: var(--muted); font: 600 .8125rem/1.3 var(--font); }
+.sf-row-v { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.sf-row-v.sf-text { display: block; line-height: 1.4; white-space: pre-line; }
 .sf-ext, .sf-note-l { color: var(--muted); }
-.sf-payinfo, .sf-contact { overflow-wrap: anywhere; }
-.sf-desc { margin: 0; color: var(--muted); }
+.tp-rows { flex: 1 1 100%; margin-top: 4px; }
+/* A store's card on Stores: its numbers side by side (no dots to break a line on), its place on a line of its own. */
+.svh-facts { display: flex; flex-wrap: wrap; gap: 2px 14px; margin: 2px 0 0; padding: 0; list-style: none; color: var(--muted); font-size: .8125rem; }
+.svh-facts li { white-space: nowrap; }
+.svh-facts b { color: var(--text); font-weight: 700; }
+.svh-place { margin: 2px 0 0; color: var(--muted); font-size: .8125rem; overflow-wrap: anywhere; }
+/* A trainer's cards for sale are in their store, with the prices: how many, and the way there. */
+.tp-sale { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: var(--text); }
+.tp-sale:hover { text-decoration: none; box-shadow: 0 0 0 1px var(--gold-edge); }
+.tp-sale-t { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.tp-sale-t b { font: 700 1.0625rem/1.3 var(--font); }
+.tp-sale-t small { color: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
+.tp-sale svg { flex: none; width: 22px; height: 22px; fill: none; stroke: var(--gold); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sf-desc { margin: 0; color: var(--text); white-space: pre-line; overflow-wrap: anywhere; }
 .sf-filter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
 .sf-filter input[type="search"] { flex: 1 1 220px; }
 .sf-filter select { flex: 0 1 190px; width: auto; }
@@ -977,7 +997,7 @@ img.av { object-fit: cover; }
 .sf-price { order: -1; color: var(--gold-hi); font: 800 1.125rem/1.2 var(--display); }
 .sf-title { font-weight: 600; overflow-wrap: anywhere; }
 .sf-set { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: .8125rem; }
-.sf-note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; margin: 2px 0 0; color: var(--muted); font-size: .8125rem; overflow: hidden; }
+.sf-note { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; margin: 2px 0 0; color: var(--text); font-size: .8125rem; overflow: hidden; }
 .sf-buy { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: auto; padding: 8px 12px 12px; }
 .sf-buy .btn { flex: 1 1 auto; min-height: 36px; padding: 0 10px; font-size: .8125rem; }
 .sf-buy .cart-add { flex: 1 1 100%; }
@@ -1012,6 +1032,9 @@ img.av { object-fit: cover; }
   .pf-cover:not(:has(> img)) { height: 96px; }
   .tp-head { grid-template-columns: minmax(0, 1fr); justify-items: center; text-align: center; }
   .tp-who, .pf-acts, .tp-stars, .svh-links { justify-content: center; }
+  /* The centred header keeps its "Find me on" row together in the middle, the label beside its chips. */
+  .tp-rows { align-items: center; }
+  .tp-rows .sf-row { grid-template-columns: auto minmax(0, auto); text-align: left; }
   .tp-who .h1, .sf-who .h1 { font-size: 1.5rem; }
   .tp-head .av-xl, .sf-id > .av.av-xl { width: 124px; height: 124px; font-size: 2.5rem; }
   .pf-acts .btn, .sf-acts .btn { flex: 1 1 130px; }
@@ -1040,7 +1063,7 @@ img.av { object-fit: cover; }
   .sf-stats { flex-wrap: nowrap; }
   .sf-stats li { align-items: center; padding: 6px 4px; text-align: center; }
   .sf-stats b { font-size: .9375rem; }
-  .sf-stats span { font-size: .6875rem; line-height: 1.2; }
+  .sf-stats span { font-size: .75rem; line-height: 1.2; }
   .sf-vouches { align-items: center; padding: 6px 4px; text-align: center; }
 }
 
@@ -1213,7 +1236,7 @@ body:has(.detail) .v-fab { display: none; }
 .msg.cont .msg-head { display: none; }
 .msg-name { color: var(--muted); font-weight: 600; }
 .msg-time { color: var(--faint); }
-.msg-head .role, .msg-head .stars, .msg-head .worth, .msg-head .mtag { height: 16px; padding: 0 6px; font-size: .625rem; }
+.msg-head .role, .msg-head .stars, .msg-head .worth, .msg-head .mtag { height: 18px; padding: 0 6px; font-size: .75rem; }
 .msg-text { margin: 0; padding: 8px 12px; border-radius: 18px; background: var(--surface-3); white-space: pre-wrap; overflow-wrap: anywhere; }
 .msg.mine { flex-direction: row-reverse; }
 .msg.mine .msg-face, .msg.mine .msg-head > :not(.msg-time) { display: none; }
@@ -1322,7 +1345,7 @@ html[data-look="fb"] .dm-li.unread .dm-li-last { color: var(--gold-hi); }
 .st-notes:empty { display: none; }
 .st-note a { position: relative; display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 12px; row-gap: 2px; align-items: start; padding: 10px 28px 10px 10px; border-radius: var(--r); color: var(--text); }
 .st-note a:hover { background: var(--fill); text-decoration: none; }
-.st-note-k { grid-row: 1 / span 2; align-self: center; display: inline-flex; align-items: center; justify-content: center; min-width: 92px; height: 24px; padding: 0 10px; border-radius: var(--pill); background: var(--surface-3); color: var(--muted); font: 700 .6875rem/1 var(--font); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+.st-note-k { grid-row: 1 / span 2; align-self: center; display: inline-flex; align-items: center; justify-content: center; min-width: 92px; height: 24px; padding: 0 10px; border-radius: var(--pill); background: var(--surface-3); color: var(--muted); font: 700 .75rem/1 var(--font); letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
 .st-note[data-k="announcement"] .st-note-k { background: var(--gold-tint); color: var(--gold-hi); }
 .st-note-m { overflow-wrap: anywhere; }
 .st-note-t { color: var(--muted); font-size: .8125rem; }
@@ -1354,7 +1377,7 @@ a.card:hover .card-pen, .card-pen:focus-visible { opacity: 1; }
 /* A visitor who is not signed in has a wider Log in button up there: a smaller start for the name and a neater button
    (the script in fb-shell.js then fits the name exactly, whatever the site is called). */
 @media (max-width: 699px) {
-  html:not([data-me]) .hd-word { font-size: clamp(.6875rem, 3.9vw, 1.125rem); }
+  html:not([data-me]) .hd-word { font-size: clamp(.75rem, 3.9vw, 1.125rem); }
   #barLogin { min-height: 36px; padding: 0 12px; font-size: .875rem; }
   .hd-reg { display: none; }
 }
@@ -1418,7 +1441,8 @@ html.cardwin-open { overflow: hidden; }
 .sf-bx svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.25; stroke-linecap: round; }
 .sf-bt { flex: 1; min-width: 0; }
 .sf-bh { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; font: 800 1.25rem/1.25 var(--font); overflow-wrap: anywhere; }
-.sf-bm { margin: 2px 0 0; color: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
+.sf-bm { display: flex; flex-wrap: wrap; gap: 2px 12px; margin: 2px 0 0; color: var(--muted); font-size: .875rem; overflow-wrap: anywhere; }
+.sf-bm > span { min-width: 0; }
 .sf-bm a { color: var(--text); font-weight: 600; }
 .sf-bpage .sf-desc { max-width: 70ch; }
 @media (max-width: 699px) {
@@ -1532,7 +1556,7 @@ body.is-dragging { cursor: grabbing; -webkit-user-select: none; user-select: non
 .bt-card { display: flex; flex-direction: column; min-width: 0; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); overflow: hidden; cursor: grab; }
 .bt-card-pic { position: relative; display: block; aspect-ratio: 63 / 88; background: var(--surface-2); }
 .bt-card-pic img { width: 100%; height: 100%; object-fit: cover; }
-.bt-flag, .bt-note { position: absolute; right: 6px; display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--pill); font: 800 .6875rem/1 var(--font); pointer-events: none; }
+.bt-flag, .bt-note { position: absolute; right: 6px; display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: var(--pill); font: 800 .75rem/1 var(--font); pointer-events: none; }
 .bt-flag { bottom: 6px; background: var(--gold); color: var(--gold-ink); }
 .bt-note { top: 6px; background: rgba(11,13,20,.84); color: var(--text); }
 .bt-card-t { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding: 8px 10px 6px; }
@@ -1859,22 +1883,18 @@ dialog.of .sheet-acts { display: flex; justify-content: flex-end; gap: 8px; }
 /* A hidden card: faded, marked "Hidden", with Show in gold. It keeps its place and can still be dragged. */
 .bt-card[data-hidden] .bt-card-pic img { opacity: .4; filter: grayscale(.7); }
 .bt-card[data-hidden] .bt-card-t { opacity: .6; }
-.bt-hid { position: absolute; left: 6px; bottom: 6px; display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: var(--pill); background: rgba(11,13,20,.9); color: var(--text); font: 800 .6875rem/1 var(--font); box-shadow: 0 0 0 1px var(--line-2); pointer-events: none; }
+.bt-hid { position: absolute; left: 6px; bottom: 6px; display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: var(--pill); background: rgba(11,13,20,.9); color: var(--text); font: 800 .75rem/1 var(--font); box-shadow: 0 0 0 1px var(--line-2); pointer-events: none; }
 .bt-act.bt-show { background: var(--gold-tint); color: var(--gold-hi); box-shadow: inset 0 0 0 1px var(--gold-edge); }
 .bt-act.bt-show:hover { background: rgba(239,200,115,.2); }
 .bt-act:disabled { opacity: .55; }
 /* Three buttons on a card now (Cover, Hide, Remove): their words show only when all three fit. */
 @container (max-width: 235px) { .bt-card .bt-act > span { display: none; } }
-/* ---------- 41-scan. Scan a card (/me/scan, scan.js): the card camera's photo is read, and each tile opens "Add to your store" ---------- */
-.mn-try, .sc-try { flex: none; padding: 1px 8px; border-radius: var(--pill); background: var(--gold-tint); box-shadow: inset 0 0 0 1px var(--gold-edge); color: var(--gold-hi); font: 700 .6875rem/1.6 var(--font); letter-spacing: .02em; }
-.mn-try { margin-left: auto; }
-.sc-try { display: inline-block; margin-left: 6px; vertical-align: middle; font-size: .75rem; }
-.sc-page { display: flex; flex-direction: column; gap: 16px; }
+/* ---------- 41-scan. Scan a card (the Scan tab of Add cards, scan.js): the card camera's photo is read, and each tile opens "Add to your store" ---------- */
 .sc-go { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .sc-shoot { gap: 10px; min-height: 52px; padding: 0 24px; font-size: 1rem; cursor: pointer; }
 .sc-shoot svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .sc-shoot.off { opacity: .6; pointer-events: none; }
-.sc-left, .sc-alt { margin: 0; color: var(--muted); font-size: .875rem; }
+.sc-left { margin: 0; color: var(--muted); font-size: .875rem; }
 .sc-out { display: flex; flex-direction: column; gap: 20px; scroll-margin-top: calc(var(--hd-h) + 12px); }
 .sc-out:empty { display: none; }
 .sc-read { display: flex; align-items: center; gap: 14px; padding: 12px; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }

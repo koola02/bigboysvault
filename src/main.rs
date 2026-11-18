@@ -474,7 +474,8 @@ async fn suggest_api(State(app): State<App>, Qs(qs): Qs<SuggestQs>) -> Res {
         let cards = with_db(&app, move |c| Ok(db::list(c, &Query { q: q2, ..Default::default() })?.0)).await?;
         serde_json::json!({
             "items": hits.iter().map(|h| serde_json::json!({ "text": h.text, "p": h.p, "kind": h.kind, "href": h.href, "typo": h.typo })).collect::<Vec<_>>(),
-            "cards": cards.iter().take(3).map(|p| serde_json::json!({ "title": p.title, "handle": p.handle, "price": p.price_text(), "img": p.img(120) })).collect::<Vec<_>>(),
+            // No price in the suggestions (the owner, 18 Nov 2026: prices only where cards are shopped): the set instead.
+            "cards": cards.iter().take(3).map(|p| serde_json::json!({ "title": p.title, "handle": p.handle, "set": p.set_text(), "img": p.img(120) })).collect::<Vec<_>>(),
             "ghost": ghost,
         })
     };
@@ -850,7 +851,7 @@ mod tests {
         let binder = page("/collections/affordable-common-uncommon", "Affordable Common/Uncommon", 1117);
         assert!(binder.contains("<a class=\"sf-bx\" href=\"/store/vault\" aria-label=\"Close\" title=\"Back to Big Boys Vault\" data-binder-close>"), "{binder}");
         assert!(binder.contains("<h1 class=\"sf-bh\">Affordable Common/Uncommon</h1>"));
-        assert!(binder.contains("1,117 cards · by <a href=\"/store/vault\">Big Boys Vault</a>"), "the count its tile shows");
+        assert!(binder.contains("<span>1,117 cards</span><span>by <a href=\"/store/vault\">Big Boys Vault</a></span>"), "the count its tile shows, beside whose it is (no dots)");
         assert!(binder.contains("class=\"wrap mk mk-bpage\"") && binder.contains("<form class=\"filters\"") && binder.contains("id=\"grid\""), "its search and cards stay");
         assert!(!binder.contains("<p class=\"sub\">"));
         // Full admins arrange its cards right there: the button is in every visitor's page (it is kept), hidden unless they are signed in.
@@ -1094,6 +1095,7 @@ async fn main() {
         .route("/sellers", get(store::directory))
         .route("/trainers/{id}/cards/{card}", get(community::member_card))
         .route("/me", get(community::me))
+        .route("/me/page", get(community::my_page))
         // the seller panel
         .route("/me/store", get(store::dash))
         .route("/me/store/visibility", post(store::set_visibility))
