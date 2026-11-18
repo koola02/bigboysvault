@@ -1908,19 +1908,9 @@ dialog.of .sheet-acts { display: flex; justify-content: flex-end; gap: 8px; }
 .sc-tile .sc-mk { color: var(--text); }
 .sc-more { align-self: flex-start; }
 .sc-src { margin: -8px 0 0; color: var(--muted); font-size: .8125rem; }
-.sc-find { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
-.sc-find-l { font-weight: 700; }
-.sc-find-row { display: flex; flex-wrap: wrap; gap: 8px; }
-.sc-find-row input { flex: 1 1 220px; min-width: 0; min-height: 44px; }
-.sc-find-row select { flex: 0 1 auto; min-height: 44px; }
-.sc-find-row .btn { min-height: 44px; }
-.sc-found { display: flex; flex-direction: column; gap: 10px; scroll-margin-top: calc(var(--hd-h) + 12px); }
-.sc-found:empty { display: none; }
 .sc-again { align-self: center; min-width: 220px; }
 @media (max-width: 699px) {
   .sc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .sc-shoot { flex: 1 1 100%; justify-content: center; }
   .sc-again { align-self: stretch; }
-  .sc-find-row select { flex: 1 1 0; }
-  .sc-find-row .btn { flex: 1 1 0; }
 }

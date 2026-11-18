@@ -93,7 +93,7 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 | `POST /me/cards` | Add a catalogue card (`{ id, image, image_large, en }`), as before; now allows a second listing of the same card |
 | `POST /me/cards/new` | Multipart: the card's `id`, `image`, `image_large`, `en`, `cond`, `price`, `qty` (1–99), `notes`, `binder_id`, optional `photo`, optional `finish` (a version key from the card list's prices, like `reverse-holofoil`, sent when the window came from Scan a card; empty is the card's usual version). A seller's new card goes on sale through the "Add to your store" window (store Add cards, a binder's Add, `/me`, Scan a card); nothing is priced for them |
 | `POST /me/cards/upload` | Add a card from the seller's own photo (multipart: `photo`, `name`, `set`, `cond`, `value`) |
-| `GET /me/search?q=&lang=` | The card catalogue, as before (Add cards, and Scan a card's "Not the right card?" box) |
+| `GET /me/search?q=&lang=` | The card catalogue, as before |
 | `GET /me/scan` | Scan a card (sellers; "Try it" in the menu): the card camera, then what the card list has for the photo (`docs/OPERATIONS.md` 4e) |
 | `POST /me/scan` | Multipart `photo` (JPEG, PNG or WebP, 5 MB at most). Answers `{read, exact, versions, versions_total, family, left}`: what Claude read (`read.problem` when the photo can't be used), the card itself with its `finishes` (versions with market prices), its other printings (the best guess marked `guess` when the number couldn't be read), and its evolution family. 403 for a trainer who isn't a seller, 429 past the day's scans, 503 when scanning is off or resting |
 | `GET /me/binders` | Binders page |

@@ -14,10 +14,9 @@
 //! - its evolution family (Lombre and Ludicolo for a Lotad), the same set first. The family comes from PokeAPI's
 //!   species table (`market::families`), not from the model, which can mix families up.
 //!
-//! Everything comes from the full online card list Add cards searches, never only the vault's cards, and a search box
-//! under the results looks up any other card there (`GET /me/search`). A tile opens the usual "Add to your store" window
-//! (static/add-card.js), with that version chosen: the seller still picks the condition, types the price and says how
-//! many. Nothing is added or priced by itself, and the photo is not kept.
+//! Everything comes from the full online card list Add cards searches, never only the vault's cards. A tile opens the
+//! usual "Add to your store" window (static/add-card.js), with that version chosen: the seller still picks the
+//! condition, types the price and says how many. Nothing is added or priced by itself, and the photo is not kept.
 //!
 //! Settings: ANTHROPIC_API_KEY (a Fly secret; without it the page says scanning isn't on yet), SCAN_MODEL (default
 //! below), SCAN_EFFORT (how hard the model thinks: low, medium, high, xhigh or max; default high, the owner's choice on

@@ -216,9 +216,9 @@ Holo, Reverse Holo...), its other printings, and its evolution family from PokeA
 (`market::families`, refreshed weekly), the card's own set first. When the number can't be read, every printing shows
 with the best guess first and marked. A tile opens the "Add to your store" window with that version chosen
 (`finish` on `POST /me/cards/new`); the seller still chooses the condition, types the price and says how many. Every
-result comes from the full online card list Add cards searches (TCGdex), never only the vault's cards, and a search box
-under the results ("Not the right card?") searches it for any card, in English, Japanese or Chinese (`GET /me/search`).
-The photo isn't kept.
+result comes from the full online card list Add cards searches (TCGdex), never only the vault's cards; the page says
+so. (A search box under the results was tried and taken out at the owner's word: "no need to add a search box".) The
+photo isn't kept.
 
 - Key: platform.claude.com → API keys, then `fly secrets set ANTHROPIC_API_KEY=... -a bigboysvault` (the owner's own
   step; never paste it anywhere else). The owner's key is an all-workspaces key, so every request also names the
