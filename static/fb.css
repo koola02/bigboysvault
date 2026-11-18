@@ -1894,7 +1894,8 @@ dialog.of .sheet-acts { display: flex; justify-content: flex-end; gap: 8px; }
 .sc-tile:hover { background: var(--surface-2); }
 .sc-tile:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .sc-tile[hidden] { display: none; }
-.sc-pic { display: block; margin-bottom: 4px; aspect-ratio: 63 / 88; border-radius: var(--r-sm); background: var(--surface-2); overflow: hidden; }
+.sc-pic { display: grid; place-items: center; margin-bottom: 4px; aspect-ratio: 63 / 88; border-radius: var(--r-sm); background: var(--surface-2); overflow: hidden; }
+.sc-nopic { padding: 8px; color: var(--faint); font-size: .75rem; font-weight: 500; text-align: center; }
 .sc-pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .sc-plus { position: absolute; top: 2px; right: 2px; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--gold); color: var(--gold-ink); font: 700 1.375rem/1 var(--font); box-shadow: 0 2px 6px rgba(0,0,0,.45); }
 .sc-tile.guess { box-shadow: 0 0 0 2px var(--gold-edge); }
@@ -1906,9 +1907,20 @@ dialog.of .sheet-acts { display: flex; justify-content: flex-end; gap: 8px; }
 .sc-tile small { color: var(--muted); font-size: .75rem; font-weight: 500; overflow-wrap: anywhere; }
 .sc-tile .sc-mk { color: var(--text); }
 .sc-more { align-self: flex-start; }
+.sc-src { margin: -8px 0 0; color: var(--muted); font-size: .8125rem; }
+.sc-find { display: flex; flex-direction: column; gap: 10px; padding: 14px; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
+.sc-find-l { font-weight: 700; }
+.sc-find-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.sc-find-row input { flex: 1 1 220px; min-width: 0; min-height: 44px; }
+.sc-find-row select { flex: 0 1 auto; min-height: 44px; }
+.sc-find-row .btn { min-height: 44px; }
+.sc-found { display: flex; flex-direction: column; gap: 10px; scroll-margin-top: calc(var(--hd-h) + 12px); }
+.sc-found:empty { display: none; }
 .sc-again { align-self: center; min-width: 220px; }
 @media (max-width: 699px) {
   .sc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
   .sc-shoot { flex: 1 1 100%; justify-content: center; }
   .sc-again { align-self: stretch; }
+  .sc-find-row select { flex: 1 1 0; }
+  .sc-find-row .btn { flex: 1 1 0; }
 }

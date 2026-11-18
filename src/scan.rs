@@ -3,8 +3,8 @@
 //! /me/scan, marked "Try it" in the menu; Add cards in the Store Manager is untouched.
 //!
 //! The seller photographs a card with the card camera (static/card-cam.js, `data-card-cam="scan"`). Claude reads it:
-//! the photo goes to Anthropic's Messages API (raw HTTP: there is no Rust SDK), to Claude Sonnet 5.5 (the owner's choice)
-//! at low effort, which answers in a fixed JSON shape (structured outputs): the card's name, its Pokémon, its collector
+//! the photo goes to Anthropic's Messages API (raw HTTP: there is no Rust SDK), to Claude Sonnet 5.5 at high effort (the
+//! owner's choices), which answers in a fixed JSON shape (structured outputs): the card's name, its Pokémon, its collector
 //! number, its set (a best guess) and its language. The site then looks the card up in the card list (TCGdex,
 //! `ops::catalog_cached`): by its name, and by its name and number (so a popular Pokémon's old printing isn't lost past
 //! the first page). It shows (static/scan.js):
@@ -14,11 +14,14 @@
 //! - its evolution family (Lombre and Ludicolo for a Lotad), the same set first. The family comes from PokeAPI's
 //!   species table (`market::families`), not from the model, which can mix families up.
 //!
-//! A tile opens the usual "Add to your store" window (static/add-card.js), with that version chosen: the seller still
-//! picks the condition and types the price. Nothing is added or priced by itself, and the photo is not kept.
+//! Everything comes from the full online card list Add cards searches, never only the vault's cards, and a search box
+//! under the results looks up any other card there (`GET /me/search`). A tile opens the usual "Add to your store" window
+//! (static/add-card.js), with that version chosen: the seller still picks the condition, types the price and says how
+//! many. Nothing is added or priced by itself, and the photo is not kept.
 //!
 //! Settings: ANTHROPIC_API_KEY (a Fly secret; without it the page says scanning isn't on yet), SCAN_MODEL (default
-//! below), SCAN_DAILY_MAX (scans a day across the site, default 300), SCAN_PER_SELLER (a day, for each seller, default
+//! below), SCAN_EFFORT (how hard the model thinks: low, medium, high, xhigh or max; default high, the owner's choice on
+//! 18 Nov 2026), SCAN_DAILY_MAX (scans a day across the site, default 300), SCAN_PER_SELLER (a day, for each seller, default
 //! 30), ANTHROPIC_WORKSPACE_ID (the workspace to bill, needed when the key is an all-workspaces key; not secret),
 //! ANTHROPIC_BASE_URL (a stand-in server, only for trying this out). The owner sees how it is going at
 //! /admin/scan/status, and can try a photo at POST /admin/scan/try.
@@ -39,6 +42,9 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
 const DEFAULT_MODEL: &str = "claude-sonnet-5-5";
+/// The owner asked for Sonnet 5.5 at high effort (18 Nov 2026): it thinks before it answers.
+const DEFAULT_EFFORT: &str = "high";
+const EFFORTS: [&str; 5] = ["low", "medium", "high", "xhigh", "max"];
 /// The Messages API version this is written for. It accepts no sampling settings, and none are sent.
 const API_VERSION: &str = "2026-10-21";
 /// Server-side fallback (`fallbacks: "default"`): if the model declines a photo, Anthropic retries it on another model
@@ -74,6 +80,10 @@ fn workspace() -> Option<String> {
 
 fn model() -> String {
     std::env::var("SCAN_MODEL").ok().map(|m| m.trim().to_string()).filter(|m| !m.is_empty()).unwrap_or_else(|| DEFAULT_MODEL.to_string())
+}
+
+fn effort() -> String {
+    std::env::var("SCAN_EFFORT").ok().map(|e| e.trim().to_lowercase()).filter(|e| EFFORTS.contains(&e.as_str())).unwrap_or_else(|| DEFAULT_EFFORT.to_string())
 }
 
 fn env_num(name: &str, default: i64) -> i64 {
@@ -157,14 +167,14 @@ fn schema() -> Value {
     })
 }
 
-/// The Messages API request for one photo: adaptive thinking at low effort (reading a card needs little), the JSON shape
-/// above, and no sampling settings (API version 2026-10-21 rejects them).
-fn body(model: &str, media_type: &str, photo_b64: &str) -> Value {
+/// The Messages API request for one photo: adaptive thinking at the effort chosen (`SCAN_EFFORT`), the JSON shape above,
+/// and no sampling settings (API version 2026-10-21 rejects them). Thinking counts towards `max_tokens`, so it has room.
+fn body(model: &str, effort: &str, media_type: &str, photo_b64: &str) -> Value {
     let mut b = json!({
         "model": model,
-        "max_tokens": 4096,
+        "max_tokens": 16000,
         "system": SYSTEM,
-        "output_config": { "effort": "low", "format": { "type": "json_schema", "schema": schema() } },
+        "output_config": { "effort": effort, "format": { "type": "json_schema", "schema": schema() } },
         "messages": [{
             "role": "user",
             "content": [
@@ -200,7 +210,7 @@ async fn call(app: &App, key: &str, body: &Value) -> Result<Value, String> {
         .post(format!("{base}/v1/messages"))
         .header("x-api-key", key)
         .header("anthropic-version", API_VERSION)
-        .timeout(Duration::from_secs(60))
+        .timeout(Duration::from_secs(90))
         .json(body);
     if body.get("fallbacks").is_some() {
         req = req.header("anthropic-beta", FALLBACK_BETA);
@@ -567,7 +577,7 @@ async fn scan(app: &App, who: i64, mut mp: Multipart) -> Res {
     }
     let b64 = base64::engine::general_purpose::STANDARD.encode(&photo);
     drop(photo); // read, not kept
-    let reply = call(app, &key, &body(&model(), kind, &b64)).await;
+    let reply = call(app, &key, &body(&model(), &effort(), kind, &b64)).await;
     // What the last reply used (tokens in and out), for the owner's status: the cost of a scan, as it really is.
     let usage = reply.as_ref().ok().map(|v| format!("{}|{}", v["usage"]["input_tokens"].as_i64().unwrap_or(0), v["usage"]["output_tokens"].as_i64().unwrap_or(0)));
     if reply.is_ok() {
@@ -623,7 +633,7 @@ pub async fn status(State(app): State<App>, h: HeaderMap) -> Res {
     // "1234|56": the last scan's tokens in and out.
     let (tokens_in, tokens_out) = usage.as_deref().and_then(|u| u.split_once('|')).map_or((0, 0), |(i, o)| (i.parse().unwrap_or(0), o.parse().unwrap_or(0)));
     Ok(ok(json!({
-        "on": enabled(), "model": model(), "workspace": workspace(), "today": today, "daily_max": daily_max(), "per_seller": per_seller(),
+        "on": enabled(), "model": model(), "effort": effort(), "workspace": workspace(), "today": today, "daily_max": daily_max(), "per_seller": per_seller(),
         "last_ok": last_ok, "last_error": last_error, "last_tokens_in": tokens_in, "last_tokens_out": tokens_out,
         "paused_until": PAUSED_UNTIL.load(Ordering::Relaxed)
     })))
@@ -762,9 +772,10 @@ mod tests {
 
     #[test]
     fn the_request_asks_for_the_shape_and_sends_no_sampling_settings() {
-        let b = body(DEFAULT_MODEL, "image/jpeg", "AAAA");
+        let b = body(DEFAULT_MODEL, DEFAULT_EFFORT, "image/jpeg", "AAAA");
         assert_eq!(b["model"], "claude-sonnet-5-5");
-        assert_eq!(b["output_config"]["effort"], "low");
+        assert_eq!(b["output_config"]["effort"], "high", "the owner's choice");
+        assert_eq!(b["max_tokens"], 16000, "room for the thinking as well as the answer");
         assert_eq!(b["output_config"]["format"]["type"], "json_schema");
         let s = &b["output_config"]["format"]["schema"];
         assert_eq!(s["additionalProperties"], false);
@@ -774,7 +785,8 @@ mod tests {
         for k in ["temperature", "top_p", "top_k", "thinking", "tool_choice"] {
             assert!(b.get(k).is_none(), "{k} isn't sent");
         }
-        assert!(body("claude-haiku-5-5", "image/png", "AAAA").get("fallbacks").is_none(), "only the default model asks for the fallback");
+        assert!(body("claude-haiku-5-5", "low", "image/png", "AAAA").get("fallbacks").is_none(), "only the default model asks for the fallback");
+        assert!(EFFORTS.contains(&DEFAULT_EFFORT));
         assert_eq!(media_type(&[0xFF, 0xD8, 0xFF, 0xE0]), Some("image/jpeg"));
         assert_eq!(media_type(b"\x89PNG\r\n\x1a\n...."), Some("image/png"));
         assert_eq!(media_type(b"RIFF\0\0\0\0WEBPVP8 "), Some("image/webp"));

@@ -1,8 +1,9 @@
 // Scan a card (sellers, /me/scan; src/scan.rs). The card camera (card-cam.js, data-card-cam="scan") hands back a photo of
 // the card; the site reads it (POST /me/scan) and this page shows what the card list has for it: the card itself, one
 // tile per version (Normal, Holo, Reverse Holo...), the same card in other sets, and its evolution family. A tile opens
-// "Add to your store" (add-card.js) with that version chosen; the seller still picks the condition and the price.
-// Nothing is added by itself.
+// "Add to your store" (add-card.js) with that version chosen; the seller still picks the condition, the price and how
+// many. Everything comes from the full online card list Add cards searches (not only the vault's cards), and a search
+// box under the results looks up any other card there. Nothing is added by itself.
 (() => {
   const file = document.getElementById('scanFile');
   if (!file) return;
@@ -78,7 +79,8 @@
   function tile(c, fin) {
     const b = make('button', 'sc-tile'); b.type = 'button';
     const pic = make('span', 'sc-pic');
-    if (c.image) { const i = make('img'); i.src = c.image; i.alt = ''; i.loading = 'lazy'; i.decoding = 'async'; i.width = 245; i.height = 342; i.onerror = () => i.remove(); pic.append(i); }
+    const none = make('span', 'sc-nopic', 'No picture yet');
+    if (c.image) { const i = make('img'); i.src = c.image; i.alt = ''; i.loading = 'lazy'; i.decoding = 'async'; i.width = 245; i.height = 342; i.onerror = () => i.replaceWith(none); pic.append(i); } else pic.append(none);
     const plus = make('span', 'sc-plus', '+'); plus.setAttribute('aria-hidden', 'true');
     b.append(pic, plus, make('b', 'sc-name', c.name || 'Card'));
     if (c.guess) { b.classList.add('guess'); b.append(make('span', 'sc-guess', 'Best guess')); }
@@ -129,6 +131,7 @@
       out.replaceChildren(...parts);
       return;
     }
+    parts.push(make('p', 'sc-src', 'From the full Pokémon card list, the same one Add cards searches: every card printed, not only the vault’s.'));
     if (exact.length) {
       const tiles = exact.flatMap((c) => {
         const fins = (c.finishes || []).filter((f) => f.key && f.key !== 'market');
@@ -141,7 +144,7 @@
       if (!r.number) parts.push(make('p', 'sc-tip', 'Tip: hold the card flat and close, so the small number at the bottom is sharp.'));
     }
     if (versions.length) {
-      parts.push(group('h2', exact.length ? 'Other versions' : `Cards called ${name}`, versions.map((c) => tile(c, null)), j.versions_total || versions.length, exact.length ? 12 : 24));
+      parts.push(group('h2', exact.length ? 'Other versions' : `Cards called ${name}`, versions.map((c) => tile(c, null)), j.versions_total || versions.length, 24));
     }
     if (family.length) {
       const fam = make('section', 'sc-sec sc-fam');
@@ -149,9 +152,43 @@
       family.forEach((g) => fam.append(group('h3', g.name, (g.cards || []).map((c) => tile(c, null)), g.total || 0, 6)));
       parts.push(fam);
     }
+    parts.push(finder(j.lang && j.lang !== 'en' && r.species ? r.species : name, j.lang || 'en')); // a Japanese or Chinese list is searched by the Pokémon's English name
     const again = make('button', 'btn sc-again', 'Scan another card'); again.type = 'button';
     again.addEventListener('click', () => file.click());
     parts.push(again);
     out.replaceChildren(...parts);
+  }
+
+  // "Not the right card?": any card in the full card list, by name (and number), in English, Japanese or Chinese, as
+  // Add cards searches (GET /me/search). Its results open the same window.
+  function finder(name, lang) {
+    const box = make('form', 'sc-find'); box.noValidate = true;
+    const lab = make('label', 'sc-find-l', 'Not the right card? Search the full card list');
+    const q = make('input'); q.type = 'search'; q.value = name === 'this card' ? '' : name; q.placeholder = 'Card name, like Pikachu 58'; q.autocomplete = 'off'; q.enterKeyHint = 'search'; q.id = 'scanQ';
+    lab.htmlFor = 'scanQ';
+    const pick = make('select'); pick.setAttribute('aria-label', 'Card language');
+    [['en', 'English'], ['ja', 'Japanese'], ['zh', 'Chinese']].forEach(([v, t]) => pick.append(new Option(t, v, false, v === lang)));
+    const go = make('button', 'btn', 'Search'); go.type = 'submit';
+    const row = make('div', 'sc-find-row'); row.append(q, pick, go);
+    const found = make('div', 'sc-found');
+    box.append(lab, row, found);
+    let seq = 0;
+    box.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const text = q.value.trim(), mine = ++seq;
+      if (text.length < 2) { found.replaceChildren(note('Type at least two letters of the card’s name.')); return; }
+      found.replaceChildren(note('Searching…'));
+      try {
+        const r = await fetch(`/me/search?q=${encodeURIComponent(text)}&lang=${pick.value}`, { credentials: 'same-origin', headers: { Accept: 'application/json' } });
+        const j = await r.json().catch(() => ({}));
+        if (mine !== seq) return;
+        const cards = j.cards || [];
+        if (!r.ok || (!cards.length && j.error)) { found.replaceChildren(note(j.error || 'Couldn’t search just now. Please try again.')); return; }
+        if (!cards.length) { found.replaceChildren(note(j.hint === 'no-translation' ? 'That name isn’t in this language’s card list. Try the English name.' : `No cards called “${text}”. Check the spelling.`)); return; }
+        found.replaceChildren(group('h2', `Cards called “${text}”`, cards.map((c) => tile(c, null)), j.total || cards.length, 24));
+        found.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      } catch (_) { if (mine === seq) found.replaceChildren(note('Couldn’t search just now. Check your connection.')); }
+    });
+    return box;
   }
 })();
