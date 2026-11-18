@@ -741,7 +741,7 @@ pub(crate) const TOO_BIG: &str = admin::TOO_BIG; // one word for "too big", whic
 const TOO_BIG_TEXT: &str = "That photo is too big. Please use a smaller one (under 16 megapixels).";
 
 /// Reads only the picture's size from its first bytes, and refuses one that is too big to open safely.
-fn check_size(bytes: &[u8]) -> Result<(), String> {
+pub(crate) fn check_size(bytes: &[u8]) -> Result<(), String> {
     let (w, h) = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().map_err(|e| e.to_string())?.into_dimensions().map_err(|e| e.to_string())?;
     if u64::from(w) * u64::from(h) > MAX_PIXELS {
         return Err(TOO_BIG.into());
@@ -1959,6 +1959,7 @@ pub async fn add_card_full(State(app): State<App>, h: HeaderMap, mut mp: Multipa
     }
     let (mut card_id, mut image, mut image_large, mut en) = (String::new(), None::<String>, None::<String>, None::<String>);
     let (mut cond, mut price, mut qty, mut notes, mut binder, mut photo) = (String::new(), String::new(), String::from("1"), String::new(), String::new(), None::<Vec<u8>>);
+    let mut finish = String::new();
     while let Some(f) = mp.next_field().await.map_err(|_| (StatusCode::BAD_REQUEST, "That didn't upload. Please try again.".to_string()))? {
         let key = f.name().unwrap_or("").to_string();
         if key == "photo" {
@@ -1979,12 +1980,22 @@ pub async fn add_card_full(State(app): State<App>, h: HeaderMap, mut mp: Multipa
             "qty" => qty = text.trim().to_string(),
             "notes" => notes = text,
             "binder_id" => binder = text.trim().to_string(),
+            "finish" => finish = text.trim().chars().take(40).collect(),
             _ => {}
         }
     }
     // Everything is checked before anything is made.
     if card_id.is_empty() {
         return Ok(fail(StatusCode::BAD_REQUEST, "Pick a card first."));
+    }
+    // The version (Normal, Holo, Reverse Holo...) when the window offered a choice (a scanned card's tiles, scan.rs): a
+    // key from the card list's prices. Empty, the listing is the card's usual version, as before. "market" is a price
+    // with no version, never a version.
+    if !finish.chars().all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == ' ') {
+        return Ok(fail(StatusCode::BAD_REQUEST, "That version isn't one the card list knows. Please try again."));
+    }
+    if finish.eq_ignore_ascii_case("market") {
+        finish.clear();
     }
     if !members::CONDITIONS.contains(&cond.as_str()) {
         return Ok(fail(StatusCode::BAD_REQUEST, "Choose the card's condition."));
@@ -2048,7 +2059,7 @@ pub async fn add_card_full(State(app): State<App>, h: HeaderMap, mut mp: Multipa
         }
     }
     let set = members::clean_line(&text("set"), 80);
-    let market = market::member_finish_price(&info, "").unwrap_or(0.0);
+    let market = market::member_finish_price(&info, &finish).unwrap_or(0.0);
     let (t2, n2, s2, i2, l2, key) = (title.clone(), number.clone(), set.clone(), pic.clone(), pic_large.clone(), card_id.clone());
     let made = with_db(&app, move |c| {
         let added = marcuru_rs::sellers::add_listing(c, id, &key, &t2, &n2, &s2, &i2, &l2)?;
@@ -2060,7 +2071,15 @@ pub async fn add_card_full(State(app): State<App>, h: HeaderMap, mut mp: Multipa
         if own_bytes > 0 {
             members::set_card_photo_bytes(c, cid, own_bytes)?;
         }
-        let patch = marcuru_rs::sellers::Patch { price: Some(price), cond: Some(cond), qty: Some(qty), notes: Some(notes), binder_id: binder_id.map(Some), ..Default::default() };
+        let patch = marcuru_rs::sellers::Patch {
+            price: Some(price),
+            cond: Some(cond),
+            qty: Some(qty),
+            notes: Some(notes),
+            binder_id: binder_id.map(Some),
+            finish: (!finish.is_empty()).then_some(finish),
+            ..Default::default()
+        };
         let card = marcuru_rs::sellers::update_listing(c, id, cid, &patch)?;
         Ok(Ok((cid, card)))
     })

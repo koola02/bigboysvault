@@ -6,6 +6,7 @@ mod look;
 mod messages;
 mod ops;
 mod push;
+mod scan;
 mod store;
 mod vault_ai;
 
@@ -1153,6 +1154,8 @@ async fn main() {
         .route("/ask", get(community::ask_page))
         .route("/api/ask", post(api::ask_vault))
         .route("/admin/ask/status", get(api::ask_status))
+        .route("/admin/scan/status", get(scan::status))
+        .route("/admin/scan/try", post(scan::try_it).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)))
         .route("/feed", get(feed::more))
         .route("/posts", post(feed::create).layer(axum::extract::DefaultBodyLimit::max(40 * 1024 * 1024)))
         .route("/posts/{id}", get(feed::one))
@@ -1191,6 +1194,7 @@ async fn main() {
         .route("/me/cards/new", post(community::add_card_full).layer(axum::extract::DefaultBodyLimit::max(12 * 1024 * 1024)))
         .route("/me/cards/price", get(community::seller_price))
         .route("/me/cards/upload", post(community::upload_card).layer(axum::extract::DefaultBodyLimit::max(12 * 1024 * 1024)))
+        .route("/me/scan", get(scan::page).post(scan::read).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)))
         .route("/admin/member-cards/{id}/delete", post(community::staff_remove_card))
         .route("/me/cards/order", post(community::order_cards))
         .route("/me/cards/{card}", post(community::card_action))

@@ -63,6 +63,7 @@ one file on its volume. Don't add a second machine without moving those first.
 | `visits.rs` | Visitors per day: who counts, the table, the totals the Overview shows |
 | `ops.rs` | Speed and upkeep: picture formats, cache headers, `/healthz`, and the routes the VM's jobs call |
 | `ask.rs`, `vault_ai.rs` | Ask the Vault: the built-in rules, and Gemini when its key is set |
+| `scan.rs` | Scan a card (sellers, `/me/scan`, "Try it"): Claude reads a card photo; the card, its versions, other printings and evolution family from the card list (see `docs/OPERATIONS.md` 4e) |
 | `blocks.rs` | Site settings (name, welcome line) and the showcase's cards |
 | `binder_sort.rs` | A binder's one-tap Sort (A to Z, Z to A, by set, by number, by evolution) and the TCGdex details it keeps in `card_dex` |
 | `look.rs` | The style guide page (`/admin/look`) with the feed's automatic-post switches |
@@ -78,6 +79,7 @@ one file on its volume. Don't add a second machine without moving those first.
 | `product.html`, `product_body.html`, `product_part.html` | A card: its page, and the part the card window loads |
 | `store*.html`, `stores*.html`, `binder_tile.html` | Stores, a store, the vault's store, the Store Manager's pages (`store_tabs.html` is its frame) |
 | `me.html` | My trainer, inside the Manager's frame |
+| `me_scan.html` | Scan a card (sellers): the card camera button, then the tiles `scan.js` draws |
 | `admin_*.html` | The Vault Manager (`admin_tabs.html` is its frame; `mgr_head.html` loads `mgr.css`) |
 | Others | `trainers.html`, `trainer_body.html`, `login.html`, `join.html`, `ask*.html`, `chat*.html`, `vouch*.html`, `messages.html`, `look_guide.html` |
 
@@ -90,7 +92,8 @@ one file on its volume. Don't add a second machine without moving those first.
 | `storefront.js`, `store.js`, `binder-tools.js`, `edit-listing.js` | A store's page, the Store Manager, arranging binders, editing a listing in place |
 | `store-head.js`, `bookmarks.js`, `apply.js` | Every store page's top (Follow, the Vouches window, the border colour picker), Bookmark buttons and the Bookmarks page, Apply as a seller |
 | `quick.js`, `my-cards.js`, `admin-float.js`, `admin-ui.js`, `mgr-table.js`, `showcase.js`, `binders.js`, `edit-card.js` | The Vault Manager |
-| `me.js`, `pricing.js`, `dragsort.js`, `card-cam.js`, `holo.js`, `suggest.js`, `tiles.js` | My trainer, the suggested-price line, drag and drop, the card camera, a card's shine, search suggestions, card tiles |
+| `me.js`, `pricing.js`, `dragsort.js`, `card-cam.js`, `holo.js`, `suggest.js`, `tiles.js` | My trainer, the suggested-price line, drag and drop, the card camera (`data-card-cam="scan"`: Scan a card's sharper photo, sent at the shutter), a card's shine, search suggestions, card tiles |
+| `add-card.js`, `scan.js` | The "Add to your store" window every seller's new card goes through (from Scan a card it also offers the version: Normal, Holo, Reverse Holo...), and Scan a card's page |
 | `sw.js`, `push-sw.js` | The service worker (alerts with the site closed) |
 | `wasm/` | The built card finder (made by `build-wasm.sh`; don't edit) |
 

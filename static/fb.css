@@ -1859,3 +1859,56 @@ dialog.of .sheet-acts { display: flex; justify-content: flex-end; gap: 8px; }
 .bt-act:disabled { opacity: .55; }
 /* Three buttons on a card now (Cover, Hide, Remove): their words show only when all three fit. */
 @container (max-width: 235px) { .bt-card .bt-act > span { display: none; } }
+/* ---------- 41-scan. Scan a card (/me/scan, scan.js): the card camera's photo is read, and each tile opens "Add to your store" ---------- */
+.mn-try, .sc-try { flex: none; padding: 1px 8px; border-radius: var(--pill); background: var(--gold-tint); box-shadow: inset 0 0 0 1px var(--gold-edge); color: var(--gold-hi); font: 700 .6875rem/1.6 var(--font); letter-spacing: .02em; }
+.mn-try { margin-left: auto; }
+.sc-try { display: inline-block; margin-left: 6px; vertical-align: middle; font-size: .75rem; }
+.sc-page { display: flex; flex-direction: column; gap: 16px; }
+.sc-go { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.sc-shoot { gap: 10px; min-height: 52px; padding: 0 24px; font-size: 1rem; cursor: pointer; }
+.sc-shoot svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sc-shoot.off { opacity: .6; pointer-events: none; }
+.sc-left, .sc-alt { margin: 0; color: var(--muted); font-size: .875rem; }
+.sc-out { display: flex; flex-direction: column; gap: 20px; scroll-margin-top: calc(var(--hd-h) + 12px); }
+.sc-out:empty { display: none; }
+.sc-read { display: flex; align-items: center; gap: 14px; padding: 12px; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); }
+.sc-shot { flex: none; width: 72px; aspect-ratio: 63 / 88; object-fit: cover; border-radius: var(--r-sm); background: var(--surface-2); }
+.sc-what { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.sc-what b { font-size: 1.125rem; overflow-wrap: anywhere; }
+.sc-what span, .sc-what small { color: var(--muted); }
+.sc-what .sc-unsure { color: var(--gold-hi); }
+.sc-what .sc-bad { font-size: 1rem; font-weight: 600; color: var(--text); }
+.sc-what .sc-added { color: var(--ok); font-weight: 600; }
+.sc-wait .sc-shot { animation: sc-pulse 1.2s ease-in-out infinite; }
+@keyframes sc-pulse { 50% { opacity: .45; } }
+@media (prefers-reduced-motion: reduce) { .sc-wait .sc-shot { animation: none; } }
+.sc-note { margin: 0; padding: 12px 14px; border-radius: var(--r); background: var(--surface-2); }
+.sc-tip { margin: -12px 0 0; color: var(--muted); font-size: .875rem; }
+.sc-sec { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.sc-sec h2, .sc-sec h3 { display: flex; align-items: center; gap: 8px; margin: 0; }
+.sc-sec h3 { margin-top: 6px; font-size: 1rem; }
+.sc-fam { gap: 12px; }
+.sc-n { padding: 0 8px; border-radius: var(--pill); background: var(--surface-3); color: var(--muted); font: 600 .8125rem/1.6 var(--font); }
+.sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+.sc-tile { position: relative; display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 8px; border: 0; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: var(--text); font: 600 .875rem/1.25 var(--font); text-align: left; cursor: pointer; }
+.sc-tile:hover { background: var(--surface-2); }
+.sc-tile:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+.sc-tile[hidden] { display: none; }
+.sc-pic { display: block; margin-bottom: 4px; aspect-ratio: 63 / 88; border-radius: var(--r-sm); background: var(--surface-2); overflow: hidden; }
+.sc-pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.sc-plus { position: absolute; top: 2px; right: 2px; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--gold); color: var(--gold-ink); font: 700 1.375rem/1 var(--font); box-shadow: 0 2px 6px rgba(0,0,0,.45); }
+.sc-tile.guess { box-shadow: 0 0 0 2px var(--gold-edge); }
+.sc-guess { align-self: flex-start; padding: 1px 8px; border-radius: var(--pill); background: var(--gold); color: var(--gold-ink); font: 700 .75rem/1.5 var(--font); }
+.sc-tile.in { box-shadow: 0 0 0 2px var(--ok); }
+.sc-tile.in .sc-plus { background: var(--ok); font-size: 1.125rem; }
+.sc-name { overflow-wrap: anywhere; }
+.sc-fin { align-self: flex-start; padding: 1px 8px; border-radius: var(--pill); background: var(--gold-tint); color: var(--gold-hi); font: 600 .75rem/1.5 var(--font); }
+.sc-tile small { color: var(--muted); font-size: .75rem; font-weight: 500; overflow-wrap: anywhere; }
+.sc-tile .sc-mk { color: var(--text); }
+.sc-more { align-self: flex-start; }
+.sc-again { align-self: center; min-width: 220px; }
+@media (max-width: 699px) {
+  .sc-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+  .sc-shoot { flex: 1 1 100%; justify-content: center; }
+  .sc-again { align-self: stretch; }
+}

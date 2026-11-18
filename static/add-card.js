@@ -2,7 +2,9 @@
 // card list opens this window: the seller picks the condition, types their own price (the market price is only a
 // hint), chooses the card list's picture or a photo of their own card, how many, a note and the binder. Only "Add to my
 // store" makes the listing (POST /me/cards/new). Used by the Store Manager's Add cards (store.js) and a binder's Add
-// cards (binder-tools.js): window.bbvAddCard.open({ card, binderId, onAdded }).
+// cards (binder-tools.js): window.bbvAddCard.open({ card, binderId, onAdded }). Scan a card (scan.js) also passes
+// `versions: true`, and the window then lets the seller choose the version (Normal, Holo, Reverse Holo...), starting
+// from the one on the tile they tapped (`card.finish`); everywhere else the card's usual version is used, as before.
 (() => {
   const CONDS = ['Near Mint', 'LP-NM', 'Lightly Played', 'MP-LP', 'Moderately Played', 'HP-MP', 'Heavily Played', 'Damaged-HP', 'Damaged', 'Sealed'];
   const make = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
@@ -33,21 +35,26 @@
     return (j.binders || []).map((b) => ({ id: b.key ?? b.id, title: b.title }));
   }).catch(() => { binders = null; return []; }));
   const prices = new Map();
-  const nearMint = (id) => {
-    if (!prices.has(id)) prices.set(id, json(`/me/cards/price?id=${encodeURIComponent(id)}`).then((j) => { const f = (j.matches && j.matches[0] && j.matches[0].finishes) || []; return f.length ? Number(f[0].php) || 0 : 0; }));
+  // The card's versions with their market prices (Near Mint), the usual one first.
+  const finishesOf = (id) => {
+    if (!prices.has(id)) prices.set(id, json(`/me/cards/price?id=${encodeURIComponent(id)}`).then((j) => (j.matches && j.matches[0] && j.matches[0].finishes) || []));
     return prices.get(id);
   };
+  const nearMint = (id) => finishesOf(id).then((f) => (f.length ? Number(f[0].php) || 0 : 0));
 
   // `listing`: a card already in the store (GET /me/listings/{id}): the window opens filled in with it, and saving puts
   // it in the binder too (POST /me/listings/{id}/place). Without it, `card` is a new card from the card list.
-  function open({ card, listing = null, binderId = null, onAdded = null }) {
+  function open({ card, listing = null, binderId = null, onAdded = null, versions = false }) {
     const old = !!listing;
     if (old) card = { id: '', name: listing.title, set: listing.set, number: listing.number, image: listing.image };
     const goWord = old ? (binderId ? 'Save and add to this binder' : 'Save') : 'Add to my store';
     const d = make('dialog', 'float ac');
     const form = make('form', 'float-panel'); form.noValidate = true;
     const head = make('header', 'sv-h');
-    const titles = make('div', 'sv-t'); titles.append(make('h2', null, old ? (binderId ? 'Add to this binder' : 'Check this card') : 'Add to your store'), make('p', null, card.name || 'This card'));
+    // The version chosen (a key from the card list's prices, "reverse-holofoil" say), shown under the card's name.
+    let finish = (!old && versions && card.finish) || '';
+    const sub = make('p', null, finish && card.finishLabel ? `${card.name || 'This card'} · ${card.finishLabel}` : card.name || 'This card');
+    const titles = make('div', 'sv-t'); titles.append(make('h2', null, old ? (binderId ? 'Add to this binder' : 'Check this card') : 'Add to your store'), sub);
     const x = make('button', 'sv-x'); x.type = 'button'; x.setAttribute('aria-label', 'Close');
     x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
     head.append(titles, x);
@@ -78,6 +85,10 @@
       preparing = false; go.disabled = false; go.textContent = goWord;
     });
 
+    // Version: only from Scan a card, and only when the card list prices more than one.
+    const verBox = make('fieldset', 'ac-f'); verBox.hidden = true; verBox.append(make('legend', null, 'Version'));
+    const verRow = make('div', 'ac-opts'); verBox.append(verRow);
+
     // Condition: chosen by the seller (none picked for them).
     const condL = make('label', 'ac-f'); condL.append(make('b', null, 'Condition'));
     const cond = make('select'); cond.append(new Option('Choose its condition', '', !old, !old));
@@ -104,7 +115,28 @@
     };
     // A card already in the store: its own price stays as it is; one that followed the market waits for the seller's price.
     if (old) { if (Number(listing.value_own) > 0) price.value = String(Math.round(listing.value_own)); nm = Number(listing.market) || 0; paintHint(); }
-    else nearMint(card.id).then((v) => { nm = v; paintHint(); });
+    else if (versions) {
+      finishesOf(card.id).then((all) => {
+        const list = all.filter((f) => f.key && f.key !== 'market');
+        const usual = list.find((f) => f.key === finish) || all[0];
+        nm = usual ? Number(usual.php) || 0 : 0; paintHint();
+        if (list.length < 2) return;
+        const choose = (f, b) => {
+          finish = f.key; nm = Number(f.php) || 0;
+          verRow.querySelectorAll('.ac-opt').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+          sub.textContent = `${card.name || 'This card'} · ${f.label || f.key}`;
+          paintHint();
+        };
+        const start = list.find((f) => f.key === finish) || list[0];
+        list.forEach((f) => {
+          const b = make('button', 'ac-opt', f.label || f.key); b.type = 'button'; b.setAttribute('aria-pressed', 'false');
+          b.addEventListener('click', () => choose(f, b));
+          verRow.append(b);
+          if (f === start) choose(f, b);
+        });
+        verBox.hidden = false;
+      });
+    } else nearMint(card.id).then((v) => { nm = v; paintHint(); });
     cond.addEventListener('change', paintHint);
 
     const qtyL = make('label', 'ac-f ac-half'); qtyL.append(make('b', null, 'How many'));
@@ -133,7 +165,7 @@
     const cancel = make('button', 'btn ghost', 'Cancel'); cancel.type = 'button';
     const go = make('button', 'btn', goWord); go.type = 'submit';
     acts.append(cancel, go);
-    body.append(top, picBox, condL, priceL, pair, notesL, err);
+    body.append(top, verBox, picBox, condL, priceL, pair, notesL, err);
     form.append(head, body, acts); d.append(form);
     document.body.append(d);   // above any window it was opened from (the binder's Add cards)
 
@@ -159,6 +191,7 @@
       const fd = new FormData();
       if (!old) { fd.append('id', card.id); fd.append('image', card.image || ''); fd.append('image_large', card.image_large || ''); fd.append('en', card.en || ''); }
       fd.append('cond', cond.value); fd.append('price', String(Math.round(p))); fd.append('qty', String(n)); fd.append('notes', notes.value); fd.append('binder_id', binder.value);
+      if (!old && finish) fd.append('finish', finish);
       if (photo) fd.append('photo', photo, 'card.jpg');
       try {
         const r = await fetch(old ? `/me/listings/${listing.id}/place` : '/me/cards/new', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' }, body: fd });

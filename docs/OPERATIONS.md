@@ -204,6 +204,34 @@ page and its editor) and the switch between the two were removed on 14 November 
 `/admin/showcase`. `/admin/look` is the style guide: every piece in the frame, plus the switches for the feed's
 automatic posts.
 
+## 4e. Scan a card with Claude (sellers)
+
+`src/scan.rs`, `static/scan.js`, `templates/me_scan.html`; the owner asked for it on 18 Nov 2026 as its own menu item,
+"Scan a card" marked "Try it", for sellers only, next to (not instead of) Add cards. The card camera's scan mode sends a
+photo of one card (`POST /me/scan`); Claude Sonnet 5.5 (Anthropic's Messages API, API version `2026-10-21`, low effort,
+a fixed JSON answer) reads its name, Pokémon, collector number, set (a best guess) and language, or says what is wrong
+with the photo (the back of a card, several cards, too blurry, not a card). The site then searches the card list by the
+name and by the name with the number, and shows the card itself as one tile per version the market prices (Normal,
+Holo, Reverse Holo...), its other printings, and its evolution family from PokeAPI's species table
+(`market::families`, refreshed weekly), the card's own set first. When the number can't be read, every printing shows
+with the best guess first and marked. A tile opens the "Add to your store" window with that version chosen
+(`finish` on `POST /me/cards/new`); the seller still chooses the condition and types the price. The photo isn't kept.
+
+- Key: platform.claude.com → API keys, then `fly secrets set ANTHROPIC_API_KEY=... -a bigboysvault` (the owner's own
+  step; never paste it anywhere else). The owner's key is an all-workspaces key, so every request also names the
+  workspace: `ANTHROPIC_WORKSPACE_ID` (a Fly secret too, though it isn't secret: the "Default" workspace's ID from
+  Settings → Workspaces). Without it Anthropic answers "This API key is not scoped to a workspace".
+- `SCAN_MODEL` (default `claude-sonnet-5-5`), `SCAN_DAILY_MAX` (scans per Philippine day for the whole site, default
+  300), `SCAN_PER_SELLER` (per seller per day, default 30; at most 20 in any 15 minutes). A scan counts once Claude
+  answers. A real scan used about 2,600 to 3,600 tokens in and under 100 out: under one US cent.
+- With the default model the request asks for Anthropic's server-side fallback (`fallbacks: "default"`, beta
+  `server-side-fallback-2026-07-01`): if the model declines a photo, another model answers in the same call.
+- Status: `GET /admin/scan/status` (owner): on/off, model, workspace, scans today, the last success, the last problem,
+  and the last scan's tokens. `POST /admin/scan/try` (owner, a form with `photo`) scans a photo without a seller
+  account, counted as the vault's own (member 0). A key, billing or workspace problem pauses scanning for ten minutes; too
+  many at once, for one; the page then tells sellers to use Add cards.
+- `ANTHROPIC_BASE_URL` points it at a stand-in server, only for trying it out.
+
 ## 5. Catalogue importer (later)
 
 Adding stock already pulls names, sets and art from TCGdex on demand, and the nightly warm-up keeps the most

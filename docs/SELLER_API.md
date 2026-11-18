@@ -91,9 +91,11 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 | `POST /me/listings/{id}/renew` | `{ days }` (default 30, 0 = no end date). Puts an expired card back on sale |
 | `POST /me/listings/move` | `{ ids, binder_id }` moves cards into a binder (null = out) |
 | `POST /me/cards` | Add a catalogue card (`{ id, image, image_large, en }`), as before; now allows a second listing of the same card |
-| `POST /me/cards/new` | Multipart: the card's `id`, `image`, `image_large`, `en`, `cond`, `price`, `qty` (1–99), `notes`, `binder_id`, optional `photo`. A seller's new card goes on sale through the "Add to your store" window (store Add cards, a binder's Add, `/me`); nothing is priced for them |
+| `POST /me/cards/new` | Multipart: the card's `id`, `image`, `image_large`, `en`, `cond`, `price`, `qty` (1–99), `notes`, `binder_id`, optional `photo`, optional `finish` (a version key from the card list's prices, like `reverse-holofoil`, sent when the window came from Scan a card; empty is the card's usual version). A seller's new card goes on sale through the "Add to your store" window (store Add cards, a binder's Add, `/me`, Scan a card); nothing is priced for them |
 | `POST /me/cards/upload` | Add a card from the seller's own photo (multipart: `photo`, `name`, `set`, `cond`, `value`) |
 | `GET /me/search?q=&lang=` | The card catalogue, as before |
+| `GET /me/scan` | Scan a card (sellers; "Try it" in the menu): the card camera, then what the card list has for the photo (`docs/OPERATIONS.md` 4e) |
+| `POST /me/scan` | Multipart `photo` (JPEG, PNG or WebP, 5 MB at most). Answers `{read, exact, versions, versions_total, family, left}`: what Claude read (`read.problem` when the photo can't be used), the card itself with its `finishes` (versions with market prices), its other printings (the best guess marked `guess` when the number couldn't be read), and its evolution family. 403 for a trainer who isn't a seller, 429 past the day's scans, 503 when scanning is off or resting |
 | `GET /me/binders` | Binders page |
 | `POST /me/binders` | `{ title }` makes one |
 | `POST /me/binders/{id}/edit` | `{ title?, description?, visibility? }` (`Public`, `Unlisted`, `Private`) |
@@ -203,9 +205,11 @@ Settings the owner can add in the admin settings table: `seller_max_cards` (how 
   subscription. Limits worth knowing: iPhone and iPad need the site added to the Home Screen first; Android may hold
   alerts while the phone sleeps unless Chrome's battery use is set to Unrestricted; a ring is the phone's normal
   notification sound, repeated, not a ringtone.
-- **Scan a card** uses the browser's on-device model (`LanguageModel` with image input, Chrome desktop) to read the
-  name and number off a photo, then searches the catalogue and lets the seller pick. Browsers without it ask the
-  seller to type the name under the photo. Nothing is ever added without a tap.
+- **Scan a card** inside the Store Manager's Add cards uses the browser's on-device model (`LanguageModel` with image
+  input, Chrome desktop) to read the name and number off a photo, then searches the catalogue and lets the seller pick.
+  Browsers without it ask the seller to type the name under the photo. Nothing is ever added without a tap. The menu's
+  own **Scan a card** page (`/me/scan`, 18 Nov 2026) reads the photo with Claude on any device instead; see
+  `docs/OPERATIONS.md` 4e.
 
 ## Tables added (all `CREATE … IF NOT EXISTS` / `ADD COLUMN`, never dropped)
 

@@ -35,7 +35,7 @@ fn daily_max() -> i64 {
     std::env::var("GEMINI_DAILY_MAX").ok().and_then(|v| v.trim().parse().ok()).unwrap_or(900)
 }
 
-fn today(now: i64) -> String {
+pub(crate) fn today(now: i64) -> String {
     // The shop's day (Philippine time), so the count starts again at midnight there.
     chrono_day(now + 8 * 3600)
 }

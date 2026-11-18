@@ -222,6 +222,14 @@ try {
   say(r.ok && j.ok === true, 'server', '/healthz', r.ok && j.ok === true ? '' : JSON.stringify(j).slice(0, 120));
 } catch (e) { say(false, 'server', '/healthz', String(e.message).slice(0, 100)); }
 
+// 9. Scan a card is a signed-in seller's page: a visitor is sent to log in, and comes back to it after.
+try {
+  const r = await fetch(BASE + '/me/scan', { redirect: 'manual' });
+  const to = r.headers.get('location') || '';
+  const good = r.status >= 300 && r.status < 400 && to.includes('/login?next=/me/scan');
+  say(good, 'server', 'Scan a card asks a visitor to log in', good ? '' : `${r.status} ${to}`.slice(0, 120));
+} catch (e) { say(false, 'server', 'Scan a card asks a visitor to log in', String(e.message).slice(0, 100)); }
+
 clearTimeout(hardStop);
 await browser.close();
 console.log(`\n${failed ? 'NOT READY' : 'READY'}: ${passed} passed, ${failed} failed  (${BASE})`);

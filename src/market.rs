@@ -489,6 +489,102 @@ fn native<'a>(r: &'a NameRow, cat: &str) -> &'a [String] {
     if cat == "ja" { &r.ja } else { &r.zh }
 }
 
+// ---- Evolution families (Scan a card shows a card's family), from PokeAPI's species table ----
+
+/// Every Pokémon species' evolution family, by `family_key` of its English name: the family's English names, first stage
+/// first (Lotad: Lotad, Lombre, Ludicolo), branches included (Eevee: Eevee and all eight of its evolutions).
+pub type Families = std::collections::HashMap<String, Vec<String>>;
+static FAMILIES: Mutex<Option<(Instant, std::sync::Arc<Families>)>> = Mutex::const_new(None);
+const SPECIES_CSV: &str = "https://raw.githubusercontent.com/PokeAPI/pokeapi/master/data/v2/csv/pokemon_species.csv";
+
+/// A name as the family table compares it: lower case, straight apostrophes, "é" as "e" ("Farfetch’d", "Flabébé").
+pub fn family_key(name: &str) -> String {
+    name.split_whitespace().collect::<Vec<_>>().join(" ").to_lowercase().replace('’', "'").replace('é', "e")
+}
+
+/// The families, from PokeAPI's species table (who evolves from whom) and its names table. Refreshed weekly; if the
+/// source is down, the last good table is kept (and with none yet, there are no families: the scan still works).
+pub async fn families(client: &reqwest::Client) -> std::sync::Arc<Families> {
+    let mut g = FAMILIES.lock().await;
+    if let Some((t, f)) = g.as_ref() {
+        if t.elapsed() < Duration::from_secs(7 * 86_400) && !f.is_empty() {
+            return f.clone();
+        }
+    }
+    let get = |url: &'static str| async move { client.get(url).timeout(Duration::from_secs(20)).send().await.ok()?.text().await.ok() };
+    let (species, names) = tokio::join!(get(SPECIES_CSV), get(NAME_CSVS[0]));
+    let built = match (species, names) {
+        (Some(s), Some(n)) => build_families(&s, &n),
+        _ => Families::new(),
+    };
+    if built.is_empty() {
+        return g.as_ref().map(|(_, f)| f.clone()).unwrap_or_default();
+    }
+    let arc = std::sync::Arc::new(built);
+    *g = Some((Instant::now(), arc.clone()));
+    arc
+}
+
+/// The family table from the text of PokeAPI's pokemon_species.csv and pokemon_species_names.csv. Its columns are found
+/// by their headings. Members are ordered by stage (how many evolutions from the first), then by the national order.
+pub fn build_families(species_csv: &str, names_csv: &str) -> Families {
+    let mut lines = species_csv.lines();
+    let head = csv_fields(lines.next().unwrap_or(""));
+    let col = |n: &str| head.iter().position(|h| h.trim() == n);
+    let (Some(ci), Some(cf), Some(cc)) = (col("id"), col("evolves_from_species_id"), col("evolution_chain_id")) else { return Families::new() };
+    let co = col("order");
+    let num = |f: &[String], i: usize| f.get(i).and_then(|v| v.trim().parse::<i64>().ok());
+    // (id, evolves from, chain, national order)
+    let mut species: Vec<(i64, Option<i64>, i64, i64)> = vec![];
+    for line in lines {
+        let f = csv_fields(line);
+        if let (Some(id), Some(chain)) = (num(&f, ci), num(&f, cc)) {
+            species.push((id, num(&f, cf), chain, co.and_then(|o| num(&f, o)).unwrap_or(id)));
+        }
+    }
+    let mut english = std::collections::HashMap::new();
+    for line in names_csv.lines().skip(1) {
+        let f = csv_fields(line);
+        if f.len() >= 3 && f[1].trim() == "9" && !f[2].trim().is_empty() {
+            if let Ok(id) = f[0].trim().parse::<i64>() {
+                english.insert(id, f[2].trim().to_string());
+            }
+        }
+    }
+    let from: std::collections::HashMap<i64, Option<i64>> = species.iter().map(|s| (s.0, s.1)).collect();
+    let stage = |mut id: i64| {
+        let mut n = 0;
+        while let Some(Some(p)) = from.get(&id) {
+            n += 1;
+            id = *p;
+            if n > 4 {
+                break;
+            }
+        }
+        n
+    };
+    let mut chains: std::collections::HashMap<i64, Vec<(usize, i64, i64)>> = Default::default();
+    for s in &species {
+        chains.entry(s.2).or_default().push((stage(s.0), s.3, s.0));
+    }
+    let mut out = Families::new();
+    for (_, mut members) in chains {
+        members.sort();
+        let names: Vec<String> = members.iter().filter_map(|m| english.get(&m.2).cloned()).collect();
+        for n in &names {
+            out.insert(family_key(n), names.clone());
+        }
+    }
+    out
+}
+
+/// A Pokémon's family by its English species name. A name with extra words ("Galarian Meowth", "Mega Absol") is tried
+/// without its first words too. Empty when it isn't a Pokémon the table knows (a Trainer, say).
+pub fn family_of(f: &Families, species: &str) -> Vec<String> {
+    let words: Vec<&str> = species.split_whitespace().collect();
+    (0..words.len()).find_map(|i| f.get(&family_key(&words[i..].join(" "))).cloned()).unwrap_or_default()
+}
+
 /// English name for a Japanese/Chinese card name: the longest known Pokémon/item name inside it
 /// ("ナンジャモのハラバリー" -> Bellibolt, "カビゴンex" -> Snorlax).
 fn english_label<'a>(card_name: &str, cat: &str, names: &'a Names) -> Option<&'a NameRow> {
@@ -1116,5 +1212,49 @@ mod printing_tests {
     fn a_card_with_one_printing_is_left_whole() {
         assert!(printings_of(&json!({ "variants_detailed": [{ "type": "holo", "subtype": null, "stamp": null }] })).is_empty());
         assert!(printings_of(&json!({})).is_empty());
+    }
+
+    #[test]
+    fn families_come_from_who_evolves_from_whom_first_stage_first() {
+        let species = "id,identifier,generation_id,evolves_from_species_id,evolution_chain_id,color_id,order
+            25,pikachu,1,172,10,10,35
+26,raichu,1,25,10,10,37
+172,pichu,2,,10,10,34
+            133,eevee,1,,67,3,162
+135,jolteon,1,133,67,10,164
+134,vaporeon,1,133,67,2,163
+            270,lotad,3,,135,2,316
+271,lombre,3,270,135,2,317
+272,ludicolo,3,271,135,5,318
+            359,absol,3,,180,9,430
+83,farfetchd,1,,37,3,108
+865,sirfetchd,8,83,37,9,109
+";
+        let names = "pokemon_species_id,local_language_id,name,genus
+            25,9,Pikachu,Mouse
+25,1,ピカチュウ,x
+26,9,Raichu,Mouse
+172,9,Pichu,Tiny Mouse
+133,9,Eevee,Evolution
+            134,9,Vaporeon,Bubble Jet
+135,9,Jolteon,Lightning
+270,9,Lotad,Water Weed
+271,9,Lombre,Jolly
+            272,9,Ludicolo,Carefree
+359,9,Absol,Disaster
+83,9,Farfetch’d,Wild Duck
+865,9,Sirfetch’d,Wild Duck
+";
+        let f = build_families(species, names);
+        assert_eq!(family_of(&f, "Lombre"), ["Lotad", "Lombre", "Ludicolo"]);
+        assert_eq!(family_of(&f, "Raichu"), ["Pichu", "Pikachu", "Raichu"], "by stage: the baby first, though its number is higher");
+        assert_eq!(family_of(&f, "eevee"), ["Eevee", "Vaporeon", "Jolteon"], "branches in the national order");
+        assert_eq!(family_of(&f, "Absol"), ["Absol"]);
+        assert_eq!(family_of(&f, "Galarian Farfetch'd"), ["Farfetch’d", "Sirfetch’d"], "extra words and a straight apostrophe");
+        assert!(family_of(&f, "Professor's Research").is_empty());
+        assert!(family_of(&f, "").is_empty());
+        assert!(build_families("nothing,useful
+1,2
+", names).is_empty(), "a table without its columns gives no families");
     }
 }

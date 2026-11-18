@@ -4,6 +4,8 @@
    card detection: only neat framing.
    data-card-cam="free" is a plain camera instead (the chat's "take a photo"): no frame and no cutting, on phones and
    computers alike; the photo is sent as taken.
+   data-card-cam="scan" is Scan a card (scan.js): the same frame, but the shutter hands the photo over at once (no
+   second step), and sharper (up to 1600 pixels tall), so the small number at the bottom of the card can be read.
    Any <input type="file" data-card-cam> uses it. The finished photo goes back into that input (with a "change"
    event), so the page's own preview and upload work exactly as before. */
 (() => {
@@ -24,16 +26,17 @@
     const inp = e.target.closest && e.target.closest('input[type=file][data-card-cam]');
     if (!inp || inp.dataset.camPass) return;
     e.preventDefault(); e.stopPropagation();
-    open(inp, inp.dataset.cardCam === 'free');
+    open(inp, inp.dataset.cardCam === 'free', inp.dataset.cardCam === 'scan');
   }, true);
 
-  function open(target, free) {
+  function open(target, free, scan) {
     close();
-    const o = el('div', free ? 'cc free' : 'cc'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', free ? 'Take a photo' : 'Card photo');
+    const title = free ? 'Take a photo' : scan ? 'Scan a card' : 'Card photo';
+    const o = el('div', free ? 'cc free' : 'cc'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', title);
     o.innerHTML = `
       <header class="cc-top">
         <button type="button" class="cc-ib" data-x aria-label="Close">${svg(ICON.x)}</button>
-        <b class="cc-title">${free ? 'Take a photo' : 'Card photo'}</b>
+        <b class="cc-title">${title}</b>
         <button type="button" class="cc-ib" data-flip aria-label="Switch camera" hidden>${svg(ICON.flip)}</button>
       </header>
       <div class="cc-stage">
@@ -47,12 +50,12 @@
         <button type="button" class="cc-side" data-pick>${svg(ICON.pics)}<span>Photos</span></button>
         <button type="button" class="cc-shut" data-shoot aria-label="Take the photo"><span></span></button>
         <button type="button" class="cc-side" data-cam hidden>${svg(ICON.cam)}<span>Camera</span></button>
-        <button type="button" class="btn cc-use" data-use hidden>${free ? 'Send photo' : 'Use photo'}</button>
+        <button type="button" class="btn cc-use" data-use hidden>${free ? 'Send photo' : scan ? 'Scan this card' : 'Use photo'}</button>
       </footer>`;
     document.body.append(o);
     document.documentElement.classList.add('cc-on');
     const pick = el('input'); pick.type = 'file'; pick.accept = 'image/*'; pick.hidden = true; o.append(pick);
-    ui = { o, target, pick, free: !!free, file: null, stream: null, facing: 'environment', img: null, x: 0, y: 0, s: 1, base: 1 };
+    ui = { o, target, pick, free: !!free, scan: !!scan, file: null, stream: null, facing: 'environment', img: null, x: 0, y: 0, s: 1, base: 1 };
     o.querySelector('[data-x]').addEventListener('click', close);
     o.querySelector('[data-pick]').addEventListener('click', () => pick.click());
     o.querySelector('[data-cam]').addEventListener('click', () => camera());
@@ -106,22 +109,37 @@
     q('.cc-zoom').hidden = !editing || ui.free;
     q('.cc-hint').textContent = ui.free
       ? (live ? 'Tap the button to take the photo' : editing ? 'Send this photo, or take another' : 'Choose a photo')
-      : (live ? 'Fit the card inside the frame' : editing ? 'Drag or zoom so the card fills the frame' : 'Choose a photo of the card');
+      : (live ? (ui.scan ? 'Fit the card inside the frame, then tap the button' : 'Fit the card inside the frame') : editing ? 'Drag or zoom so the card fills the frame' : 'Choose a photo of the card');
   }
 
+  // The camera can take a while to start (the browser may first ask to allow it). A photo picked, the window closed or
+  // the camera asked for again meanwhile wins: the late camera is stopped, so it never covers the photo.
   async function camera() {
     stop();
+    const mine = ui, ask = (ui.ask = (ui.ask || 0) + 1);
+    let stream;
     try {
-      ui.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: ui.facing }, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false });
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: ui.facing }, width: { ideal: 1920 }, height: { ideal: 1440 } }, audio: false });
     } catch (_) {
+      if (ui !== mine || mine.ask !== ask) return;
       mode('pick');
       ui.o.querySelector('.cc-hint').textContent = 'The camera is blocked here. Choose a photo instead, or allow the camera.';
       return;
     }
+    if (ui !== mine || mine.ask !== ask) { stream.getTracks().forEach((t) => t.stop()); return; }
+    ui.stream = stream;
     const v = ui.o.querySelector('.cc-video');
     v.srcObject = ui.stream; await v.play().catch(() => {});
+    if (ui !== mine || mine.ask !== ask) return;
     ui.img = null; mode('live'); layout();
     navigator.mediaDevices.enumerateDevices?.().then((d) => { ui.o.querySelector('[data-flip]').hidden = d.filter((x) => x.kind === 'videoinput').length < 2; }).catch(() => {});
+  }
+
+  // The photo's size: a card photo is always 900 wide; a scan keeps what the camera saw of the card, up to 1600 tall.
+  function outSize(srcH) {
+    if (!ui.scan) return [OUT_W, OUT_H];
+    const h = Math.round(Math.min(1600, Math.max(OUT_H, srcH)));
+    return [Math.round(h * CARD), h];
   }
 
   // The frame's part of the camera picture, at full camera resolution (the video is shown "cover", so work back).
@@ -140,16 +158,24 @@
     const f = frameRect();
     const scale = Math.max(f.sw / v.videoWidth, f.sh / v.videoHeight);
     const ox = (f.sw - v.videoWidth * scale) / 2, oy = (f.sh - v.videoHeight * scale) / 2;
-    const c = document.createElement('canvas'); c.width = OUT_W; c.height = OUT_H;
+    const [w, h] = outSize(f.h / scale);
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
     const g = c.getContext('2d');
     g.imageSmoothingQuality = 'high';
-    g.drawImage(v, (f.x - ox) / scale, (f.y - oy) / scale, f.w / scale, f.h / scale, 0, 0, OUT_W, OUT_H);
+    g.drawImage(v, (f.x - ox) / scale, (f.y - oy) / scale, f.w / scale, f.h / scale, 0, 0, w, h);
     ui.o.querySelector('.cc-stage').classList.add('flash'); setTimeout(() => ui?.o.querySelector('.cc-stage').classList.remove('flash'), 180);
-    c.toBlob((b) => { if (!b) return; stop(); edit(new File([b], 'card.jpg', { type: 'image/jpeg' }), true); }, 'image/jpeg', 0.92);
+    const scan = ui.scan, target = ui.target;
+    c.toBlob((b) => {
+      if (!b) return;
+      stop();
+      const photo = new File([b], 'card.jpg', { type: 'image/jpeg' });
+      if (scan) give(target, photo); else edit(photo, true);
+    }, 'image/jpeg', 0.92);
   }
 
   // A photo in the frame: starts centred and filling the frame; drag to move, pinch / wheel / slider to zoom.
   function edit(file, fromCamera) {
+    ui.ask = (ui.ask || 0) + 1; // a camera still starting is no longer wanted
     const url = URL.createObjectURL(file);
     const img = new Image();
     img.onload = () => {
@@ -214,9 +240,10 @@
     const f = frameRect(), sc = ui.base * ui.s;
     const w = ui.img.naturalWidth * sc, h = ui.img.naturalHeight * sc;
     const left = f.x + f.w / 2 - w / 2 + ui.x, top = f.y + f.h / 2 - h / 2 + ui.y;
-    const c = document.createElement('canvas'); c.width = OUT_W; c.height = OUT_H;
+    const [ow, oh] = outSize(f.h / sc);
+    const c = document.createElement('canvas'); c.width = ow; c.height = oh;
     const g = c.getContext('2d'); g.imageSmoothingQuality = 'high';
-    g.drawImage(ui.img, (f.x - left) / sc, (f.y - top) / sc, f.w / sc, f.h / sc, 0, 0, OUT_W, OUT_H);
+    g.drawImage(ui.img, (f.x - left) / sc, (f.y - top) / sc, f.w / sc, f.h / sc, 0, 0, ow, oh);
     const target = ui.target;
     c.toBlob((b) => {
       if (!b) return;
