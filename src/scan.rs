@@ -20,7 +20,7 @@
 //!
 //! Settings: ANTHROPIC_API_KEY (a Fly secret; without it the page says scanning isn't on yet), SCAN_MODEL (default
 //! below), SCAN_EFFORT (how hard the model thinks: low, medium, high, xhigh or max; default high, the owner's choice on
-//! 18 Nov 2026), SCAN_PER_SELLER (scans a day for each seller, default 30), SCAN_DAILY_MAX (a fixed total a day for the
+//! 18 Nov 2026), SCAN_PER_SELLER (scans a day for each seller, default 40), SCAN_DAILY_MAX (a fixed total a day for the
 //! whole site; unset, the total follows the number of sellers: `site_max`), ANTHROPIC_WORKSPACE_ID (the workspace to bill, needed when the key is an all-workspaces key; not secret),
 //! ANTHROPIC_BASE_URL (a stand-in server, only for trying this out). The owner sees how it is going at
 //! /admin/scan/status, and can try a photo at POST /admin/scan/try.
@@ -106,8 +106,9 @@ fn site_max_with(c: &rusqlite::Connection, per: i64, fixed: Option<i64>) -> rusq
     Ok(per * (sellers + 1))
 }
 
+/// Scans a day for each seller: 40, the owner's choice for a month of 10 sellers (18 Nov 2026: "lets do 40").
 fn per_seller() -> i64 {
-    env_num("SCAN_PER_SELLER", 30)
+    env_num("SCAN_PER_SELLER", 40)
 }
 
 // ---------- how many scans are left today ----------
