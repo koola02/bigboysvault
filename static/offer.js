@@ -32,7 +32,7 @@
     const body = make('div', 'of-body');
     const card = make('p', 'of-card');
     if (d.image) { const im = make('img'); im.src = d.image; im.alt = ''; im.width = 60; im.height = 84; card.append(im); }
-    card.append(make('span', null, `${d.cond ? d.cond + ' · ' : ''}${price > 0 ? 'asking ' + peso(price) : 'no price yet'} · ${left} available`));
+    card.append(make('span', null, `${d.cond ? d.cond + ' · ' : ''}${price > 0 ? 'Asking ' + peso(price) : 'No Price Yet'} · ${left} Available`));
     const amountL = make('label', 'sf-field'); amountL.append(make('span', null, 'Your Offer, Per Card ₱'));
     const amount = make('input', 'sheet-input'); amount.type = 'number'; amount.min = '1'; amount.step = '1'; amount.inputMode = 'numeric'; amount.required = true;
     amountL.append(amount);

@@ -127,7 +127,7 @@
     for (const l of lines) {
       const slug = l.kind === 'vault' ? 'vault' : (l.seller_slug || '');
       const k = l.kind === 'vault' ? 'vault' : `s:${slug || l.id}`;
-      if (!groups.has(k)) groups.set(k, { name: l.seller_name || (l.kind === 'vault' ? site : 'a seller'), slug, lines: [] });
+      if (!groups.has(k)) groups.set(k, { name: l.seller_name || (l.kind === 'vault' ? site : 'A Seller'), slug, lines: [] });
       groups.get(k).lines.push(l);
     }
     let sum = 0, okCount = 0;
@@ -141,7 +141,7 @@
         const body = el('div', 'cart-body');
         const name = el('a', 'cart-t', l.title || 'Card'); name.href = l.url || '#'; body.append(name);
         if (l.ok === false) body.append(el('small', 'cart-why', l.why || 'Not Available'));
-        else body.append(el('small', null, `${peso(l.price)} each` + (l.left > 0 && (l.qty || 1) >= l.left ? ` · ${l.left === 1 ? 'only 1 there' : `all ${l.left} there`}` : '')));
+        else body.append(el('small', null, `${peso(l.price)} Each` + (l.left > 0 && (l.qty || 1) >= l.left ? ` · ${l.left === 1 ? 'Only 1 There' : `All ${l.left} There`}` : '')));
         const qty = el('div', 'cart-qty');
         const minus = el('button', null, '−'); minus.type = 'button'; minus.setAttribute('aria-label', 'One Fewer');
         const num = el('span', null, String(l.qty || 1));

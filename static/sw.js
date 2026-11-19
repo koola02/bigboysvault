@@ -45,7 +45,7 @@ async function ring(d) {
   if (await pageOnScreen()) return;
   for (const n of await self.registration.getNotifications({ tag })) n.close();
   return self.registration.showNotification(`${d.from || 'Someone'} is calling you`, {
-    body: 'Voice call · Big Boys Vault', tag, renotify: true, requireInteraction: true, silent: false,
+    body: 'Voice Call · Big Boys Vault', tag, renotify: true, requireInteraction: true, silent: false,
     icon: d.avatar || LOGO, badge: LOGO, timestamp: Date.now(), vibrate: [700, 300, 700, 300, 700],
     actions: [{ action: 'answer', title: 'Answer' }, { action: 'decline', title: 'Decline' }],
     data: { kind: 'call', call: d.call, thread: d.thread, url: d.url },
@@ -53,10 +53,10 @@ async function ring(d) {
 }
 
 const ENDED = {
-  missed: (who) => [`Missed call from ${who}`, 'Tap to see the chat'],
-  answered: (who) => [`Call with ${who}`, 'Answered'],
-  declined: (who) => [`Call from ${who}`, 'Declined'],
-  ended: (who) => [`Call with ${who}`, 'Ended'],
+  missed: (who) => [`Missed Call From ${who}`, 'Tap to see the chat'],
+  answered: (who) => [`Call With ${who}`, 'Answered'],
+  declined: (who) => [`Call From ${who}`, 'Declined'],
+  ended: (who) => [`Call With ${who}`, 'Ended'],
 };
 
 async function callEnded(d) {
@@ -74,9 +74,9 @@ async function callEnded(d) {
   if (await pageOnScreen()) return;
   if (d.reason === 'superseded') {
     // The caller is calling again: a quiet stand-in, which the new call's ring replaces.
-    return self.registration.showNotification(`Call from ${d.from || 'someone'}`, { body: 'Calling again…', tag, silent: true, renotify: false, icon: d.avatar || LOGO, badge: LOGO, timestamp: Date.now(), data: { kind: 'call-end', call: d.call, thread: d.thread, url: d.url } });
+    return self.registration.showNotification(`Call From ${d.from || 'Someone'}`, { body: 'Calling again…', tag, silent: true, renotify: false, icon: d.avatar || LOGO, badge: LOGO, timestamp: Date.now(), data: { kind: 'call-end', call: d.call, thread: d.thread, url: d.url } });
   }
-  const [title, body] = (ENDED[d.reason] || ENDED.ended)(d.from || 'someone');
+  const [title, body] = (ENDED[d.reason] || ENDED.ended)(d.from || 'Someone');
   // A missed call makes a sound only if nothing rang before (the phone was out of reach while it rang).
   return self.registration.showNotification(title, {
     body, tag, renotify: false, silent: d.reason !== 'missed' || open.length > 0,
@@ -88,7 +88,7 @@ async function message(d) {
   if (await pageOnScreen()) return;
   const tag = `dm-${d.thread}`;
   for (const n of await self.registration.getNotifications({ tag })) n.close();
-  return self.registration.showNotification(d.from || 'New message', {
+  return self.registration.showNotification(d.from || 'New Message', {
     body: d.text || 'Sent you a message', tag, renotify: true, silent: false, icon: d.avatar || LOGO, badge: LOGO,
     timestamp: Date.now(), data: { kind: 'message', thread: d.thread, url: d.url },
   });

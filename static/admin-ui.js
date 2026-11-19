@@ -153,7 +153,7 @@ window.Admin = (() => {
 
   function sync() {
     for (const b of boxes()) { b.checked = allMatching || sel.has(+b.dataset.sel); b.closest('.crow').classList.toggle('sel', b.checked); }
-    const n = selCount(); $('selCount').textContent = `${n.toLocaleString()} selected`; $('selbar').hidden = n === 0;
+    const n = selCount(); $('selCount').textContent = `${n.toLocaleString()} Selected`; $('selbar').hidden = n === 0;
     document.body.classList.toggle('has-sel', n > 0);
     const all = $('selAll'), vis = boxes();
     if (all) { all.checked = vis.length > 0 && vis.every((b) => b.checked); all.indeterminate = !all.checked && vis.some((b) => b.checked); }
@@ -237,7 +237,7 @@ window.Admin = (() => {
     const hint = el('p', 'hint show', 'Every selected card gets exactly this value. It stays until you change it: the nightly market update leaves it alone.');
     const lab = el('label', 'sf-label'); lab.append(el('span', 'sf-l', 'Amount'), inp);
     node.append(segment([['set', 'Set To'], ['up', 'Raise %'], ['down', 'Lower %'], ['market', 'Market Today']], (v) => {
-      mode = v; lab.hidden = v === 'market'; inp.placeholder = v === 'set' ? '₱ amount' : '% change';
+      mode = v; lab.hidden = v === 'market'; inp.placeholder = v === 'set' ? '₱ Amount' : '% Change';
       hint.textContent = { set: 'Every selected card gets exactly this value. It stays until you change it: the nightly market update leaves it alone.',
         up: 'Raises every value by this percentage. The new values stay until you change them.', down: 'Lowers every value by this percentage. The new values stay until you change them.',
         market: 'Looks up today’s market price for cards added with a card number, and sets the suggested price for each card’s condition. These then follow the market every night. Graded and sealed cards keep your price. Up to 40 at a time.' }[v];

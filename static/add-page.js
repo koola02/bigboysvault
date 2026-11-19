@@ -176,7 +176,7 @@
     if (s.logo) { const i = make('img'); i.src = s.logo; i.alt = ''; i.loading = 'lazy'; i.onerror = () => { i.remove(); pic.textContent = s.name; }; pic.append(i); } else pic.textContent = s.name;
     b.append(pic, make('b', null, s.name));
     if (s.en_name) b.append(make('span', 'qa-set-en', `English: ${s.en_name}`));
-    b.append(make('small', null, `${s.count} cards`));
+    b.append(make('small', null, `${s.count} Cards`));
     b.addEventListener('click', () => showSet(s));
     return b;
   }
@@ -196,7 +196,7 @@
       const cards = j.cards || [], set = j.set || {};
       if (!cards.length) { setMeta.textContent = ''; setState.textContent = j.error ? 'The card list isn’t answering right now. Try again in a moment.' : 'No cards listed for this set.'; return; }
       if (set.name) setName.textContent = set.en_name ? `${set.name} · ${set.en_name}` : set.name;
-      setMeta.textContent = `${cards.length} card${cards.length === 1 ? '' : 's'}`;
+      setMeta.textContent = `${cards.length} Card${cards.length === 1 ? '' : 's'}`;
       if (set.logo) { setLogo.src = set.logo; setLogo.hidden = false; setLogo.onerror = () => { setLogo.hidden = true; }; }
       setCards.replaceChildren(...cards.map((c) => tile({ ...c, set: c.set || set.name || s.name })));
       setState.textContent = 'Tap your card.';

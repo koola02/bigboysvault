@@ -108,7 +108,7 @@
     const pic = document.createElement('span'); pic.className = 'qa-set-logo';
     if (s.logo) { const i = document.createElement('img'); i.src = s.logo; i.alt = ''; i.loading = 'lazy'; i.onerror = () => { i.remove(); pic.textContent = s.name; }; pic.append(i); } else pic.textContent = s.name;
     const t1 = document.createElement('b'); t1.textContent = s.name;
-    const t2 = document.createElement('small'); t2.textContent = `${s.count} cards · ${s.id.toUpperCase()}`;
+    const t2 = document.createElement('small'); t2.textContent = `${s.count} Cards · ${s.id.toUpperCase()}`;
     b.append(pic, t1);
     if (s.en_name) { const t3 = document.createElement('span'); t3.className = 'qa-set-en'; t3.textContent = 'English: ' + s.en_name; b.append(t3); }
     b.append(t2); b.addEventListener('click', () => showSet(s.id, true, s.cat)); return b;
@@ -243,7 +243,7 @@
   const value = () => st.tray.reduce((n, t) => n + t.copies.reduce((v, c) => v + (Number(c.price) || 0), 0), 0);
   function paintBar() {
     const n = count(); el.bar.hidden = n === 0; document.body.classList.toggle('qa-has-tray', n > 0);
-    el.count.textContent = `${n} card${n === 1 ? '' : 's'}`;
+    el.count.textContent = `${n} Card${n === 1 ? '' : 's'}`;
     el.value.textContent = st.tray.some((t) => !t.priced) ? `${peso(value())} · pricing…` : peso(value());
     el.thumbs.replaceChildren(...st.tray.filter((t) => t.image).slice(-5).map((t) => { const i = document.createElement('img'); i.src = t.image; i.alt = ''; return i; }));
     el.save.textContent = `Save All ${n} Card${n === 1 ? '' : 's'}`;

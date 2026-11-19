@@ -148,7 +148,7 @@
   function place(list, node, parent) {
     const top = parent ? list.querySelector(`.cm[data-cm="${parent}"]`) : null;
     if (!top) { list.append(node); return; }
-    if (top.parentElement.classList.contains('cm-kids')) node.querySelector('.cm-name').after(el('span', 'cm-to', `to ${top.querySelector('.cm-name').textContent}`));
+    if (top.parentElement.classList.contains('cm-kids')) node.querySelector('.cm-name').after(el('span', 'cm-to', `To ${top.querySelector('.cm-name').textContent}`));
     top.querySelector(':scope > .cm-kids').append(node);
   }
   // Who the comment box answers: a comment (its writer's name shows above the box, with ✕ to stop), or the post.
@@ -274,7 +274,7 @@
     const n = view.pics.length;
     pv.querySelector('.pv-img').src = view.pics[view.at];
     pv.querySelectorAll('.pv-nav').forEach((b) => { b.hidden = n < 2; });
-    const count = pv.querySelector('.pv-count'); count.hidden = n < 2; count.textContent = `${view.at + 1} of ${n}`;
+    const count = pv.querySelector('.pv-count'); count.hidden = n < 2; count.textContent = `${view.at + 1} Of ${n}`;
     if (view.own) loadPanel();
   }
   const step = (by) => { const n = view.pics.length; if (n < 2) return; view.at = (view.at + by + n) % n; showPic(); };
@@ -458,7 +458,7 @@
     };
     const count = () => {
       const n = [...runsOf(ed).map((r) => r.t).join('').trim()].length, out = bar.querySelector('[data-count]');
-      out.hidden = n < RT_MAX - 200; out.textContent = `${n.toLocaleString()} of ${RT_MAX.toLocaleString()}`; out.classList.toggle('over', n > RT_MAX);
+      out.hidden = n < RT_MAX - 200; out.textContent = `${n.toLocaleString()} Of ${RT_MAX.toLocaleString()}`; out.classList.toggle('over', n > RT_MAX);
     };
     // A tap on a style button must not take the cursor out of the words.
     ['mousedown', 'pointerdown'].forEach((t) => bar.addEventListener(t, (e) => { if (e.target.closest('button')) e.preventDefault(); }));

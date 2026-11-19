@@ -527,7 +527,7 @@
     let cards = [], on = false, dirty = false, box = null, list = null, count = null, empty = null, sorted = false, sortBar = null, sorting = false;
     // The ways to sort, and what the message says after each.
     const SORTS = [['az', 'A To Z'], ['za', 'Z To A'], ['set', 'By Set'], ['number', 'By Number'], ['evolution', 'By Evolution']];
-    const SORTED = { az: 'A To Z', za: 'Z To A', set: 'by set', number: 'by number', evolution: 'by evolution' };
+    const SORTED = { az: 'A To Z', za: 'Z To A', set: 'By Set', number: 'By Number', evolution: 'By Evolution' };
 
     async function load() { const j = await api.cards(key); cards = j.cards || []; if (j.title) title = j.title; }
     async function enter() {
@@ -593,7 +593,7 @@
     function draw() {
       list.replaceChildren(...cards.map(card));
       const hid = cards.filter((c) => c.hidden).length;
-      count.textContent = cards.length ? `${plural(cards.length, 'card')}${hid ? ` · ${hid} hidden` : ''}` : '';
+      count.textContent = cards.length ? `${plural(cards.length, 'Card')}${hid ? ` · ${hid} Hidden` : ''}` : '';
       empty.hidden = cards.length > 0;
       sortBar.hidden = cards.length < 2;
     }

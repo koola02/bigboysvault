@@ -133,7 +133,7 @@
       shared.hidden = !shared.textContent;
       list.replaceChildren(...rows.map((c, i) => {
         const row = make('li', 'qa-copy');
-        const label = make('span', 'qa-copy-n', (solo ? 'This Card' : `Card ${i + 1}`) + (c.sold ? ' · sold' : ''));
+        const label = make('span', 'qa-copy-n', (solo ? 'This Card' : `Card ${i + 1}`) + (c.sold ? ' · Sold' : ''));
         const fin = document.createElement('select'); fin.setAttribute('aria-label', `Finish Of Card ${i + 1}`);
         if (!c.finish) fin.append(new Option('Pick A Finish', '', true, true));
         const A = window.Admin;

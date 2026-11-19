@@ -20,7 +20,7 @@
     tile.dataset.ids = ids.join(','); tile.querySelector('[data-sel]').dataset.ids = tile.dataset.ids; tile.dataset.sold = gone.join(',');
     const n = ids.length - gone.length; tile.querySelector('[data-n]').textContent = n;
     const badge = tile.querySelector('[data-qty-badge]'); badge.hidden = n < 2; badge.textContent = '×' + n;
-    const soldN = tile.querySelector('[data-sold-n]'); if (soldN) { soldN.hidden = !gone.length; soldN.textContent = `${gone.length} sold`; }
+    const soldN = tile.querySelector('[data-sold-n]'); if (soldN) { soldN.hidden = !gone.length; soldN.textContent = `${gone.length} Sold`; }
   }
   const forSaleOf = (tile) => { const sold = soldOf(tile); return idsOf(tile).filter((x) => !sold.has(x)); };
   // − / ＋ take turns on each card, in the order they were tapped. Each turn reads the copies again,
