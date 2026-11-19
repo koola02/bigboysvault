@@ -130,6 +130,8 @@ pub struct Member {
     pub page_ig_url: String,
     pub page_tiktok_url: String,
     pub page_links: String,
+    /// The store's look, as saved (`look()` reads it).
+    pub store_look: String,
 }
 
 /// An admin's tags for a trainer, as a list.
@@ -195,6 +197,10 @@ impl Member {
     }
     pub fn has_cover(&self) -> bool {
         !self.cover_photo.is_empty()
+    }
+    /// How the store looks beyond its pictures and colour: its background, name style, card size and welcome note.
+    pub fn look(&self) -> crate::sellers::StoreLook {
+        crate::sellers::StoreLook::parse(&self.store_look)
     }
     /// The store's picture: its own, or its owner's until they pick one. Wherever the store's name shows, this shows.
     pub fn store_pic(&self) -> &str {
@@ -406,6 +412,8 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         ("page_ig_url", "TEXT NOT NULL DEFAULT ''"),
         ("page_tiktok_url", "TEXT NOT NULL DEFAULT ''"),
         ("page_links", "TEXT NOT NULL DEFAULT ''"),
+        // How the store looks beyond its pictures and colour (Store settings › Store design): `sellers::StoreLook`, as JSON.
+        ("store_look", "TEXT NOT NULL DEFAULT ''"),
     ] {
         let there: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('members') WHERE name=?1", [col], |r| r.get(0))?;
         if there == 0 {
@@ -779,8 +787,8 @@ pub struct Highlight {
     pub card: MemberCard,
 }
 
-const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags,m.slug,m.fb_url,m.tiktok_url,m.links,m.cover_photo,m.location,m.contact_info,m.contact_public,m.status,m.email,m.store_name,m.fb_group_url,m.ig_url,m.shopee_url,m.pay_info,m.pay_methods,m.notify_views,m.pay_public,m.seller,m.store_border,m.store_hidden,m.store_avatar,m.store_bio,m.page_cover,m.page_fb_url,m.page_ig_url,m.page_tiktok_url,m.page_links");
-const MEMBER_COUNT: usize = 41;
+const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags,m.slug,m.fb_url,m.tiktok_url,m.links,m.cover_photo,m.location,m.contact_info,m.contact_public,m.status,m.email,m.store_name,m.fb_group_url,m.ig_url,m.shopee_url,m.pay_info,m.pay_methods,m.notify_views,m.pay_public,m.seller,m.store_border,m.store_hidden,m.store_avatar,m.store_bio,m.page_cover,m.page_fb_url,m.page_ig_url,m.page_tiktok_url,m.page_links,m.store_look");
+const MEMBER_COUNT: usize = 42;
 
 fn map_member(r: &Row) -> rusqlite::Result<Member> {
     Ok(Member {
@@ -825,6 +833,7 @@ fn map_member(r: &Row) -> rusqlite::Result<Member> {
         page_ig_url: r.get(38)?,
         page_tiktok_url: r.get(39)?,
         page_links: r.get(40)?,
+        store_look: r.get(41)?,
     })
 }
 

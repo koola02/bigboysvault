@@ -36,11 +36,13 @@
       <label>How to pay <small>shown to a buyer once you accept their order</small><textarea name="pay_info" rows="4" maxlength="600" placeholder="GCash: Juan D. · 0917 123 4567&#10;Meetups: SM North, weekends">{{ pay_info }}</textarea></label>
     </div>
 
-    <h2 class="h2">Border colour</h2>
-    <div class="st-borders" role="radiogroup" aria-label="Border colour">
+    <h2 class="h2">Store colour</h2>
+    <div class="st-borders" role="radiogroup" aria-label="Store colour">
       {% for (name, col) in borders %}<label class="st-border"><input type="radio" class="sr" name="border" value="{{ col }}"{% if *col == border %} checked{% endif %}><span class="st-sw" style="--sw:{% if col.is_empty() %}#efc873{% else %}{{ col }}{% endif %}"></span><span>{{ name }}</span></label>{% endfor %}
       {% if !named_border %}<label class="st-border"><input type="radio" class="sr" name="border" value="{{ border }}" checked><span class="st-sw" style="--sw:{{ border }}"></span><span>Your own colour</span></label>{% endif %}
     </div>
+
+    {% include "store_look_fields.html" %}
 
     <div class="me-save-row"><button class="btn" type="submit">Save</button><a class="linkbtn" href="/store/vault" target="_blank" rel="noopener">See the store ↗</a></div>
   </form>
@@ -51,6 +53,10 @@
 document.addEventListener('DOMContentLoaded', () => {
   const A = window.Admin;
   const form = document.getElementById('vaultStoreForm'), file = document.getElementById('coverFile');
+  // Store design: "Your photo" shows its picker, and a picked photo shows at once.
+  const bgRow = document.getElementById('bgPhotoRow'), bgFile = document.getElementById('bgFile');
+  form.addEventListener('change', (e) => { if (e.target.name === 'look_bg') bgRow.hidden = e.target.value !== 'photo'; });
+  bgFile.addEventListener('change', () => { const g = bgFile.files[0]; if (!g) return; document.getElementById('bgImg').src = URL.createObjectURL(g); document.getElementById('bgPrev').hidden = false; });
   file.addEventListener('change', () => { const f = file.files[0]; if (!f) return; document.getElementById('coverImg').src = URL.createObjectURL(f); document.getElementById('coverPrev').hidden = false; });
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -59,11 +65,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const fd = new FormData(form);
       const f = file.files[0];
       if (f) fd.set('cover', A.resize ? await A.resize(f, 1600).catch(() => f) : f, 'cover.jpg'); else fd.delete('cover');
+      const bg = document.getElementById('bgFile').files[0];
+      if (bg) fd.set('bg_photo', A.resize ? await A.resize(bg, 1600).catch(() => bg) : bg, 'background.jpg');
       const r = await fetch('/admin/store', { method: 'POST', body: fd, credentials: 'same-origin', headers: { Accept: 'application/json' } });
       const j = await r.json().catch(() => ({}));
       if (!r.ok || !j.ok) throw new Error(j.error || 'That didn’t save. Please try again.');
       if (j.cover) { document.getElementById('coverImg').src = j.cover; document.getElementById('coverPrev').hidden = false; } else document.getElementById('coverPrev').hidden = true;
-      form.elements.drop_cover.checked = false; file.value = '';
+      form.elements.drop_cover.checked = false; file.value = ''; document.getElementById('bgFile').value = '';
+      if (j.bg) { document.getElementById('bgImg').src = j.bg; document.getElementById('bgPrev').hidden = false; }
       A.toast('Saved ✓', { kind: 'ok' });
     } catch (err) { A.toast(err.message, { kind: 'err' }); }
     btn.disabled = false;

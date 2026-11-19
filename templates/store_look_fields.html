@@ -1,0 +1,32 @@
+{#- Store design (the owner, 20 Nov 2026: "an option for everyone to improve further the design of their stores to make
+    their stores standout according to their own tastes and effort"). The same choices for a seller's store (Store
+    settings) and the vault's (Vault Manager › Store settings). Needs `look` (sellers::StoreLook) and the choices
+    `look_bgs`, `look_names`, `look_tiles`. Each choice is a small picture of itself; `look_sent` says the form
+    carried them (a form without it, like the cover photo alone, leaves the look as it is). -#}
+<h2 class="h2">Store design</h2>
+<input type="hidden" name="look_sent" value="1">
+<div class="me-fields">
+  <div class="st-pick">
+    <span class="st-pick-l">Background <small>drawn in your store colour</small></span>
+    <div class="st-choices" role="radiogroup" aria-label="Background">
+      {% for (v, words) in look_bgs %}<label class="st-choice"><input type="radio" class="sr" name="look_bg" value="{{ v }}"{% if *v == look.bg %} checked{% endif %}><span class="st-pic st-pic-{% if v.is_empty() %}plain{% else %}{{ v }}{% endif %}"></span><span>{{ words }}</span></label>{% endfor %}
+    </div>
+    <div class="st-bgphoto" id="bgPhotoRow"{% if look.bg != "photo" %} hidden{% endif %}>
+      <span class="st-cover-prev" id="bgPrev"{% if look.photo.is_empty() %} hidden{% endif %}><img src="{{ look.photo }}" alt="" id="bgImg"></span>
+      <input type="file" accept="image/*" id="bgFile" aria-label="Background photo">
+    </div>
+  </div>
+  <div class="st-pick">
+    <span class="st-pick-l">Store name</span>
+    <div class="st-choices" role="radiogroup" aria-label="Store name">
+      {% for (v, words) in look_names %}<label class="st-choice"><input type="radio" class="sr" name="look_name" value="{{ v }}"{% if *v == look.name %} checked{% endif %}><span class="st-pic st-pic-name-{{ v }}">Aa</span><span>{{ words }}</span></label>{% endfor %}
+    </div>
+  </div>
+  <div class="st-pick">
+    <span class="st-pick-l">Card size</span>
+    <div class="st-choices" role="radiogroup" aria-label="Card size">
+      {% for (v, words) in look_tiles %}<label class="st-choice"><input type="radio" class="sr" name="look_tile" value="{{ v }}"{% if *v == look.tile %} checked{% endif %}><span class="st-pic st-pic-tile st-pic-tile-{{ v }}"><i></i><i></i>{% if *v != "l" %}<i></i>{% endif %}{% if *v == "s" %}<i></i>{% endif %}</span><span>{{ words }}</span></label>{% endfor %}
+    </div>
+  </div>
+  <label>Welcome note <small>one line at the top of the store, like “Free shipping this week”</small><input name="look_note" value="{{ look.note }}" maxlength="140" autocomplete="off"></label>
+</div>

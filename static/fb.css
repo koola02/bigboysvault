@@ -636,6 +636,27 @@ html.sheet-open { overflow: hidden; }
 .cm-edit input { flex: 1 1 180px; min-width: 0; min-height: 40px; padding: 4px 12px; border-radius: var(--pill); }
 .cm-edit .btn { min-height: 36px; }
 
+/* ---------- 15d. A store's own look (Store settings › Store design; `sellers::StoreLook`) ---------- */
+/* The page behind the store is a layer of its own under everything, drawn in the store's colour (--sacc) or from its
+   own photo under a dark veil, so words stay on the site's solid panels and stay easy to read. */
+.storefront { --sacc: var(--gold); }
+body:has(.storefront[class*="lk-bg-"]) { background: none; }
+.storefront[class*="lk-bg-"]::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+.storefront.lk-bg-glow::before { background: radial-gradient(90% 58% at 50% 0, color-mix(in srgb, var(--sacc) 32%, transparent), transparent 72%), radial-gradient(60% 46% at 100% 100%, color-mix(in srgb, var(--sacc) 16%, transparent), transparent 72%); }
+.storefront.lk-bg-dots::before { background: radial-gradient(color-mix(in srgb, var(--sacc) 38%, transparent) 1.2px, transparent 1.8px) 0 0 / 22px 22px; }
+.storefront.lk-bg-lines::before { background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--sacc) 14%, transparent) 0 2px, transparent 2px 18px); }
+.storefront.lk-bg-photo::before { inset: -24px; background: linear-gradient(rgba(8,10,16,.8), rgba(8,10,16,.9)), var(--sbg) center / cover no-repeat; filter: blur(7px); }
+.storefront.lk-name-glow .sf-who .h1 { text-shadow: 0 0 24px color-mix(in srgb, var(--sacc) 85%, transparent), 0 0 3px color-mix(in srgb, var(--sacc) 70%, transparent); }
+.storefront.lk-name-line .sf-who .h1 { text-decoration: underline; text-decoration-color: var(--sacc); text-decoration-thickness: 4px; text-underline-offset: 7px; }
+/* The welcome note: one line of the store's own, marked in its colour. */
+.sf-welcome { margin: 0; padding: 10px 14px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--sacc) 13%, var(--surface)); box-shadow: inset 4px 0 0 var(--sacc); color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+/* Card size: large shows fewer, bigger cards (one to a row on a phone); small fits more on a wide screen. */
+@media (min-width: 700px) {
+  .storefront.lk-tile-l .sf-grid, .storefront.lk-tile-l .grid { grid-template-columns: repeat(auto-fill, minmax(236px, 1fr)); }
+  .storefront.lk-tile-s .sf-grid, .storefront.lk-tile-s .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+}
+@media (max-width: 699px) { .storefront.lk-tile-l .sf-grid, .storefront.lk-tile-l .grid { grid-template-columns: minmax(0, 1fr); } }
+
 /* ---------- 15c. Share (share.js): a binder, a store, a card or a post, to a message here or out of the site ---------- */
 .sh-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .sf-bbar .sh-btn { flex: none; min-height: 40px; }

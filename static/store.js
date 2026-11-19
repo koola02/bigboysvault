@@ -356,6 +356,9 @@
     const showLogo = (src) => { const old = $('logoImg'); const img = document.createElement('img'); img.className = 'av'; img.id = 'logoImg'; img.alt = ''; img.src = src; old.replaceWith(img); };
     $('logoFile').addEventListener('change', () => { const f = $('logoFile').files[0]; if (!f) return; showLogo(URL.createObjectURL(f)); $('storeForm').drop_logo.checked = false; });
     { const area = $('storeForm').elements.store_bio, out = $('storeBioCount'), paint = () => { out.textContent = area.value.length; }; area.addEventListener('input', paint); paint(); }
+    // Store design: "Your photo" shows its picker, and a picked photo shows at once.
+    $('storeForm').addEventListener('change', (e) => { if (e.target.name === 'look_bg') $('bgPhotoRow').hidden = e.target.value !== 'photo'; });
+    $('bgFile').addEventListener('change', () => { const f = $('bgFile').files[0]; if (!f) return; $('bgImg').src = URL.createObjectURL(f); $('bgPrev').hidden = false; });
     // "Other" border colour: the colour box sets it and picks it.
     $('ownColor').addEventListener('input', () => { const v = $('ownColor').value; $('ownBorder').value = v; $('ownBorder').checked = true; $('ownSw').style.setProperty('--sw', v); });
     $('ownBorder').addEventListener('change', () => { if (!$('ownBorder').value) { $('ownBorder').value = $('ownColor').value; $('ownSw').style.setProperty('--sw', $('ownColor').value); } });
@@ -367,11 +370,14 @@
         if (cover) fd.set('cover', await shrink(cover, 1600), 'cover.jpg'); else fd.delete('cover');
         const logo = $('logoFile').files[0];
         if (logo) fd.set('logo', await shrink(logo, 800), 'logo.jpg');
+        const bg = $('bgFile').files[0];
+        if (bg) fd.set('bg_photo', await shrink(bg, 1600), 'background.jpg');
         const j = await send('/me/settings', fd);
         if (j.cover) { $('coverImg').src = j.cover; $('coverPrev').hidden = false; } else { $('coverPrev').hidden = true; }
         f.drop_cover.checked = false; $('coverFile').value = '';
         if (j.logo) showLogo(j.logo);
         f.drop_logo.checked = false; $('logoFile').value = ''; $('logoDrop').hidden = !j.own_logo;
+        $('bgFile').value = ''; if (j.bg) { $('bgImg').src = j.bg; $('bgPrev').hidden = false; }
         A.toast('Saved ✓', { kind: 'ok' });
       } catch (err) { A.toast(err.message, { kind: 'err' }); }
       btn.disabled = false;

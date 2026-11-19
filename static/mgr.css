@@ -557,6 +557,25 @@ a.pbtn:hover { text-decoration: none; }
 .st-pick-l small { font-weight: 400; }
 .st-logo-prev .av { width: 88px; height: 88px; font-size: 2rem; }
 .st-pick .chk[hidden] { display: none; }
+/* Store design: each choice is a small picture of itself with its word. */
+.st-choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.st-choice { display: inline-flex; flex-direction: column; align-items: center; gap: 6px; width: 92px; padding: 8px 6px; border-radius: var(--r-sm); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--mgr-line); color: var(--text); font: 600 .8125rem/1.2 var(--font); text-align: center; cursor: pointer; }
+.st-choice:has(input:checked) { background: var(--gold-tint); box-shadow: inset 0 0 0 2px var(--gold); color: var(--gold-hi); }
+.st-choice:has(input:focus-visible) { outline: 2px solid var(--gold); outline-offset: 2px; }
+.st-pic { display: grid; place-items: center; width: 72px; height: 48px; border-radius: 6px; background: #0b0d14; box-shadow: inset 0 0 0 1px var(--mgr-line); overflow: hidden; color: #fff; font: 800 .8125rem/1 var(--font); }
+.st-pic-glow { background: radial-gradient(90% 90% at 50% 0, rgba(239,200,115,.55), transparent 70%), #0b0d14; }
+.st-pic-dots { background: radial-gradient(rgba(239,200,115,.7) 1.2px, transparent 1.7px) 0 0 / 9px 9px, #0b0d14; }
+.st-pic-lines { background: repeating-linear-gradient(135deg, rgba(239,200,115,.4) 0 2px, transparent 2px 9px), #0b0d14; }
+.st-pic-photo { background: linear-gradient(135deg, #3b4a6b, #7a5c3c 55%, #2c6b5a); }
+.st-pic-name-glow { text-shadow: 0 0 8px #efc873, 0 0 2px #efc873; }
+.st-pic-name-line { text-decoration: underline; text-decoration-color: #efc873; text-decoration-thickness: 3px; text-underline-offset: 4px; }
+.st-pic-tile { gap: 3px; grid-auto-flow: column; }
+.st-pic-tile i { display: block; border-radius: 2px; background: #c9cbd8; }
+.st-pic-tile-s i { width: 9px; height: 13px; }
+.st-pic-tile- i { width: 13px; height: 18px; }
+.st-pic-tile-l i { width: 19px; height: 27px; }
+.st-bgphoto { display: flex; flex-direction: column; gap: 6px; }
+.st-bgphoto[hidden] { display: none; }
 /* "Other" border colour: the colour box sits in the choice itself. */
 .st-border-own input[type="color"] { width: 36px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; }
 .st-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }

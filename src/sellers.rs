@@ -238,6 +238,133 @@ pub fn set_slug(c: &Connection, member_id: i64, slug: &str) -> rusqlite::Result<
     Ok(Ok(true))
 }
 
+/// How a store looks beyond its pictures and colour (Store settings › Store design; the owner, 20 Nov 2026: "an
+/// option for everyone to improve further the design of their stores to make their stores standout according to their
+/// own tastes and effort"). The same choices for a seller's store and the vault's. Kept as JSON.
+#[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct StoreLook {
+    /// The page behind the store: "" plain, "glow", "dots" or "lines" (drawn in the store's colour), or "photo".
+    #[serde(default)]
+    pub bg: String,
+    /// The store's own background photo. It is kept while another background is chosen, so it can come back.
+    #[serde(default)]
+    pub photo: String,
+    /// The store's name: "" plain, "glow", or "line" (underlined), both in the store's colour.
+    #[serde(default)]
+    pub name: String,
+    /// The cards on the store: "" standard, "l" large, "s" small.
+    #[serde(default)]
+    pub tile: String,
+    /// One line at the top of the store ("Free shipping this week").
+    #[serde(default)]
+    pub note: String,
+}
+
+pub const LOOK_BGS: [(&str, &str); 5] = [("", "Plain"), ("glow", "Glow"), ("dots", "Dots"), ("lines", "Lines"), ("photo", "Your photo")];
+pub const LOOK_NAMES: [(&str, &str); 3] = [("", "Plain"), ("glow", "Glow"), ("line", "Underline")];
+pub const LOOK_TILES: [(&str, &str); 3] = [("", "Standard"), ("l", "Large"), ("s", "Small")];
+
+impl StoreLook {
+    /// From what was saved. Nothing, or something unreadable, is the plain look.
+    pub fn parse(saved: &str) -> Self {
+        serde_json::from_str::<Self>(saved).unwrap_or_default().clean()
+    }
+    /// Only the choices there are, the note as one clean line, and a photo only from the site's own uploads.
+    pub fn clean(mut self) -> Self {
+        let pick = |v: &str, all: &[(&str, &str)]| if all.iter().any(|(k, _)| *k == v) { v.to_string() } else { String::new() };
+        self.bg = pick(&self.bg, &LOOK_BGS);
+        self.name = pick(&self.name, &LOOK_NAMES);
+        self.tile = pick(&self.tile, &LOOK_TILES);
+        self.note = members::clean_line(&self.note, 140);
+        let safe = self.photo.starts_with("/uploads/") && self.photo.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '/' | '-' | '_' | '.'));
+        if !safe {
+            self.photo.clear();
+        }
+        if self.bg == "photo" && self.photo.is_empty() {
+            self.bg.clear();
+        }
+        self
+    }
+    pub fn json(&self) -> String {
+        serde_json::to_string(self).unwrap_or_default()
+    }
+    /// The classes the store's page carries (" lk-bg-glow lk-name-line lk-tile-l"); nothing for the plain look.
+    pub fn classes(&self) -> String {
+        let mut s = String::new();
+        for (pre, v) in [("lk-bg-", &self.bg), ("lk-name-", &self.name), ("lk-tile-", &self.tile)] {
+            if !v.is_empty() {
+                s.push(' ');
+                s.push_str(pre);
+                s.push_str(v);
+            }
+        }
+        s
+    }
+    pub fn has_note(&self) -> bool {
+        !self.note.is_empty()
+    }
+    /// The background is the store's own photo.
+    pub fn has_photo(&self) -> bool {
+        self.bg == "photo" && !self.photo.is_empty()
+    }
+}
+
+/// The Store design fields of a settings form (`look_sent`, `look_bg`, `look_name`, `look_tile`, `look_note`), for a
+/// seller's Store settings and the vault's alike.
+#[derive(Default)]
+pub struct LookForm {
+    pub sent: bool,
+    bg: Option<String>,
+    name: Option<String>,
+    tile: Option<String>,
+    note: Option<String>,
+}
+
+impl LookForm {
+    /// Takes one form field. False: it isn't one of the look's.
+    pub fn take(&mut self, key: &str, v: &str) -> bool {
+        match key {
+            "look_sent" => self.sent = true,
+            "look_bg" => self.bg = Some(v.to_string()),
+            "look_name" => self.name = Some(v.to_string()),
+            "look_tile" => self.tile = Some(v.to_string()),
+            "look_note" => self.note = Some(v.to_string()),
+            _ => return false,
+        }
+        true
+    }
+    /// The form asks for the store's own photo behind it.
+    pub fn wants_photo(&self) -> bool {
+        self.bg.as_deref() == Some("photo")
+    }
+    /// The look to save: what was saved before, with what the form changed and a new background photo if one came.
+    pub fn over(&self, was: &StoreLook, new_photo: Option<&str>) -> StoreLook {
+        StoreLook {
+            bg: self.bg.clone().unwrap_or_else(|| was.bg.clone()),
+            photo: new_photo.map(str::to_string).unwrap_or_else(|| was.photo.clone()),
+            name: self.name.clone().unwrap_or_else(|| was.name.clone()),
+            tile: self.tile.clone().unwrap_or_else(|| was.tile.clone()),
+            note: self.note.clone().unwrap_or_else(|| was.note.clone()),
+        }
+        .clean()
+    }
+}
+
+/// Saves a seller's store look.
+pub fn set_look(c: &Connection, member_id: i64, look: &StoreLook) -> rusqlite::Result<()> {
+    c.execute("UPDATE members SET store_look=?2 WHERE id=?1", rusqlite::params![member_id, look.clone().clean().json()])?;
+    Ok(())
+}
+
+/// The vault's own store look (the `vault_look` setting), and saving it.
+pub fn vault_look(c: &Connection) -> rusqlite::Result<StoreLook> {
+    Ok(StoreLook::parse(&crate::blocks::setting(c, "vault_look")?.unwrap_or_default()))
+}
+
+pub fn set_vault_look(c: &Connection, look: &StoreLook) -> rusqlite::Result<()> {
+    crate::blocks::set_setting(c, "vault_look", &look.clone().clean().json())
+}
+
 /// The seller's store details, saved from the Store settings page.
 #[derive(Default)]
 pub struct StoreSettings {

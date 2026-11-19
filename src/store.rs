@@ -1024,6 +1024,11 @@ struct SettingsPage {
     /// The border colours to pick from, and whether the store's is one of them (else it is its own "Other" colour).
     borders: [(&'static str, &'static str); 10],
     named_border: bool,
+    /// Store design: the look saved, and the choices (`store_look_fields.html`).
+    look: sellers::StoreLook,
+    look_bgs: [(&'static str, &'static str); 5],
+    look_names: [(&'static str, &'static str); 3],
+    look_tiles: [(&'static str, &'static str); 3],
 }
 
 pub async fn settings(State(app): State<App>, h: HeaderMap) -> Res {
@@ -1034,7 +1039,8 @@ pub async fn settings(State(app): State<App>, h: HeaderMap) -> Res {
     let (nav, p) = with_db(&app, move |c| Ok((chrome(c)?, panel(c, m, "settings")?))).await?;
     let site = nav.site.clone();
     let named_border = sellers::BORDERS.iter().any(|(_, c)| *c == p.m.store_border);
-    Ok(html(render(SettingsPage { nav, p, methods: sellers::PAY_METHODS, site, borders: sellers::BORDERS, named_border })?))
+    let look = p.m.look();
+    Ok(html(render(SettingsPage { nav, p, methods: sellers::PAY_METHODS, site, borders: sellers::BORDERS, named_border, look, look_bgs: sellers::LOOK_BGS, look_names: sellers::LOOK_NAMES, look_tiles: sellers::LOOK_TILES })?))
 }
 
 pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> Res {
@@ -1070,20 +1076,29 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
     let (mut cover, mut methods, mut drop_cover, mut border) = (None::<Vec<u8>>, Vec::<String>::new(), false, None::<String>);
     // The store's own picture: a new one, or back to its owner's.
     let (mut logo, mut drop_logo) = (None::<Vec<u8>>, false);
+    // Store design: the page behind the store, its name, its card size, its welcome note.
+    let (mut look_form, mut bg_photo) = (sellers::LookForm::default(), None::<Vec<u8>>);
     // An unticked box isn't sent at all. The pay_methods_sent marker says "the whole form came in",
     // so a missing box then means "off"; without the marker it means "leave it as it is".
     // The boxes are applied after the loop, so the order the fields arrive in doesn't matter.
     let (mut sent, mut contact_public, mut pay_public, mut notify_views) = (false, None::<bool>, None::<bool>, None::<bool>);
     while let Some(f) = mp.next_field().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))? {
         let key = f.name().unwrap_or("").to_string();
-        if key == "cover" || key == "logo" {
+        if key == "cover" || key == "logo" || key == "bg_photo" {
             let b = f.bytes().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
             if !b.is_empty() {
-                if key == "cover" { cover = Some(b.to_vec()) } else { logo = Some(b.to_vec()) }
+                match key.as_str() {
+                    "cover" => cover = Some(b.to_vec()),
+                    "logo" => logo = Some(b.to_vec()),
+                    _ => bg_photo = Some(b.to_vec()),
+                }
             }
             continue;
         }
         let v = f.text().await.unwrap_or_default();
+        if look_form.take(&key, &v) {
+            continue;
+        }
         match key.as_str() {
             "store_name" => s.store_name = v,
             "store_bio" => s.store_bio = v,
@@ -1148,6 +1163,34 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
             }
         }
     }
+    // Store design. "Your photo" needs a photo: a new one now, or the one kept from before.
+    let was_look = m.look();
+    let mut new_bg = None;
+    if look_form.sent {
+        let undo = |app: &App| {
+            for f in [&new_cover, &new_logo].into_iter().flatten() {
+                admin::remove_upload(&app.uploads, f);
+            }
+        };
+        if let Some(bytes) = bg_photo {
+            let dir = PathBuf::from(&*app.uploads);
+            let stem = format!("sbg{}-{}", m.id, members::temp_password());
+            match gated(move || store_photo(bytes, dir, stem)).await? {
+                Ok((large, small, _, _, _)) => {
+                    admin::remove_upload(&app.uploads, &small);
+                    new_bg = Some(large);
+                }
+                Err(e) => {
+                    undo(&app);
+                    return Ok(fail(StatusCode::BAD_REQUEST, if e == crate::community::TOO_BIG { "That photo is too big. Please use a smaller one (under 16 megapixels)." } else { "That background photo couldn't be read. Try a JPEG or PNG." }));
+                }
+            }
+        } else if look_form.wants_photo() && was_look.photo.is_empty() {
+            undo(&app);
+            return Ok(fail(StatusCode::BAD_REQUEST, "Choose a photo for the background first, or pick another background."));
+        }
+    }
+    let look = look_form.sent.then(|| look_form.over(&was_look, new_bg.as_deref()));
     // A store can't call itself Big Boys Vault (or the owner's current site name), staff or official: its cards sit
     // next to the vault's on The Vault page, each saying whose it is.
     let wanted = members::clean_line(&s.store_name, 40);
@@ -1160,9 +1203,12 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
         }
     }
     let (id, old_cover, old_logo) = (m.id, m.cover_photo.clone(), m.store_avatar.clone());
-    let (cover_now, logo_now) = (new_cover.clone(), new_logo.clone());
+    let (cover_now, logo_now, look_now) = (new_cover.clone(), new_logo.clone(), look.clone());
     with_db(&app, move |c| {
         sellers::save_store(c, id, &s)?;
+        if let Some(l) = &look_now {
+            sellers::set_look(c, id, l)?;
+        }
         if let Some(on) = notify_views {
             sellers::set_pref(c, id, "view", on, false, false)?;
         }
@@ -1188,9 +1234,13 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
     if (new_logo.is_some() || drop_logo) && old_logo.starts_with("/uploads/") {
         admin::remove_upload(&app.uploads, &old_logo);
     }
+    // A background photo that was replaced leaves the disk.
+    if new_bg.is_some() && !was_look.photo.is_empty() {
+        admin::remove_upload(&app.uploads, &was_look.photo);
+    }
     app.forget();
     let me = with_db(&app, move |c| members::get(c, id)).await?;
-    Ok(ok(json!({ "ok": true, "cover": me.as_ref().map(|m| m.cover_photo.clone()), "logo": me.as_ref().map(|m| m.store_pic().to_string()), "own_logo": me.as_ref().is_some_and(|m| !m.store_avatar.is_empty()), "status": me.as_ref().map(|m| m.status.clone()) })))
+    Ok(ok(json!({ "ok": true, "cover": me.as_ref().map(|m| m.cover_photo.clone()), "logo": me.as_ref().map(|m| m.store_pic().to_string()), "own_logo": me.as_ref().is_some_and(|m| !m.store_avatar.is_empty()), "bg": me.as_ref().map(|m| m.look().photo), "status": me.as_ref().map(|m| m.status.clone()) })))
 }
 
 #[derive(Deserialize)]
@@ -1680,6 +1730,8 @@ struct VaultStorePage {
     links: Vec<(String, String, String)>,
     pay: Vec<String>,
     border: String,
+    /// Its look, as a seller's store has (Vault Manager › Store settings › Store design).
+    look: sellers::StoreLook,
     /// "Everything in the vault": its cards for sale, as `grid.html` draws them.
     base: String,
     q: String,
@@ -1762,7 +1814,8 @@ fn vault_page(c: &rusqlite::Connection, q: db::Query) -> rusqlite::Result<VaultS
         title,
         ..Default::default()
     };
-    Ok(VaultStorePage { nav, tiles, n, since, bio, cover: vs.cover, links, pay, border, base: VAULT_STORE.into(), q: q.q, sort: q.sort, cond: q.cond, conds, in_stock: true, items, next })
+    let look = sellers::vault_look(c)?;
+    Ok(VaultStorePage { nav, tiles, n, since, bio, cover: vs.cover, links, pay, border, look, base: VAULT_STORE.into(), q: q.q, sort: q.sort, cond: q.cond, conds, in_stock: true, items, next })
 }
 
 /// GET /store/vault/binders/{handle}: a vault binder's address, should anyone write it like a seller's. Its page is /collections/{handle}.
@@ -2371,6 +2424,11 @@ struct AdminStorePage {
     borders: [(&'static str, &'static str); 10],
     /// The border colour is one of the named ones (otherwise it shows as "Your own colour").
     named_border: bool,
+    /// Store design: the look saved, and the choices (`store_look_fields.html`).
+    look: sellers::StoreLook,
+    look_bgs: [(&'static str, &'static str); 5],
+    look_names: [(&'static str, &'static str); 3],
+    look_tiles: [(&'static str, &'static str); 3],
 }
 
 impl AdminStorePage {
@@ -2385,10 +2443,10 @@ pub async fn admin_store(State(app): State<App>, h: HeaderMap) -> Res {
     if !admin::authed(&app, &h) {
         return Ok(Redirect::to("/login").into_response());
     }
-    let (nav, s, (pay_methods, pay_info), border) = with_db(&app, |c| Ok((chrome(c)?, sellers::vault_store(c)?, sellers::vault_pay(c)?, sellers::vault_border(c)?))).await?;
+    let (nav, s, (pay_methods, pay_info), border, look) = with_db(&app, |c| Ok((chrome(c)?, sellers::vault_store(c)?, sellers::vault_pay(c)?, sellers::vault_border(c)?, sellers::vault_look(c)?))).await?;
     let bio = if s.bio.trim().is_empty() { VAULT_BIO.to_string() } else { s.bio.clone() };
     let named_border = sellers::BORDERS.iter().any(|(_, c)| *c == border);
-    Ok(html(render(AdminStorePage { nav, tab: "store", s, bio, methods: sellers::PAY_METHODS, pay_methods, pay_info, border, borders: sellers::BORDERS, named_border })?))
+    Ok(html(render(AdminStorePage { nav, tab: "store", s, bio, methods: sellers::PAY_METHODS, pay_methods, pay_info, border, borders: sellers::BORDERS, named_border, look, look_bgs: sellers::LOOK_BGS, look_names: sellers::LOOK_NAMES, look_tiles: sellers::LOOK_TILES })?))
 }
 
 /// POST /admin/store: a form with the cover photo (`cover`, or `drop_cover`), `bio`, the links, `pay_method` ×n and
@@ -2399,16 +2457,21 @@ pub async fn admin_store_save(State(app): State<App>, h: HeaderMap, mut mp: Mult
     }
     let mut s = sellers::VaultStore::default();
     let (mut methods, mut pay_info, mut border, mut cover, mut drop_cover) = (Vec::<String>::new(), String::new(), String::new(), None::<Vec<u8>>, false);
+    // Store design, the same choices a seller's store has.
+    let (mut look_form, mut bg_photo) = (sellers::LookForm::default(), None::<Vec<u8>>);
     while let Some(f) = mp.next_field().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))? {
         let key = f.name().unwrap_or("").to_string();
-        if key == "cover" {
+        if key == "cover" || key == "bg_photo" {
             let b = f.bytes().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
             if !b.is_empty() {
-                cover = Some(b.to_vec());
+                if key == "cover" { cover = Some(b.to_vec()) } else { bg_photo = Some(b.to_vec()) }
             }
             continue;
         }
         let v = f.text().await.unwrap_or_default();
+        if look_form.take(&key, &v) {
+            continue;
+        }
         match key.as_str() {
             "bio" => s.bio = v,
             "fb_url" => s.fb_url = v,
@@ -2438,10 +2501,39 @@ pub async fn admin_store_save(State(app): State<App>, h: HeaderMap, mut mp: Mult
             Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "That cover photo couldn't be read. Try a JPEG or PNG.")),
         }
     }
+    let was_look = with_db(&app, |c| sellers::vault_look(c)).await?;
+    let mut new_bg = None;
+    if look_form.sent {
+        if let Some(bytes) = bg_photo {
+            let dir = PathBuf::from(&*app.uploads);
+            let stem = format!("vbg-{}", members::temp_password());
+            match gated(move || store_photo(bytes, dir, stem)).await? {
+                Ok((large, small, _, _, _)) => {
+                    admin::remove_upload(&app.uploads, &small);
+                    new_bg = Some(large);
+                }
+                Err(e) => {
+                    if let Some(k) = &new_cover {
+                        admin::remove_upload(&app.uploads, k);
+                    }
+                    return Ok(fail(StatusCode::BAD_REQUEST, if e == crate::community::TOO_BIG { "That photo is too big. Please use a smaller one (under 16 megapixels)." } else { "That background photo couldn't be read. Try a JPEG or PNG." }));
+                }
+            }
+        } else if look_form.wants_photo() && was_look.photo.is_empty() {
+            if let Some(k) = &new_cover {
+                admin::remove_upload(&app.uploads, k);
+            }
+            return Ok(fail(StatusCode::BAD_REQUEST, "Choose a photo for the background first, or pick another background."));
+        }
+    }
+    let look = look_form.sent.then(|| look_form.over(&was_look, new_bg.as_deref()));
     let (pay, info, next_cover) = (methods.join(","), pay_info, new_cover.clone());
     let (old_cover, cover_now) = with_db(&app, move |c| {
         let old = sellers::vault_store(c)?.cover;
         sellers::set_vault_store(c, &s)?;
+        if let Some(l) = &look {
+            sellers::set_vault_look(c, l)?;
+        }
         sellers::set_vault_pay(c, &pay, &info)?;
         sellers::set_vault_border(c, &border)?;
         let now = match (&next_cover, drop_cover) {
@@ -2455,12 +2547,16 @@ pub async fn admin_store_save(State(app): State<App>, h: HeaderMap, mut mp: Mult
         Ok((old, now))
     })
     .await?;
-    // A replaced or removed cover leaves the disk.
+    // A replaced or removed cover leaves the disk, and so does a background photo that was replaced.
     if !old_cover.is_empty() && old_cover != cover_now {
         admin::remove_upload(&app.uploads, &old_cover);
     }
+    if new_bg.is_some() && !was_look.photo.is_empty() {
+        admin::remove_upload(&app.uploads, &was_look.photo);
+    }
     app.forget();
-    Ok(ok(json!({ "ok": true, "cover": cover_now })))
+    let bg = new_bg.unwrap_or(was_look.photo);
+    Ok(ok(json!({ "ok": true, "cover": cover_now, "bg": bg })))
 }
 
 /// POST /admin/store/border: the vault's store border colour (a full admin, from "Edit store" on the vault's page).
@@ -3674,6 +3770,51 @@ mod tests {
         assert_eq!((all[2].off, all[2].words.as_str()), (true, "1 card · none for sale · hidden from visitors"));
         assert_eq!((all[3].off, all[3].words.as_str()), (true, "No cards yet · hidden from visitors"));
         assert!(!all[0].off && all[0].count == 3);
+    }
+
+    /// Store design (the owner, 20 Nov 2026: "an option for everyone to improve further the design of their stores"): a
+    /// store's look is only the choices there are, its page carries it, and the vault's store has the same.
+    #[test]
+    fn a_store_keeps_its_own_look() {
+        let c = db();
+        vault(&c);
+        let s = members::create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        c.execute("UPDATE members SET store_border='#22d3ee' WHERE id=?1", [s]).unwrap();
+        let slug = members::get(&c, s).unwrap().unwrap().slug;
+        // Nothing chosen: the plain look, and the page says nothing about it.
+        assert_eq!(members::get(&c, s).unwrap().unwrap().look(), sellers::StoreLook::default());
+        let plain = page(&c, &slug, None);
+        assert!(plain.contains("<section class=\"wrap storefront\" style=\"--sacc:#22d3ee;\"") && !plain.contains("lk-") && !plain.contains("sf-welcome"), "{plain}");
+        // The form's choices, laid over what was there; anything that isn't a choice is the plain one.
+        let mut f = sellers::LookForm::default();
+        for (k, v) in [("look_sent", "1"), ("look_bg", "glow"), ("look_name", "line"), ("look_tile", "huge"), ("look_note", "  Free shipping this week  ")] {
+            assert!(f.take(k, v));
+        }
+        assert!(!f.take("store_name", "x") && f.sent && !f.wants_photo());
+        let look = f.over(&sellers::StoreLook::default(), None);
+        assert_eq!((look.bg.as_str(), look.name.as_str(), look.tile.as_str(), look.note.as_str()), ("glow", "line", "", "Free shipping this week"));
+        sellers::set_look(&c, s, &look).unwrap();
+        let html = page(&c, &slug, None);
+        assert!(html.contains("<section class=\"wrap storefront lk-bg-glow lk-name-line\" style=\"--sacc:#22d3ee;\"") && html.contains("<p class=\"sf-welcome\">Free shipping this week</p>"), "{html}");
+        // Its own photo behind the store: only one the site stored; "photo" without one is the plain background.
+        let mut f = sellers::LookForm::default();
+        f.take("look_sent", "1");
+        f.take("look_bg", "photo");
+        assert!(f.wants_photo());
+        assert_eq!(f.over(&look, None).bg, "", "no photo yet");
+        let with = f.over(&look, Some("/uploads/sbg1-abc_l.jpg"));
+        assert_eq!((with.bg.as_str(), with.photo.as_str(), with.name.as_str(), with.note.as_str()), ("photo", "/uploads/sbg1-abc_l.jpg", "line", "Free shipping this week"), "what the form didn't send stays");
+        assert!(sellers::StoreLook { bg: "photo".into(), photo: "/uploads/x.jpg');background:url(//evil".into(), ..Default::default() }.clean().photo.is_empty());
+        assert_eq!(sellers::StoreLook::parse("not json"), sellers::StoreLook::default());
+        sellers::set_look(&c, s, &with).unwrap();
+        let html = page(&c, &slug, None);
+        assert!(html.contains("lk-bg-photo lk-name-line") && html.contains("--sbg:url('/uploads/sbg1-abc_l.jpg');"), "{html}");
+        // The vault's store has the same choices.
+        sellers::set_vault_look(&c, &sellers::StoreLook { bg: "dots".into(), tile: "l".into(), note: "New slabs every Friday".into(), ..Default::default() }).unwrap();
+        let v = vault_html(&c, "");
+        assert!(v.contains("class=\"wrap storefront vstore lk-bg-dots lk-tile-l\"") && v.contains("<p class=\"sf-welcome\">New slabs every Friday</p>"), "{v}");
     }
 
     /// Sharing (the owner, 20 Nov 2026): a binder, a store, a card or a post goes into a message as a small card of its
