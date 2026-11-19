@@ -76,7 +76,7 @@
       tidy();
       if (prepend) log.scrollTop = log.scrollHeight - had;
       else if (fresh.length) { if (stick || fresh.some((m) => m.member === who.member?.id)) toEnd(true); else newer.hidden = false; }
-      if (j.here != null) online.textContent = j.here === 1 ? 'Just You Here Now' : `${j.here} here now`;
+      if (j.here != null) online.textContent = j.here === 1 ? 'Just You Here Now' : `${j.here} Here Now`;
       if (j.v) version = j.v;
     }
 

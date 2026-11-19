@@ -28,7 +28,7 @@
   const ago = (t) => {
     const s = Math.max(0, Date.now() / 1000 - t);
     const say = (n, unit) => { const f = Math.floor(n); return `${f} ${unit}${f === 1 ? '' : 's'} ago`; };
-    if (s < 60) return 'just now';
+    if (s < 60) return 'Just now';
     if (s < 3600) return say(s / 60, 'minute');
     if (s < 86400) return say(s / 3600, 'hour');
     if (s < 1209600) return say(s / 86400, 'day');
@@ -136,7 +136,7 @@
     add.append(file); pics.append(add);
     const err = make('p', 'vc-err'); err.setAttribute('role', 'alert');
     const foot = make('div', 'vc-foot');
-    const count = make('small', null, '0 of 1000');
+    const count = make('small', null, '0 Of 1000');
     const post = make('button', 'btn', parent ? 'Send Reply' : 'Post Vouch'); post.type = 'submit';
     foot.append(count, post);
     form.append(text, pics, err, foot);
@@ -145,7 +145,7 @@
 
     const items = [];
     let queue = Promise.resolve(), busy = false;
-    text.addEventListener('input', () => { count.textContent = `${text.value.length} of 1000`; });
+    text.addEventListener('input', () => { count.textContent = `${text.value.length} Of 1000`; });
 
     // Photos go up as soon as they're picked, one at a time, with no limit on how many.
     file.addEventListener('change', () => {

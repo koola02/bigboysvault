@@ -9,7 +9,7 @@
   const prev = $('shwPrev'), prevNone = $('shwPrevNone'), state = $('shwState'), found = $('shwFound');
   const MAX = Number(root.dataset.max) || 24;
   const el = (tag, cls, txt) => { const n = document.createElement(tag); if (cls) n.className = cls; if (txt != null) n.textContent = txt; return n; };
-  const plural = (n) => `${n} card${n === 1 ? '' : 's'}`;
+  const plural = (n) => `${n} Card${n === 1 ? '' : 's'}`;
 
   // What is known about each card: the ones in the showcase come with the page, the rest arrive with a search.
   const cards = new Map();

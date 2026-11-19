@@ -101,7 +101,7 @@
         b.classList.add('in'); plus.textContent = '✓';
         added++;
         const done = out.querySelector('.sc-added');
-        if (done) { done.hidden = false; done.textContent = `${added} added to your store ✓`; }
+        if (done) { done.hidden = false; done.textContent = `${added} Added To Your Store ✓`; }
       } });
     });
     return b;

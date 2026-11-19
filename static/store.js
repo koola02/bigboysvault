@@ -146,7 +146,7 @@
     const boxes = () => [...rows.querySelectorAll('[data-sel]')];
     function sync() {
       boxes().forEach((b) => { b.checked = sel.has(+b.dataset.sel); b.closest('.ls-tile').classList.toggle('sel', b.checked); });
-      $('selCount').textContent = `${sel.size} selected`; $('selbar').hidden = sel.size === 0; document.body.classList.toggle('has-sel', sel.size > 0);
+      $('selCount').textContent = `${sel.size} Selected`; $('selbar').hidden = sel.size === 0; document.body.classList.toggle('has-sel', sel.size > 0);
       const all = $('selAll'); if (all) { const vis = boxes(); all.checked = vis.length > 0 && vis.every((b) => b.checked); all.indeterminate = !all.checked && vis.some((b) => b.checked); }
     }
     const clear = () => { sel.clear(); sync(); };
@@ -174,10 +174,10 @@
     const BINDERS = [...document.querySelector('.ls-tile [data-binder]')?.options || []].map((o) => [o.value, o.textContent]);
     const sheets = {
       price() {
-        let mode = 'set'; const node = el('div', 'sheet-form'); const inp = el('input', 'sheet-input'); inp.inputMode = 'decimal'; inp.placeholder = '₱ amount';
+        let mode = 'set'; const node = el('div', 'sheet-form'); const inp = el('input', 'sheet-input'); inp.inputMode = 'decimal'; inp.placeholder = '₱ Amount';
         const hint = el('p', 'hint show', 'Every selected card gets exactly this price.');
         node.append(segment([['set', 'Set To'], ['up', 'Raise %'], ['down', 'Lower %'], ['market', 'Follow The Market']], (v) => {
-          mode = v; inp.hidden = v === 'market'; inp.placeholder = v === 'set' ? '₱ amount' : '% change';
+          mode = v; inp.hidden = v === 'market'; inp.placeholder = v === 'set' ? '₱ Amount' : '% Change';
           hint.textContent = { set: 'Every selected card gets exactly this price.', up: 'Raises every price by this percentage.', down: 'Lowers every price by this percentage.', market: 'Clears your own prices: these cards follow today’s market price for their condition.' }[v];
         }), inp, hint);
         A.sheet.open(`Price · ${plural(sel.size)}`, node, async () => {
@@ -229,8 +229,8 @@
     document.addEventListener('click', (e) => { const b = e.target.closest('[data-bulk]'); if (b && sheets[b.dataset.bulk]) sheets[b.dataset.bulk](); });
     function renewSheet(tiles, many) {
       const node = el('div', 'sheet-form'); const inp = el('input', 'sheet-input'); inp.hidden = true;
-      node.append(el('p', 'hint show', 'When the date comes, the card comes off sale and you get a note to renew it. Pick “No end date” to keep it up for good.'),
-        chips(['30 days', '60 days', '90 days', 'No End Date'], inp));
+      node.append(el('p', 'hint show', 'When the date comes, the card comes off sale and you get a note to renew it. Pick “No End Date” to keep it up for good.'),
+        chips(['30 Days', '60 Days', '90 Days', 'No End Date'], inp));
       A.sheet.open(many ? `End Date · ${plural(sel.size)}` : 'End Date', node, async () => {
         if (!inp.value) throw new Error('Pick one.');
         const days = parseInt(inp.value) || 0;

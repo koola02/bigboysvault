@@ -37,13 +37,13 @@
     const ids = idsOf(tile);
     if (plus) {   // one more copy for sale (the server makes it for sale even if the card it copies has sold)
       const from = forSaleOf(tile)[0] ?? ids[0];
-      try { const j = await A.post('/admin/dup/' + from); const now = [...idsOf(tile), j.id]; setCount(tile, now); const n = forSaleOf(tile).length; A.toast(`${n} cop${n === 1 ? 'y' : 'ies'} for sale ✓`, { kind: 'ok' }); }
+      try { const j = await A.post('/admin/dup/' + from); const now = [...idsOf(tile), j.id]; setCount(tile, now); const n = forSaleOf(tile).length; A.toast(`${n} Cop${n === 1 ? 'y' : 'ies'} For Sale ✓`, { kind: 'ok' }); }
       catch (err) { A.toast(err.message, { kind: 'err' }); }
       return;
     }
     if (ids.length > 1) {   // one copy fewer: the newest copy still for sale (sold records only when none are left)
       const pool = forSaleOf(tile), gone = Math.max(...(pool.length ? pool : ids));
-      try { await A.post('/admin/delete/' + gone); const left = idsOf(tile).filter((x) => x !== gone); setCount(tile, left); const n = forSaleOf(tile).length; A.toast(`${n} cop${n === 1 ? 'y' : 'ies'} for sale`, { kind: 'ok' }); }
+      try { await A.post('/admin/delete/' + gone); const left = idsOf(tile).filter((x) => x !== gone); setCount(tile, left); const n = forSaleOf(tile).length; A.toast(`${n} Cop${n === 1 ? 'y' : 'ies'} For Sale`, { kind: 'ok' }); }
       catch (err) { A.toast(err.message, { kind: 'err' }); }
       return;
     }
