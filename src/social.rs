@@ -92,6 +92,10 @@ CREATE TABLE IF NOT EXISTS comment_reactions(
   comment_id INTEGER NOT NULL, member_id INTEGER NOT NULL, kind TEXT NOT NULL, created_at INTEGER NOT NULL,
   PRIMARY KEY(comment_id, member_id)
 );
+CREATE TABLE IF NOT EXISTS photo_reactions(
+  image_id INTEGER NOT NULL, member_id INTEGER NOT NULL, kind TEXT NOT NULL, created_at INTEGER NOT NULL,
+  PRIMARY KEY(image_id, member_id)
+);
 CREATE TABLE IF NOT EXISTS reports(
   id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, ref_id INTEGER NOT NULL, member_id INTEGER NOT NULL,
   reason TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL, UNIQUE(kind, ref_id, member_id)
@@ -113,12 +117,18 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         ("comments", "image", "TEXT NOT NULL DEFAULT ''"),
         ("comments", "thumb", "TEXT NOT NULL DEFAULT ''"),
         ("comments", "bytes", "INTEGER NOT NULL DEFAULT 0"),
+        // Each photo of a written post has its own likes and comments (the owner, 19 Nov 2026: "unique comment,react,
+        // etc. per photo, not just show the entire post"): a photo's counts, and the photo a comment is on (0: the post).
+        ("post_images", "like_n", "INTEGER NOT NULL DEFAULT 0"),
+        ("post_images", "comment_n", "INTEGER NOT NULL DEFAULT 0"),
+        ("comments", "image_id", "INTEGER NOT NULL DEFAULT 0"),
     ] {
         let there: i64 = c.query_row(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name=?1"), [col], |r| r.get(0))?;
         if there == 0 {
             c.execute(&format!("ALTER TABLE {table} ADD COLUMN {col} {kind}"), [])?;
         }
     }
+    c.execute_batch("CREATE INDEX IF NOT EXISTS comments_image ON comments(image_id, id)")?;
     // Price moves left the feed (18 Nov 2026): the posts already written stay, out of sight, with their likes.
     c.execute("UPDATE posts SET hidden=3 WHERE kind='prices' AND hidden IN (0,1)", [])?;
     Ok(())
@@ -267,6 +277,8 @@ pub struct Comment {
     /// Its one photo, if any: full size and small.
     pub image: String,
     pub thumb: String,
+    /// The photo of the post it is on (`post_images.id`); 0 when it is on the post itself.
+    pub image_id: i64,
 }
 
 fn map_comment(r: &Row) -> rusqlite::Result<Comment> {
@@ -284,19 +296,26 @@ fn map_comment(r: &Row) -> rusqlite::Result<Comment> {
         like_n: r.get(10)?,
         image: r.get(11)?,
         thumb: r.get(12)?,
-        mine: r.get(13)?,
+        image_id: r.get(13)?,
+        mine: r.get(14)?,
     })
 }
 
-const COMMENT_COLS: &str = "k.id, k.post_id, k.member_id, k.parent_id, m.name, m.avatar, m.role, k.text, k.created_at, k.edited_at, k.like_n, k.image, k.thumb";
+const COMMENT_COLS: &str = "k.id, k.post_id, k.member_id, k.parent_id, m.name, m.avatar, m.role, k.text, k.created_at, k.edited_at, k.like_n, k.image, k.thumb, k.image_id";
 
 /// A post's comments for one viewer (0: nobody signed in), oldest first (replies come after the comment they answer).
+/// The comments on its photos are not among them: each photo has its own (`comments_on`).
 pub fn comments(c: &Connection, post: i64, viewer: i64, limit: i64) -> rusqlite::Result<Vec<Comment>> {
+    comments_on(c, post, 0, viewer, limit)
+}
+
+/// The comments on one photo of a post (`image`, a `post_images.id`), or on the post itself (0).
+pub fn comments_on(c: &Connection, post: i64, image: i64, viewer: i64, limit: i64) -> rusqlite::Result<Vec<Comment>> {
     c.prepare_cached(&format!(
         "SELECT {COMMENT_COLS}, COALESCE((SELECT kind FROM comment_reactions x WHERE x.comment_id=k.id AND x.member_id=?3), '')
-         FROM comments k JOIN members m ON m.id=k.member_id WHERE k.post_id=?1 AND k.hidden=0 ORDER BY k.id LIMIT ?2"
+         FROM comments k JOIN members m ON m.id=k.member_id WHERE k.post_id=?1 AND k.image_id=?4 AND k.hidden=0 ORDER BY k.id LIMIT ?2"
     ))?
-    .query_map(params![post, limit, viewer], map_comment)?
+    .query_map(params![post, limit, viewer, image], map_comment)?
     .collect()
 }
 
@@ -337,25 +356,37 @@ pub fn comment_tops(c: &Connection, comment: i64) -> rusqlite::Result<Vec<String
     c.prepare_cached("SELECT kind FROM comment_reactions WHERE comment_id=?1 GROUP BY kind ORDER BY COUNT(*) DESC, MIN(created_at) LIMIT 3")?.query_map([comment], |r| r.get(0))?.collect()
 }
 
+/// A post counts the comments on itself; each of its photos counts its own.
 fn recount_comments(c: &Connection, post: i64) -> rusqlite::Result<()> {
-    c.execute("UPDATE posts SET comment_n=(SELECT COUNT(*) FROM comments WHERE post_id=?1 AND hidden=0) WHERE id=?1", [post]).map(|_| ())
+    c.execute("UPDATE posts SET comment_n=(SELECT COUNT(*) FROM comments WHERE post_id=?1 AND image_id=0 AND hidden=0) WHERE id=?1", [post])?;
+    c.execute("UPDATE post_images SET comment_n=(SELECT COUNT(*) FROM comments k WHERE k.image_id=post_images.id AND k.hidden=0) WHERE post_id=?1", [post]).map(|_| ())
 }
 
 /// A comment on a post, or a reply to a comment or to another reply (the owner, 19 Nov 2026: "comment within a
 /// comment"): each keeps the comment it answers, so threads can go as deep as people take them. With maybe one photo
 /// (full size, small, bytes on disk).
 pub fn comment_add(c: &Connection, post: i64, member: i64, parent: Option<i64>, text: &str, photo: Option<(&str, &str, i64)>, now: i64) -> rusqlite::Result<Option<i64>> {
+    comment_add_on(c, post, 0, member, parent, text, photo, now)
+}
+
+/// The same, on one photo of the post (`on`, a `post_images.id` that has its own likes and comments) or on the post
+/// itself (0). A reply stays where the comment it answers is.
+#[allow(clippy::too_many_arguments)]
+pub fn comment_add_on(c: &Connection, post: i64, on: i64, member: i64, parent: Option<i64>, text: &str, photo: Option<(&str, &str, i64)>, now: i64) -> rusqlite::Result<Option<i64>> {
     if c.query_row("SELECT 1 FROM posts WHERE id=?1 AND hidden=0", [post], |_| Ok(())).optional()?.is_none() {
         return Ok(None);
     }
+    if on != 0 && !photo_has_its_own(c, post, on)? {
+        return Ok(None);
+    }
     let parent = match parent {
-        Some(p) => c.query_row("SELECT id FROM comments WHERE id=?1 AND post_id=?2", [p, post], |r| r.get::<_, i64>(0)).optional()?,
+        Some(p) => c.query_row("SELECT id FROM comments WHERE id=?1 AND post_id=?2 AND image_id=?3", [p, post, on], |r| r.get::<_, i64>(0)).optional()?,
         None => None,
     };
     let (image, thumb, bytes) = photo.unwrap_or(("", "", 0));
     c.execute(
-        "INSERT INTO comments(post_id, member_id, parent_id, text, created_at, image, thumb, bytes) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",
-        params![post, member, parent, text, now, image, thumb, bytes],
+        "INSERT INTO comments(post_id, member_id, parent_id, text, created_at, image, thumb, bytes, image_id) VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+        params![post, member, parent, text, now, image, thumb, bytes, on],
     )?;
     let id = c.last_insert_rowid();
     recount_comments(c, post)?;
@@ -390,6 +421,101 @@ pub fn posts_since(c: &Connection, member: i64, since: i64) -> rusqlite::Result<
     c.query_row("SELECT COUNT(*) FROM posts WHERE member_id=?1 AND kind IN ('post','share') AND created_at>=?2", [member, since], |r| r.get(0))
 }
 
+/// Does this photo have likes and comments of its own? The photos of a post a person wrote do when the post has two
+/// or more (the owner, 19 Nov 2026: "unique comment,react, etc. per photo, not just show the entire post, this doesn't
+/// apply to card listings etc. just organic posts"). A post's only photo is the post, as on Facebook: its likes and
+/// comments are the post's. A photo that already has some of its own keeps them if the others are taken off.
+pub fn photo_has_its_own(c: &Connection, post: i64, image: i64) -> rusqlite::Result<bool> {
+    let found: Option<(String, i64, i64, i64)> = c
+        .query_row(
+            "SELECT p.kind, (SELECT COUNT(*) FROM post_images x WHERE x.post_id=p.id), i.like_n, i.comment_n
+             FROM post_images i JOIN posts p ON p.id=i.post_id WHERE i.id=?2 AND i.post_id=?1 AND p.hidden=0",
+            [post, image],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+        .optional()?;
+    Ok(found.is_some_and(|(kind, photos, likes, said)| (kind == "post" || kind == "share") && (photos >= 2 || likes > 0 || said > 0)))
+}
+
+/// Do this post's photos have their own likes and comments? (What the page needs to know to open a photo.)
+pub fn photos_have_their_own(c: &Connection, p: &Post, photos: usize) -> rusqlite::Result<bool> {
+    if !p.written() || photos == 0 {
+        return Ok(false);
+    }
+    if photos >= 2 {
+        return Ok(true);
+    }
+    Ok(c.query_row("SELECT COUNT(*) FROM post_images WHERE post_id=?1 AND (like_n>0 OR comment_n>0)", [p.id], |r| r.get::<_, i64>(0))? > 0)
+}
+
+/// One photo of a post, with its own likes and comments, for one viewer.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PhotoOwn {
+    pub id: i64,
+    pub post_id: i64,
+    pub like_n: i64,
+    pub comment_n: i64,
+    /// The viewer's own reaction ("" when none).
+    pub mine: String,
+    /// Which photo of the post it is (1 is the first), and how many the post has.
+    pub at: i64,
+    pub of: i64,
+}
+
+pub fn photo_own(c: &Connection, post: i64, image: i64, viewer: i64) -> rusqlite::Result<Option<PhotoOwn>> {
+    if !photo_has_its_own(c, post, image)? {
+        return Ok(None);
+    }
+    c.query_row(
+        "SELECT i.id, i.post_id, i.like_n, i.comment_n, COALESCE((SELECT kind FROM photo_reactions r WHERE r.image_id=i.id AND r.member_id=?2), ''),
+                (SELECT COUNT(*) FROM post_images x WHERE x.post_id=i.post_id AND x.id<=i.id), (SELECT COUNT(*) FROM post_images x WHERE x.post_id=i.post_id)
+         FROM post_images i WHERE i.id=?1",
+        [image, viewer],
+        |r| Ok(PhotoOwn { id: r.get(0)?, post_id: r.get(1)?, like_n: r.get(2)?, comment_n: r.get(3)?, mine: r.get(4)?, at: r.get(5)?, of: r.get(6)? }),
+    )
+    .optional()
+}
+
+/// Sets, changes or (kind "") takes back the viewer's reaction to one photo, as on a post. Returns how many reactions
+/// the photo has now. None: the photo isn't there, or its likes are its post's.
+pub fn photo_react(c: &Connection, post: i64, image: i64, member: i64, kind: &str, now: i64) -> rusqlite::Result<Option<i64>> {
+    if !photo_has_its_own(c, post, image)? {
+        return Ok(None);
+    }
+    if kind.is_empty() {
+        c.execute("DELETE FROM photo_reactions WHERE image_id=?1 AND member_id=?2", [image, member])?;
+    } else {
+        c.execute(
+            "INSERT INTO photo_reactions(image_id, member_id, kind, created_at) VALUES(?1,?2,?3,?4) ON CONFLICT(image_id, member_id) DO UPDATE SET kind=?3",
+            params![image, member, kind, now],
+        )?;
+    }
+    c.execute("UPDATE post_images SET like_n=(SELECT COUNT(*) FROM photo_reactions WHERE image_id=?1) WHERE id=?1", [image])?;
+    c.query_row("SELECT like_n FROM post_images WHERE id=?1", [image], |r| r.get(0)).map(Some)
+}
+
+/// The reactions used most on a photo, most used first (at most three).
+pub fn photo_tops(c: &Connection, image: i64) -> rusqlite::Result<Vec<String>> {
+    c.prepare_cached("SELECT kind FROM photo_reactions WHERE image_id=?1 GROUP BY kind ORDER BY COUNT(*) DESC, MIN(created_at) LIMIT 3")?.query_map([image], |r| r.get(0))?.collect()
+}
+
+/// Who reacted to a photo, newest first: (member, name, picture, reaction).
+pub fn photo_reactions_of(c: &Connection, image: i64, limit: i64) -> rusqlite::Result<Vec<(i64, String, String, String)>> {
+    c.prepare("SELECT m.id, m.name, m.avatar, r.kind FROM photo_reactions r JOIN members m ON m.id=r.member_id WHERE r.image_id=?1 AND m.blocked=0 ORDER BY r.created_at DESC LIMIT ?2")?
+        .query_map(params![image, limit], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?
+        .collect()
+}
+
+/// Everything said about one photo goes when the photo does: its likes, its comments and theirs. Returns the files
+/// of the photos in those comments, for the caller to remove from disk.
+fn photo_forget(c: &Connection, image: i64) -> rusqlite::Result<Vec<String>> {
+    let files = comment_files(c, "image_id=?1", image)?;
+    c.execute("DELETE FROM photo_reactions WHERE image_id=?1", [image])?;
+    c.execute("DELETE FROM comment_reactions WHERE comment_id IN (SELECT id FROM comments WHERE image_id=?1)", [image])?;
+    c.execute("DELETE FROM comments WHERE image_id=?1", [image])?;
+    Ok(files)
+}
+
 /// One photo of a post: (full size, small, width, height, bytes on disk).
 pub type Photo = (String, String, i64, i64, i64);
 
@@ -419,6 +545,7 @@ pub fn post_edit(c: &Connection, id: i64, text: &str, keep: &[i64], add: &[Photo
     let mut files = vec![];
     for (pid, path, thumb) in photos_ids(c, id)? {
         if !keep.contains(&pid) {
+            files.extend(photo_forget(c, pid)?);
             c.execute("DELETE FROM post_images WHERE id=?1", [pid])?;
             files.push(path);
             files.push(thumb);
@@ -467,6 +594,7 @@ pub fn post_remove(c: &Connection, id: i64) -> rusqlite::Result<Vec<String>> {
         files.push(thumb);
     }
     files.extend(comment_files(c, "post_id=?1", id)?);
+    c.execute("DELETE FROM photo_reactions WHERE image_id IN (SELECT id FROM post_images WHERE post_id=?1)", [id])?;
     c.execute("DELETE FROM post_images WHERE post_id=?1", [id])?;
     c.execute("DELETE FROM reactions WHERE post_id=?1", [id])?;
     c.execute("DELETE FROM comment_reactions WHERE comment_id IN (SELECT id FROM comments WHERE post_id=?1)", [id])?;

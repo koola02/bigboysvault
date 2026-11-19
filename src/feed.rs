@@ -8,6 +8,7 @@
 //! GET /feed?c=    the next items, as HTML (the page's last element asks for them when it scrolls into view)
 //! POST /posts     a trainer's post (words, up to four photos, maybe a card)
 //! POST /posts/{id}/react · GET|POST /posts/{id}/comments · POST /posts/{id}/delete|hide · POST /comments/{id}/delete
+//! GET /posts/{id}/photos/{image}   one photo of a written post with its own likes and comments (the photo window)
 use crate::community::{acting, current, fail, gated, html, ok, over_limit, photo_cap_mb, render, same_site, store_photo, TOO_BIG};
 use crate::{admin, cached, messages, page, with_db, App, Chrome, Res, Seo};
 use askama::Template;
@@ -74,6 +75,13 @@ pub struct PostView {
     pub own: bool,
     /// A one-line item with nothing under it ("joined").
     pub small: bool,
+    /// Its photos each have their own likes and comments (a written post with two or more): opening one shows that
+    /// photo's, not the post's.
+    pub photo_threads: bool,
+    /// This is one photo of post `id`, drawn as a small post of its own for the photo window (`post_images.id`; 0 for
+    /// a post), and which one it is ("Photo 2 Of 3").
+    pub image: i64,
+    pub image_at: String,
 }
 
 impl PostView {
@@ -227,6 +235,9 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
         pinned: p.pinned,
         own: viewer != 0 && viewer == p.member_id && (p.kind == "post" || p.kind == "share"),
         small: false,
+        photo_threads: false,
+        image: 0,
+        image_at: String::new(),
     };
     let ids = |key: &str| -> Vec<i64> { p.payload[key].as_array().map(|a| a.iter().filter_map(Value::as_i64).collect()).unwrap_or_default() };
     match p.kind.as_str() {
@@ -296,6 +307,7 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
         }
         _ => {
             v.photos = social::photos_ids(c, p.id)?;
+            v.photo_threads = social::photos_have_their_own(c, p, v.photos.len())?;
             let card = &p.payload["card"];
             if let Some(title) = card["title"].as_str() {
                 let s = |k: &str| card[k].as_str().unwrap_or("").to_string();
@@ -925,9 +937,35 @@ pub async fn comment_edit(State(app): State<App>, h: HeaderMap, Path(id): Path<i
 pub struct ReactReq {
     #[serde(default)]
     kind: String,
+    /// One photo of the post, when the like is for the photo itself (`post_images.id`); 0 or left out for the post.
+    #[serde(default)]
+    image: i64,
 }
 
-/// POST /posts/{id}/react {kind}: like, another reaction, or "" to take it back.
+/// Which photo of a post a list or a comment is about: `?image=` (`post_images.id`), or the post itself without it.
+#[derive(Deserialize, Default)]
+pub struct OnQs {
+    #[serde(default)]
+    image: i64,
+}
+
+/// Where a like or a comment is: the post's own page, opened on the photo when it is on one.
+fn link_of(post: i64, image: i64) -> String {
+    if image != 0 { format!("/posts/{post}?photo={image}") } else { format!("/posts/{post}") }
+}
+
+/// What it is on, in the words of a notice to whoever posted it.
+fn thing(p: &social::Post, image: i64) -> &'static str {
+    match (p.member_id == 0, image != 0) {
+        (true, true) => "the vault's photo",
+        (true, false) => "the vault's post",
+        (false, true) => "your photo",
+        (false, false) => "your post",
+    }
+}
+
+/// POST /posts/{id}/react {kind, image?}: like, another reaction, or "" to take it back; on the post, or on one of
+/// its photos when the photos have their own.
 pub async fn react(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Json(req): Json<ReactReq>) -> Res {
     let m = match acting(&app, &h).await? {
         Ok(m) => m,
@@ -936,21 +974,24 @@ pub async fn react(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Js
     if !req.kind.is_empty() && !social::reaction_ok(&req.kind) {
         return Ok(fail(StatusCode::BAD_REQUEST, "That reaction isn't one of ours."));
     }
-    let (me, name, now, kind) = (m.id, m.name.clone(), crate::unix_now(), req.kind.clone());
+    let (me, name, now, kind, image) = (m.id, m.name.clone(), crate::unix_now(), req.kind.clone(), req.image);
     let out = with_db(&app, move |c| {
-        let Some(n) = social::react(c, id, me, &kind, now)? else { return Ok(None) };
-        // Whoever wrote it hears (the vault's own posts: its admins): one line per post, brought up to date ("Ana and 2
-        // others reacted to your post") instead of one per reaction.
+        let n = if image != 0 { social::photo_react(c, id, image, me, &kind, now)? } else { social::react(c, id, me, &kind, now)? };
+        let Some(n) = n else { return Ok(None) };
+        // Whoever wrote it hears (the vault's own posts: its admins): one line per post or photo, brought up to date
+        // ("Ana and 2 others reacted to your post") instead of one per reaction.
         if !kind.is_empty() {
             if let Some(p) = social::post(c, 0, id)? {
-                let whose = if p.member_id == 0 { "the vault's post" } else { "your post" };
+                let whose = thing(&p, image);
                 let words = if n > 1 { format!("{name} and {} other{} reacted to {whose}.", n - 1, if n == 2 { "" } else { "s" }) } else { format!("{name} reacted {} to {whose}.", social::emoji(&kind)) };
+                let group = if image != 0 { format!("preact:{image}") } else { format!("react:{id}") };
                 for who in post_owners(c, &p)?.into_iter().filter(|w| *w != me) {
-                    sellers::notify_from(c, who, me, "social", &format!("react:{id}"), &words, &format!("/posts/{id}"))?;
+                    sellers::notify_from(c, who, me, "social", &group, &words, &link_of(id, image))?;
                 }
             }
         }
-        let tops: Vec<&'static str> = social::top_reactions(c, id)?.iter().map(|k| social::emoji(k)).collect();
+        let tops = if image != 0 { social::photo_tops(c, image)? } else { social::top_reactions(c, id)? };
+        let tops: Vec<&'static str> = tops.iter().map(|k| social::emoji(k)).collect();
         Ok(Some((n, tops)))
     })
     .await?;
@@ -971,20 +1012,77 @@ fn comment_json(c: &rusqlite::Connection, k: &social::Comment, viewer: i64, staf
     })
 }
 
-/// GET /posts/{id}/comments
-pub async fn comments(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -> Res {
+/// GET /posts/{id}/comments, or `?image=` for the comments on one of its photos.
+pub async fn comments(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, Query(q): Query<OnQs>) -> Res {
     let viewer = current(&app, &h).await?.map(|m| m.id).unwrap_or(0);
     let staff = admin::power(&app, &h) != admin::Power::Nothing;
-    let list = with_db(&app, move |c| Ok(social::comments(c, id, viewer, 200)?.iter().map(|k| comment_json(c, k, viewer, staff)).collect::<Vec<_>>())).await?;
+    let image = q.image;
+    let list = with_db(&app, move |c| Ok(social::comments_on(c, id, image, viewer, 200)?.iter().map(|k| comment_json(c, k, viewer, staff)).collect::<Vec<_>>())).await?;
     Ok(ok(json!({ "comments": list })))
 }
 
+/// GET /posts/{id}/photos/{image}: one photo of a written post as a small post of its own (who posted it, which photo
+/// it is, its own likes and comments), for the photo window. Not found when the photo's likes and comments are its
+/// post's (a post's only photo, and the photos of automatic posts).
+pub async fn photo(State(app): State<App>, h: HeaderMap, Path((id, image)): Path<(i64, i64)>) -> Res {
+    let viewer = current(&app, &h).await?.map(|m| m.id).unwrap_or(0);
+    let view = with_db(&app, move |c| {
+        let Some(p) = social::post(c, viewer, id)?.filter(|p| !p.hidden) else { return Ok(None) };
+        let Some(own) = social::photo_own(c, id, image, viewer)? else { return Ok(None) };
+        let nav = crate::chrome(c)?;
+        photo_view(c, &p, &own, &nav.brand)
+    })
+    .await?;
+    match view {
+        Some(v) => Ok(html(part(vec![Item { post: Some(v), stores: vec![], binder: None }])?)),
+        None => Ok(fail(StatusCode::NOT_FOUND, "That photo isn't here any more.")),
+    }
+}
+
+/// One photo with its own likes and comments, drawn with the post's own layout (so every button works as on a post).
+fn photo_view(c: &rusqlite::Connection, p: &social::Post, own: &social::PhotoOwn, brand: &str) -> rusqlite::Result<Option<PostView>> {
+    let Some(author) = who(c, p.member_id, brand, false)? else { return Ok(None) };
+    Ok(Some(PostView {
+        id: p.id,
+        kind: "photo".into(),
+        who: author,
+        headline: String::new(),
+        when: members::ago(p.created_at),
+        text: String::new(),
+        rich: String::new(),
+        tiles: vec![],
+        more: 0,
+        link: String::new(),
+        link_text: String::new(),
+        photos: vec![],
+        member: p.member_id,
+        edited: false,
+        attach: None,
+        people: vec![],
+        like_n: own.like_n,
+        comment_n: own.comment_n,
+        mine: own.mine.clone(),
+        tops: social::photo_tops(c, own.id)?.iter().map(|k| social::emoji(k)).collect(),
+        pinned: false,
+        own: false,
+        small: false,
+        photo_threads: false,
+        image: own.id,
+        image_at: format!("Photo {} Of {}", own.at, own.of),
+    }))
+}
+
 /// The start of what someone said, for a line in the bell: their words, or "a photo".
-/// GET /posts/{id}/reactions: who reacted to a post, newest first (the list behind its likes).
-pub async fn reactions(State(app): State<App>, Path(id): Path<i64>) -> Res {
+/// GET /posts/{id}/reactions: who reacted to a post (or, with `?image=`, to one of its photos), newest first (the
+/// list behind its likes).
+pub async fn reactions(State(app): State<App>, Path(id): Path<i64>, Query(q): Query<OnQs>) -> Res {
+    let image = q.image;
     let list = with_db(&app, move |c| {
         if social::post(c, 0, id)?.filter(|p| !p.hidden).is_none() {
             return Ok(None);
+        }
+        if image != 0 {
+            return Ok(if social::photo_has_its_own(c, id, image)? { Some(social::photo_reactions_of(c, image, 300)?) } else { None });
         }
         Ok(Some(social::reactions_of(c, id, 300)?))
     })
@@ -1066,12 +1164,14 @@ pub async fn comment(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, 
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
-    let (mut text, mut parent, mut file) = (String::new(), None::<i64>, None::<Vec<u8>>);
+    // `image`: the photo of the post this comment is on, when the post's photos have their own comments.
+    let (mut text, mut parent, mut file, mut on) = (String::new(), None::<i64>, None::<Vec<u8>>, 0i64);
     let bad = |_| (StatusCode::BAD_REQUEST, "That didn't upload. Please try again.".to_string());
     while let Some(f) = mp.next_field().await.map_err(bad)? {
         match f.name().unwrap_or("") {
             "text" => text = f.text().await.map_err(bad)?,
             "parent" => parent = f.text().await.map_err(bad)?.trim().parse().ok(),
+            "image" => on = f.text().await.map_err(bad)?.trim().parse().unwrap_or(0),
             "photo" => {
                 let b = f.bytes().await.map_err(bad)?;
                 if !b.is_empty() {
@@ -1111,12 +1211,12 @@ pub async fn comment(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, 
     let kept = photo.clone();
     let out = with_db(&app, move |c| {
         let pic = photo.as_ref().map(|(l, s, b)| (l.as_str(), s.as_str(), *b));
-        let Some(cid) = social::comment_add(c, id, me, parent, &text, pic, now)? else { return Ok(Err("That post isn't here any more.")) };
+        let Some(cid) = social::comment_add_on(c, id, on, me, parent, &text, pic, now)? else { return Ok(Err("That post isn't here any more.")) };
         let what = said(&text);
-        let link = format!("/posts/{id}");
+        let link = link_of(id, on);
         let mut told = vec![me];
         if let Some(p) = social::post(c, 0, id)? {
-            let whose = if p.member_id == 0 { "the vault's post" } else { "your post" };
+            let whose = thing(&p, on);
             for who in post_owners(c, &p)? {
                 if !told.contains(&who) {
                     sellers::notify_from(c, who, me, "social", "", &format!("{name} commented on {whose}: {what}"), &link)?;
@@ -1129,7 +1229,7 @@ pub async fn comment(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, 
                 sellers::notify_from(c, k.member_id, me, "social", "", &format!("{name} replied to your comment: {what}"), &link)?;
             }
         }
-        let n: i64 = c.query_row("SELECT comment_n FROM posts WHERE id=?1", [id], |r| r.get(0))?;
+        let n: i64 = if on != 0 { c.query_row("SELECT comment_n FROM post_images WHERE id=?1", [on], |r| r.get(0))? } else { c.query_row("SELECT comment_n FROM posts WHERE id=?1", [id], |r| r.get(0))? };
         let k = social::comment_for(c, cid, me)?;
         Ok(Ok((k.map(|k| comment_json(c, &k, me, staff)), n)))
     })
@@ -1176,7 +1276,7 @@ pub async fn comment_react(State(app): State<App>, h: HeaderMap, Path(id): Path<
         if !kind.is_empty() {
             if let Some(k) = social::comment(c, id)?.filter(|k| k.member_id != me) {
                 let words = if n > 1 { format!("{name} and {} other{} reacted to your comment: {}", n - 1, if n == 2 { "" } else { "s" }, said(&k.text)) } else { format!("{name} reacted {} to your comment: {}", social::emoji(&kind), said(&k.text)) };
-                sellers::notify_from(c, k.member_id, me, "social", &format!("creact:{id}"), &words, &format!("/posts/{}", k.post_id))?;
+                sellers::notify_from(c, k.member_id, me, "social", &format!("creact:{id}"), &words, &link_of(k.post_id, k.image_id))?;
             }
         }
         let tops: Vec<&'static str> = social::comment_tops(c, id)?.iter().map(|x| social::emoji(x)).collect();
@@ -1224,10 +1324,10 @@ fn take_comment(c: &rusqlite::Connection, id: i64, me: i64, name: &str, staff: b
     }
     let on = social::post(c, 0, k.post_id)?;
     let (post, files) = social::comment_remove(c, id)?.unwrap_or((k.post_id, vec![]));
-    let (what, link) = (said(&k.text), format!("/posts/{post}"));
+    let (what, link) = (said(&k.text), link_of(post, k.image_id));
     if own {
         if let Some(p) = &on {
-            let whose = if p.member_id == 0 { "the vault's post" } else { "your post" };
+            let whose = thing(p, k.image_id);
             for who in post_owners(c, p)?.into_iter().filter(|w| *w != me) {
                 sellers::notify_from(c, who, me, "social", "", &format!("{name} deleted their comment on {whose}: {what}"), &link)?;
             }
@@ -1235,7 +1335,9 @@ fn take_comment(c: &rusqlite::Connection, id: i64, me: i64, name: &str, staff: b
     } else {
         sellers::notify_from(c, k.member_id, 0, "announcement", "", &format!("The vault's team took down your comment: {what}"), &link)?;
     }
-    let n: i64 = rusqlite::OptionalExtension::optional(c.query_row("SELECT comment_n FROM posts WHERE id=?1", [post], |r| r.get(0)))?.unwrap_or(0);
+    // How many comments are left where it was: on its photo, or on the post.
+    let left = if k.image_id != 0 { c.query_row("SELECT comment_n FROM post_images WHERE id=?1", [k.image_id], |r| r.get(0)) } else { c.query_row("SELECT comment_n FROM posts WHERE id=?1", [post], |r| r.get(0)) };
+    let n: i64 = rusqlite::OptionalExtension::optional(left)?.unwrap_or(0);
     Ok(Some(Ok((n, files))))
 }
 
@@ -1475,6 +1577,71 @@ mod tests {
         assert!(html.contains("<p class=\"post-text\">New plain words</p>") && !html.contains("rt-l"), "{html}");
         social::post_rich(&c, p, &styled).unwrap();
         assert!(draw(&c, p).contains("<p class=\"post-text\">New plain words</p>"));
+    }
+
+    /// The owner, 19 Nov 2026: "we should be able to have unique comment,react, etc. per photo, not just show the entire
+    /// post, this doesn't apply to card listings etc. just organic posts."
+    #[test]
+    fn each_photo_of_a_written_post_has_its_own_likes_and_comments() {
+        let c = db();
+        let (ash, _, brock) = town(&c);
+        let pic = |n: i64| (format!("/uploads/p{n}_l.jpg"), format!("/uploads/p{n}_s.jpg"), 800, 600, 1000);
+        let p = social::post_add(&c, ash, "post", "Three pulls", &[pic(1), pic(2), pic(3)], &json!({}), 10).unwrap();
+        let ids: Vec<i64> = social::photos_ids(&c, p).unwrap().into_iter().map(|x| x.0).collect();
+        let (a, b) = (ids[0], ids[1]);
+        // The post says its photos have their own. A post with one photo doesn't: its photo is the post, as on Facebook.
+        assert!(post_view(&c, &social::post(&c, 0, p).unwrap().unwrap(), "Big Boys Vault", 0).unwrap().unwrap().photo_threads);
+        let single = social::post_add(&c, ash, "post", "One pull", &[pic(9)], &json!({}), 11).unwrap();
+        let one = social::photos_ids(&c, single).unwrap()[0].0;
+        assert!(!post_view(&c, &social::post(&c, 0, single).unwrap().unwrap(), "Big Boys Vault", 0).unwrap().unwrap().photo_threads);
+        assert!(social::photo_react(&c, single, one, brock, "like", 12).unwrap().is_none() && social::photo_own(&c, single, one, 0).unwrap().is_none());
+        assert!(social::photo_react(&c, single, a, brock, "like", 12).unwrap().is_none(), "a photo of another post");
+        // Brock loves the second photo and comments on it. The post itself and the first photo are untouched.
+        assert_eq!(social::photo_react(&c, p, b, brock, "love", 13).unwrap(), Some(1));
+        let k = social::comment_add_on(&c, p, b, brock, None, "This one!", None, 14).unwrap().unwrap();
+        let r = social::comment_add_on(&c, p, b, ash, Some(k), "Thanks", None, 15).unwrap().unwrap();
+        let own = social::photo_own(&c, p, b, brock).unwrap().unwrap();
+        assert_eq!((own.like_n, own.comment_n, own.mine.as_str(), own.at, own.of), (1, 2, "love", 2, 3));
+        let first = social::photo_own(&c, p, a, brock).unwrap().unwrap();
+        assert_eq!((first.like_n, first.comment_n, first.mine.as_str(), first.at), (0, 0, "", 1));
+        let post = social::post(&c, brock, p).unwrap().unwrap();
+        assert_eq!((post.like_n, post.comment_n, post.mine.as_str()), (0, 0, ""));
+        assert!(social::comments(&c, p, 0, 50).unwrap().is_empty());
+        assert_eq!(social::comments_on(&c, p, b, 0, 50).unwrap().iter().map(|x| (x.id, x.parent_id, x.image_id)).collect::<Vec<_>>(), vec![(k, None, b), (r, Some(k), b)]);
+        assert_eq!(social::photo_reactions_of(&c, b, 10).unwrap().len(), 1);
+        // A reply can't jump to another photo: there it is a comment of its own.
+        let stray = social::comment_add_on(&c, p, a, brock, Some(k), "Wrong place", None, 16).unwrap().unwrap();
+        assert_eq!(social::comment(&c, stray).unwrap().unwrap().parent_id, None);
+        // A comment on the post itself is the post's.
+        social::comment_add(&c, p, brock, None, "Great post", None, 17).unwrap().unwrap();
+        assert_eq!(social::post(&c, 0, p).unwrap().unwrap().comment_n, 1);
+        // What a notice says and where it leads: the post, or the post opened on that photo.
+        assert_eq!((thing(&post, 0), thing(&post, b), link_of(p, 0), link_of(p, b)), ("your post", "your photo", format!("/posts/{p}"), format!("/posts/{p}?photo={b}")));
+        // The photo as its own small post: which photo it is, its own counts, no menu, and it says which photo it is.
+        let html = part(vec![Item { post: photo_view(&c, &post, &own, "Big Boys Vault").unwrap(), stores: vec![], binder: None }]).unwrap();
+        assert!(html.contains(&format!("data-post=\"{p}\" data-image=\"{b}\"")) && html.contains("Photo 2 Of 3 · ") && html.contains("2 comments") && !html.contains("data-post-menu") && html.contains("data-mine=\"love\""), "{html}");
+        // And the post in the feed tells the page its photos have their own.
+        let feed_post = part(vec![Item { post: post_view(&c, &post, "Big Boys Vault", 0).unwrap(), stores: vec![], binder: None }]).unwrap();
+        assert!(feed_post.contains("class=\"post-media n3\" data-photo-threads") && !feed_post.contains("data-image="), "{feed_post}");
+        // Deleting a comment on a photo (the reply under it goes too) leaves that photo's count right.
+        assert_eq!(take_comment(&c, k, brock, "Brock", false).unwrap(), Some(Ok((0, vec![]))));
+        assert_eq!(social::photo_own(&c, p, b, 0).unwrap().unwrap().comment_n, 0);
+        let told: String = c.query_row("SELECT message || ' -> ' || link FROM notifications WHERE member_id=?1 ORDER BY id DESC LIMIT 1", [ash], |r| r.get(0)).unwrap();
+        assert_eq!(told, format!("Brock deleted their comment on your photo: “This one!” -> /posts/{p}?photo={b}"));
+        // Taking a photo off the post takes what was said about it, pictures included. The others keep theirs.
+        social::comment_add_on(&c, p, b, brock, None, "Still love it", Some(("/uploads/k1_l.jpg", "/uploads/k1_s.jpg", 10)), 18).unwrap().unwrap();
+        let gone = social::post_edit(&c, p, "Two pulls", &[a, ids[2]], &[], 19).unwrap();
+        assert!(gone.contains(&"/uploads/k1_l.jpg".to_string()) && gone.contains(&"/uploads/p2_l.jpg".to_string()), "{gone:?}");
+        assert!(social::photo_own(&c, p, b, 0).unwrap().is_none());
+        assert_eq!(c.query_row("SELECT (SELECT COUNT(*) FROM photo_reactions WHERE image_id=?1) + (SELECT COUNT(*) FROM comments WHERE image_id=?1)", [b], |r| r.get::<_, i64>(0)).unwrap(), 0);
+        assert_eq!(social::photo_own(&c, p, a, 0).unwrap().unwrap().comment_n, 1, "what was said about the first photo is still there");
+        // Down to one photo: one that has comments of its own keeps them.
+        social::post_edit(&c, p, "One pull", &[a], &[], 20).unwrap();
+        assert!(social::photo_own(&c, p, a, 0).unwrap().is_some());
+        // The post goes: everything about its photos goes with it.
+        social::photo_react(&c, p, a, brock, "like", 21).unwrap();
+        social::post_remove(&c, p).unwrap();
+        assert_eq!(c.query_row("SELECT (SELECT COUNT(*) FROM photo_reactions) + (SELECT COUNT(*) FROM comments WHERE post_id=?1)", [p], |r| r.get::<_, i64>(0)).unwrap(), 0);
     }
 
     #[test]

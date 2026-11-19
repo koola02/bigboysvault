@@ -764,6 +764,7 @@ html.pv-open { overflow: hidden; }
 .pv-next { right: 12px; }
 .pv-count { position: absolute; bottom: 12px; left: 50%; translate: -50% 0; padding: 4px 12px; border-radius: var(--pill); background: rgba(11,13,20,.86); color: #fff; font: 600 .8125rem/1.4 var(--font); }
 .pv-hold { border-radius: var(--r); }
+.pv-gone { margin: 0; padding: 24px 16px; color: var(--muted); text-align: center; }
 @media (max-width: 999px) {
   .pv { display: block; overflow-y: auto; overscroll-behavior: contain; padding-top: calc(68px + var(--sat)); }
   .pv::before { content: ""; position: fixed; inset: 0 0 auto 0; z-index: 3; height: calc(68px + var(--sat)); background: #05060b; }

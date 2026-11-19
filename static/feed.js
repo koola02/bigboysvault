@@ -34,6 +34,10 @@
     return j;
   }
   const postOf = (n) => n.closest('[data-post]');
+  // A photo with its own likes and comments is drawn as a small post of its own (it says which photo: data-image).
+  // What is liked or said there goes to that photo, not to the post it came with.
+  const onPhoto = (post) => post.dataset.image || '';
+  const qPhoto = (post) => (onPhoto(post) ? `?image=${onPhoto(post)}` : '');
   // The photo window (further down). A post moves into it while its photo is open, so everything below listens on the
   // feed and on the window alike.
   const pv = el('div', 'pv'); pv.hidden = true; pv.setAttribute('role', 'dialog'); pv.setAttribute('aria-modal', 'true'); pv.setAttribute('aria-label', 'Photo');
@@ -56,7 +60,7 @@
   async function react(post, kind) {
     closePick();
     if (!me) { toLogin(); return; }
-    try { paintLike(post, await api(`/posts/${post.dataset.post}/react`, { kind })); } catch (e) { toast(e.message, true); }
+    try { paintLike(post, await api(`/posts/${post.dataset.post}/react`, onPhoto(post) ? { kind, image: Number(onPhoto(post)) } : { kind })); } catch (e) { toast(e.message, true); }
   }
   // A comment's Like: the same six reactions as a post; how many sits beside it, and its writer hears.
   function paintCmLike(node, j) {
@@ -135,7 +139,7 @@
       form.querySelector('.cm-pic-x').addEventListener('click', () => setCmPhoto(form, null));
       form.querySelector('.cm-to-x').addEventListener('click', () => { replyTo(form, null); form.querySelector('input[type="text"]').focus(); });
       face(form.querySelector('[data-my-face]'), me); box.append(form);
-      try { const j = await api(`/posts/${post.dataset.post}/comments`); j.comments.forEach((k) => place(list, commentNode(k), k.parent)); } catch (e) { toast(e.message, true); }
+      try { const j = await api(`/posts/${post.dataset.post}/comments${qPhoto(post)}`); j.comments.forEach((k) => place(list, commentNode(k), k.parent)); } catch (e) { toast(e.message, true); }
     } else box.hidden = false;
     if (focus) box.querySelector('.cm-form input[type="text"]').focus({ preventScroll: false });
   }
@@ -171,6 +175,7 @@
     const fd = new FormData(); fd.append('text', text);
     if (f.dataset.parent) fd.append('parent', f.dataset.parent);
     if (f.cmPhoto) fd.append('photo', f.cmPhoto, f.cmPhoto.name || 'photo.jpg');
+    if (onPhoto(post)) fd.append('image', onPhoto(post));
     input.disabled = true;
     try {
       const j = await api(`/posts/${post.dataset.post}/comments`, fd);
@@ -217,9 +222,10 @@
     try { await api(`/posts/${post.dataset.post}/delete`, {}); closeView(); post.remove(); toast('Removed.'); } catch (e) { toast(e.message, true); }
   }
   async function share(post, copyOnly) {
-    const url = `${location.origin}/posts/${post.dataset.post}`;
+    // A photo with its own likes and comments is shared as itself: the link opens the post on that photo.
+    const url = `${location.origin}/posts/${post.dataset.post}${onPhoto(post) ? `?photo=${onPhoto(post)}` : ''}`, what = onPhoto(post) ? 'photo' : 'post';
     // Share opens the site's share window: a message here, Messenger, Facebook or the link (share.js).
-    if (!copyOnly && window.bbvShare) { const who = post.querySelector('.post-who b')?.textContent.trim(); window.bbvShare.open({ ref: `post:${post.dataset.post}`, url, title: who ? `${who}’s post` : 'A post' }); return; }
+    if (!copyOnly && window.bbvShare) { const who = post.querySelector('.post-who b')?.textContent.trim(); window.bbvShare.open({ ref: `post:${post.dataset.post}`, url, title: who ? `${who}’s ${what}` : `A ${what}` }); return; }
     // The phone's own share menu where there is one. Closing it is fine; if it can't open, the link is copied instead.
     if (!copyOnly && navigator.share) { try { await navigator.share({ url, title: document.title }); return; } catch (err) { if (err && err.name === 'AbortError') return; } }
     try { await navigator.clipboard.writeText(url); toast('Link copied.'); } catch (_) { toast(`Copy this link: ${url}`); }
@@ -243,27 +249,54 @@
   // beside it (under it on a phone or an upright tablet) with its likes, its comments and the comment box, photo and
   // camera buttons included. It is the real post, moved here while the window is open: a like or a comment made here
   // is on the post in the feed.
-  const view = { post: null, hold: null, pics: [], at: 0, back: null, pushed: false };
+  //
+  // When a post a person wrote has two or more photos, each photo has likes and comments of its own (the owner,
+  // 19 Nov 2026: "we should be able to have unique comment,react, etc. per photo, not just show the entire post, this
+  // doesn't apply to card listings etc. just organic posts"). Then the post stays where it is and what sits beside
+  // the photo is that photo's own small post, fetched from the server and swapped as the arrows go through them. A
+  // post's only photo is the post itself, as on Facebook.
+  const view = { post: null, hold: null, pics: [], ids: [], at: 0, back: null, pushed: false, own: false };
+  let panelSeq = 0;
+  async function loadPanel() {
+    const side = pv.querySelector('.pv-side'), seq = ++panelSeq, id = view.post.dataset.post, img = view.ids[view.at];
+    closeMenu(); closePick();
+    try {
+      const j = await api(`/posts/${id}/photos/${img}`);
+      if (seq !== panelSeq || !view.post) return;
+      const holder = el('div'); holder.innerHTML = j.html;
+      const fresh = holder.querySelector('[data-post]');
+      if (!fresh) throw new Error('That photo isn’t here any more.');
+      fresh.classList.add('pv-post'); side.replaceChildren(fresh);
+      openComments(fresh, false);
+    } catch (e) { if (seq === panelSeq && view.post) side.replaceChildren(el('p', 'pv-gone', e.message)); }
+  }
   function showPic() {
     const n = view.pics.length;
     pv.querySelector('.pv-img').src = view.pics[view.at];
     pv.querySelectorAll('.pv-nav').forEach((b) => { b.hidden = n < 2; });
     const count = pv.querySelector('.pv-count'); count.hidden = n < 2; count.textContent = `${view.at + 1} of ${n}`;
+    if (view.own) loadPanel();
   }
   const step = (by) => { const n = view.pics.length; if (n < 2) return; view.at = (view.at + by + n) % n; showPic(); };
   function openView(link) {
     const post = postOf(link); if (!post || view.post) return;
-    view.pics = [...post.querySelectorAll('.post-media [data-photo]')].map((a) => a.getAttribute('href'));
+    const links = [...post.querySelectorAll('.post-media [data-photo]')];
+    view.pics = links.map((a) => a.getAttribute('href'));
+    view.ids = links.map((a) => a.dataset.img);
     view.at = Math.max(0, view.pics.indexOf(link.getAttribute('href')));
     view.back = link;
-    // The post's place in the feed is kept, so the feed doesn't jump while it is away.
-    view.hold = el('div', 'pv-hold'); view.hold.style.height = `${post.offsetHeight}px`;
-    post.before(view.hold);
-    pv.querySelector('.pv-side').append(post); post.classList.add('pv-post');
+    view.own = !!link.closest('[data-photo-threads]');
+    if (view.own) view.hold = null;
+    else {
+      // The post's place in the feed is kept, so the feed doesn't jump while it is away.
+      view.hold = el('div', 'pv-hold'); view.hold.style.height = `${post.offsetHeight}px`;
+      post.before(view.hold);
+      pv.querySelector('.pv-side').append(post); post.classList.add('pv-post');
+    }
     view.post = post;
     pv.hidden = false; pv.scrollTop = 0; document.documentElement.classList.add('pv-open');
     showPic();
-    if (post.querySelector('[data-comments]')) openComments(post, false);
+    if (!view.own && post.querySelector('[data-comments]')) openComments(post, false);
     try { history.pushState({ bbvPhoto: 1 }, ''); view.pushed = true; } catch (_) { view.pushed = false; }
     pv.querySelector('.pv-x').focus({ preventScroll: true });
   }
@@ -271,12 +304,15 @@
   function closeView(byBack) {
     const post = view.post; if (!post) return;
     closeMenu(); closePick();
-    post.classList.remove('pv-post');
-    if (view.hold.isConnected) view.hold.replaceWith(post); else post.remove();
+    if (view.own) { panelSeq += 1; pv.querySelector('.pv-side').replaceChildren(); }
+    else {
+      post.classList.remove('pv-post');
+      if (view.hold.isConnected) view.hold.replaceWith(post); else post.remove();
+    }
     pv.hidden = true; document.documentElement.classList.remove('pv-open');
     pv.querySelector('.pv-img').removeAttribute('src');
     const back = view.back, pushed = view.pushed;
-    view.post = null; view.hold = null; view.pushed = false;
+    view.post = null; view.hold = null; view.pushed = false; view.own = false;
     if (back && back.isConnected) back.focus({ preventScroll: true });
     if (pushed && !byBack) history.back();
   }
@@ -304,7 +340,7 @@
     if (t.closest('[data-comments-open]')) { openComments(postOf(t), true); return; }
     // The faces and number under a post: who reacted.
     const rx = t.closest('[data-reacts]');
-    if (rx && window.bbvPeople) { window.bbvPeople('Reactions', `/posts/${postOf(rx).dataset.post}/reactions`); return; }
+    if (rx && window.bbvPeople) { window.bbvPeople('Reactions', `/posts/${postOf(rx).dataset.post}/reactions${qPhoto(postOf(rx))}`); return; }
     const crp = t.closest('[data-cm-report]');
     if (crp) { report('comment', crp.dataset.cmReport); return; }
     if (t.closest('[data-share]')) { share(postOf(t)); return; }
@@ -579,5 +615,13 @@
   }
 
   // A shared link opens one post with its comments showing.
-  if (feed.hasAttribute('data-single')) { const p = feed.querySelector('[data-post]'); if (p && p.querySelector('[data-comments]')) who.then(() => openComments(p, false)); }
+  // With ?photo= it opens on that photo, where its own likes and comments are (what a notice about a photo links to).
+  if (feed.hasAttribute('data-single')) {
+    const p = feed.querySelector('[data-post]');
+    if (p && p.querySelector('[data-comments]')) who.then(() => {
+      openComments(p, false);
+      const want = new URLSearchParams(location.search).get('photo'), link = want && /^\d+$/.test(want) ? p.querySelector(`.post-media [data-photo][data-img="${want}"]`) : null;
+      if (link) openView(link);
+    });
+  }
 })();

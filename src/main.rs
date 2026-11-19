@@ -1201,6 +1201,7 @@ async fn main() {
         .route("/posts/{id}/comments", get(feed::comments).post(feed::comment).layer(axum::extract::DefaultBodyLimit::max(12 * 1024 * 1024)))
         .route("/comments/{id}/react", post(feed::comment_react))
         .route("/posts/{id}/reactions", get(feed::reactions))
+        .route("/posts/{id}/photos/{image}", get(feed::photo))
         .route("/posts/{id}/report", post(feed::report_post))
         .route("/comments/{id}/report", post(feed::report_comment))
         .route("/posts/{id}/delete", post(feed::remove))
