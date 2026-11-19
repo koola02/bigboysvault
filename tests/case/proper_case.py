@@ -311,7 +311,7 @@ def load_overrides(path):
     out = {}
     if path and os.path.exists(path):
         for ln in open(path, encoding="utf-8"):
-            ln = ln.rstrip("\n")
+            ln = ln.rstrip("\r\n")
             if not ln or ln.startswith("#"):
                 continue
             f, how, words = ln.split("\t", 2)
