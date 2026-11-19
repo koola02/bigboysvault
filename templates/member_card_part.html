@@ -5,6 +5,7 @@
   <div class="detail-info" data-translate>
     <h1 class="h1">{{ c.title }}</h1>
     {% if c.is_sale() && t.seller && !(c.buyable() && c.has_price()) %}<button type="button" class="btn ghost sm bm-btn" data-bm="card" data-id="{{ c.id }}" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg><span class="bm-l">Bookmark</span></button>{% endif %}
+    <button type="button" class="btn ghost sm sh-btn" data-share-ref="card:{{ c.id }}" data-share-url="/trainers/{{ t.id }}/cards/{{ c.id }}" data-share-title="{{ c.title }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v13"/></svg><span>Share</span></button>
     {% if !c.big().is_empty() %}<button type="button" class="inspect" data-zoom="{{ c.big() }}" data-loupe data-zoom-back="Back to the card"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4M11 8v6M8 11h6"/></svg>Inspect up close</button>{% endif %}
     <dl class="facts">
       <div class="fact fact-cond"><dt>Condition</dt><dd>{{ c.cond }}</dd></div>

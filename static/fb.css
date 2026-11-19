@@ -636,6 +636,23 @@ html.sheet-open { overflow: hidden; }
 .cm-edit input { flex: 1 1 180px; min-width: 0; min-height: 40px; padding: 4px 12px; border-radius: var(--pill); }
 .cm-edit .btn { min-height: 36px; }
 
+/* ---------- 15c. Share (share.js): a binder, a store, a card or a post, to a message here or out of the site ---------- */
+.sh-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sf-bbar .sh-btn { flex: none; min-height: 40px; }
+.detail-info > .sh-btn { align-self: flex-start; min-height: 40px; }
+@media (min-width: 700px) { .bt-dlg.sh { width: min(420px, calc(100% - 32px)); } }
+.sh .bt-x svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sh-what { margin: 0; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+.sh-list { display: flex; flex-direction: column; gap: 8px; }
+.sh-row { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 56px; padding: 8px 12px; border: 0; border-radius: var(--r); background: var(--surface-2); color: var(--text); font: 600 1rem/1.25 var(--font); text-align: left; }
+.sh-row:hover { background: var(--surface-3); }
+.sh-row.sh-main { background: var(--gold-tint); box-shadow: inset 0 0 0 1px var(--gold-edge); color: var(--gold-hi); }
+.sh-ic { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--surface-3); color: var(--text); }
+.sh-main .sh-ic { background: var(--gold); color: var(--gold-ink); }
+.sh-ic svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* On a phone a binder's bar is tight: its Share is the picture alone. */
+@media (max-width: 699px) { .sf-bbar .sh-btn span { display: none; } .sf-bbar .sh-btn { width: 40px; padding: 0; justify-content: center; } }
+
 /* ---------- 15b. The photo window (feed.js): a post's photo big, the post beside it ---------- */
 /* The photo fits the screen whatever its shape. From 1000px wide the post sits beside it; narrower (a phone, a tablet
    held upright) the photo is on top and the post under it, the whole window scrolling under a bar that keeps ✕ clear. */

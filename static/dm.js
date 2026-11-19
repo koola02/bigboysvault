@@ -161,7 +161,8 @@
         const text = box.value.trim(); const card = this.card;
         if (!text && !card) return;
         box.value = ''; grow();
-        const body = { text }; if (card) body.card = card.src === 'vault' ? { vault: card.id } : { card: card.id };
+        // A card of this chat's seller, or something shared (a binder, a store, a card, a post: share.js).
+        const body = { text }; if (card) body.card = card.src === 'share' ? { share: card.ref } : card.src === 'vault' ? { vault: card.id } : { card: card.id };
         this.setCard(null);
         const temp = this.pending(text || '…');
         try { const j = await api(`/dm/${this.thread}/send`, body); temp.remove(); if (j.message) this.add([j.message]); kick(); }
@@ -305,11 +306,11 @@
       const box = $('.dm-attach', this.node); box.replaceChildren(); box.hidden = !card;
       if (!card) { const ta = $('textarea', this.node); ta.placeholder = 'Aa'; $('.dm-form', this.node).classList.toggle('has-text', !!ta.value.trim()); return; }
       box.append(cardView(card, true));
-      const x = el('button', 'dm-ib dm-attach-x'); x.type = 'button'; x.innerHTML = icon(I.close); x.setAttribute('aria-label', 'Don\'t attach this card');
+      const x = el('button', 'dm-ib dm-attach-x'); x.type = 'button'; x.innerHTML = icon(I.close); x.setAttribute('aria-label', card.src === 'share' ? 'Don\'t send this' : 'Don\'t attach this card');
       x.addEventListener('click', () => this.setCard(null));
       box.append(x);
       $('.dm-form', this.node).classList.add('has-text');
-      $('textarea', this.node).placeholder = 'Write about this card…';
+      $('textarea', this.node).placeholder = card.src === 'share' ? 'Say something about it, or just send…' : 'Write about this card…';
     },
     minimise() {
       if (!this.node) return;
@@ -350,7 +351,7 @@
     if (c.price) row.append(el('span', 'dm-card-p', c.price));
     if (c.sold) row.append(el('span', 'dm-card-c sold', 'Sold'));
     t.append(row);
-    if (!small) t.append(el('span', 'dm-card-go', 'View card ›'));
+    if (!small) t.append(el('span', 'dm-card-go', c.go || 'View card ›'));
     a.append(t);
     return a;
   }
@@ -652,12 +653,14 @@
   });
 
   /* ---------------- New message: anyone on the site, about anything ---------------- */
+  // `share` ("binder:12", "store:7"...): the same list, to pick who it goes to; their chat opens with it attached.
   let picker = null;
-  function people() {
+  function people(share) {
     if (picker) picker.remove();
-    const o = el('div', 'dm-people'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', 'New message');
+    const title = share ? 'Send to' : 'New message';
+    const o = el('div', 'dm-people'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', title);
     const box = el('div', 'dm-people-in');
-    const head = el('header', 'dm-people-h'); head.append(el('b', '', 'New message'));
+    const head = el('header', 'dm-people-h'); head.append(el('b', '', title));
     const x = el('button', 'dm-ib', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Close'); head.append(x);
     const q = el('input'); q.type = 'search'; q.placeholder = 'Search trainers by name'; q.setAttribute('aria-label', 'Search trainers by name'); q.autocomplete = 'off';
     const list = el('ul', 'dm-list dm-people-list');
@@ -687,7 +690,7 @@
         a.append(t);
         a.addEventListener('click', async () => {
           a.disabled = true;
-          try { const r = await api('/dm/open', { to: p.id }); close(); await win.open(r.thread); }
+          try { const r = await api('/dm/open', share ? { to: p.id, share } : { to: p.id }); close(); await win.open(r.thread, share ? { card: r.card && r.card.title ? r.card : null } : {}); }
           catch (err) { a.disabled = false; if (err.login) toLogin(); else toast(err.message, true); }
         });
         li.append(a); list.append(li);
@@ -703,6 +706,8 @@
     if (!live.me) { toLogin(); return; }
     people();
   });
+  // Share › Send in a message (share.js): who to, then their chat with it attached.
+  window.bbvDM = { share: async (ref) => { const j = await who(); if (!j || !j.member) { toLogin(); return; } people(ref); } };
 
   /* ---------------- a conversation's line: who, what was said last, how many are unread ---------------- */
   function threadRow(r, admin, after) {

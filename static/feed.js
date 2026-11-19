@@ -218,6 +218,8 @@
   }
   async function share(post, copyOnly) {
     const url = `${location.origin}/posts/${post.dataset.post}`;
+    // Share opens the site's share window: a message here, Messenger, Facebook or the link (share.js).
+    if (!copyOnly && window.bbvShare) { const who = post.querySelector('.post-who b')?.textContent.trim(); window.bbvShare.open({ ref: `post:${post.dataset.post}`, url, title: who ? `${who}’s post` : 'A post' }); return; }
     // The phone's own share menu where there is one. Closing it is fine; if it can't open, the link is copied instead.
     if (!copyOnly && navigator.share) { try { await navigator.share({ url, title: document.title }); return; } catch (err) { if (err && err.name === 'AbortError') return; } }
     try { await navigator.clipboard.writeText(url); toast('Link copied.'); } catch (_) { toast(`Copy this link: ${url}`); }

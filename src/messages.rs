@@ -210,8 +210,79 @@ pub(crate) fn card_copy(c: &rusqlite::Connection, r: &CardRef) -> rusqlite::Resu
 
 #[derive(Deserialize, Default, Clone)]
 pub struct CardRef {
+    #[serde(default)]
     pub(crate) vault: Option<i64>,
+    #[serde(default)]
     pub(crate) card: Option<i64>,
+    /// Something shared, not a card of this conversation's: "binder:12", "vbinder:pikachu-set", "store:7", "card:9",
+    /// "vcard:4", "post:31" (`share_copy`).
+    #[serde(default)]
+    pub(crate) share: Option<String>,
+}
+
+const NOT_SHARED: &str = "That can't be shared: it isn't there any more, or not everyone can see it.";
+
+/// A copy of something shared in a message (the owner, 20 Nov 2026: "share a binder within messages"): a binder, a
+/// store, a card or a post, as a small card with its picture, a line about it and where it leads. `r` is "binder:12"
+/// (a seller's binder), "vbinder:pikachu-set" (one of the vault's), "store:7" (0: the vault's), "card:9" (a trainer's
+/// card), "vcard:4" (a vault card) or "post:31". Unlike a card of the conversation, it can go to anyone; so only what
+/// anyone with the link may open is copied. None: it isn't there, or it is for its owner's eyes only.
+pub(crate) fn share_copy(c: &rusqlite::Connection, r: &str) -> rusqlite::Result<Option<Value>> {
+    let Some((kind, id)) = r.split_once(':') else { return Ok(None) };
+    let brand = || -> rusqlite::Result<String> { Ok(marcuru_rs::blocks::setting(c, "brand")?.filter(|b| !b.trim().is_empty()).unwrap_or_else(|| VAULT_NAME.into())) };
+    let cards = |n: i64| format!("{} card{}", db::thousands(n), if n == 1 { "" } else { "s" });
+    let share = |kind: &str, icon: &str, title: String, sub: String, image: String, url: String, go: &str| json!({ "src": "share", "ref": r, "kind": kind, "icon": icon, "title": title, "set": sub, "image": image, "url": url, "go": go });
+    Ok(match kind {
+        "binder" => {
+            let Some(b) = id.parse::<i64>().ok().map(|bid| members::binder_by_id(c, bid)).transpose()?.flatten().filter(|b| b.visibility != "Private") else { return Ok(None) };
+            let Some(m) = members::get(c, b.member_id)?.filter(|m| m.store_open()) else { return Ok(None) };
+            let n = marcuru_rs::sellers::storefront_listings(c, m.id)?.iter().filter(|k| k.binder_id == Some(b.id)).count() as i64;
+            let image = if b.photo.is_empty() { b.cover_image.clone() } else { db::cdn(&b.photo, 360) };
+            Some(share("binder", "📒", b.title.clone(), format!("Binder · {} · {}", cards(n), m.store_title()), image, format!("{}/binders/{}", m.store_url(), b.slug), "Open binder ›"))
+        }
+        "vbinder" => {
+            let Some(b) = db::collections(c)?.into_iter().find(|b| b.handle == id && b.visibility != "Private") else { return Ok(None) };
+            let image = if b.has_image() { b.img(360) } else { String::new() };
+            Some(share("binder", "📒", b.title.clone(), format!("Binder · {} · {}", cards(b.count), brand()?), image, format!("/collections/{}", b.handle), "Open binder ›"))
+        }
+        "store" => match id.parse::<i64>() {
+            Ok(0) => {
+                let (for_sale, _, _) = admin::in_vault(c)?;
+                Some(share("store", "🏪", brand()?, format!("Store · {} for sale", cards(for_sale)), VAULT_AVATAR.into(), format!("/store/{}", marcuru_rs::sellers::VAULT_SLUG), "Visit store ›"))
+            }
+            Ok(sid) => {
+                let Some(m) = members::get(c, sid)?.filter(|m| m.store_open()) else { return Ok(None) };
+                let n = marcuru_rs::sellers::store_stats(c, m.id)?.on_sale;
+                Some(share("store", "🏪", m.store_title(), format!("Store · {} for sale", cards(n)), m.store_pic().to_string(), m.store_url(), "Visit store ›"))
+            }
+            Err(_) => None,
+        },
+        "card" | "vcard" => {
+            let Ok(cid) = id.parse::<i64>() else { return Ok(None) };
+            let cref = if kind == "card" { CardRef { card: Some(cid), ..Default::default() } } else { CardRef { vault: Some(cid), ..Default::default() } };
+            let Some((owner, mut copy)) = card_copy(c, &cref)? else { return Ok(None) };
+            if kind == "card" {
+                // A trainer's card everyone may open: their page is live, and a card for sale is in a store that is open.
+                let Some(m) = members::get(c, owner)?.filter(|m| m.profile_ok && !m.blocked) else { return Ok(None) };
+                let Some(k) = members::card(c, owner, cid)?.filter(|k| k.status != "Hidden") else { return Ok(None) };
+                if k.is_sale() && !m.store_open() {
+                    return Ok(None);
+                }
+            }
+            for (key, v) in [("src", "share"), ("ref", r), ("kind", "card"), ("icon", "🃏"), ("go", "View card ›")] {
+                copy[key] = json!(v);
+            }
+            Some(copy)
+        }
+        "post" => {
+            let Some(p) = id.parse::<i64>().ok().map(|pid| marcuru_rs::social::post(c, 0, pid)).transpose()?.flatten().filter(|p| !p.hidden) else { return Ok(None) };
+            let who = if p.member_id == 0 { brand()? } else { members::get(c, p.member_id)?.map(|m| m.name).unwrap_or_else(|| "A trainer".into()) };
+            let image = marcuru_rs::social::photos(c, p.id)?.first().map(|(_, small)| small.clone()).unwrap_or_default();
+            let words = if p.text.trim().is_empty() { "A post".to_string() } else { crate::clip(&p.text, 80) };
+            Some(share("post", "📝", format!("{who}'s post"), words, image, format!("/posts/{}", p.id), "See post ›"))
+        }
+        _ => None,
+    })
 }
 
 fn signed_out() -> Response {
@@ -385,6 +456,9 @@ pub struct OpenReq {
     /// A member's id, or 0 for the vault.
     #[serde(default)]
     to: Option<i64>,
+    /// Something to share with `to` ("binder:12", "store:7", "post:31"...): it is ready to send with the first words.
+    #[serde(default)]
+    share: Option<String>,
 }
 
 /// POST /dm/open: the conversation with the seller of a card (or with a trainer, or the vault), made if new,
@@ -398,8 +472,15 @@ pub async fn open(State(app): State<App>, h: HeaderMap, Json(req): Json<OpenReq>
     let hub = app.dm.clone();
     let now = crate::unix_now();
     let out = with_db(&app, move |c| {
-        let r = CardRef { vault: req.vault, card: req.card };
-        let (to, card) = if r.vault.is_some() || r.card.is_some() {
+        let r = CardRef { vault: req.vault, card: req.card, share: None };
+        let (to, card) = if let Some(s) = req.share.as_deref() {
+            // Sharing: to whoever was picked, with a copy of the binder, store, card or post.
+            match (req.to, share_copy(c, s)?) {
+                (Some(t), Some(copy)) => (t, copy),
+                (None, _) => return Ok(Err("Who to send it to?")),
+                (_, None) => return Ok(Err(NOT_SHARED)),
+            }
+        } else if r.vault.is_some() || r.card.is_some() {
             match card_copy(c, &r)? {
                 // A seller writing to the buyer of their own card (the Message button on an order): the card goes along.
                 Some((owner, copy)) if owner == m.id && req.to.is_some_and(|t| t != m.id && t != dm::VAULT) => (req.to.unwrap_or_default(), copy),
@@ -541,7 +622,12 @@ pub async fn send(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
     let (t2, author) = (t.clone(), m.id);
     let out = with_db(&app, move |c| {
         let mut new = dm::New { kind: "text".into(), text, ..Default::default() };
-        if let Some(r) = req.card.as_ref().filter(|r| r.vault.is_some() || r.card.is_some()) {
+        if let Some(s) = req.card.as_ref().and_then(|r| r.share.as_deref()) {
+            // Something shared goes to anyone: it isn't a card of this conversation's.
+            let Some(copy) = share_copy(c, s)? else { return Ok(Err(NOT_SHARED)) };
+            new.kind = "card".into();
+            new.card = copy.to_string();
+        } else if let Some(r) = req.card.as_ref().filter(|r| r.vault.is_some() || r.card.is_some()) {
             let Some((owner, copy)) = card_copy(c, r)? else { return Ok(Err("That card isn't here any more.")) };
             // A card in a conversation belongs to one of the two sides.
             if !t2.has(owner) {

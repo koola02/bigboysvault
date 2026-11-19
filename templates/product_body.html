@@ -5,6 +5,7 @@
   <div class="detail-info" data-translate>
     <h1 class="h1" data-tr="title" lang="{{ p.lang() }}">{{ p.title }}</h1>
     {% if !(p.available && p.price > 0.0) %}<button type="button" class="btn ghost sm bm-btn" data-bm="product" data-id="{{ p.id }}" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg><span class="bm-l">Bookmark</span></button>{% endif %}
+    <button type="button" class="btn ghost sm sh-btn" data-share-ref="vcard:{{ p.id }}" data-share-url="/products/{{ p.handle }}" data-share-title="{{ p.short_title() }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v13"/></svg><span>Share</span></button>
     <p class="price">{{ p.price_text() }}{% if copies > 1 %} <span class="copies" data-tr="copies" data-n="{{ copies }}">×{{ copies }} in the vault</span>{% endif %}</p>
     {% if !p.price_updated.is_empty() %}<p class="hint" data-tr="market" data-date="{{ p.price_updated }}">Market value as of {{ p.price_updated }}</p>{% endif %}
     {% if let Some(t) = trend %}<p class="trend" data-dir="{{ t.dir() }}"><svg viewBox="0 0 120 32" width="96" height="26" aria-hidden="true" focusable="false"><polyline points="{{ t.points }}" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/></svg><span>{{ t.text() }}</span></p>{% endif %}

@@ -1181,6 +1181,12 @@ pub fn binder_by_slug(c: &Connection, member_id: i64, slug: &str) -> rusqlite::R
     }).optional()
 }
 
+/// One binder by its number, whoever's it is (a binder shared in a message, `messages::share_copy`).
+pub fn binder_by_id(c: &Connection, id: i64) -> rusqlite::Result<Option<MemberBinder>> {
+    let Some(owner) = c.query_row("SELECT member_id FROM member_binders WHERE id=?1", [id], |r| r.get::<_, i64>(0)).optional()? else { return Ok(None) };
+    Ok(binders_of(c, owner)?.into_iter().find(|b| b.id == id))
+}
+
 /// The most binders one trainer may have, and the longest a binder's name may be (in letters).
 pub const MAX_BINDERS: i64 = 50;
 pub const BINDER_NAME_MAX: usize = 60;

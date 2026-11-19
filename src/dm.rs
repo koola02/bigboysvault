@@ -170,8 +170,10 @@ pub fn preview(m: &New) -> String {
         "voice" => "🎤 Voice message".into(),
         "call" => short(&words),
         "card" => {
-            let title = serde_json::from_str::<serde_json::Value>(&m.card).ok().and_then(|v| v["title"].as_str().map(str::to_string)).unwrap_or_default();
-            if words.is_empty() { format!("🃏 {}", short(&title)) } else { short(&words) }
+            // A card, or something shared (a binder, a store, a post), which brings its own little picture.
+            let v = serde_json::from_str::<serde_json::Value>(&m.card).unwrap_or_default();
+            let (title, icon) = (v["title"].as_str().unwrap_or_default(), v["icon"].as_str().unwrap_or("🃏"));
+            if words.is_empty() { format!("{icon} {}", short(title)) } else { short(&words) }
         }
         _ => short(&words),
     }

@@ -1458,8 +1458,16 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
         Some(b) => format!("{} · {} · {}", b.title, name, nav.brand),
         None => format!("{} · {}", name, nav.brand),
     };
-    // Say what the page is first, then a little of the seller's own words.
-    let about = if m.bio.trim().is_empty() { String::new() } else { format!(" {}", crate::clip(&m.bio, 90)) };
+    // Say what the page is first, then a little of the store's own words (a binder's own, on its page).
+    let words = binder.as_ref().map(|b| b.description.trim()).filter(|d| !d.is_empty()).unwrap_or(m.store_bio.trim());
+    let about = if words.is_empty() { String::new() } else { format!(" {}", crate::clip(words, 90)) };
+    // The picture a shared link shows: a binder's own cover (its photo, or its first card), else the store's cover or picture.
+    let pic = match &binder {
+        Some(b) if !b.photo.is_empty() => b.photo.clone(),
+        Some(b) if !b.cover_image.is_empty() => b.cover_image.clone(),
+        _ if m.has_cover() => m.cover_photo.clone(),
+        _ => m.store_pic().to_string(),
+    };
     let desc = match &binder {
         Some(b) => crate::clip(&format!("{}, a Pokémon card binder from {} on {}: {} on sale.{about}", b.title, m.store_title(), nav.brand, cards.iter().filter(|(k, _)| k.on_sale()).count()), 165),
         None => crate::clip(&format!("{} sells Pokémon cards on {}: {} on sale.{about}", m.store_title(), nav.brand, stats.on_sale), 165),
@@ -1467,11 +1475,13 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
     nav.seo = crate::Seo {
         title,
         desc,
+        // A binder not everyone can see opens by its link, but search engines don't keep it.
         path: match &binder {
+            Some(b) if b.visibility != "Public" => String::new(),
             Some(b) => format!("/store/{}/binders/{}", m.slug, b.slug),
             None => m.store_url(),
         },
-        image: if m.has_cover() { nav.abs(&m.cover_photo) } else if m.has_store_pic() { nav.abs(m.store_pic()) } else { String::new() },
+        image: if pic.is_empty() { String::new() } else { nav.abs(&pic) },
         kind: "profile",
         ..Default::default()
     };
@@ -3664,6 +3674,63 @@ mod tests {
         assert_eq!((all[2].off, all[2].words.as_str()), (true, "1 card · none for sale · hidden from visitors"));
         assert_eq!((all[3].off, all[3].words.as_str()), (true, "No cards yet · hidden from visitors"));
         assert!(!all[0].off && all[0].count == 3);
+    }
+
+    /// Sharing (the owner, 20 Nov 2026): a binder, a store, a card or a post goes into a message as a small card of its
+    /// own, to anyone; never what only its owner may see. Its page carries a Share button.
+    #[test]
+    fn a_binder_a_store_a_card_and_a_post_can_be_shared_in_a_message() {
+        let c = db();
+        marcuru_rs::social::migrate(&c).unwrap();
+        vault(&c);
+        let s = members::create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        c.execute("UPDATE members SET store_name='Pallet Cards', store_avatar='/uploads/s-shop.jpg' WHERE id=?1", [s]).unwrap();
+        let b = members::create_member_binder(&c, s, "Fire").unwrap();
+        let Added::Yes(id) = sellers::add_listing(&c, s, "tcgdex:base1-4", "Charizard", "4/102", "Base Set", "/p/zard.webp", "").unwrap() else { panic!() };
+        c.execute("UPDATE member_cards SET kind='sale', status='Active', qty=1, value_own=900 WHERE id=?1", [id]).unwrap();
+        members::move_card_to_binder(&c, s, id, Some(b.id)).unwrap();
+        let share = |c: &rusqlite::Connection, r: &str| crate::messages::share_copy(c, r).unwrap();
+        let slug = members::get(&c, s).unwrap().unwrap().slug;
+        let binder = format!("binder:{}", b.id);
+        let v = share(&c, &binder).unwrap();
+        assert_eq!((v["src"].as_str(), v["title"].as_str(), v["set"].as_str(), v["image"].as_str(), v["go"].as_str()), (Some("share"), Some("Fire"), Some("Binder · 1 card · Pallet Cards"), Some("/p/zard.webp"), Some("Open binder ›")));
+        assert_eq!(v["url"].as_str().unwrap(), format!("/store/{slug}/binders/fire"));
+        // Its page has the Share button, for its owner and for visitors.
+        let html = page(&c, &slug, Some("fire"));
+        assert!(html.contains(&format!("data-share-ref=\"binder:{}\" data-share-url=\"/store/{slug}/binders/fire\" data-share-title=\"Fire · Pallet Cards\"", b.id)), "{html}");
+        assert!(page(&c, &slug, None).contains(&format!("data-share-ref=\"store:{s}\"")) && page_as(&c, &slug, None, true).contains(&format!("data-share-ref=\"store:{s}\"")));
+        // A link-only binder can be shared (that is what its link is for); a private one can't, and has no button.
+        c.execute("UPDATE member_binders SET visibility='Unlisted' WHERE id=?1", [b.id]).unwrap();
+        assert!(share(&c, &binder).is_some());
+        c.execute("UPDATE member_binders SET visibility='Private' WHERE id=?1", [b.id]).unwrap();
+        assert!(share(&c, &binder).is_none());
+        assert!(!page_as(&c, &slug, Some("fire"), true).contains("data-share-ref=\"binder:"));
+        // One of the vault's binders, a store (0: the vault's), a card of each kind.
+        let v = share(&c, "vbinder:pikachu-set").unwrap();
+        assert_eq!((v["title"].as_str(), v["set"].as_str(), v["url"].as_str()), (Some("Pikachu Set"), Some("Binder · 3 cards · Big Boys Vault"), Some("/collections/pikachu-set")));
+        db::set_binder_words(&c, "pikachu-set", None, Some("Private")).unwrap();
+        assert!(share(&c, "vbinder:pikachu-set").is_none());
+        let v = share(&c, &format!("store:{s}")).unwrap();
+        assert_eq!((v["title"].as_str(), v["set"].as_str(), v["image"].as_str(), v["go"].as_str()), (Some("Pallet Cards"), Some("Store · 1 card for sale"), Some("/uploads/s-shop.jpg"), Some("Visit store ›")));
+        assert_eq!(share(&c, "store:0").unwrap()["url"].as_str(), Some("/store/vault"));
+        assert!(vault_html(&c, "").contains("data-share-ref=\"store:0\""));
+        let v = share(&c, &format!("card:{id}")).unwrap();
+        assert_eq!((v["src"].as_str(), v["title"].as_str(), v["ref"].as_str().map(str::to_string)), (Some("share"), Some("Charizard"), Some(format!("card:{id}"))));
+        assert_eq!(share(&c, "vcard:1").unwrap()["url"].as_str(), Some("/products/c1"));
+        // A post, with its first words.
+        let p = marcuru_rs::social::post_add(&c, s, "post", "Look at this pull", &[], &serde_json::json!({}), 10).unwrap();
+        let v = share(&c, &format!("post:{p}")).unwrap();
+        assert_eq!((v["title"].as_str(), v["set"].as_str(), v["url"].as_str().map(str::to_string)), (Some("Shop's post"), Some("Look at this pull"), Some(format!("/posts/{p}"))));
+        // In the inbox something shared shows with its own little picture.
+        let line = marcuru_rs::dm::preview(&marcuru_rs::dm::New { kind: "card".into(), card: share(&c, "vbinder:trainers").unwrap().to_string(), ..Default::default() });
+        assert_eq!(line, "📒 Trainers");
+        // A hidden store shares nothing: not itself, not its binders, not its cards for sale. Nor does nonsense.
+        c.execute("UPDATE member_binders SET visibility='Public' WHERE id=?1", [b.id]).unwrap();
+        c.execute("UPDATE members SET store_hidden=1 WHERE id=?1", [s]).unwrap();
+        assert!(share(&c, &format!("store:{s}")).is_none() && share(&c, &binder).is_none() && share(&c, &format!("card:{id}")).is_none());
+        assert!(share(&c, "nonsense").is_none() && share(&c, "binder:x").is_none() && share(&c, "post:999").is_none());
     }
 
     /// A store shows its own picture and its own words, wherever its name shows, and its owner's button there is Store
