@@ -239,6 +239,7 @@ pub fn set_slug(c: &Connection, member_id: i64, slug: &str) -> rusqlite::Result<
 }
 
 /// The seller's store details, saved from the Store settings page.
+#[derive(Default)]
 pub struct StoreSettings {
     pub store_name: String,
     pub location: String,
@@ -256,6 +257,8 @@ pub struct StoreSettings {
     pub email: String,
     pub notify_views: bool,
     pub pay_public: bool,
+    /// The store's own "about" (its owner's page has its own).
+    pub store_bio: String,
 }
 
 /// Saves a store's settings. New or changed public links go back to an admin for a look, as a changed profile does.
@@ -264,14 +267,14 @@ pub fn save_store(c: &Connection, member_id: i64, s: &StoreSettings) -> rusqlite
     let methods: Vec<&str> = s.pay_methods.split(',').map(str::trim).filter(|m| PAY_METHODS.contains(m)).collect();
     c.execute(
         "UPDATE members SET store_name=?2, location=?3, contact_info=?4, contact_public=?5, status=?6, fb_url=?7, fb_group_url=?8, ig_url=?9, tiktok_url=?10,
-           shopee_url=?11, links=?12, pay_methods=?13, pay_info=?14, email=?15, notify_views=?16, updated_at=?17, pay_public=?18,
+           shopee_url=?11, links=?12, pay_methods=?13, pay_info=?14, email=?15, notify_views=?16, updated_at=?17, pay_public=?18, store_bio=?19,
            profile_ok=CASE WHEN fb_url=?7 AND fb_group_url=?8 AND ig_url=?9 AND tiktok_url=?10 AND shopee_url=?11 AND links=?12 THEN profile_ok ELSE 0 END
          WHERE id=?1",
         rusqlite::params![
             member_id, members::clean_line(&s.store_name, 40), members::clean_line(&s.location, 80), members::clean_text(&s.contact_info, 300), s.contact_public, status,
             members::clean_https_url(&s.fb_url), members::clean_https_url(&s.fb_group_url), members::clean_https_url(&s.ig_url), members::clean_https_url(&s.tiktok_url),
             members::clean_https_url(&s.shopee_url), clean_link_lines(&s.links), methods.join(","), members::clean_text(&s.pay_info, 600),
-            clean_email(&s.email), s.notify_views, now(), s.pay_public
+            clean_email(&s.email), s.notify_views, now(), s.pay_public, members::clean_text(&s.store_bio, 300)
         ],
     )?;
     Ok(())
@@ -757,7 +760,7 @@ const LEFT: &str = "c.qty - COALESCE((SELECT SUM(r.qty) FROM reservations r WHER
 
 /// The open listings, with their store and copies left (`open_row` reads a row), and `more` after the checks.
 fn open_sql(more: &str) -> String {
-    format!("SELECT {}, m.slug, m.store_name, m.name, m.avatar, {LEFT} FROM member_cards c JOIN members m ON m.id=c.member_id WHERE {OPEN_FOR_SALE}{more}", members::CARD_COLS)
+    format!("SELECT {}, m.slug, m.store_name, m.name, COALESCE(NULLIF(m.store_avatar,''), m.avatar), {LEFT} FROM member_cards c JOIN members m ON m.id=c.member_id WHERE {OPEN_FOR_SALE}{more}", members::CARD_COLS)
 }
 
 /// A seller's card that can be bought right now (`OPEN_FOR_SALE`), with its store.
@@ -906,7 +909,7 @@ const LISTED_AT: &str = "COALESCE(MIN(NULLIF(c.updated_at,0), e.first), NULLIF(c
 pub fn market_lines(c: &Connection) -> rusqlite::Result<String> {
     use std::collections::HashMap;
     let mut st = c.prepare(&format!(
-        "SELECT {}, m.slug, m.store_name, m.name, m.avatar, {LEFT}, {LISTED_AT} AS listed
+        "SELECT {}, m.slug, m.store_name, m.name, COALESCE(NULLIF(m.store_avatar,''), m.avatar), {LEFT}, {LISTED_AT} AS listed
          FROM member_cards c JOIN members m ON m.id=c.member_id
          LEFT JOIN (SELECT card_id, MIN(created_at) AS first FROM card_events GROUP BY card_id) e ON e.card_id=c.id
          WHERE {OPEN_FOR_SALE}

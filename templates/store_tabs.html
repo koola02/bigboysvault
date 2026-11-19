@@ -1,7 +1,7 @@
 
 {% if p.m.seller %}
 <nav class="mgr-rail" aria-label="Store Manager">
-  <a class="mgr-rail-h" href="/me/store">{% if p.m.has_avatar() %}<img src="{{ p.m.avatar }}" width="36" height="36" alt="">{% else %}<span class="av">{{ p.m.initial() }}</span>{% endif %}<span><b>Store Manager</b><small>{{ p.m.store_title() }}</small></span></a>
+  <a class="mgr-rail-h" href="/me/store">{% if p.m.has_store_pic() %}<img src="{{ p.m.store_pic() }}" width="36" height="36" alt="">{% else %}<span class="av">{{ p.m.initial() }}</span>{% endif %}<span><b>Store Manager</b><small>{{ p.m.store_title() }}</small></span></a>
   <a href="/me/store"{% if p.tab == "dash" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="10" rx="1.5"/><rect x="13" y="3" width="8" height="6" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="15" width="8" height="6" rx="1.5"/></svg><span>Overview</span></a>
   <a href="/me/listings"{% if p.tab == "listings" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 4v16"/></svg><span>Listings</span></a>
   <a href="/me/add"{% if p.tab == "add" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg><span>Add cards</span></a>
@@ -16,7 +16,7 @@
 </nav>
 <script>{ const r = document.querySelector('.mgr-rail'), a = r && r.querySelector('[aria-current="page"]'); if (a && r.scrollWidth > r.clientWidth) r.scrollLeft = a.offsetLeft - (r.clientWidth - a.offsetWidth) / 2; }</script>
 <header class="mgr-bar">
-  <div class="mgr-bar-l"><h1 class="mgr-title">{% if p.tab == "dash" %}Overview{% else if p.tab == "listings" %}Listings{% else if p.tab == "orders" %}Orders{% else if p.tab == "notifications" %}Notifications{% else if p.tab == "settings" %}Store settings{% else if p.tab == "me" %}Account Settings{% else if p.tab == "add" %}Add cards{% else %}Store Manager{% endif %}</h1><span class="mgr-acct">{% if p.m.has_avatar() %}<img src="{{ p.m.avatar }}" width="24" height="24" alt="">{% endif %}<b>{{ p.m.store_title() }}</b></span></div>
+  <div class="mgr-bar-l"><h1 class="mgr-title">{% if p.tab == "dash" %}Overview{% else if p.tab == "listings" %}Listings{% else if p.tab == "orders" %}Orders{% else if p.tab == "notifications" %}Notifications{% else if p.tab == "settings" %}Store settings{% else if p.tab == "me" %}Account Settings{% else if p.tab == "add" %}Add cards{% else %}Store Manager{% endif %}</h1><span class="mgr-acct">{% if p.m.has_store_pic() %}<img src="{{ p.m.store_pic() }}" width="24" height="24" alt="">{% endif %}<b>{{ p.m.store_title() }}</b></span></div>
   <div class="mgr-bar-r">{% if p.tab != "listings" && p.tab != "add" %}<a class="btn mgr-create" href="/me/add"><span aria-hidden="true">+</span> Add cards</a>{% endif %}</div>
 </header>
 {% if !p.m.profile_ok && p.tab != "me" %}<p class="mgr-note">The vault owner still has to approve your page. Until then only you can see your store.</p>{% endif %}

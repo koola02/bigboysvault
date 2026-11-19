@@ -838,7 +838,7 @@ pub(crate) fn check_size(bytes: &[u8]) -> Result<(), String> {
 
 /// A profile picture: square, sharp enough to enlarge, and re-made from the pixels, so nothing hidden in the upload survives.
 /// It is made small first, then cut square, so no second full-size copy is ever held in memory.
-fn store_avatar(bytes: Vec<u8>, dir: PathBuf, stem: String) -> Result<String, String> {
+pub(crate) fn store_avatar(bytes: Vec<u8>, dir: PathBuf, stem: String) -> Result<String, String> {
     use image::{codecs::jpeg::JpegEncoder, imageops::FilterType};
     check_size(&bytes)?;
     let img = admin::open_image(bytes)?;
@@ -931,8 +931,9 @@ pub async fn save_profile(State(app): State<App>, h: HeaderMap, mut mp: Multipar
     if over_limit(&app, format!("profile|{}", m.id), 30) {
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "Too many saves. Please wait a few minutes."));
     }
-    let (mut name, mut bio, mut photo) = (m.name.clone(), m.bio.clone(), None::<Vec<u8>>);
-    let (mut fb_url, mut tiktok_url, mut links) = (m.fb_url.clone(), m.tiktok_url.clone(), m.links.clone());
+    let (mut name, mut bio, mut photo, mut cover_file, mut drop_cover) = (m.name.clone(), m.bio.clone(), None::<Vec<u8>>, None::<Vec<u8>>, false);
+    // The page's own links, never the store's (those are in Store settings). What is there stays unless the form sends it.
+    let (mut fb_url, mut ig_url, mut tiktok_url, mut links) = (m.page_fb_url.clone(), m.page_ig_url.clone(), m.page_tiktok_url.clone(), m.page_links.clone());
     while let Some(f) = mp.next_field().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))? {
         match f.name().unwrap_or_default() {
             "avatar" => {
@@ -941,11 +942,22 @@ pub async fn save_profile(State(app): State<App>, h: HeaderMap, mut mp: Multipar
                     photo = Some(b.to_vec());
                 }
             }
+            "cover" => {
+                let b = f.bytes().await.map_err(|_| (StatusCode::BAD_REQUEST, "That cover photo didn't upload.".to_string()))?;
+                if !b.is_empty() {
+                    cover_file = Some(b.to_vec());
+                }
+            }
+            "drop_cover" => {
+                let v = f.text().await.unwrap_or_default();
+                drop_cover = v == "1" || v == "on";
+            }
             "name" => name = f.text().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
             "bio" => bio = f.text().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?,
-            "fb_url" => fb_url = members::clean_https_url(&f.text().await.unwrap_or_default()),
-            "tiktok_url" => tiktok_url = members::clean_https_url(&f.text().await.unwrap_or_default()),
-            "links" => links = members::clean_link_lines(&f.text().await.unwrap_or_default()),
+            "fb_url" => fb_url = f.text().await.unwrap_or_default(),
+            "ig_url" => ig_url = f.text().await.unwrap_or_default(),
+            "tiktok_url" => tiktok_url = f.text().await.unwrap_or_default(),
+            "links" => links = f.text().await.unwrap_or_default(),
             _ => {}
         }
     }
@@ -967,17 +979,44 @@ pub async fn save_profile(State(app): State<App>, h: HeaderMap, mut mp: Multipar
         }
         None => None,
     };
-    let (m2, n2, b2, a2) = (m.clone(), name.clone(), bio.clone(), avatar.clone());
-    let (fb, tt, lk) = (fb_url.clone(), tiktok_url.clone(), links.clone());
-    let saved = with_db(&app, move |c| members::save_profile_seller(c, &m2, &n2, &b2, a2.as_deref(), &fb, &tt, &lk)).await?;
+    // The page's own cover photo: a new one, taken off, or left as it is.
+    let cover = match cover_file {
+        Some(bytes) => {
+            let dir = PathBuf::from(&*app.uploads);
+            let stem = format!("pcover{}-{}", m.id, members::temp_password());
+            let made = gated(move || store_photo(bytes, dir, stem)).await?;
+            match made {
+                Ok((large, small, _, _, _)) => {
+                    admin::remove_upload(&app.uploads, &small);
+                    Some(large)
+                }
+                Err(e) => {
+                    if let Some(a) = &avatar {
+                        admin::remove_upload(&app.uploads, a);
+                    }
+                    return Ok(fail(StatusCode::BAD_REQUEST, if e == TOO_BIG { TOO_BIG_TEXT } else { "That cover photo couldn't be read. Try a JPEG or PNG." }));
+                }
+            }
+        }
+        None if drop_cover => Some(String::new()),
+        None => None,
+    };
+    let (m2, n2, b2, a2, k2) = (m.clone(), name.clone(), bio.clone(), avatar.clone(), cover.clone());
+    let saved = with_db(&app, move |c| {
+        members::save_page(c, &m2, &members::PageSave { name: &n2, bio: &b2, avatar: a2.as_deref(), cover: k2.as_deref(), fb_url: &fb_url, ig_url: &ig_url, tiktok_url: &tiktok_url, links: &links })
+    })
+    .await?;
     if !saved {
-        if let Some(a) = &avatar {
-            admin::remove_upload(&app.uploads, a);
+        for f in [&avatar, &cover].into_iter().flatten().filter(|f| !f.is_empty()) {
+            admin::remove_upload(&app.uploads, f);
         }
         return Ok(fail(StatusCode::CONFLICT, "That trainer name is taken. Please pick another."));
     }
     if avatar.is_some() && m.has_avatar() {
         admin::remove_upload(&app.uploads, &m.avatar);
+    }
+    if cover.is_some() && m.has_page_cover() {
+        admin::remove_upload(&app.uploads, &m.page_cover);
     }
     app.forget();
     let id = m.id;
@@ -987,7 +1026,7 @@ pub async fn save_profile(State(app): State<App>, h: HeaderMap, mut mp: Multipar
         let n3 = name.clone();
         with_db(&app, move |c| tell_staff_waiting(c, id, &format!("{n3} changed their page, and it waits for approval."))).await?;
     }
-    Ok(ok(json!({ "ok": true, "name": name, "avatar": avatar, "approved": approved })))
+    Ok(ok(json!({ "ok": true, "name": name, "avatar": avatar, "cover": fresh.as_ref().map(|f| f.page_cover.clone()).unwrap_or_default(), "approved": approved })))
 }
 
 // ---------- vouches and replies ----------
@@ -2369,6 +2408,53 @@ mod tests {
         members::migrate(&c).unwrap();
         marcuru_rs::db::migrate(&c).unwrap();
         c
+    }
+
+    /// A trainer's own page and their store have their own settings (the owner, 20 Nov 2026: "when i add a link in
+    /// store, it shows up in my personal page too"): the page shows only what Account Settings holds, the store only
+    /// what Store settings holds, and the store can have a picture of its own.
+    #[test]
+    fn a_trainers_page_and_their_store_keep_their_own_settings() {
+        let c = db();
+        let s = members::create(&c, "Ash", "h").unwrap().unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        c.execute("UPDATE members SET avatar='/uploads/t-ash.jpg', bio='I collect Pikachu' WHERE id=?1", [s]).unwrap();
+        // Store settings: the store's links, cover, words and picture.
+        let store = marcuru_rs::sellers::StoreSettings { store_name: "Pallet Cards".into(), fb_url: "https://facebook.com/palletcards".into(), links: "Carousell | https://carousell.ph/u/pallet".into(), status: "Active".into(), store_bio: "Singles and sealed, shipped in toploaders.".into(), ..Default::default() };
+        marcuru_rs::sellers::save_store(&c, s, &store).unwrap();
+        c.execute("UPDATE members SET cover_photo='/uploads/cover-store_l.jpg', profile_ok=1 WHERE id=?1", [s]).unwrap();
+        let m = members::get(&c, s).unwrap().unwrap();
+        assert_eq!(m.store_pic(), "/uploads/t-ash.jpg", "the store shows its owner's picture until it has its own");
+        let page = |c: &rusqlite::Connection, is_me: bool| {
+            let t = members::get(c, s).unwrap().unwrap();
+            render(TrainerPage { nav: chrome(c).unwrap(), t, cards: vec![], wishes: vec![], selling: vec![], highlight: None, is_me, full: true, vouches: vec![], awards: vec![] }).unwrap()
+        };
+        let html = page(&c, false);
+        assert!(!html.contains("palletcards") && !html.contains("carousell") && !html.contains("cover-store") && !html.contains("Find me on"), "nothing of the store's on the trainer's own page: {html}");
+        // Account Settings: the page's own cover and links (a bad link is dropped). The store's stay as they are.
+        assert!(members::save_page(&c, &m, &members::PageSave { name: "Ash", bio: "I collect Pikachu", avatar: None, cover: Some("/uploads/pcover-ash_l.jpg"), fb_url: "https://facebook.com/ash.ketchum", ig_url: "javascript:alert(1)", tiktok_url: "", links: "YouTube | https://youtube.com/@ash" }).unwrap());
+        let m = members::get(&c, s).unwrap().unwrap();
+        assert_eq!((m.page_cover.as_str(), m.page_fb_url.as_str(), m.page_ig_url.as_str(), m.fb_url.as_str(), m.cover_photo.as_str()), ("/uploads/pcover-ash_l.jpg", "https://facebook.com/ash.ketchum", "", "https://facebook.com/palletcards", "/uploads/cover-store_l.jpg"));
+        assert_eq!(m.page_link_list().iter().map(|l| l.0.as_str()).collect::<Vec<_>>(), vec!["Facebook", "YouTube"]);
+        assert_eq!(m.social_links().iter().map(|l| l.0.as_str()).collect::<Vec<_>>(), vec!["Facebook", "Carousell"], "the store's links are untouched");
+        assert!(!m.profile_ok, "a changed page goes back for a look, as before");
+        members::set_profile_ok(&c, s, true).unwrap();
+        let m = members::get(&c, s).unwrap().unwrap();
+        assert!(members::save_page(&c, &m, &members::PageSave { name: "Ash", bio: "I collect Pikachu", avatar: None, cover: None, fb_url: "https://facebook.com/ash.ketchum", ig_url: "", tiktok_url: "", links: "YouTube | https://youtube.com/@ash" }).unwrap());
+        assert!(members::get(&c, s).unwrap().unwrap().profile_ok, "saved again with nothing changed: still live");
+        let html = page(&c, true);
+        assert!(html.contains("src=\"/uploads/pcover-ash_l.jpg\"") && html.contains("href=\"https://facebook.com/ash.ketchum\"") && html.contains(">YouTube <") && !html.contains("palletcards") && !html.contains("cover-store"), "{html}");
+        assert!(html.contains("href=\"/me\"") && html.contains("Account Settings"), "the page's own settings button");
+        // Taking the page's cover off leaves the store's alone.
+        let m = members::get(&c, s).unwrap().unwrap();
+        members::save_page(&c, &m, &members::PageSave { name: "Ash", bio: "I collect Pikachu", avatar: None, cover: Some(""), fb_url: "", ig_url: "", tiktok_url: "", links: "" }).unwrap();
+        let m = members::get(&c, s).unwrap().unwrap();
+        assert_eq!((m.page_cover.as_str(), m.cover_photo.as_str(), m.page_link_list().len(), m.social_links().len()), ("", "/uploads/cover-store_l.jpg", 0, 2));
+        // The store's own picture.
+        c.execute("UPDATE members SET store_avatar='/uploads/s-pallet.jpg' WHERE id=?1", [s]).unwrap();
+        let m = members::get(&c, s).unwrap().unwrap();
+        assert_eq!((m.store_pic(), m.avatar.as_str(), m.store_bio.as_str()), ("/uploads/s-pallet.jpg", "/uploads/t-ash.jpg", "Singles and sealed, shipped in toploaders."));
     }
 
     #[test]

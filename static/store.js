@@ -352,15 +352,26 @@
       catch (err) { A.toast(err.message, { kind: 'err' }); }
     });
     $('coverFile').addEventListener('change', () => { const f = $('coverFile').files[0]; if (!f) return; $('coverImg').src = URL.createObjectURL(f); $('coverPrev').hidden = false; });
+    // The store's own picture: shown here as soon as it is picked, saved with the rest.
+    const showLogo = (src) => { const old = $('logoImg'); const img = document.createElement('img'); img.className = 'av'; img.id = 'logoImg'; img.alt = ''; img.src = src; old.replaceWith(img); };
+    $('logoFile').addEventListener('change', () => { const f = $('logoFile').files[0]; if (!f) return; showLogo(URL.createObjectURL(f)); $('storeForm').drop_logo.checked = false; });
+    { const area = $('storeForm').elements.store_bio, out = $('storeBioCount'), paint = () => { out.textContent = area.value.length; }; area.addEventListener('input', paint); paint(); }
+    // "Other" border colour: the colour box sets it and picks it.
+    $('ownColor').addEventListener('input', () => { const v = $('ownColor').value; $('ownBorder').value = v; $('ownBorder').checked = true; $('ownSw').style.setProperty('--sw', v); });
+    $('ownBorder').addEventListener('change', () => { if (!$('ownBorder').value) { $('ownBorder').value = $('ownColor').value; $('ownSw').style.setProperty('--sw', $('ownColor').value); } });
     $('storeForm').addEventListener('submit', async (e) => {
       e.preventDefault(); const f = e.target, btn = f.querySelector('button[type=submit]'); btn.disabled = true;
       try {
         const fd = new FormData(f);
         const cover = $('coverFile').files[0];
         if (cover) fd.set('cover', await shrink(cover, 1600), 'cover.jpg'); else fd.delete('cover');
+        const logo = $('logoFile').files[0];
+        if (logo) fd.set('logo', await shrink(logo, 800), 'logo.jpg');
         const j = await send('/me/settings', fd);
         if (j.cover) { $('coverImg').src = j.cover; $('coverPrev').hidden = false; } else { $('coverPrev').hidden = true; }
         f.drop_cover.checked = false; $('coverFile').value = '';
+        if (j.logo) showLogo(j.logo);
+        f.drop_logo.checked = false; $('logoFile').value = ''; $('logoDrop').hidden = !j.own_logo;
         A.toast('Saved ✓', { kind: 'ok' });
       } catch (err) { A.toast(err.message, { kind: 'err' }); }
       btn.disabled = false;

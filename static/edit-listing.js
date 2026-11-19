@@ -172,42 +172,6 @@
       catch (err) { toast(err.message, true); stock.disabled = false; }
       return;
     }
-    const shop = e.target.closest('[data-own-store]');
-    if (shop) {
-      const d = shop.dataset;
-      sheet('Edit store', (f, api) => {
-        const nl = el('label', 'f ls-f'); nl.append('Store name');
-        const name = el('input'); name.type = 'text'; name.maxLength = 40; name.value = d.name || ''; name.placeholder = d.fallback || 'Your store'; name.autocomplete = 'off';
-        nl.append(name, el('small', '', `Shown at the top of your store. Leave it empty to use your trainer name${d.fallback ? ` (${d.fallback})` : ''}.`));
-        const ll = el('label', 'f ls-f'); ll.append('Where you are');
-        const loc = el('input'); loc.type = 'text'; loc.maxLength = 60; loc.value = d.location || ''; loc.placeholder = 'Quezon City, meetups at SM North';
-        ll.append(loc, el('small', '', 'Helps buyers know if a meetup is possible.'));
-        // The border colour around the store (store-head.js draws the choices and shows them on the header as you pick).
-        const bp = window.bbvBorder ? window.bbvBorder.picker(d.border || '') : null;
-        // Closed without saving (✕, a tap outside, Escape): the header gets its own colour back.
-        let kept = false;
-        if (bp) { const seen = new MutationObserver(() => { if (!api.node.isConnected) { seen.disconnect(); if (!kept) bp.undo(); } }); seen.observe(document.body, { childList: true }); }
-        const err = el('p', 'ce-err'); err.hidden = true; err.setAttribute('role', 'alert');
-        const acts = el('div', 'sheet-acts ls-acts');
-        const more = el('a', 'linkbtn ls-stop', 'All store settings'); more.href = '/me/settings';
-        const cancel = el('button', 'btn ghost', 'Cancel'); cancel.type = 'button'; cancel.addEventListener('click', () => { if (bp) bp.undo(); api.close(); });
-        const save = el('button', 'btn', 'Save'); save.type = 'submit';
-        acts.append(more, cancel, save);
-        f.append(nl, ll);
-        if (bp) f.append(bp.node);
-        f.append(err, acts);
-        f.addEventListener('submit', async (ev) => {
-          ev.preventDefault();
-          const border = bp ? bp.value() : (d.border || '');
-          if (name.value.trim() === (d.name || '') && loc.value.trim() === (d.location || '') && border === (d.border || '')) { api.close(); return; }
-          save.disabled = true; save.textContent = 'Saving…';
-          const fd = new FormData(); fd.append('store_name', name.value.trim()); fd.append('location', loc.value.trim()); fd.append('store_border', border);
-          try { await send('/me/settings', fd); kept = true; later('Saved. This is how your store looks now.'); }
-          catch (e2) { save.disabled = false; save.textContent = 'Save'; err.textContent = e2.message; err.hidden = false; }
-        });
-        setTimeout(() => name.focus(), 30);
-      });
-    }
   });
 
   // The cover photo: pick one and it is up.

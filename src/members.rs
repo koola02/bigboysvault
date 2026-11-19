@@ -121,6 +121,15 @@ pub struct Member {
     /// The seller hid their store: everyone else is shown nothing of it, as for a store that isn't approved
     /// (`sellers::set_store_hidden`). Its owner and the vault's staff still see it all.
     pub store_hidden: bool,
+    /// The store's own picture ('' until the seller picks one: it shows theirs) and its own "about".
+    pub store_avatar: String,
+    pub store_bio: String,
+    /// The trainer's own page: its cover photo and its links, apart from the store's.
+    pub page_cover: String,
+    pub page_fb_url: String,
+    pub page_ig_url: String,
+    pub page_tiktok_url: String,
+    pub page_links: String,
 }
 
 /// An admin's tags for a trainer, as a list.
@@ -165,10 +174,6 @@ impl Member {
     pub fn tag_list(&self) -> Vec<String> {
         tag_list(&self.tags)
     }
-    /// Extra links to show: checked again here, so an old bad link never reaches a page.
-    pub fn link_list(&self) -> Vec<String> {
-        self.links.lines().map(clean_https_url).filter(|s| !s.is_empty()).collect()
-    }
     pub fn seller_url(&self) -> String {
         if self.slug.is_empty() {
             format!("/trainers/{}", self.id)
@@ -191,6 +196,32 @@ impl Member {
     pub fn has_cover(&self) -> bool {
         !self.cover_photo.is_empty()
     }
+    /// The store's picture: its own, or its owner's until they pick one. Wherever the store's name shows, this shows.
+    pub fn store_pic(&self) -> &str {
+        if self.store_avatar.is_empty() { &self.avatar } else { &self.store_avatar }
+    }
+    pub fn has_store_pic(&self) -> bool {
+        !self.store_pic().is_empty()
+    }
+    /// The trainer's own page has a cover photo of its own.
+    pub fn has_page_cover(&self) -> bool {
+        !self.page_cover.is_empty()
+    }
+    /// The links on the trainer's own page, as (label, address, the address in short). Never the store's.
+    pub fn page_link_list(&self) -> Vec<(String, String, String)> {
+        let mut v = vec![];
+        for (label, url) in [("Facebook", &self.page_fb_url), ("Instagram", &self.page_ig_url), ("TikTok", &self.page_tiktok_url)] {
+            if !url.is_empty() {
+                v.push((label.to_string(), url.clone(), short_link(url)));
+            }
+        }
+        for line in crate::sellers::clean_link_lines(&self.page_links).lines() {
+            let (label, url) = crate::sellers::link_parts(line);
+            let s = short_link(&url);
+            v.push((label, url, s));
+        }
+        v
+    }
     pub fn is_away(&self) -> bool {
         self.status == "Away"
     }
@@ -210,8 +241,10 @@ impl Member {
                 v.push((label.to_string(), url.clone(), short(url)));
             }
         }
-        for line in self.link_list() {
-            let (label, url) = crate::sellers::link_parts(&line);
+        // Each extra line is "Label | https://…" or just the address. (They were checked as bare addresses here before,
+        // so a named link never showed.)
+        for line in crate::sellers::clean_link_lines(&self.links).lines() {
+            let (label, url) = crate::sellers::link_parts(line);
             let s = short(&url);
             v.push((label, url, s));
         }
@@ -362,10 +395,25 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         ("store_border", "TEXT NOT NULL DEFAULT ''"),
         // The seller hid their store (Store settings, 18 Nov 2026): only they and the vault's staff see it and its cards.
         ("store_hidden", "INTEGER NOT NULL DEFAULT 0"),
+        // A store and its owner's own page have their own settings (the owner, 20 Nov 2026: "personal page and store
+        // should have different settings ... when i add a link in store, it shows up in my personal page too"). The
+        // store: its own picture ('' shows the owner's) and its own words. The page: its own cover photo and links.
+        // The links, cover and place there before were typed in Store settings: they stay the store's.
+        ("store_avatar", "TEXT NOT NULL DEFAULT ''"),
+        ("store_bio", "TEXT NOT NULL DEFAULT ''"),
+        ("page_cover", "TEXT NOT NULL DEFAULT ''"),
+        ("page_fb_url", "TEXT NOT NULL DEFAULT ''"),
+        ("page_ig_url", "TEXT NOT NULL DEFAULT ''"),
+        ("page_tiktok_url", "TEXT NOT NULL DEFAULT ''"),
+        ("page_links", "TEXT NOT NULL DEFAULT ''"),
     ] {
         let there: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('members') WHERE name=?1", [col], |r| r.get(0))?;
         if there == 0 {
             c.execute_batch(&format!("ALTER TABLE members ADD COLUMN {col} {def}"))?;
+            // Once: a store goes on saying what it says today (it showed its owner's "about").
+            if col == "store_bio" {
+                c.execute("UPDATE members SET store_bio=bio", [])?;
+            }
         }
     }
     for (col, def) in [
@@ -731,8 +779,8 @@ pub struct Highlight {
     pub card: MemberCard,
 }
 
-const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags,m.slug,m.fb_url,m.tiktok_url,m.links,m.cover_photo,m.location,m.contact_info,m.contact_public,m.status,m.email,m.store_name,m.fb_group_url,m.ig_url,m.shopee_url,m.pay_info,m.pay_methods,m.notify_views,m.pay_public,m.seller,m.store_border,m.store_hidden");
-const MEMBER_COUNT: usize = 34;
+const MEMBER_COLS: &str = concat!("m.id,m.name,m.bio,m.avatar,m.highlight,m.profile_ok,(SELECT COUNT(*) FROM member_cards x WHERE x.member_id=m.id),m.locked_until,m.blocked,m.stars,m.role,", worth_sql!(), ",m.tags,m.slug,m.fb_url,m.tiktok_url,m.links,m.cover_photo,m.location,m.contact_info,m.contact_public,m.status,m.email,m.store_name,m.fb_group_url,m.ig_url,m.shopee_url,m.pay_info,m.pay_methods,m.notify_views,m.pay_public,m.seller,m.store_border,m.store_hidden,m.store_avatar,m.store_bio,m.page_cover,m.page_fb_url,m.page_ig_url,m.page_tiktok_url,m.page_links");
+const MEMBER_COUNT: usize = 41;
 
 fn map_member(r: &Row) -> rusqlite::Result<Member> {
     Ok(Member {
@@ -770,6 +818,13 @@ fn map_member(r: &Row) -> rusqlite::Result<Member> {
         seller: r.get::<_, i64>(31)? != 0,
         store_border: r.get(32)?,
         store_hidden: r.get::<_, i64>(33)? != 0,
+        store_avatar: r.get(34)?,
+        store_bio: r.get(35)?,
+        page_cover: r.get(36)?,
+        page_fb_url: r.get(37)?,
+        page_ig_url: r.get(38)?,
+        page_tiktok_url: r.get(39)?,
+        page_links: r.get(40)?,
     })
 }
 
@@ -1022,29 +1077,45 @@ pub fn unapproved_count(c: &Connection) -> rusqlite::Result<i64> {
 /// Saves name, description and picture. Changing what people see sends the profile back for approval.
 /// Returns false when the name is already taken by someone else.
 pub fn save_profile(c: &Connection, m: &Member, name: &str, bio: &str, avatar: Option<&str>) -> rusqlite::Result<bool> {
-    save_profile_seller(c, m, name, bio, avatar, &m.fb_url, &m.tiktok_url, &m.links)
+    save_page(c, m, &PageSave { name, bio, avatar, cover: None, fb_url: &m.page_fb_url, ig_url: &m.page_ig_url, tiktok_url: &m.page_tiktok_url, links: &m.page_links })
 }
 
-pub fn save_profile_seller(
-    c: &Connection,
-    m: &Member,
-    name: &str,
-    bio: &str,
-    avatar: Option<&str>,
-    fb_url: &str,
-    tiktok_url: &str,
-    links: &str,
-) -> rusqlite::Result<bool> {
-    let taken: Option<i64> = c.query_row("SELECT id FROM members WHERE name_key=?1 AND id<>?2", rusqlite::params![name_key(name), m.id], |r| r.get(0)).optional()?;
+/// What a trainer's own page is saved with (Account Settings): never anything of their store's.
+pub struct PageSave<'a> {
+    pub name: &'a str,
+    pub bio: &'a str,
+    /// A new picture, or None to keep the one there.
+    pub avatar: Option<&'a str>,
+    /// A new cover photo, `Some("")` to take it off, or None to keep the one there.
+    pub cover: Option<&'a str>,
+    pub fb_url: &'a str,
+    pub ig_url: &'a str,
+    pub tiktok_url: &'a str,
+    pub links: &'a str,
+}
+
+/// Saves a trainer's own page: name, words, picture, cover photo and links. A change goes back to an admin for a look
+/// (the page isn't live again until then), as before. False: the name is someone else's.
+pub fn save_page(c: &Connection, m: &Member, p: &PageSave) -> rusqlite::Result<bool> {
+    let taken: Option<i64> = c.query_row("SELECT id FROM members WHERE name_key=?1 AND id<>?2", rusqlite::params![name_key(p.name), m.id], |r| r.get(0)).optional()?;
     if taken.is_some() {
         return Ok(false);
     }
-    let same = m.name == name && m.bio == bio && avatar.is_none_or(|a| a == m.avatar) && m.fb_url == fb_url && m.tiktok_url == tiktok_url && m.links == links;
+    let (fb, ig, tt, links) = (clean_https_url(p.fb_url), clean_https_url(p.ig_url), clean_https_url(p.tiktok_url), crate::sellers::clean_link_lines(p.links));
+    let same = m.name == p.name
+        && m.bio == p.bio
+        && p.avatar.is_none_or(|a| a == m.avatar)
+        && p.cover.is_none_or(|k| k == m.page_cover)
+        && m.page_fb_url == fb
+        && m.page_ig_url == ig
+        && m.page_tiktok_url == tt
+        && m.page_links == links;
     // The web address stays when the name changes, so links people shared keep working. It changes only in Store settings.
-    let slug = if m.slug.is_empty() { unique_slug(c, name, m.id)? } else { m.slug.clone() };
+    let slug = if m.slug.is_empty() { unique_slug(c, p.name, m.id)? } else { m.slug.clone() };
     c.execute(
-        "UPDATE members SET name=?2,name_key=?3,bio=?4,avatar=COALESCE(?5,avatar),updated_at=?6,profile_ok=CASE WHEN ?7 THEN profile_ok ELSE 0 END,slug=?8,fb_url=?9,tiktok_url=?10,links=?11 WHERE id=?1",
-        rusqlite::params![m.id, name, name_key(name), bio, avatar, now(), same, slug, fb_url, tiktok_url, links],
+        "UPDATE members SET name=?2,name_key=?3,bio=?4,avatar=COALESCE(?5,avatar),updated_at=?6,profile_ok=CASE WHEN ?7 THEN profile_ok ELSE 0 END,slug=?8,
+           page_cover=COALESCE(?9,page_cover),page_fb_url=?10,page_ig_url=?11,page_tiktok_url=?12,page_links=?13 WHERE id=?1",
+        rusqlite::params![m.id, p.name, name_key(p.name), p.bio, p.avatar, now(), same, slug, p.cover, fb, ig, tt, links],
     )?;
     Ok(true)
 }

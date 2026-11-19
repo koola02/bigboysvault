@@ -551,6 +551,14 @@ a.pbtn:hover { text-decoration: none; }
 .st-cover-prev { display: block; }
 .st-cover-prev[hidden] { display: none; }
 .st-cover-prev img { display: block; width: 100%; max-height: 200px; border-radius: var(--r-sm); object-fit: cover; }
+/* A picture to pick (a cover photo, a store's own picture): its name, how it looks now, the file, and taking it off. */
+.st-pick { display: flex; flex-direction: column; gap: 6px; }
+.st-pick-l { color: var(--muted); font: 600 .8125rem/1.2 var(--font); }
+.st-pick-l small { font-weight: 400; }
+.st-logo-prev .av { width: 88px; height: 88px; font-size: 2rem; }
+.st-pick .chk[hidden] { display: none; }
+/* "Other" border colour: the colour box sits in the choice itself. */
+.st-border-own input[type="color"] { width: 36px; height: 28px; padding: 0; border: 0; border-radius: 6px; background: none; cursor: pointer; }
 .st-links { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
 .st-links label:last-child { grid-column: 1 / -1; }
 .me-fields code { padding: 1px 5px; border-radius: 4px; background: var(--surface-3); font-size: .75rem; }

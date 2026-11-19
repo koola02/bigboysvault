@@ -28,11 +28,19 @@
     <h2 class="h2">The store</h2>
     <div class="me-fields">
       <label>Store name <small>shown at the top; blank uses your trainer name</small><input name="store_name" value="{{ p.m.store_name }}" maxlength="40" autocomplete="off"></label>
+      {#- The store's own picture (the owner, 20 Nov 2026): the trainer's own shows until one is picked. -#}
+      <div class="st-pick st-logo">
+        <span class="st-pick-l">Store picture <small>shown with your store's name; your own shows until you pick one</small></span>
+        <span class="st-logo-prev" id="logoPrev">{% if p.m.has_store_pic() %}<img class="av" src="{{ p.m.store_pic() }}" alt="" id="logoImg">{% else %}<span class="av" id="logoImg">{{ p.m.initial() }}</span>{% endif %}</span>
+        <input type="file" accept="image/*" id="logoFile" aria-label="Store picture">
+        <label class="chk" id="logoDrop"{% if p.m.store_avatar.is_empty() %} hidden{% endif %}><input type="checkbox" class="sr" name="drop_logo" value="1"><span class="chk-box"></span> Use my own picture again</label>
+      </div>
       <label class="st-cover-pick">Cover photo <small>wide, like a banner</small>
         <span class="st-cover-prev" id="coverPrev"{% if !p.m.has_cover() %} hidden{% endif %}><img src="{{ p.m.cover_photo }}" alt="" id="coverImg"></span>
         <input type="file" name="cover" accept="image/*" id="coverFile">
         <label class="chk"><input type="checkbox" class="sr" name="drop_cover" value="1"><span class="chk-box"></span> Remove the cover photo</label>
       </label>
+      <label>About the store <small><span id="storeBioCount">0</span> of 300</small><textarea name="store_bio" maxlength="300" rows="3" placeholder="What you sell, how you pack and ship, when you answer">{{ p.m.store_bio }}</textarea></label>
       <label>Status
         <select name="status">
           <option value="Active"{% if p.m.status == "Active" %} selected{% endif %}>Active — open for orders</option>
@@ -55,6 +63,12 @@
       <label>Other links <small>one per line: <code>Carousell | https://…</code>, or just the address</small><textarea name="links" rows="3" placeholder="Carousell | https://carousell.ph/u/…">{{ p.m.links }}</textarea></label>
     </div>
 
+    <h2 class="h2">Border colour</h2>
+    <div class="st-borders" role="radiogroup" aria-label="Border colour">
+      {% for (name, col) in borders %}<label class="st-border"><input type="radio" class="sr" name="store_border" value="{{ col }}"{% if *col == p.m.store_border %} checked{% endif %}><span class="st-sw" style="--sw:{% if col.is_empty() %}#efc873{% else %}{{ col }}{% endif %}"></span><span>{{ name }}</span></label>{% endfor %}
+      <label class="st-border st-border-own"><input type="radio" class="sr" name="store_border" id="ownBorder" value="{% if !named_border %}{{ p.m.store_border }}{% endif %}"{% if !named_border %} checked{% endif %}><span class="st-sw" id="ownSw" style="--sw:{% if named_border %}#8a90a6{% else %}{{ p.m.store_border }}{% endif %}"></span><span>Other</span><input type="color" id="ownColor" value="{% if named_border %}#4c8dff{% else %}{{ p.m.store_border }}{% endif %}" aria-label="Pick another colour"></label>
+    </div>
+
     <h2 class="h2">Getting paid</h2>
     <p class="me-how">{{ nav.brand }} never handles money. A buyer pays you directly, in their own app, once you accept their order. These details are shown only then.</p>
     <div class="me-fields">
@@ -74,5 +88,5 @@
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/admin-ui.js?v=10" defer></script>
-<script src="/static/store.js?v=14" defer></script>
+<script src="/static/store.js?v=15" defer></script>
 {% endblock %}

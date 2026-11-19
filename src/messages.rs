@@ -156,7 +156,8 @@ fn person(c: &rusqlite::Connection, side: i64, hub: &DmHub, admins: &[i64]) -> r
         return Ok(json!({ "id": dm::VAULT, "name": VAULT_NAME, "avatar": VAULT_AVATAR, "initial": "B", "online": admins.iter().any(|a| hub.is_online(*a)), "url": "/" }));
     }
     Ok(match members::get(c, side)? {
-        Some(m) => json!({ "id": m.id, "name": m.store_title(), "avatar": m.avatar, "initial": m.initial(), "online": hub.is_online(m.id), "url": format!("/trainers/{}", m.id) }),
+        // A seller talks as their store: its name, so its picture.
+        Some(m) => json!({ "id": m.id, "name": m.store_title(), "avatar": if m.seller { m.store_pic() } else { m.avatar.as_str() }, "initial": m.initial(), "online": hub.is_online(m.id), "url": format!("/trainers/{}", m.id) }),
         None => json!({ "id": side, "name": "A trainer who left", "avatar": "", "initial": "?", "online": false, "url": "" }),
     })
 }

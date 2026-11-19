@@ -1,5 +1,6 @@
-// The top of every store page, the vault's and a trainer's alike: Follow, the Vouches window, and the border colour
-// a store's owner picks in "Edit store" (a full admin, for the vault's). Loaded by store.html and store_vault.html.
+// The top of every store page, the vault's and a trainer's alike: Follow and the Vouches window. (A store's border
+// colour, picture and words are set in Store settings; the vault's in Vault Manager › Store settings.)
+// Loaded by store.html and store_vault.html.
 (() => {
   const root = document.getElementById('storefront'); if (!root) return;
   const slug = root.dataset.slug, name = root.dataset.name || 'this store';
@@ -120,51 +121,6 @@
   });
   // Arriving from "… left you a review" (the bell): the Vouches window, where reviews are now.
   if (location.hash === '#vouches') { const b = root.querySelector('[data-vouches]'); if (b) { history.replaceState(null, '', location.pathname + location.search); vouches(b); } }
-
-  /* ----- the border colour ----- */
-  // Every store starts gold; any colour that shows up on the dark page can be picked. The server checks the same rule.
-  const BORDERS = [['Gold', ''], ['Silver', '#c0c6d4'], ['Bronze', '#c98a55'], ['Red', '#e5534b'], ['Orange', '#f0883e'], ['Green', '#46c37b'], ['Teal', '#2bb6a8'], ['Blue', '#4c8dff'], ['Purple', '#a371f7'], ['Pink', '#f778ba']];
-  const GOLD = '#efc873';
-  const lum = (hex) => {
-    const ch = (i) => { const x = parseInt(hex.slice(i, i + 2), 16) / 255; return x <= 0.04045 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4; };
-    return 0.2126 * ch(1) + 0.7152 * ch(3) + 0.0722 * ch(5);
-  };
-  const shows = (hex) => !hex || ((lum(hex) + 0.05) / (lum('#0b0d14') + 0.05)) >= 2;
-  // A row of colour buttons, plus "Other colour". Picking one shows it on the store's header straight away.
-  function picker(value) {
-    const head = document.querySelector('.sf-head');
-    const was = head ? head.style.getPropertyValue('--sborder') : '';
-    let current = (value || '').toLowerCase();
-    const wrap = make('div', 'bp');
-    wrap.append(make('p', 'bp-l', 'Border colour'));
-    const row = make('div', 'bp-row'); row.setAttribute('role', 'radiogroup'); row.setAttribute('aria-label', 'Border colour');
-    const note = make('small', 'bp-note', 'Shown around your store here and on the Stores page.');
-    const custom = make('label', 'bp-sw bp-other');
-    const input = make('input'); input.type = 'color'; input.value = current || GOLD; input.setAttribute('aria-label', 'Other colour');
-    custom.append(input, make('span', null, 'Other'));
-    const swatches = BORDERS.map(([label, hex]) => {
-      const b = button('bp-sw', null, () => set(hex));
-      b.setAttribute('role', 'radio'); b.setAttribute('aria-label', label); b.title = label;
-      b.style.setProperty('--c', hex || GOLD); b.dataset.hex = hex;
-      return b;
-    });
-    row.append(...swatches, custom);
-    function set(hex) {
-      hex = (hex || '').toLowerCase();
-      if (!shows(hex)) { note.textContent = 'That colour is too dark to see on the page. Pick a lighter one.'; note.classList.add('bad'); return; }
-      note.textContent = 'Shown around your store here and on the Stores page.'; note.classList.remove('bad');
-      current = hex;
-      const preset = BORDERS.some(([, h]) => h === hex);
-      swatches.forEach((b) => b.setAttribute('aria-checked', String(b.dataset.hex === hex)));
-      custom.classList.toggle('on', !preset); if (!preset) custom.style.setProperty('--c', hex);
-      if (head) head.style.setProperty('--sborder', hex || 'var(--gold-edge)');
-    }
-    input.addEventListener('input', () => set(input.value));
-    wrap.append(row, note);
-    set(current);
-    return { node: wrap, value: () => current, undo: () => { if (head) { if (was) head.style.setProperty('--sborder', was); else head.style.removeProperty('--sborder'); } } };
-  }
-  window.bbvBorder = { picker };
 
   // (The vault's store is set up in Vault Manager › Store settings, /admin/store, like a seller's Store settings.)
 })();

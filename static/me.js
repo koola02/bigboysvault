@@ -56,12 +56,19 @@
     const s = $('meStatus'); s.classList.toggle('ok', live);
     s.textContent = live ? '✓ Your page is live.' : 'The vault owner still has to approve your picture, description and binder. Your vouches go up straight away.';
   };
+  // The page's cover photo: shown here as soon as it is picked, saved with the rest.
+  const coverFile = $('pageCoverFile');
+  coverFile.addEventListener('change', () => { const f = coverFile.files[0]; if (!f) return; $('pageCoverImg').src = URL.createObjectURL(f); $('pageCoverPrev').hidden = false; form.elements.drop_cover.checked = false; });
   async function saveProfile() {
     const fd = new FormData(form);
     if (picked) fd.set('avatar', picked, 'avatar.jpg');
     try {
+      const cover = coverFile.files[0];
+      if (cover) fd.set('cover', await shrink(cover, 1600), 'cover.jpg');
       const j = await send('/me/profile', fd);
-      picked = null;
+      picked = null; coverFile.value = ''; form.elements.drop_cover.checked = false;
+      if (j.cover) $('pageCoverImg').src = j.cover;
+      $('pageCoverPrev').hidden = !j.cover; $('pageCoverDrop').hidden = !j.cover;
       status(j.approved);
       say(j.approved ? 'Saved ✓' : 'Saved ✓ The vault owner will check it soon.');
     } catch (err) { say(err.message, true); }

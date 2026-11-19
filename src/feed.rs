@@ -190,7 +190,7 @@ fn who(c: &rusqlite::Connection, id: i64, brand: &str, store: bool) -> rusqlite:
     }
     Ok(members::get(c, id)?.filter(|m| !m.blocked).map(|m| Who {
         name: if store { m.store_title() } else { m.name.clone() },
-        avatar: m.avatar.clone(),
+        avatar: if store { m.store_pic().to_string() } else { m.avatar.clone() },
         initial: m.initial(),
         url: if store { m.store_url() } else { format!("/trainers/{}", m.id) },
     }))

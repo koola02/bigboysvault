@@ -1021,6 +1021,9 @@ struct SettingsPage {
     p: Panel,
     methods: [&'static str; 6],
     site: String,
+    /// The border colours to pick from, and whether the store's is one of them (else it is its own "Other" colour).
+    borders: [(&'static str, &'static str); 10],
+    named_border: bool,
 }
 
 pub async fn settings(State(app): State<App>, h: HeaderMap) -> Res {
@@ -1030,7 +1033,8 @@ pub async fn settings(State(app): State<App>, h: HeaderMap) -> Res {
     };
     let (nav, p) = with_db(&app, move |c| Ok((chrome(c)?, panel(c, m, "settings")?))).await?;
     let site = nav.site.clone();
-    Ok(html(render(SettingsPage { nav, p, methods: sellers::PAY_METHODS, site })?))
+    let named_border = sellers::BORDERS.iter().any(|(_, c)| *c == p.m.store_border);
+    Ok(html(render(SettingsPage { nav, p, methods: sellers::PAY_METHODS, site, borders: sellers::BORDERS, named_border })?))
 }
 
 pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> Res {
@@ -1061,24 +1065,29 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
         email: m.email.clone(),
         notify_views: m.notify_views,
         pay_public: m.pay_public,
+        store_bio: m.store_bio.clone(),
     };
     let (mut cover, mut methods, mut drop_cover, mut border) = (None::<Vec<u8>>, Vec::<String>::new(), false, None::<String>);
+    // The store's own picture: a new one, or back to its owner's.
+    let (mut logo, mut drop_logo) = (None::<Vec<u8>>, false);
     // An unticked box isn't sent at all. The pay_methods_sent marker says "the whole form came in",
     // so a missing box then means "off"; without the marker it means "leave it as it is".
     // The boxes are applied after the loop, so the order the fields arrive in doesn't matter.
     let (mut sent, mut contact_public, mut pay_public, mut notify_views) = (false, None::<bool>, None::<bool>, None::<bool>);
     while let Some(f) = mp.next_field().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))? {
         let key = f.name().unwrap_or("").to_string();
-        if key == "cover" {
+        if key == "cover" || key == "logo" {
             let b = f.bytes().await.map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
             if !b.is_empty() {
-                cover = Some(b.to_vec());
+                if key == "cover" { cover = Some(b.to_vec()) } else { logo = Some(b.to_vec()) }
             }
             continue;
         }
         let v = f.text().await.unwrap_or_default();
         match key.as_str() {
             "store_name" => s.store_name = v,
+            "store_bio" => s.store_bio = v,
+            "drop_logo" => drop_logo = v == "1" || v == "on",
             "location" => s.location = v,
             "contact_info" => s.contact_info = v,
             "contact_public" => contact_public = Some(v == "1" || v == "on"),
@@ -1125,6 +1134,20 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
             Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "That cover photo couldn't be read. Try a JPEG or PNG.")),
         }
     }
+    let mut new_logo = None;
+    if let Some(bytes) = logo {
+        let dir = PathBuf::from(&*app.uploads);
+        let stem = format!("s{}-{}", m.id, members::temp_password());
+        match gated(move || crate::community::store_avatar(bytes, dir, stem)).await? {
+            Ok(p) => new_logo = Some(p),
+            Err(e) => {
+                if let Some(k) = &new_cover {
+                    admin::remove_upload(&app.uploads, k);
+                }
+                return Ok(fail(StatusCode::BAD_REQUEST, if e == crate::community::TOO_BIG { "That picture is too big. Please use a smaller one (under 16 megapixels)." } else { "That store picture couldn't be read. Try a JPEG or PNG." }));
+            }
+        }
+    }
     // A store can't call itself Big Boys Vault (or the owner's current site name), staff or official: its cards sit
     // next to the vault's on The Vault page, each saying whose it is.
     let wanted = members::clean_line(&s.store_name, 40);
@@ -1136,8 +1159,8 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
             return Ok(fail(StatusCode::BAD_REQUEST, "That store name is reserved. Please pick another."));
         }
     }
-    let (id, old_cover) = (m.id, m.cover_photo.clone());
-    let cover_now = new_cover.clone();
+    let (id, old_cover, old_logo) = (m.id, m.cover_photo.clone(), m.store_avatar.clone());
+    let (cover_now, logo_now) = (new_cover.clone(), new_logo.clone());
     with_db(&app, move |c| {
         sellers::save_store(c, id, &s)?;
         if let Some(on) = notify_views {
@@ -1151,15 +1174,23 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
         } else if drop_cover {
             c.execute("UPDATE members SET cover_photo='' WHERE id=?1", [id])?;
         }
+        if let Some(p) = &logo_now {
+            c.execute("UPDATE members SET store_avatar=?2 WHERE id=?1", rusqlite::params![id, p])?;
+        } else if drop_logo {
+            c.execute("UPDATE members SET store_avatar='' WHERE id=?1", [id])?;
+        }
         Ok(())
     })
     .await?;
     if (new_cover.is_some() || drop_cover) && old_cover.starts_with("/uploads/") {
         admin::remove_upload(&app.uploads, &old_cover);
     }
+    if (new_logo.is_some() || drop_logo) && old_logo.starts_with("/uploads/") {
+        admin::remove_upload(&app.uploads, &old_logo);
+    }
     app.forget();
     let me = with_db(&app, move |c| members::get(c, id)).await?;
-    Ok(ok(json!({ "ok": true, "cover": me.as_ref().map(|m| m.cover_photo.clone()), "status": me.as_ref().map(|m| m.status.clone()) })))
+    Ok(ok(json!({ "ok": true, "cover": me.as_ref().map(|m| m.cover_photo.clone()), "logo": me.as_ref().map(|m| m.store_pic().to_string()), "own_logo": me.as_ref().is_some_and(|m| !m.store_avatar.is_empty()), "status": me.as_ref().map(|m| m.status.clone()) })))
 }
 
 #[derive(Deserialize)]
@@ -1440,7 +1471,7 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
             Some(b) => format!("/store/{}/binders/{}", m.slug, b.slug),
             None => m.store_url(),
         },
-        image: if m.has_cover() { nav.abs(&m.cover_photo) } else if m.has_avatar() { nav.abs(&m.avatar) } else { String::new() },
+        image: if m.has_cover() { nav.abs(&m.cover_photo) } else if m.has_store_pic() { nav.abs(m.store_pic()) } else { String::new() },
         kind: "profile",
         ..Default::default()
     };
@@ -1944,7 +1975,7 @@ fn seller_card(c: &rusqlite::Connection, m: Member, s: StoreStats) -> rusqlite::
     Ok(StoreCard {
         name: m.store_title(),
         url: m.store_url(),
-        avatar: if m.has_avatar() { m.avatar.clone() } else { String::new() },
+        avatar: m.store_pic().to_string(),
         initial: m.initial(),
         logo: false,
         cover: if m.has_cover() { m.cover_photo.clone() } else { String::new() },
@@ -3188,7 +3219,7 @@ fn bm_store(c: &rusqlite::Connection, id: i64, brand: &str) -> rusqlite::Result<
         let n = sellers::store_stats(c, id)?.on_sale;
         format!("{n} card{} for sale", if n == 1 { "" } else { "s" })
     };
-    Ok(Some(BmStore { id, name: m.store_title(), url: m.store_url(), avatar: if m.has_avatar() { m.avatar.clone() } else { String::new() }, initial: m.initial(), logo: false, sub }))
+    Ok(Some(BmStore { id, name: m.store_title(), url: m.store_url(), avatar: m.store_pic().to_string(), initial: m.initial(), logo: false, sub }))
 }
 
 /// Puts a card under its store's heading, making the heading the first time that store comes up.
@@ -3633,6 +3664,32 @@ mod tests {
         assert_eq!((all[2].off, all[2].words.as_str()), (true, "1 card · none for sale · hidden from visitors"));
         assert_eq!((all[3].off, all[3].words.as_str()), (true, "No cards yet · hidden from visitors"));
         assert!(!all[0].off && all[0].count == 3);
+    }
+
+    /// A store shows its own picture and its own words, wherever its name shows, and its owner's button there is Store
+    /// settings (the owner, 20 Nov 2026; the Edit store window is gone: one place for a store's settings).
+    #[test]
+    fn a_store_shows_its_own_picture_and_words_and_its_owner_gets_store_settings() {
+        let c = db();
+        let m = members::create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, m, true).unwrap();
+        members::set_profile_ok(&c, m, true).unwrap();
+        c.execute("UPDATE members SET avatar='/uploads/t-me.jpg', bio='About me', store_bio='About the store', store_avatar='/uploads/s-shop.jpg' WHERE id=?1", [m]).unwrap();
+        let Added::Yes(id) = sellers::add_listing(&c, m, "tcgdex:base1-58", "Pikachu", "58/102", "Base Set", "/p/pika.webp", "").unwrap() else { panic!() };
+        c.execute("UPDATE member_cards SET kind='sale', status='Active', qty=1, value_own=500 WHERE id=?1", [id]).unwrap();
+        let slug = members::get(&c, m).unwrap().unwrap().slug;
+        let own = page_as(&c, &slug, None, true);
+        assert!(own.contains("<img class=\"av av-xl\" src=\"/uploads/s-shop.jpg\"") && own.contains("<p class=\"sf-bio\">About the store</p>") && !own.contains("About me"), "{own}");
+        assert!(own.contains("<a class=\"btn\" href=\"/me/settings\">") && own.contains("Store settings</a>") && !own.contains("data-own-store"));
+        assert!(!page(&c, &slug, None).contains("href=\"/me/settings\""), "only its owner gets the button");
+        // Its card on Stores, and the store named beside a card for sale, carry the same picture.
+        let card = store_cards(&c, "Big Boys Vault").unwrap().into_iter().find(|s| s.name == "Shop").expect("the store is on Stores");
+        assert_eq!(card.avatar, "/uploads/s-shop.jpg");
+        let open = sellers::open_listings(&c).unwrap();
+        assert_eq!(open.iter().find(|l| l.card.id == id).map(|l| l.store.img.as_str()), Some("/uploads/s-shop.jpg"));
+        // No picture of its own: its owner's.
+        c.execute("UPDATE members SET store_avatar='' WHERE id=?1", [m]).unwrap();
+        assert!(page(&c, &slug, None).contains("<img class=\"av av-xl\" src=\"/uploads/t-me.jpg\""));
     }
 
     /// One binder editor for every store (the owner, 19 Nov 2026): a seller's binder can have a photo for its cover, as a

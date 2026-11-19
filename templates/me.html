@@ -43,9 +43,20 @@
     <div class="me-fields">
       <label>Trainer name<input name="name" value="{{ p.m.name }}" maxlength="24" autocomplete="off" required></label>
       <label>About you <small><span id="bioCount">0</span> of 300</small><textarea name="bio" maxlength="300" rows="3" placeholder="What do you collect? Who's your favorite Pokémon?">{{ p.m.bio }}</textarea></label>
+      {#- The page's own cover photo and links (the owner, 20 Nov 2026: a store's are its own, in Store settings). -#}
+      <div class="st-pick">
+        <span class="st-pick-l">Cover photo <small>wide, like a banner, at the top of your page</small></span>
+        <span class="st-cover-prev" id="pageCoverPrev"{% if !p.m.has_page_cover() %} hidden{% endif %}><img src="{{ p.m.page_cover }}" alt="" id="pageCoverImg"></span>
+        <input type="file" accept="image/*" id="pageCoverFile" aria-label="Cover photo">
+        <label class="chk" id="pageCoverDrop"{% if !p.m.has_page_cover() %} hidden{% endif %}><input type="checkbox" class="sr" name="drop_cover" value="1"><span class="chk-box"></span> Remove the cover photo</label>
+      </div>
+      <label>Facebook<input type="url" name="fb_url" value="{{ p.m.page_fb_url }}" placeholder="https://facebook.com/…" maxlength="300"></label>
+      <label>Instagram<input type="url" name="ig_url" value="{{ p.m.page_ig_url }}" placeholder="https://instagram.com/…" maxlength="300"></label>
+      <label>TikTok<input type="url" name="tiktok_url" value="{{ p.m.page_tiktok_url }}" placeholder="https://tiktok.com/@…" maxlength="300"></label>
+      <label>Other links <small>one per line: <code>YouTube | https://…</code>, or just the address</small><textarea name="links" rows="2" placeholder="YouTube | https://youtube.com/@…">{{ p.m.page_links }}</textarea></label>
       <div class="me-save-row">
         <button class="btn" type="submit">Save</button>
-        {% if p.m.seller %}<a class="linkbtn" href="/me/settings">Links, location and how to pay are in Store settings</a>{% endif %}
+        {% if p.m.seller %}<a class="linkbtn" href="/me/settings">Your store has its own picture, cover and links: Store settings</a>{% endif %}
       </div>
     </div>
   </form>
@@ -116,5 +127,5 @@
 </section>
 <script src="/static/dragsort.js?v=5" defer></script>
 <script src="/static/pricing.js?v=2" defer></script>
-<script src="/static/me.js?v=15" defer></script>
+<script src="/static/me.js?v=16" defer></script>
 {% endblock %}
