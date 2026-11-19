@@ -637,7 +637,7 @@ html.sheet-open { overflow: hidden; }
 .cm-edit .btn { min-height: 36px; }
 
 /* ---------- 15e. Finger-sized: on a touch screen, what a finger aims at is at least 32px tall ---------- */
-/* A sweep of every page on a phone (20 Nov 2026, after the owner couldn't find a comment's tiny Edit and Delete) found
+/* A sweep of every page on a phone (19 Nov 2026, after the owner couldn't find a comment's tiny Edit and Delete) found
    these under that. Only touch screens change: a mouse keeps the tighter rows. */
 @media (pointer: coarse) {
   .reacts[data-reacts] { min-height: 32px; padding-right: 6px; }

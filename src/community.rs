@@ -308,7 +308,8 @@ struct AdminPage {
 struct AdminRow {
     m: Member,
     highlight: Option<MemberCard>,
-    profile_waiting: bool,
+    /// The vault's team hid this trainer's page.
+    page_hidden: bool,
     awards: Vec<Award>,
     /// This viewer can act on this trainer. Nobody acts on themselves, and moderators don't act on other staff.
     can_act: bool,
@@ -429,7 +430,9 @@ pub async fn join(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm>)
     if let Err(e) = members::valid_password(&f.password) {
         return join_again(&app, StatusCode::BAD_REQUEST, "join", typed, e, &f.next).await;
     }
-    if with_db(&app, members::unapproved_count).await? >= members::MAX_PENDING {
+    // Nobody waits for approval, so what stops a bot filling the disk is a limit on new trainers in a day, on top of
+    // the limit for each address above.
+    if with_db(&app, |c| members::joined_since(c, members::now() - 86_400)).await? >= members::MAX_JOINS_PER_DAY {
         return join_again(&app, StatusCode::SERVICE_UNAVAILABLE, "join", typed, "New sign-ups are paused for a moment. Please try again later.", &f.next).await;
     }
     // A taken name is turned away before the slow password work.
@@ -449,7 +452,7 @@ pub async fn join(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm>)
     };
     over_limit(&app, format!("joined|{ip}"), u32::MAX);
     let n3 = name.clone();
-    with_db(&app, move |c| tell_staff_waiting(c, id, &format!("{n3} joined and waits for approval."))).await?;
+    with_db(&app, move |c| tell_staff_joined(c, id, &n3)).await?;
     // A new trainer lands on their new page, unless they came to finish something (an order, a message).
     let to = safe_next(&f.next).map(str::to_string).unwrap_or_else(|| format!("/trainers/{id}"));
     signed_in(&app, &h, id, members::REMEMBER_SECS, &to).await
@@ -640,7 +643,7 @@ pub async fn trainer(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, 
     if t.blocked && !owner {
         return not_found(&app).await;
     }
-    // Not approved yet: the public sees the name and vouches. The picture, description, links and binder wait for the owner.
+    // A page the vault's team hid: the public sees the name and vouches only. Its trainer and the staff see all of it.
     let full = t.profile_ok || is_me || owner;
     if !full {
         t.avatar.clear();
@@ -659,7 +662,7 @@ pub async fn trainer(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, 
     let highlight = t.highlight.and_then(|h| cards.iter().find(|c| c.id == h).cloned());
     let (cards, wishes, selling) = split_kinds(cards);
     let mut nav = titled(nav, &t.name);
-    // An approved trainer's page is worth finding: a profile with their picture and binder.
+    // A trainer's page is worth finding (unless the vault's team hid it): a profile with their picture and binder.
     if t.profile_ok && !t.blocked {
         let site = nav.site.clone();
         let url = format!("{site}/trainers/{}", t.id);
@@ -1018,20 +1021,10 @@ pub async fn save_profile(State(app): State<App>, h: HeaderMap, mut mp: Multipar
     if cover.is_some() && m.has_page_cover() {
         admin::remove_upload(&app.uploads, &m.page_cover);
     }
-    // An admin's own page needs no second look: they are who would give it.
-    if m.role == "admin" && m.profile_ok {
-        let id = m.id;
-        with_db(&app, move |c| members::set_profile_ok(c, id, true)).await?;
-    }
     app.forget();
     let id = m.id;
     let fresh = with_db(&app, move |c| members::get(c, id)).await?;
-    let approved = fresh.as_ref().is_some_and(|f| f.profile_ok);
-    if m.profile_ok && !approved {
-        let n3 = name.clone();
-        with_db(&app, move |c| tell_staff_waiting(c, id, &format!("{n3} changed their page, and it waits for approval."))).await?;
-    }
-    Ok(ok(json!({ "ok": true, "name": name, "avatar": avatar, "cover": fresh.as_ref().map(|f| f.page_cover.clone()).unwrap_or_default(), "approved": approved })))
+    Ok(ok(json!({ "ok": true, "name": name, "avatar": avatar, "cover": fresh.as_ref().map(|f| f.page_cover.clone()).unwrap_or_default() })))
 }
 
 // ---------- vouches and replies ----------
@@ -1083,7 +1076,7 @@ pub async fn who(State(app): State<App>, h: HeaderMap) -> Res {
         "admin": p != admin::Power::Nothing,
         "full": matches!(p, admin::Power::Admin(_)),
         // "store": a seller's own store, where the menu's "My store" goes.
-        "member": m.map(|m| json!({ "id": m.id, "name": m.name, "locked": m.locked(), "lock_left": m.lock_left(), "avatar": m.avatar, "initial": m.initial(), "seller": m.seller, "role": m.role, "approved": m.profile_ok, "store": if m.seller { m.store_url() } else { String::new() } })),
+        "member": m.map(|m| json!({ "id": m.id, "name": m.name, "locked": m.locked(), "lock_left": m.lock_left(), "avatar": m.avatar, "initial": m.initial(), "seller": m.seller, "role": m.role, "page_hidden": !m.profile_ok, "store": if m.seller { m.store_url() } else { String::new() } })),
         // The key a browser turns alerts on with (static/alerts.js).
         "push_key": crate::push::public_key(),
         "bookmarks": bookmarks,
@@ -1161,12 +1154,24 @@ fn tell_about_vouch(c: &rusqlite::Connection, writer: i64, name: &str, parent: O
     Ok(())
 }
 
-/// The admins hear that trainers wait for approval: one line, brought up to date with how many wait.
-fn tell_staff_waiting(c: &rusqlite::Connection, who: i64, words: &str) -> rusqlite::Result<()> {
-    let waiting = members::unapproved_count(c)?;
-    let line = if waiting > 1 { format!("{words} {waiting} trainers wait for approval.") } else { words.to_string() };
+/// The admins hear that a trainer joined (nobody waits for approval, so this is for knowing, not for doing): one line
+/// while it is unread, brought up to date with how many joined in the last day. It opens the newest one's page.
+fn tell_staff_joined(c: &rusqlite::Connection, who: i64, name: &str) -> rusqlite::Result<()> {
+    let n = members::joined_since(c, members::now() - 86_400)?;
+    let line = if n > 1 { format!("{name} joined. {n} new trainers in the last day.") } else { format!("{name} joined.") };
     for a in marcuru_rs::dm::admins(c)?.into_iter().filter(|a| *a != who) {
-        marcuru_rs::sellers::notify_from(c, a, who, "staff", "staff:waiting", &line, "/admin/trainers")?;
+        marcuru_rs::sellers::notify_from(c, a, who, "staff", "staff:joined", &line, &format!("/trainers/{who}"))?;
+    }
+    Ok(())
+}
+
+/// The vault's team hides a trainer's page, or shows it again. Its trainer is told, once for each change.
+fn show_page(c: &rusqlite::Connection, id: i64, show: bool) -> rusqlite::Result<()> {
+    let was = members::get(c, id)?.is_some_and(|m| m.profile_ok);
+    members::set_profile_ok(c, id, show)?;
+    if was != show {
+        let words = if show { "Your page is showing again: everyone can see it." } else { "The vault's team hid your page. Only you can see it for now." };
+        marcuru_rs::sellers::notify(c, id, "announcement", words, &format!("/trainers/{id}"))?;
     }
     Ok(())
 }
@@ -1297,7 +1302,7 @@ pub async fn vouch_act(State(app): State<App>, h: HeaderMap, Path(vid): Path<i64
 }
 
 /// A vouch (or a reply under one) the vault's team hid or took down tells its writer, unless they did it themselves:
-/// nobody is left wondering where their words went (the owner, 20 Nov 2026).
+/// nobody is left wondering where their words went (the owner, 19 Nov 2026).
 fn tell_vouch_writer(c: &rusqlite::Connection, vid: i64, by: i64, did: &str) -> rusqlite::Result<()> {
     let found: Option<(i64, String, Option<i64>)> = rusqlite::OptionalExtension::optional(c.query_row("SELECT member_id, text, parent_id FROM vouches WHERE id=?1", [vid], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))))?;
     let Some((writer, text, parent)) = found else { return Ok(()) };
@@ -1828,7 +1833,7 @@ pub async fn admin_page(State(app): State<App>, h: HeaderMap, Query(q): Query<Ad
                 };
                 let awards = members::awards_of(c, m.id, 20)?;
                 let is_self = me == Some(m.id);
-                rows.push(AdminRow { profile_waiting: !m.profile_ok, highlight, awards, can_act: full || !m.is_staff(), is_self, m });
+                rows.push(AdminRow { page_hidden: !m.profile_ok, highlight, awards, can_act: full || !m.is_staff(), is_self, m });
             }
         }
         Ok((nav, rows, members::admin_feed(c, 200)?, members::photo_bytes(c)?))
@@ -1887,16 +1892,10 @@ pub async fn admin_action(State(app): State<App>, h: HeaderMap, Path(id): Path<i
     }
     let action = req.action.clone();
     match action.as_str() {
-        "approve" => with_db(&app, move |c| {
-            let was = members::get(c, id)?.is_some_and(|m| m.profile_ok);
-            members::set_profile_ok(c, id, true)?;
-            if !was {
-                marcuru_rs::sellers::notify(c, id, "announcement", "Your page is live: everyone can see your picture, your words and your cards.", &format!("/trainers/{id}"))?;
-            }
-            Ok(())
-        })
-        .await?,
-        "hide" => with_db(&app, move |c| members::set_profile_ok(c, id, false)).await?,
+        // A page is live from the start. The vault's team can hide one ("hide") and show it again ("approve", the name
+        // it had when pages waited for approval).
+        "approve" => with_db(&app, move |c| show_page(c, id, true)).await?,
+        "hide" => with_db(&app, move |c| show_page(c, id, false)).await?,
         "lock" => {
             let hours = req.hours.unwrap_or(0);
             if !(1..=87_600).contains(&hours) {
@@ -2115,8 +2114,9 @@ pub async fn chat_delete(State(app): State<App>, h: HeaderMap, Path(mid): Path<i
 }
 
 // ---------- trainers' own photos ----------
-/// How many of their own card photos a trainer can add before the vault owner approves their page.
-const UNAPPROVED_PHOTOS: i64 = 20;
+/// How many of their own card photos a trainer whose page the vault's team hid can hold: past it they add no more
+/// until the page shows again.
+const HIDDEN_PAGE_PHOTOS: i64 = 20;
 
 /// A card the catalogue doesn't have: the trainer's own photo, a name, and the rest if they like. It only shows on their page.
 pub async fn upload_card(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> Res {
@@ -2136,9 +2136,8 @@ pub async fn upload_card(State(app): State<App>, h: HeaderMap, mut mp: Multipart
     if room >= photo_cap_mb() * 1024 * 1024 {
         return Ok(fail(StatusCode::INSUFFICIENT_STORAGE, "The vault's photo space is full right now. Please try again later."));
     }
-    // Until the vault owner approves a new trainer, they can add only a few of their own photos.
-    if !m.profile_ok && own >= UNAPPROVED_PHOTOS {
-        return Ok(fail(StatusCode::FORBIDDEN, "You can add more of your own photos once the vault owner approves your page."));
+    if !m.profile_ok && own >= HIDDEN_PAGE_PHOTOS {
+        return Ok(fail(StatusCode::FORBIDDEN, "The vault's team has hidden your page, so you can't add more of your own photos for now."));
     }
     let (mut bytes, mut name, mut set, mut cond, mut value) = (None, String::new(), String::new(), String::new(), 0.0f64);
     while let Some(f) = mp.next_field().await.map_err(|_| (StatusCode::BAD_REQUEST, "That photo didn't upload.".to_string()))? {
@@ -2462,7 +2461,7 @@ mod tests {
         c
     }
 
-    /// A trainer's own page and their store have their own settings (the owner, 20 Nov 2026: "when i add a link in
+    /// A trainer's own page and their store have their own settings (the owner, 19 Nov 2026: "when i add a link in
     /// store, it shows up in my personal page too"): the page shows only what Account Settings holds, the store only
     /// what Store settings holds, and the store can have a picture of its own.
     #[test]
@@ -2490,7 +2489,7 @@ mod tests {
         assert_eq!((m.page_cover.as_str(), m.page_fb_url.as_str(), m.page_ig_url.as_str(), m.fb_url.as_str(), m.cover_photo.as_str()), ("/uploads/pcover-ash_l.jpg", "https://facebook.com/ash.ketchum", "", "https://facebook.com/palletcards", "/uploads/cover-store_l.jpg"));
         assert_eq!(m.page_link_list().iter().map(|l| l.0.as_str()).collect::<Vec<_>>(), vec!["Facebook", "YouTube"]);
         assert_eq!(m.social_links().iter().map(|l| l.0.as_str()).collect::<Vec<_>>(), vec!["Facebook", "Carousell"], "the store's links are untouched");
-        assert!(!m.profile_ok, "a changed page goes back for a look, as before");
+        assert!(m.profile_ok, "a changed page stays live: nothing waits for approval");
         members::set_profile_ok(&c, s, true).unwrap();
         let m = members::get(&c, s).unwrap().unwrap();
         assert!(members::save_page(&c, &m, &members::PageSave { name: "Ash", bio: "I collect Pikachu", avatar: None, cover: None, fb_url: "https://facebook.com/ash.ketchum", ig_url: "", tiktok_url: "", links: "YouTube | https://youtube.com/@ash" }).unwrap());
@@ -2556,7 +2555,7 @@ mod tests {
     }
 
     #[test]
-    fn a_vouch_tells_its_store_a_reply_tells_its_writer_and_admins_hear_who_waits() {
+    fn a_vouch_tells_its_store_a_reply_tells_its_writer_and_admins_hear_who_joined() {
         let c = db();
         let ash = members::create(&c, "Ash", "h").unwrap().unwrap();
         members::set_seller(&c, ash, true).unwrap();
@@ -2584,13 +2583,22 @@ mod tests {
         assert_eq!(last(ash).message, "Misty replied to you on a vouch.");
         tell_about_vouch(&c, ash, "Ash", None, ash).unwrap();
         assert_eq!(last(ash).message, "Misty replied to you on a vouch.", "not told about their own vouch");
-        // Trainers waiting for approval: one line in the admins' bell, kept up to date.
+        // New trainers: one line in the admins' bell while it is unread, kept up to date, opening the newest one's page.
+        // Nobody waits for approval: their pages are live already.
         let brock = members::create(&c, "Brock", "h").unwrap().unwrap();
-        tell_staff_waiting(&c, brock, "Brock joined and waits for approval.").unwrap();
+        tell_staff_joined(&c, brock, "Brock").unwrap();
         let gary = members::create(&c, "Gary", "h").unwrap().unwrap();
-        tell_staff_waiting(&c, gary, "Gary joined and waits for approval.").unwrap();
-        let staff: Vec<String> = members::notifications(&c, boss, true).unwrap().into_iter().filter(|n| n.kind == "staff").map(|n| n.message).collect();
-        assert_eq!(staff, vec!["Gary joined and waits for approval. 2 trainers wait for approval.".to_string()]);
+        tell_staff_joined(&c, gary, "Gary").unwrap();
+        let staff: Vec<(String, String)> = members::notifications(&c, boss, true).unwrap().into_iter().filter(|n| n.kind == "staff").map(|n| (n.message, n.link)).collect();
+        assert_eq!(staff, vec![("Gary joined. 5 new trainers in the last day.".to_string(), format!("/trainers/{gary}"))]);
+        assert!(members::get(&c, gary).unwrap().unwrap().profile_ok && members::approved(&c).unwrap().iter().any(|m| m.id == gary));
+        // The vault's team hides a page and shows it again: its trainer is told each time, and only when it changed.
+        show_page(&c, gary, false).unwrap();
+        show_page(&c, gary, false).unwrap();
+        assert_eq!(last(gary).message, "The vault's team hid your page. Only you can see it for now.");
+        assert_eq!(members::notifications(&c, gary, true).unwrap().len(), 1);
+        show_page(&c, gary, true).unwrap();
+        assert_eq!((last(gary).message.as_str(), members::get(&c, gary).unwrap().unwrap().profile_ok), ("Your page is showing again: everyone can see it.", true));
     }
 
     #[test]

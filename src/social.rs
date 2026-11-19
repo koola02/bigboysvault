@@ -336,7 +336,7 @@ fn recount_comments(c: &Connection, post: i64) -> rusqlite::Result<()> {
     c.execute("UPDATE posts SET comment_n=(SELECT COUNT(*) FROM comments WHERE post_id=?1 AND hidden=0) WHERE id=?1", [post]).map(|_| ())
 }
 
-/// A comment on a post, or a reply to a comment or to another reply (the owner, 20 Nov 2026: "comment within a
+/// A comment on a post, or a reply to a comment or to another reply (the owner, 19 Nov 2026: "comment within a
 /// comment"): each keeps the comment it answers, so threads can go as deep as people take them. With maybe one photo
 /// (full size, small, bytes on disk).
 pub fn comment_add(c: &Connection, post: i64, member: i64, parent: Option<i64>, text: &str, photo: Option<(&str, &str, i64)>, now: i64) -> rusqlite::Result<Option<i64>> {

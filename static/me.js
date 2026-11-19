@@ -52,10 +52,6 @@
   const counter = (area, out) => { const paint = () => { out.textContent = area.value.length; }; area.addEventListener('input', paint); paint(); };
   const form = $('meProfile');
   counter(form.elements.bio, $('bioCount'));
-  const status = (live) => {
-    const s = $('meStatus'); s.classList.toggle('ok', live);
-    s.textContent = live ? '✓ Your page is live.' : 'The vault owner still has to approve your picture, description and binder. Your vouches go up straight away.';
-  };
   // The page's cover photo: shown here as soon as it is picked, saved with the rest.
   const coverFile = $('pageCoverFile');
   coverFile.addEventListener('change', () => { const f = coverFile.files[0]; if (!f) return; $('pageCoverImg').src = URL.createObjectURL(f); $('pageCoverPrev').hidden = false; form.elements.drop_cover.checked = false; });
@@ -69,8 +65,7 @@
       picked = null; coverFile.value = ''; form.elements.drop_cover.checked = false;
       if (j.cover) $('pageCoverImg').src = j.cover;
       $('pageCoverPrev').hidden = !j.cover; $('pageCoverDrop').hidden = !j.cover;
-      status(j.approved);
-      say(j.approved ? 'Saved ✓' : 'Saved ✓ The vault owner will check it soon.');
+      say('Saved ✓');
     } catch (err) { say(err.message, true); }
   }
   form.addEventListener('submit', (e) => { e.preventDefault(); saveProfile(); });

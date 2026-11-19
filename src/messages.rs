@@ -222,7 +222,7 @@ pub struct CardRef {
 
 const NOT_SHARED: &str = "That can't be shared: it isn't there any more, or not everyone can see it.";
 
-/// A copy of something shared in a message (the owner, 20 Nov 2026: "share a binder within messages"): a binder, a
+/// A copy of something shared in a message (the owner, 19 Nov 2026: "share a binder within messages"): a binder, a
 /// store, a card or a post, as a small card with its picture, a line about it and where it leads. `r` is "binder:12"
 /// (a seller's binder), "vbinder:pikachu-set" (one of the vault's), "store:7" (0: the vault's), "card:9" (a trainer's
 /// card), "vcard:4" (a vault card) or "post:31". Unlike a card of the conversation, it can go to anyone; so only what

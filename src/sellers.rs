@@ -238,7 +238,7 @@ pub fn set_slug(c: &Connection, member_id: i64, slug: &str) -> rusqlite::Result<
     Ok(Ok(true))
 }
 
-/// How a store looks beyond its pictures and colour (Store settings › Store design; the owner, 20 Nov 2026: "an
+/// How a store looks beyond its pictures and colour (Store settings › Store design; the owner, 19 Nov 2026: "an
 /// option for everyone to improve further the design of their stores to make their stores standout according to their
 /// own tastes and effort"). The same choices for a seller's store and the vault's. Kept as JSON.
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -388,14 +388,13 @@ pub struct StoreSettings {
     pub store_bio: String,
 }
 
-/// Saves a store's settings. New or changed public links go back to an admin for a look, as a changed profile does.
+/// Saves a store's settings. Nothing here waits for approval: a store that is open stays open whatever changes.
 pub fn save_store(c: &Connection, member_id: i64, s: &StoreSettings) -> rusqlite::Result<()> {
     let status = if ["Active", "Away", "Vacation"].contains(&s.status.as_str()) { s.status.as_str() } else { "Active" };
     let methods: Vec<&str> = s.pay_methods.split(',').map(str::trim).filter(|m| PAY_METHODS.contains(m)).collect();
     c.execute(
         "UPDATE members SET store_name=?2, location=?3, contact_info=?4, contact_public=?5, status=?6, fb_url=?7, fb_group_url=?8, ig_url=?9, tiktok_url=?10,
-           shopee_url=?11, links=?12, pay_methods=?13, pay_info=?14, email=?15, notify_views=?16, updated_at=?17, pay_public=?18, store_bio=?19,
-           profile_ok=CASE WHEN fb_url=?7 AND fb_group_url=?8 AND ig_url=?9 AND tiktok_url=?10 AND shopee_url=?11 AND links=?12 THEN profile_ok ELSE 0 END
+           shopee_url=?11, links=?12, pay_methods=?13, pay_info=?14, email=?15, notify_views=?16, updated_at=?17, pay_public=?18, store_bio=?19
          WHERE id=?1",
         rusqlite::params![
             member_id, members::clean_line(&s.store_name, 40), members::clean_line(&s.location, 80), members::clean_text(&s.contact_info, 300), s.contact_public, status,

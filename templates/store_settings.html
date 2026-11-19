@@ -28,7 +28,7 @@
     <h2 class="h2">The store</h2>
     <div class="me-fields">
       <label>Store name <small>shown at the top; blank uses your trainer name</small><input name="store_name" value="{{ p.m.store_name }}" maxlength="40" autocomplete="off"></label>
-      {#- The store's own picture (the owner, 20 Nov 2026): the trainer's own shows until one is picked. -#}
+      {#- The store's own picture (the owner, 19 Nov 2026): the trainer's own shows until one is picked. -#}
       <div class="st-pick st-logo">
         <span class="st-pick-l">Store picture <small>shown with your store's name; your own shows until you pick one</small></span>
         <span class="st-logo-prev" id="logoPrev">{% if p.m.has_store_pic() %}<img class="av" src="{{ p.m.store_pic() }}" alt="" id="logoImg">{% else %}<span class="av" id="logoImg">{{ p.m.initial() }}</span>{% endif %}</span>

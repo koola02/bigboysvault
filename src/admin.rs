@@ -1873,7 +1873,7 @@ struct DashboardPage {
     cond_notes_n: usize,
     cond_notes: Vec<(i64, String, String, String)>,
     trainers: i64,
-    pending: i64,
+    joined_week: i64,
     vouches_week: i64,
     chat_week: i64,
     /// (id, name, value, stars, bar width in %)
@@ -2048,7 +2048,7 @@ pub async fn dashboard(State(app): State<App>, h: HeaderMap) -> Res {
         let all_notes = db::condition_notes(c)?;
         let cond_notes_n = all_notes.len();
         let cond_notes = all_notes.into_iter().take(8).collect();
-        let (trainers, pending, vouches_week, chat_week) = marcuru_rs::members::community_numbers(c, week_ago)?;
+        let (trainers, joined_week, vouches_week, chat_week) = marcuru_rs::members::community_numbers(c, week_ago)?;
         let mut people = marcuru_rs::members::approved(c)?;
         people.sort_by(|a, b| b.worth.total_cmp(&a.worth));
         let richest = people.first().map_or(1.0, |m| m.worth);
@@ -2081,7 +2081,7 @@ pub async fn dashboard(State(app): State<App>, h: HeaderMap) -> Res {
         Ok(DashboardPage {
             nav, tab: "dash", value: db::peso(total_value), copies: db::thousands(i64::from(copies)), distinct: db::thousands(cards.len() as i64), average, median, top10,
             week_n, week_value: db::peso(week_v), month_n, month_value: db::peso(month_v), insights, days, days_first, binders, viewed, searches, missing_searches,
-            no_photo_n, no_photo, no_price_n, no_price, cond_notes_n, cond_notes, trainers, pending, vouches_week, chat_week, top_trainers, condition_shares, ops, movers,
+            no_photo_n, no_photo, no_price_n, no_price, cond_notes_n, cond_notes, trainers, joined_week, vouches_week, chat_week, top_trainers, condition_shares, ops, movers,
             visit_today, visit_pages_today, visit_week, visit_week_signed, visit_month, visit_days, visit_days_first, visit_since, orders_month,
         })
     })

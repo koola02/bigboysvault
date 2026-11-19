@@ -127,7 +127,7 @@ Order: welcome banner (signed-out only: logo, one line, Join / Log in) → **Sto
 
 **Following:** follow any trainer or store; posts from people you follow rank first; you're notified of their new posts and listings (can be muted). Today's store follows carry over.
 
-**Moderation:** only approved trainers can post; hourly limits; admins and moderators can hide or delete any post, comment or story (these buttons obey the "hide admin buttons" switch); a Report link on every post notifies admins.
+**Moderation:** any trainer can post from the moment they register (no approval since 19 Nov 2026; a trainer whose page the vault's team hid cannot); hourly limits; admins and moderators can hide or delete any post, comment or story (these buttons obey the "hide admin buttons" switch); a Report link on every post notifies admins.
 
 **Editing, like Facebook.** Whatever is yours has its Edit control right where it appears, in the ⋯ menu or beside it, and opens in place:
 
@@ -211,7 +211,7 @@ Each phase is deployed with the usual steps: live database backup, `fly deploy`,
 
 ## 9. Things to know
 
-- **Moderation work goes up.** Posts, comments and stories from any approved trainer mean more to watch. The plan includes limits, hide/delete, reports and admin alerts.
+- **Moderation work goes up.** Posts, comments and stories from any trainer mean more to watch. The plan includes limits, hide/delete, reports and admin alerts.
 - **The home page changes for Google too.** Titles and structured data stay; the feed is readable by search engines; card pages don't change address.
 - **Photo space.** Post and story photos use the same capped space as other uploads; expired stories are deleted hourly.
 - **Voice calls, Gemini, the VM jobs** are untouched by this work.

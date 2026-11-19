@@ -116,7 +116,7 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 | `POST /me/reviews` | Buyer: `{ transaction_id, rating (1–5), text }`. Only the buyer of a finished sale, once; never the seller |
 | `POST /me/reviews/{id}/reply` | Seller: `{ text }` |
 | `GET /me/settings` | Store settings page |
-| `POST /me/profile` | The trainer's own page (Account Settings), multipart: `name`, `bio`, `avatar` (image), `cover` (image) or `drop_cover`, `fb_url`, `ig_url`, `tiktok_url`, `links` (lines of `Label \| https://…`). These are the page's own (`members.page_cover`, `page_*_url`, `page_links`), never the store's. A change goes back for approval, as before. Answers `{ ok, name, avatar, cover, approved }` |
+| `POST /me/profile` | The trainer's own page (Account Settings), multipart: `name`, `bio`, `avatar` (image), `cover` (image) or `drop_cover`, `fb_url`, `ig_url`, `tiktok_url`, `links` (lines of `Label \| https://…`). These are the page's own (`members.page_cover`, `page_*_url`, `page_links`), never the store's. Nothing waits for approval (19 Nov 2026): the page stays live. Answers `{ ok, name, avatar, cover }` |
 | `POST /me/settings` | The store's own settings (Store design: `look_sent=1` with `look_bg` `""\|glow\|dots\|lines\|photo`, `look_name` `""\|glow\|line`, `look_tile` `""\|l\|s`, `look_note`, and `bg_photo` (image) for the photo background; the vault's `POST /admin/store` takes the same). Multipart: `store_name`, `logo` (image: the store's own picture, `members.store_avatar`; `drop_logo` shows the trainer's again), `store_bio` (the store's own words), `store_border`, `cover` (image), `drop_cover`, `status` (`Active`/`Away`/`Vacation`), `location`, `contact_info`, `contact_public`, `fb_url`, `fb_group_url`, `ig_url`, `tiktok_url`, `shopee_url`, `links` (lines of `Label \| https://…`), `pay_method` (repeatable; send `pay_methods_sent=1` to clear), `pay_info`, `email`, `notify_views` (when sent, sets the `view` choice on Notifications; the box itself left this page). Links must be `https://` |
 | `POST /me/settings/slug` | `{ slug }`: 3–30 of `a-z 0-9 -`, unique whatever the case, not a name the site uses |
 | `POST /me/store/visibility` | A form: `hidden` (`1` hides the store, `0` shows it), `back` (a `/me/…` or `/store/…` page to return to). Hidden (`members.store_hidden`, 18 Nov 2026), only the seller and the vault's staff see the store and its cards: it is left out of Stores, The Vault page, Ask the Vault, the feed, wishlist alerts, bookmarks and the sitemap; its page, its cards' pages and its cards on the trainer page are not found; it takes no orders, offers or questions. Orders already placed carry on. Store settings has the button; the Store Manager and the store page show a note with Show my store while it is hidden |
@@ -139,7 +139,7 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 | Route | What |
 |---|---|
 | `GET /stores` (also `/sellers`) | Every store with cards on sale, the vault's among them, drawn alike: the one that last put up or changed a card first |
-| `GET /store/{slug}` | A store: cover, name, status banner, stats from real data, links, ways to pay, binders, cards on sale, reviews. Blocked and not-yet-approved stores are seen only by their owner and the vault's staff |
+| `GET /store/{slug}` | A store: cover, name, status banner, stats from real data, links, ways to pay, binders, cards on sale, reviews. A blocked store, or one whose page the vault's team hid, is seen only by its owner and the vault's staff |
 | `GET /store/{slug}/binders/{binder}` | One binder (`Private` only for the owner) |
 | `GET /store/{slug}/followers`, `GET /trainers/{id}/followers` | Who follows a store or a trainer, newest first: `{ people: [{ id, name, avatar, initial, url }] }` (trainers whose page is up) |
 | `GET /trainers/{id}/follow`, `POST /trainers/{id}/follow` | Follow a trainer, or stop: the same `store_follows` row as their store's Follow. Followers hear when they post (one line per author, `posts:{id}`) or put up cards |
@@ -239,8 +239,8 @@ New: `reservations`, `offers`, `inquiries`, `transactions`, `reviews`, `store_fo
 
 ## Testing by hand
 
-1. `cargo run`, open http://localhost:3000/join and make two trainers (approve them on Admin › Trainers, or they
-   see only their own store).
+1. `cargo run`, open http://localhost:3000/join and make two trainers (their pages are live straight
+   away; only the application to sell needs an admin).
 2. As the seller: Store Manager › **+ Add cards** (`/me/add`), Search, tap a card, fill in the window; set stock, prices, a binder; Store
    settings: name, address, ways to pay, how to pay.
 3. As the buyer: `/stores` › the store › **Reserve** (or **Offer**, **Ask a question**, **Follow**, ♥).

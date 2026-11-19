@@ -5,7 +5,7 @@
 <section class="wrap admin st me" id="me" data-max="{{ max }}" data-seller="{{ p.m.seller }}" data-highlight="{% if let Some(h) = p.m.highlight %}{{ h }}{% endif %}">
   {% include "store_tabs.html" %}
   <div class="me-top">
-    <p class="me-status {% if p.m.profile_ok %}ok{% endif %}" id="meStatus">{% if p.m.profile_ok %}✓ Your page is live.{% else %}The vault owner still has to approve your picture, description and binder. Your vouches go up straight away.{% endif %}</p>
+    {% if !p.m.profile_ok %}<p class="me-status">The vault's team has hidden your page. Only you can see it for now.</p>{% endif %}
     <div class="me-top-acts">
       <a class="btn ghost sm" href="/trainers/{{ p.m.id }}">See my page</a>
       <form method="post" action="/signout"><button class="btn ghost sm" type="submit">Log out</button></form>
@@ -43,7 +43,7 @@
     <div class="me-fields">
       <label>Trainer name<input name="name" value="{{ p.m.name }}" maxlength="24" autocomplete="off" required></label>
       <label>About you <small><span id="bioCount">0</span> of 300</small><textarea name="bio" maxlength="300" rows="3" placeholder="What do you collect? Who's your favorite Pokémon?">{{ p.m.bio }}</textarea></label>
-      {#- The page's own cover photo and links (the owner, 20 Nov 2026: a store's are its own, in Store settings). -#}
+      {#- The page's own cover photo and links (the owner, 19 Nov 2026: a store's are its own, in Store settings). -#}
       <div class="st-pick">
         <span class="st-pick-l">Cover photo <small>wide, like a banner, at the top of your page</small></span>
         <span class="st-cover-prev" id="pageCoverPrev"{% if !p.m.has_page_cover() %} hidden{% endif %}><img src="{{ p.m.page_cover }}" alt="" id="pageCoverImg"></span>
@@ -127,5 +127,5 @@
 </section>
 <script src="/static/dragsort.js?v=5" defer></script>
 <script src="/static/pricing.js?v=2" defer></script>
-<script src="/static/me.js?v=16" defer></script>
+<script src="/static/me.js?v=17" defer></script>
 {% endblock %}

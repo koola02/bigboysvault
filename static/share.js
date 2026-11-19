@@ -1,4 +1,4 @@
-/* Share (the owner, 20 Nov 2026: "share a binder within messages and even outside the site like facebook messenger").
+/* Share (the owner, 19 Nov 2026: "share a binder within messages and even outside the site like facebook messenger").
    One small window for a binder, a store, a card or a post:
    - Send in a message: pick someone here, and the chat opens with it attached, ready to send (static/dm.js).
    - Messenger: a phone's own share menu (Messenger, Viber and the rest) where it has one; on a computer the link is

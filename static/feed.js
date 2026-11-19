@@ -238,7 +238,7 @@
   }
 
   /* ---------- the photo window: a post's photo big, with the post beside it ---------- */
-  // Like a photo on Facebook (the owner, 20 Nov 2026): the photo fits the screen whatever its shape, ✕ closes it (so do
+  // Like a photo on Facebook (the owner, 19 Nov 2026): the photo fits the screen whatever its shape, ✕ closes it (so do
   // Esc and the phone's Back), arrows (or a swipe, or the arrow keys) go through the post's photos, and the post sits
   // beside it (under it on a phone or an upright tablet) with its likes, its comments and the comment box, photo and
   // camera buttons included. It is the real post, moved here while the window is open: a like or a comment made here
@@ -450,10 +450,10 @@
       sheet.querySelectorAll('[data-pic-btn]').forEach((b) => { b.hidden = false; });
       as.hidden = !(full && me.role === 'admin'); as.value = 'me';
     }
-    // A trainer the vault owner hasn't approved yet can't post: say so before they write anything, not after.
-    const waiting = !editing && me.approved === false && !staff;
+    // A trainer whose page the vault's team hid can't post: say so before they write anything, not after.
+    const waiting = !editing && me.page_hidden === true && !staff;
     let wait = sheet.querySelector('[data-wait]');
-    if (!wait) { wait = el('p', 'sheet-wait', 'You can post once the vault owner approves your trainer. Until then you can react, comment and message.'); wait.dataset.wait = ''; sheet.querySelector('.row').after(wait); }
+    if (!wait) { wait = el('p', 'sheet-wait', 'The vault\'s team has hidden your page, so you can\'t post for now. You can still react, comment and message.'); wait.dataset.wait = ''; sheet.querySelector('.row').after(wait); }
     wait.hidden = !waiting; ta.disabled = waiting; sheet.querySelector('[data-go]').disabled = waiting;
     sheet.querySelectorAll('[data-pic-btn]').forEach((b) => { if (waiting) b.hidden = true; });
     sheet.setAttribute('aria-label', sheet.querySelector('[data-title]').textContent);

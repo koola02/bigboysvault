@@ -1,6 +1,8 @@
 //! Trainer accounts: profile, a binder of cards (the limit is `sellers::max_cards`), vouches, replies and star points.
-//! A trainer's page (name, picture, description, binder) waits for the owner's approval. Vouches, replies and their photos
-//! post straight away, and the owner can hide or delete any of them, or lock, block or remove the trainer (Admin › Trainers).
+//! Nothing waits for approval (the owner, 19 Nov 2026: "Anyone can be a trainer no approval for that is needed when
+//! registering"; the only approval is to become a seller): a trainer's page is live from the moment they register and
+//! stays live when they change it. `profile_ok` is 0 only for a page the vault's team hid (Admin › Trainers), where
+//! they can also hide or delete a vouch, or lock, block or remove the trainer.
 use argon2::password_hash::{rand_core::{OsRng, RngCore}, PasswordHash, PasswordHasher, PasswordVerifier, SaltString};
 use argon2::Argon2;
 use rusqlite::{Connection, OptionalExtension, Row};
@@ -12,8 +14,8 @@ pub const MAX_CARDS: i64 = 500;
 pub const SESSION_SECS: i64 = 30 * 86_400;
 /// How long a sign-in lasts with "remember me" on.
 pub const REMEMBER_SECS: i64 = 365 * 86_400;
-/// Sign-ups stop while this many are waiting for approval, so a bot can't fill the disk.
-pub const MAX_PENDING: i64 = 200;
+/// Sign-ups stop for the day after this many new trainers in 24 hours, so a bot can't fill the disk.
+pub const MAX_JOINS_PER_DAY: i64 = 200;
 /// Enough for anyone being honest, and a stop for anyone who isn't.
 pub const VOUCHES_PER_HOUR: i64 = 20;
 pub const REPLIES_PER_HOUR: i64 = 60;
@@ -401,7 +403,7 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         ("store_border", "TEXT NOT NULL DEFAULT ''"),
         // The seller hid their store (Store settings, 18 Nov 2026): only they and the vault's staff see it and its cards.
         ("store_hidden", "INTEGER NOT NULL DEFAULT 0"),
-        // A store and its owner's own page have their own settings (the owner, 20 Nov 2026: "personal page and store
+        // A store and its owner's own page have their own settings (the owner, 19 Nov 2026: "personal page and store
         // should have different settings ... when i add a link in store, it shows up in my personal page too"). The
         // store: its own picture ('' shows the owner's) and its own words. The page: its own cover photo and links.
         // The links, cover and place there before were typed in Store settings: they stay the store's.
@@ -481,6 +483,13 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
 
     // The store: listings' stock and prices, orders, reviews, followers, views and notifications.
     crate::sellers::migrate(c)?;
+
+    // Once (19 Nov 2026): approval is gone, so every page that was waiting for it goes live. From here on `profile_ok`
+    // is 0 only for a page the vault's team hid on purpose.
+    if crate::blocks::setting(c, "open_pages_v")?.as_deref() != Some("1") {
+        c.execute("UPDATE members SET profile_ok=1 WHERE profile_ok=0", [])?;
+        crate::blocks::set_setting(c, "open_pages_v", "1")?;
+    }
 
     // Fill slug for existing members without one
     let missing: Vec<(i64, String)> = c.prepare("SELECT id, name FROM members WHERE slug=''")?
@@ -1019,7 +1028,7 @@ pub fn from_session(c: &Connection, raw: &str) -> rusqlite::Result<Option<Member
 pub fn create(c: &Connection, name: &str, pass_hash: &str) -> rusqlite::Result<Option<i64>> {
     let t = now();
     let r = c.execute(
-        "INSERT INTO members(name,name_key,pass,created_at,updated_at) VALUES(?1,?2,?3,?4,?4) ON CONFLICT(name_key) DO NOTHING",
+        "INSERT INTO members(name,name_key,pass,created_at,updated_at,profile_ok) VALUES(?1,?2,?3,?4,?4,1) ON CONFLICT(name_key) DO NOTHING",
         rusqlite::params![name, name_key(name), pass_hash, t],
     )?;
     if r == 1 {
@@ -1075,15 +1084,12 @@ pub fn vouches_count(c: &Connection, member_id: i64) -> rusqlite::Result<i64> {
     c.query_row("SELECT COUNT(*) FROM vouches WHERE member_id=?1 AND hidden=0", [member_id], |r| r.get(0))
 }
 
-pub fn pending_count(c: &Connection) -> rusqlite::Result<i64> {
-    c.query_row("SELECT COUNT(*) FROM members WHERE profile_ok=0 AND blocked=0", [], |r| r.get(0))
+/// How many trainers registered since then.
+pub fn joined_since(c: &Connection, since: i64) -> rusqlite::Result<i64> {
+    c.query_row("SELECT COUNT(*) FROM members WHERE created_at>=?1", [since], |r| r.get(0))
 }
 
-pub fn unapproved_count(c: &Connection) -> rusqlite::Result<i64> {
-    c.query_row("SELECT COUNT(*) FROM members WHERE profile_ok=0", [], |r| r.get(0))
-}
-
-/// Saves name, description and picture. Changing what people see sends the profile back for approval.
+/// Saves name, description and picture. The page stays live: nothing a trainer changes waits for approval.
 /// Returns false when the name is already taken by someone else.
 pub fn save_profile(c: &Connection, m: &Member, name: &str, bio: &str, avatar: Option<&str>) -> rusqlite::Result<bool> {
     save_page(c, m, &PageSave { name, bio, avatar, cover: None, fb_url: &m.page_fb_url, ig_url: &m.page_ig_url, tiktok_url: &m.page_tiktok_url, links: &m.page_links })
@@ -1111,20 +1117,12 @@ pub fn save_page(c: &Connection, m: &Member, p: &PageSave) -> rusqlite::Result<b
         return Ok(false);
     }
     let (fb, ig, tt, links) = (clean_https_url(p.fb_url), clean_https_url(p.ig_url), clean_https_url(p.tiktok_url), crate::sellers::clean_link_lines(p.links));
-    let same = m.name == p.name
-        && m.bio == p.bio
-        && p.avatar.is_none_or(|a| a == m.avatar)
-        && p.cover.is_none_or(|k| k == m.page_cover)
-        && m.page_fb_url == fb
-        && m.page_ig_url == ig
-        && m.page_tiktok_url == tt
-        && m.page_links == links;
     // The web address stays when the name changes, so links people shared keep working. It changes only in Store settings.
     let slug = if m.slug.is_empty() { unique_slug(c, p.name, m.id)? } else { m.slug.clone() };
     c.execute(
-        "UPDATE members SET name=?2,name_key=?3,bio=?4,avatar=COALESCE(?5,avatar),updated_at=?6,profile_ok=CASE WHEN ?7 THEN profile_ok ELSE 0 END,slug=?8,
-           page_cover=COALESCE(?9,page_cover),page_fb_url=?10,page_ig_url=?11,page_tiktok_url=?12,page_links=?13 WHERE id=?1",
-        rusqlite::params![m.id, p.name, name_key(p.name), p.bio, p.avatar, now(), same, slug, p.cover, fb, ig, tt, links],
+        "UPDATE members SET name=?2,name_key=?3,bio=?4,avatar=COALESCE(?5,avatar),updated_at=?6,slug=?7,
+           page_cover=COALESCE(?8,page_cover),page_fb_url=?9,page_ig_url=?10,page_tiktok_url=?11,page_links=?12 WHERE id=?1",
+        rusqlite::params![m.id, p.name, name_key(p.name), p.bio, p.avatar, now(), slug, p.cover, fb, ig, tt, links],
     )?;
     Ok(true)
 }
@@ -1857,7 +1855,7 @@ pub fn approved_highlights(c: &Connection, limit: i64) -> rusqlite::Result<Vec<H
     Ok(v)
 }
 
-/// Everyone, waiting for approval first, for the owner's screen.
+/// Everyone, pages the vault's team hid first, for the owner's screen.
 pub fn all_for_admin(c: &Connection) -> rusqlite::Result<Vec<Member>> {
     let mut st = c.prepare(&format!("SELECT {MEMBER_COLS} FROM members m ORDER BY (m.profile_ok=0 AND m.blocked=0) DESC, m.updated_at DESC, m.id DESC LIMIT 1000"))?;
     let v = st.query_map([], map_member)?.collect::<Result<Vec<_>, _>>()?;
@@ -2272,19 +2270,36 @@ mod tests {
         assert!(from_session(&c, &raw).unwrap().is_none(), "a new password signs out everywhere");
     }
 
+    /// The owner, 19 Nov 2026: "Anyone can be a trainer no approval for that is needed when registering", and nothing
+    /// a trainer changes needs one either. Only the vault's team hiding a page takes it off the site.
     #[test]
-    fn a_page_waits_for_approval_and_changes_need_approval_again() {
+    fn a_new_page_is_live_and_stays_live_when_it_changes() {
         let c = db();
         let id = create(&c, "Brock", "h").unwrap().unwrap();
+        assert_eq!(approved(&c).unwrap().len(), 1, "live from the moment they register");
+        assert_eq!(joined_since(&c, now() - 60).unwrap(), 1);
+        let m = get(&c, id).unwrap().unwrap();
+        assert!(save_profile(&c, &m, "Brock", "New words", Some("/uploads/t-brock.jpg")).unwrap());
+        let m = get(&c, id).unwrap().unwrap();
+        assert!(m.profile_ok && m.bio == "New words", "a changed page stays live");
+        assert!(save_page(&c, &m, &PageSave { name: "Brock", bio: "New words", avatar: None, cover: Some("/uploads/pcover-b.jpg"), fb_url: "https://facebook.com/brock", ig_url: "", tiktok_url: "", links: "" }).unwrap());
+        assert!(get(&c, id).unwrap().unwrap().profile_ok, "and so does one with a new cover and link");
+        // The vault's team can hide a page, and show it again.
+        set_profile_ok(&c, id, false).unwrap();
         assert!(approved(&c).unwrap().is_empty());
+        let m = get(&c, id).unwrap().unwrap();
+        assert!(save_profile(&c, &m, "Brock", "Other words", None).unwrap());
+        assert!(!get(&c, id).unwrap().unwrap().profile_ok, "changing a hidden page doesn't show it again");
         set_profile_ok(&c, id, true).unwrap();
         assert_eq!(approved(&c).unwrap().len(), 1);
-        let m = get(&c, id).unwrap().unwrap();
-        assert!(save_profile(&c, &m, "Brock", "", None).unwrap());
-        assert!(get(&c, id).unwrap().unwrap().profile_ok, "saving nothing new changes nothing");
-        assert!(save_profile(&c, &m, "Brock", "New words", None).unwrap());
-        assert!(!get(&c, id).unwrap().unwrap().profile_ok);
-        assert!(approved(&c).unwrap().is_empty());
+        // Pages that were waiting when approval went are made live once, and never again after that.
+        c.execute("UPDATE members SET profile_ok=0 WHERE id=?1", [id]).unwrap();
+        c.execute("DELETE FROM settings WHERE key='open_pages_v'", []).unwrap();
+        migrate(&c).unwrap();
+        assert!(get(&c, id).unwrap().unwrap().profile_ok, "a page that was waiting goes live");
+        set_profile_ok(&c, id, false).unwrap();
+        migrate(&c).unwrap();
+        assert!(!get(&c, id).unwrap().unwrap().profile_ok, "a page hidden afterwards stays hidden");
     }
 
     #[test]
@@ -2432,7 +2447,7 @@ mod tests {
         assert!(matches!(add_card(&c, b, "c0", "T", "1", "S", "i", "l").unwrap(), Added::Yes(_)));
         assert!(matches!(add_card(&c, b, "c0", "T", "1", "S", "i", "l").unwrap(), Added::Duplicate));
         assert_eq!(get(&c, a).unwrap().unwrap().highlight, Some(first));
-        assert_eq!(approved_highlights(&c, 8).unwrap().len(), 1);
+        assert_eq!(approved_highlights(&c, 8).unwrap().len(), 2, "both pages are live from the start, each with its highlight");
         assert_eq!(approved_count(&c).unwrap(), approved(&c).unwrap().len() as i64);
         assert_eq!(approved_faces(&c, 8).unwrap().len() as i64, approved_count(&c).unwrap());
         // Another trainer's card can't be touched.
@@ -2692,11 +2707,11 @@ mod tests {
     }
 }
 
-/// Trainers and what they've said lately, for the owner's dashboard: (live pages, waiting, vouches this week, chat this week).
+/// Trainers and what they've said lately, for the owner's dashboard: (live pages, joined this week, vouches this week, chat this week).
 pub fn community_numbers(c: &Connection, since: i64) -> rusqlite::Result<(i64, i64, i64, i64)> {
     Ok((
         c.query_row("SELECT COUNT(*) FROM members WHERE profile_ok=1 AND blocked=0", [], |r| r.get(0))?,
-        c.query_row("SELECT COUNT(*) FROM members WHERE profile_ok=0 AND blocked=0", [], |r| r.get(0))?,
+        c.query_row("SELECT COUNT(*) FROM members WHERE blocked=0 AND created_at>=?1", [since], |r| r.get(0))?,
         c.query_row("SELECT COUNT(*) FROM vouches WHERE hidden=0 AND created_at>=?1", [since], |r| r.get(0))?,
         c.query_row("SELECT COUNT(*) FROM chat_messages WHERE hidden=0 AND created_at>=?1", [since], |r| r.get(0))?,
     ))

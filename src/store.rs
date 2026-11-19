@@ -1238,10 +1238,6 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
     if new_bg.is_some() && !was_look.photo.is_empty() {
         admin::remove_upload(&app.uploads, &was_look.photo);
     }
-    // An admin's own store needs no second look after a changed link: they are who would give it.
-    if m.role == "admin" && m.profile_ok {
-        with_db(&app, move |c| members::set_profile_ok(c, id, true)).await?;
-    }
     app.forget();
     let me = with_db(&app, move |c| members::get(c, id)).await?;
     Ok(ok(json!({ "ok": true, "cover": me.as_ref().map(|m| m.cover_photo.clone()), "logo": me.as_ref().map(|m| m.store_pic().to_string()), "own_logo": me.as_ref().is_some_and(|m| !m.store_avatar.is_empty()), "bg": me.as_ref().map(|m| m.look().photo), "status": me.as_ref().map(|m| m.status.clone()) })))
@@ -1458,7 +1454,7 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
     let Some(m) = with_db(app, move |c| members::by_slug(c, &s)).await? else { return not_found(app).await };
     let is_me = me.as_ref().is_some_and(|u| u.id == m.id);
     let staff = admin::can_moderate(app, h);
-    // Same rules as the trainer's page: blocked and not-yet-approved stores are for their owner and the vault's staff,
+    // Same rules as the trainer's page: a blocked store, or one whose page the vault's team hid, is for its owner and the vault's staff,
     // and so is a store its seller hid.
     if (m.blocked || !m.profile_ok || m.store_hidden) && !is_me && !staff {
         return not_found(app).await;
@@ -2312,10 +2308,10 @@ pub async fn set_visibility(State(app): State<App>, h: HeaderMap, Form(f): Form<
     Ok(Redirect::to(back).into_response())
 }
 
-/// What a buyer is told when a store is blocked or not approved yet.
+/// What a buyer is told when a store is blocked, or its page was hidden by the vault's team.
 const CLOSED: &str = "This store is closed.";
 
-/// A blocked store, one the vault hasn't approved yet, or one its seller hid, takes no orders, offers or questions.
+/// A blocked store, one whose page the vault's team hid, or one its seller hid, takes no orders, offers or questions.
 fn closed(seller: &Member) -> bool {
     seller.blocked || !seller.profile_ok || seller.store_hidden
 }
@@ -3776,7 +3772,7 @@ mod tests {
         assert!(!all[0].off && all[0].count == 3);
     }
 
-    /// Store design (the owner, 20 Nov 2026: "an option for everyone to improve further the design of their stores"): a
+    /// Store design (the owner, 19 Nov 2026: "an option for everyone to improve further the design of their stores"): a
     /// store's look is only the choices there are, its page carries it, and the vault's store has the same.
     #[test]
     fn a_store_keeps_its_own_look() {
@@ -3821,7 +3817,7 @@ mod tests {
         assert!(v.contains("class=\"wrap storefront vstore lk-bg-dots lk-tile-l\"") && v.contains("<p class=\"sf-welcome\">New slabs every Friday</p>"), "{v}");
     }
 
-    /// Sharing (the owner, 20 Nov 2026): a binder, a store, a card or a post goes into a message as a small card of its
+    /// Sharing (the owner, 19 Nov 2026): a binder, a store, a card or a post goes into a message as a small card of its
     /// own, to anyone; never what only its owner may see. Its page carries a Share button.
     #[test]
     fn a_binder_a_store_a_card_and_a_post_can_be_shared_in_a_message() {
@@ -3879,7 +3875,7 @@ mod tests {
     }
 
     /// A store shows its own picture and its own words, wherever its name shows, and its owner's button there is Store
-    /// settings (the owner, 20 Nov 2026; the Edit store window is gone: one place for a store's settings).
+    /// settings (the owner, 19 Nov 2026; the Edit store window is gone: one place for a store's settings).
     #[test]
     fn a_store_shows_its_own_picture_and_words_and_its_owner_gets_store_settings() {
         let c = db();

@@ -1,5 +1,5 @@
 <section class="wrap trainer" data-card-title="{{ t.name }}" data-trainer="{{ t.id }}" data-owner-role="{{ t.role }}">
-  {% if is_me && !t.profile_ok %}<p class="tr-wait">Your picture, description and binder wait for the vault owner's approval. Your vouches are already up.</p>{% endif %}
+  {% if is_me && !t.profile_ok && !t.blocked %}<p class="tr-wait">The vault's team has hidden your page. Only you can see it for now.</p>{% endif %}
   {% if t.blocked %}<p class="tr-wait">Blocked. Only you can see this page.</p>{% endif %}
   <header class="tp-head" data-role="{{ t.role }}">
     <div class="pf-cover">{% if t.has_page_cover() %}<img src="{{ t.page_cover }}" alt="" decoding="async">{% endif %}</div>
@@ -10,7 +10,7 @@
       {% if !t.role_text().is_empty() %}<span class="role" data-role="{{ t.role }}">{{ t.role_text() }}</span>{% endif %}{% for g in t.tag_list() %}<span class="tag-hl mtag">{{ g }}</span>{% endfor %}
       
       {% if !t.bio.is_empty() %}<p class="tp-bio">{{ t.bio }}</p>{% endif %}
-      {#- The page's own links (Account Settings). A seller's store has its own, on the store (the owner, 20 Nov 2026). -#}
+      {#- The page's own links (Account Settings). A seller's store has its own, on the store (the owner, 19 Nov 2026). -#}
       {% let links = t.page_link_list() %}{% if !links.is_empty() %}
       <div class="sf-rows tp-rows"><div class="sf-row"><span class="sf-row-l">Find me on</span><span class="sf-row-v">{% for (label, url, short) in links %}<a class="seller-social" href="{{ url }}" target="_blank" rel="noopener noreferrer" title="{{ short }}" aria-label="{{ label }}: {{ short }}">{{ label }} <span class="sf-ext" aria-hidden="true">↗</span></a>{% endfor %}</span></div></div>
       {% endif %}

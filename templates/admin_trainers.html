@@ -33,11 +33,11 @@
     {% endfor %}
   </ul>
   {% else %}
-  <p class="mc-how">{% if full %}A trainer's picture, description and binder wait for your approval. Vouches, replies and photos go up straight away, and you can take them down from the Vouches view.{% else %}You can block or remove a trainer here, and hide or delete vouches in the Vouches view.{% endif %}</p>
+  <p class="mc-how">{% if full %}Every trainer's page is live as soon as they register. Hide a page to take it off the site, and show it again when you like. Vouches can be taken down from the Vouches view.{% else %}You can block or remove a trainer here, and hide or delete vouches in the Vouches view.{% endif %}</p>
   {% if rows.is_empty() %}<div class="mc-empty"><p>No trainers yet. They sign up from the Trainers page.</p><a class="btn" href="/trainers" target="_blank" rel="noopener">See the Trainers page ↗</a></div>{% endif %}
   <ul class="at-list">
     {% for r in rows %}
-    <li id="trainer-{{ r.m.id }}" class="at-row{% if r.profile_waiting %} waiting{% endif %}{% if r.m.blocked %} is-blocked{% endif %}" data-id="{{ r.m.id }}" data-name="{{ r.m.name }}">
+    <li id="trainer-{{ r.m.id }}" class="at-row{% if r.page_hidden && !r.m.blocked %} waiting{% endif %}{% if r.m.blocked %} is-blocked{% endif %}" data-id="{{ r.m.id }}" data-name="{{ r.m.name }}">
       <div class="at-who">
         {% if r.m.has_avatar() %}<img class="av av-lg" src="{{ r.m.avatar }}" width="120" height="120" alt="" loading="lazy">{% else %}<span class="av av-lg">{{ r.m.initial() }}</span>{% endif %}
         <div class="at-txt">
@@ -46,7 +46,7 @@
           {% if !r.m.bio.is_empty() %}<p>{{ r.m.bio }}</p>{% endif %}
           <span class="at-chips">
             <span class="stars stars-lg">★ {{ r.m.stars }}</span>{% if r.m.worth > 0.0 %}<span class="worth">{{ r.m.worth_text() }}</span>{% endif %}
-            {% if r.m.blocked %}<span class="me-tag bad">⛔ Blocked</span>{% else if r.profile_waiting %}<span class="me-tag">⏳ Waiting for approval</span>{% else %}<span class="me-tag ok">✓ Live</span>{% endif %}
+            {% if r.m.blocked %}<span class="me-tag bad">⛔ Blocked</span>{% else if r.page_hidden %}<span class="me-tag">Page Hidden</span>{% else %}<span class="me-tag ok">✓ Live</span>{% endif %}
             {% if r.m.locked() %}<span class="me-tag bad">🔒 Locked for {{ r.m.lock_left() }}</span>{% endif %}
           </span>
           {% if full %}<div class="at-tags"><span class="at-tags-h">Tags everyone sees <small>type one, then Enter</small></span><div class="tag-box" data-tag-box data-tags="{{ r.m.tag_list().join("|") }}"></div></div>
@@ -58,7 +58,7 @@
       <p class="at-off">This is another staff member, so only an admin can change anything.</p>
       {% else %}
       <div class="at-acts">
-        {% if full %}{% if r.profile_waiting %}<button type="button" class="btn" data-act="approve">✓ Approve page</button>{% else %}<button type="button" class="pbtn" data-act="hide">Hide page</button>{% endif %}{% endif %}
+        {% if full %}{% if r.page_hidden %}<button type="button" class="btn" data-act="approve">Show Page</button>{% else %}<button type="button" class="pbtn" data-act="hide">Hide Page</button>{% endif %}{% endif %}
         <a class="pbtn" href="/trainers/{{ r.m.id }}" target="_blank" rel="noopener">Open ↗</a>
         {% if full %}<button type="button" class="pbtn" data-act="password">New password</button>{% endif %}
       </div>

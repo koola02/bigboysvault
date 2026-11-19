@@ -79,8 +79,6 @@ struct Chrome {
     menu: Vec<Collection>,
     /// Chrome origin-trial tokens (the ORIGIN_TRIALS setting, comma-separated). They switch on trial-only browser features.
     trials: Vec<String>,
-    /// Trainers waiting for the owner's approval (shown on the admin tab).
-    pending: i64,
     /// Orders of the vault's cards waiting for an answer (shown on the admin tab).
     orders: i64,
     /// Trainers' applications to sell waiting for an answer (shown on the Sellers tab and the Overview).
@@ -169,7 +167,6 @@ fn chrome(c: &rusqlite::Connection) -> rusqlite::Result<Chrome> {
         links: db::collections(c)?,
         years: copyright_years(),
         menu: vec![],
-        pending: members::pending_count(c)?,
         orders: marcuru_rs::sellers::vault_orders_open(c).unwrap_or(0),
         applications: marcuru_rs::sellers::applications_waiting(c).unwrap_or(0),
         trials: std::env::var("ORIGIN_TRIALS").unwrap_or_default().split(',').map(|t| t.trim().to_string()).filter(|t| !t.is_empty()).collect(),

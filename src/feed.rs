@@ -717,7 +717,7 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
         Err(r) => return Ok(r),
     };
     if !m.profile_ok {
-        return Ok(fail(StatusCode::FORBIDDEN, "You can post once your trainer is approved."));
+        return Ok(fail(StatusCode::FORBIDDEN, "The vault's team has hidden your page, so you can't post for now."));
     }
     let (id, now) = (m.id, crate::unix_now());
     let (recent, room) = with_db(&app, move |c| Ok((social::posts_since(c, id, now - 3600)?, members::photo_bytes(c)? + dm::media_bytes(c)? + social::photo_bytes(c)?))).await?;
@@ -1064,9 +1064,9 @@ pub async fn comment(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, 
     if text.is_empty() && file.is_none() {
         return Ok(fail(StatusCode::BAD_REQUEST, "Write something or add a photo first."));
     }
-    // Photos, as on posts, once the trainer is approved; words are for everyone signed in, as before.
+    // Photos, as on posts, unless the vault's team hid the trainer's page; words are for everyone signed in.
     if file.is_some() && !m.profile_ok {
-        return Ok(fail(StatusCode::FORBIDDEN, "You can add photos once your trainer is approved. Words work now."));
+        return Ok(fail(StatusCode::FORBIDDEN, "The vault's team has hidden your page, so you can't add photos for now. Words still work."));
     }
     let (me, name, now) = (m.id, m.name.clone(), crate::unix_now());
     let staff = admin::power(&app, &h) != admin::Power::Nothing;
@@ -1170,7 +1170,7 @@ pub async fn comment_react(State(app): State<App>, h: HeaderMap, Path(id): Path<
 }
 
 /// POST /comments/{id}/delete: your own comment, or any comment for staff; the replies under it go with it.
-/// Nobody is left wondering where it went (the owner, 20 Nov 2026): when you delete your own, whoever wrote the post
+/// Nobody is left wondering where it went (the owner, 19 Nov 2026): when you delete your own, whoever wrote the post
 /// hears (the vault's own posts: its admins); when the vault's team takes one down, its writer hears.
 pub async fn comment_remove(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -> Res {
     if !same_site(&h) {
