@@ -1169,23 +1169,16 @@ pub async fn comment_react(State(app): State<App>, h: HeaderMap, Path(id): Path<
     })
 }
 
-/// POST /comments/{id}/delete: your own comment, or any comment for staff.
+/// POST /comments/{id}/delete: your own comment, or any comment for staff; the replies under it go with it.
+/// Nobody is left wondering where it went (the owner, 20 Nov 2026): when you delete your own, whoever wrote the post
+/// hears (the vault's own posts: its admins); when the vault's team takes one down, its writer hears.
 pub async fn comment_remove(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -> Res {
     if !same_site(&h) {
         return Ok(fail(StatusCode::FORBIDDEN, "That request didn't come from this site."));
     }
-    let me = current(&app, &h).await?.map(|m| m.id).unwrap_or(0);
+    let (me, name) = current(&app, &h).await?.map(|m| (m.id, m.name)).unwrap_or((0, String::new()));
     let staff = admin::power(&app, &h) != admin::Power::Nothing;
-    let out = with_db(&app, move |c| {
-        let Some(k) = social::comment(c, id)? else { return Ok(None) };
-        if !(staff || (me != 0 && me == k.member_id)) {
-            return Ok(Some(Err(())));
-        }
-        let (post, files) = social::comment_remove(c, id)?.unwrap_or((k.post_id, vec![]));
-        let n: i64 = rusqlite::OptionalExtension::optional(c.query_row("SELECT comment_n FROM posts WHERE id=?1", [post], |r| r.get(0)))?.unwrap_or(0);
-        Ok(Some(Ok((n, files))))
-    })
-    .await?;
+    let out = with_db(&app, move |c| take_comment(c, id, me, &name, staff)).await?;
     stale(&app);
     Ok(match out {
         Some(Ok((n, files))) => {
@@ -1197,6 +1190,32 @@ pub async fn comment_remove(State(app): State<App>, h: HeaderMap, Path(id): Path
         Some(Err(())) => fail(StatusCode::FORBIDDEN, "That comment isn't yours."),
         None => ok(json!({ "ok": true, "n": 0 })),
     })
+}
+
+/// A comment taken away by `me` (0: the owner signed in with the admin password alone), with the replies under it,
+/// and whoever should hear told. None: it was gone already. Err: it isn't theirs to delete. Else how many comments
+/// the post has now, and the photo files to remove from disk.
+fn take_comment(c: &rusqlite::Connection, id: i64, me: i64, name: &str, staff: bool) -> rusqlite::Result<Option<Result<(i64, Vec<String>), ()>>> {
+    let Some(k) = social::comment(c, id)? else { return Ok(None) };
+    let own = me != 0 && me == k.member_id;
+    if !(staff || own) {
+        return Ok(Some(Err(())));
+    }
+    let on = social::post(c, 0, k.post_id)?;
+    let (post, files) = social::comment_remove(c, id)?.unwrap_or((k.post_id, vec![]));
+    let (what, link) = (said(&k.text), format!("/posts/{post}"));
+    if own {
+        if let Some(p) = &on {
+            let whose = if p.member_id == 0 { "the vault's post" } else { "your post" };
+            for who in post_owners(c, p)?.into_iter().filter(|w| *w != me) {
+                sellers::notify_from(c, who, me, "social", "", &format!("{name} deleted their comment on {whose}: {what}"), &link)?;
+            }
+        }
+    } else {
+        sellers::notify_from(c, k.member_id, 0, "announcement", "", &format!("The vault's team took down your comment: {what}"), &link)?;
+    }
+    let n: i64 = rusqlite::OptionalExtension::optional(c.query_row("SELECT comment_n FROM posts WHERE id=?1", [post], |r| r.get(0)))?.unwrap_or(0);
+    Ok(Some(Ok((n, files))))
 }
 
 /// POST /posts/{id}/delete: the author deletes their own post; staff take any post out of the feed.
@@ -1362,6 +1381,35 @@ mod tests {
         tell_post_followers(&c, 0, ash, v, "New box!", "Big Boys Vault").unwrap();
         let n: i64 = c.query_row("SELECT COUNT(*) FROM notifications WHERE member_id=?1 AND message LIKE 'Big Boys Vault posted%'", [brock], |r| r.get(0)).unwrap();
         assert_eq!(n, 1);
+    }
+
+    /// A comment that goes doesn't go silently: deleting your own tells whoever wrote the post; the vault's team
+    /// taking one down tells its writer. Nobody else can delete it.
+    #[test]
+    fn a_deleted_comment_tells_whoever_should_know() {
+        let c = db();
+        let (ash, _, brock) = town(&c);
+        let misty = members::create(&c, "Misty", "h").unwrap().unwrap();
+        let p = social::post_add(&c, ash, "post", "Look at this pull", &[], &json!({}), 10).unwrap();
+        let said = |c: &rusqlite::Connection, who: i64| -> Vec<(String, String, i64)> {
+            c.prepare("SELECT kind, message, actor_id FROM notifications WHERE member_id=?1 ORDER BY id").unwrap().query_map([who], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(Result::unwrap).collect()
+        };
+        // Brock deletes his own comment (and the reply under it): Ash, whose post it is, hears.
+        let k = social::comment_add(&c, p, brock, None, "Trade you for it?", None, 11).unwrap().unwrap();
+        social::comment_add(&c, p, misty, Some(k), "Me first", None, 12).unwrap().unwrap();
+        assert_eq!(take_comment(&c, k, misty, "Misty", false).unwrap(), Some(Err(())), "not hers to delete");
+        assert_eq!(take_comment(&c, k, brock, "Brock", false).unwrap(), Some(Ok((0, vec![]))));
+        assert_eq!(said(&c, ash), vec![("social".to_string(), "Brock deleted their comment on your post: “Trade you for it?”".to_string(), brock)]);
+        assert!(said(&c, brock).is_empty(), "he knows: he did it");
+        // Ash deleting his own comment on his own post tells nobody.
+        let own = social::comment_add(&c, p, ash, None, "Thanks all", None, 13).unwrap().unwrap();
+        take_comment(&c, own, ash, "Ash", false).unwrap();
+        assert_eq!(said(&c, ash).len(), 1);
+        // The vault's team takes one down: its writer hears, in the vault's name.
+        let rude = social::comment_add(&c, p, misty, None, "", None, 14).unwrap().unwrap();
+        assert_eq!(take_comment(&c, rude, 0, "", true).unwrap(), Some(Ok((0, vec![]))));
+        assert_eq!(said(&c, misty), vec![("announcement".to_string(), "The vault's team took down your comment: a photo".to_string(), 0)]);
+        assert_eq!(take_comment(&c, rude, 0, "", true).unwrap(), None, "gone already");
     }
 
     #[test]

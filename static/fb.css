@@ -545,15 +545,26 @@ a.story:hover { text-decoration: none; }
 .post-pop .row { width: 100%; min-height: 44px; border: 0; background: none; font-weight: 600; text-align: left; }
 .post-comments { padding: 4px 16px 12px; }
 .cm-list { display: flex; flex-direction: column; gap: 8px; padding: 8px 0; }
-.cm { display: flex; gap: 8px; align-items: flex-start; }
-.cm.reply { margin-left: 40px; }
+/* A comment, then the replies to it stepping in under it (each can be answered in turn). Two steps in is as far as
+   they go, a phone being narrow: deeper replies stay at that step and say whose they answer. */
+.cm { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cm-row { display: flex; gap: 8px; align-items: flex-start; min-width: 0; }
+.cm-kids { display: flex; flex-direction: column; gap: 6px; margin-left: 40px; }
+.cm-kids:empty { display: none; }
+.cm-kids .cm-kids .cm-kids { margin-left: 0; }
 .cm .av:hover { text-decoration: none; }
 .cm-body { min-width: 0; }
 .cm-bub { display: inline-block; max-width: 100%; padding: 8px 12px; border-radius: 18px; background: var(--surface-2); overflow-wrap: anywhere; }
-.cm-name { display: block; color: var(--text); font: 600 .8125rem/1.3 var(--font); }
+/* Its first line: who wrote it, whose reply it answers (deep in a thread), and when. */
+.cm-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; }
+.cm-name { color: var(--text); font: 600 .8125rem/1.3 var(--font); }
+.cm-to, .cm-when { color: var(--muted); font-size: .75rem; }
 .cm-bub p { white-space: pre-wrap; }
-.cm-meta { display: flex; gap: 12px; padding: 2px 12px 0; color: var(--muted); font-size: .75rem; }
-.cm-meta .linkbtn { color: var(--muted); font-size: .75rem; }
+/* Under it: Like, Reply and (your own) Edit and Delete as words big enough for a finger, on one row at any depth. */
+.cm-meta { display: flex; gap: 0 2px; padding: 0 4px; color: var(--muted); font-size: .8125rem; }
+.cm-meta .cm-act { min-width: 44px; min-height: 36px; padding: 0 8px; border-radius: var(--r-sm); color: var(--muted); font-size: .8125rem; }
+.cm-meta .cm-act:hover { background: var(--fill); color: var(--text); text-decoration: none; }
+.cm-meta .cm-act[data-cm-del] { color: #ffb4ad; }
 .cm-form { display: flex; align-items: flex-start; gap: 8px; }
 .cm-form > .av { margin-top: 4px; }
 .cm-form > .ibtn { margin-top: 2px; }
@@ -574,6 +585,11 @@ a.story:hover { text-decoration: none; }
 .cm-pic-x { position: absolute; top: -6px; right: -6px; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 50%; background: var(--surface-3); color: var(--text); font-size: .75rem; }
 .cm-form .cm-add { cursor: pointer; }
 @media (max-width: 380px) { .cm-form { gap: 4px; } .cm-form .ibtn { width: 34px; height: 34px; } .cm-form > .ibtn { margin-top: 3px; } }
+/* Answering a comment: whose it is shows above the box, with ✕ to answer the post instead. */
+.cm-to-row { display: flex; align-items: center; gap: 8px; padding-left: 14px; color: var(--muted); font-size: .8125rem; }
+.cm-to-row[hidden] { display: none; }
+.cm-to-row b { color: var(--text); }
+.cm-to-x { flex: none; width: 32px; height: 32px; padding: 0; border: 0; border-radius: 50%; background: var(--surface-3); color: var(--text); font-size: .75rem; }
 .vu-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px 8px; padding: 0 16px 16px; }
 .vu { display: flex; flex-direction: column; min-width: 0; color: var(--text); }
 .vu:hover { text-decoration: none; }
@@ -605,7 +621,7 @@ html.sheet-open { overflow: hidden; }
   .vu-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px 6px; padding: 0 12px 12px; }
   .vu-t { display: none; } .vu-p { font-size: .8125rem; }
   .sheet { padding: 0; place-items: stretch; } .sheet-in { width: 100%; max-height: none; border-radius: 0; padding-top: var(--sat); }
-  .cm.reply { margin-left: 28px; }
+  .cm-kids { margin-left: 28px; }
 }
 
 .post-people { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 16px 2px; }
@@ -616,7 +632,39 @@ html.sheet-open { overflow: hidden; }
 /* Editing: the post sheet's "post as", and a comment being edited. */
 .sheet select { width: auto; min-height: 32px; padding: 4px 8px; font-size: .8125rem; }
 .sheet .row { padding-inline: 0; }
-.cm-edit { display: block; width: min(420px, 60vw); min-height: 32px; margin-top: 2px; padding: 4px 10px; border-radius: var(--pill); }
+.cm-edit { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 4px; }
+.cm-edit input { flex: 1 1 180px; min-width: 0; min-height: 40px; padding: 4px 12px; border-radius: var(--pill); }
+.cm-edit .btn { min-height: 36px; }
+
+/* ---------- 15b. The photo window (feed.js): a post's photo big, the post beside it ---------- */
+/* The photo fits the screen whatever its shape. From 1000px wide the post sits beside it; narrower (a phone, a tablet
+   held upright) the photo is on top and the post under it, the whole window scrolling under a bar that keeps ✕ clear. */
+html.pv-open { overflow: hidden; }
+.pv { position: fixed; inset: 0; z-index: 978; display: grid; grid-template-columns: minmax(0, 1fr) 440px; background: #05060b; color: var(--text); }
+.pv[hidden] { display: none; }
+.pv-stage { position: relative; display: grid; place-items: center; min-width: 0; height: 100dvh; padding: 16px; touch-action: pan-y; -webkit-user-select: none; user-select: none; }
+.pv-img { display: block; width: auto; height: auto; max-width: 100%; max-height: calc(100dvh - 32px); border-radius: 6px; object-fit: contain; -webkit-user-drag: none; }
+.pv-side { min-width: 0; height: 100dvh; overflow-y: auto; overscroll-behavior: contain; background: var(--surface); box-shadow: -1px 0 0 var(--line); }
+.pv-side .pv-post { margin: 0; border-radius: 0; background: none; box-shadow: none; }
+.pv-post .post-media { display: none; }
+.pv-post .cm-form { position: sticky; bottom: 0; z-index: 2; margin: 0 -16px -12px; padding: 8px 16px calc(12px + var(--sab)); background: var(--surface); box-shadow: 0 -1px 0 var(--line); }
+.pv-x, .pv-nav { display: grid; place-items: center; width: 44px; height: 44px; padding: 0; border: 0; border-radius: 50%; background: rgba(11,13,20,.86); color: #fff; box-shadow: 0 0 0 1px rgba(255,255,255,.3); }
+.pv-x:hover, .pv-nav:hover { background: #30364b; }
+.pv-x svg, .pv-nav svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
+.pv-x { position: fixed; top: calc(12px + var(--sat)); left: 12px; z-index: 4; }
+.pv-nav { position: absolute; top: 50%; translate: 0 -50%; }
+.pv-nav[hidden], .pv-count[hidden] { display: none; }
+.pv-prev { left: 12px; }
+.pv-next { right: 12px; }
+.pv-count { position: absolute; bottom: 12px; left: 50%; translate: -50% 0; padding: 4px 12px; border-radius: var(--pill); background: rgba(11,13,20,.86); color: #fff; font: 600 .8125rem/1.4 var(--font); }
+.pv-hold { border-radius: var(--r); }
+@media (max-width: 999px) {
+  .pv { display: block; overflow-y: auto; overscroll-behavior: contain; padding-top: calc(68px + var(--sat)); }
+  .pv::before { content: ""; position: fixed; inset: 0 0 auto 0; z-index: 3; height: calc(68px + var(--sat)); background: #05060b; }
+  .pv-stage { height: auto; min-height: 200px; padding: 0 0 12px; }
+  .pv-img { max-height: min(62dvh, 720px); border-radius: 0; }
+  .pv-side { height: auto; overflow: visible; box-shadow: none; }
+}
 
 .sheet textarea:focus, .sheet textarea:focus-visible { outline: none; border-color: transparent; }
 

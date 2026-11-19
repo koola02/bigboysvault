@@ -97,8 +97,11 @@
 .dm-head-bubble:hover { scale: 1.06; }
 .dm-head-bubble[data-unread]:not([data-unread=""])::after { content: attr(data-unread); position: absolute; top: -2px; right: -2px; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: #e34c26; color: #fff; font: 800 .75rem/20px var(--font); text-align: center; }
 .dm-lightbox { position: fixed; inset: 0; z-index: 2147483300; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,.92); }
-.dm-lightbox img { max-width: 100%; max-height: 100%; border-radius: 8px; }
-.dm-lb-x { position: absolute; top: max(12px, var(--sat, 0px)); right: 12px; background: rgba(255,255,255,.12); color: #fff; }
+/* The photo fits the screen whatever its shape (a tall one used to run off the bottom on tablets and computers), and
+   ✕ is plain to see on any photo. */
+.dm-lightbox img { width: auto; height: auto; max-width: calc(100vw - 32px); max-height: calc(100dvh - 32px); border-radius: 8px; object-fit: contain; }
+.dm-lb-x { position: absolute; top: max(12px, var(--sat, 0px)); right: 12px; width: 44px; height: 44px; background: rgba(11,13,20,.86); color: #fff; box-shadow: 0 0 0 1px rgba(255,255,255,.3); font-size: 1.125rem; }
+.dm-lb-x:hover { background: #30364b; }
 .dm-call-ui { position: fixed; inset: 0; z-index: 2147483400; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 24px; background: radial-gradient(120% 80% at 50% 20%, #232a4a, #05060c 70%); color: var(--text); text-align: center; }
 .dm-call-ui .dm-av { box-shadow: 0 0 0 6px rgba(239,200,115,.12), 0 0 60px rgba(239,200,115,.25); }
 .dm-call-name { margin-top: 10px; font: 800 1.5rem/1.2 var(--display); color: var(--gold-hi); }

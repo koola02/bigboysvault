@@ -336,14 +336,15 @@ fn recount_comments(c: &Connection, post: i64) -> rusqlite::Result<()> {
     c.execute("UPDATE posts SET comment_n=(SELECT COUNT(*) FROM comments WHERE post_id=?1 AND hidden=0) WHERE id=?1", [post]).map(|_| ())
 }
 
-/// A comment on a post, or a reply to a comment (one level: a reply to a reply answers the same comment), with
-/// maybe one photo (full size, small, bytes on disk).
+/// A comment on a post, or a reply to a comment or to another reply (the owner, 20 Nov 2026: "comment within a
+/// comment"): each keeps the comment it answers, so threads can go as deep as people take them. With maybe one photo
+/// (full size, small, bytes on disk).
 pub fn comment_add(c: &Connection, post: i64, member: i64, parent: Option<i64>, text: &str, photo: Option<(&str, &str, i64)>, now: i64) -> rusqlite::Result<Option<i64>> {
     if c.query_row("SELECT 1 FROM posts WHERE id=?1 AND hidden=0", [post], |_| Ok(())).optional()?.is_none() {
         return Ok(None);
     }
     let parent = match parent {
-        Some(p) => c.query_row("SELECT COALESCE(parent_id, id) FROM comments WHERE id=?1 AND post_id=?2", [p, post], |r| r.get::<_, i64>(0)).optional()?,
+        Some(p) => c.query_row("SELECT id FROM comments WHERE id=?1 AND post_id=?2", [p, post], |r| r.get::<_, i64>(0)).optional()?,
         None => None,
     };
     let (image, thumb, bytes) = photo.unwrap_or(("", "", 0));
@@ -356,13 +357,16 @@ pub fn comment_add(c: &Connection, post: i64, member: i64, parent: Option<i64>, 
     Ok(Some(id))
 }
 
-/// Takes a comment (and the replies under it) away, with their likes. Returns the post it was on, and the photo files
-/// to remove from disk.
+/// A comment and everything under it: the replies to it, the replies to those, and so on (with one number, ?1).
+const THREAD: &str = "id IN (WITH RECURSIVE t(id) AS (SELECT ?1 UNION ALL SELECT k.id FROM comments k JOIN t ON k.parent_id=t.id) SELECT id FROM t)";
+
+/// Takes a comment (and every reply under it, however deep) away, with their likes. Returns the post it was on, and
+/// the photo files to remove from disk.
 pub fn comment_remove(c: &Connection, id: i64) -> rusqlite::Result<Option<(i64, Vec<String>)>> {
     let Some(post) = c.query_row("SELECT post_id FROM comments WHERE id=?1", [id], |r| r.get::<_, i64>(0)).optional()? else { return Ok(None) };
-    let files = comment_files(c, "id=?1 OR parent_id=?1", id)?;
-    c.execute("DELETE FROM comment_reactions WHERE comment_id IN (SELECT id FROM comments WHERE id=?1 OR parent_id=?1)", [id])?;
-    c.execute("DELETE FROM comments WHERE id=?1 OR parent_id=?1", [id])?;
+    let files = comment_files(c, THREAD, id)?;
+    c.execute(&format!("DELETE FROM comment_reactions WHERE comment_id IN (SELECT id FROM comments WHERE {THREAD})"), [id])?;
+    c.execute(&format!("DELETE FROM comments WHERE {THREAD}"), [id])?;
     recount_comments(c, post)?;
     Ok(Some((post, files)))
 }
@@ -691,10 +695,23 @@ mod tests {
         let a = comment_add(&c, p, 1, None, "Nice card", None, 10).unwrap().unwrap();
         let b = comment_add(&c, p, 2, Some(a), "Thanks", None, 11).unwrap().unwrap();
         let d = comment_add(&c, p, 1, Some(b), "Welcome", None, 12).unwrap().unwrap();
-        assert_eq!(comment(&c, d).unwrap().unwrap().parent_id, Some(a), "a reply to a reply answers the same comment");
-        assert_eq!(post(&c, 0, p).unwrap().unwrap().comment_n, 3);
+        assert_eq!(comment(&c, d).unwrap().unwrap().parent_id, Some(b), "a reply to a reply keeps the reply it answers");
+        let other = post_add(&c, 2, "post", "another", &[], &json!({}), 1001).unwrap();
+        let stray = comment_add(&c, other, 1, Some(a), "wrong post", None, 13).unwrap().unwrap();
+        assert_eq!(comment(&c, stray).unwrap().unwrap().parent_id, None, "never under a comment of another post");
+        let e = comment_add(&c, p, 2, None, "A second thread", None, 14).unwrap().unwrap();
+        comment_react(&c, d, 2, "like", 15).unwrap();
+        assert_eq!(post(&c, 0, p).unwrap().unwrap().comment_n, 4);
+        assert_eq!(comment_remove(&c, b).unwrap(), Some((p, vec![])));
+        assert_eq!(comments(&c, p, 0, 50).unwrap().iter().map(|k| k.id).collect::<Vec<_>>(), vec![a, e], "a reply goes with every reply under it; the rest stay");
+        assert_eq!(c.query_row("SELECT COUNT(*) FROM comment_reactions", [], |r| r.get::<_, i64>(0)).unwrap(), 0, "their likes go too");
+        let f = comment_add(&c, p, 1, Some(a), "Under the first", None, 16).unwrap().unwrap();
+        comment_add(&c, p, 2, Some(f), "And under that", None, 17).unwrap().unwrap();
         assert_eq!(comment_remove(&c, a).unwrap(), Some((p, vec![])));
-        assert_eq!(post(&c, 0, p).unwrap().unwrap().comment_n, 0, "its replies go with it");
+        assert_eq!(comments(&c, p, 0, 50).unwrap().iter().map(|k| k.id).collect::<Vec<_>>(), vec![e], "a comment goes with its whole thread, however deep");
+        comment_remove(&c, e).unwrap();
+        comment_remove(&c, stray).unwrap();
+        assert_eq!(post(&c, 0, p).unwrap().unwrap().comment_n, 0);
         assert_eq!(photo_bytes(&c).unwrap(), 500);
         // Editing: new words, the old photo comes off, a new one goes on; the site's refresh leaves a note alone.
         assert_eq!(post_edit(&c, p, "hello again", &[], &[("b_l.jpg".into(), "b_s.jpg".into(), 5, 5, 200)], 50).unwrap(), vec!["a_l.jpg".to_string(), "a_s.jpg".to_string()]);

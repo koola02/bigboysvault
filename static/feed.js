@@ -1,7 +1,8 @@
-/* The feed: likes and other reactions (on posts and on comments), comments (words, a photo, or both), sharing, the
-   post menu, and writing a post.
+/* The feed: likes and other reactions (on posts and on comments), comments (words, a photo, or both; replies to
+   replies; your own to edit or delete), the photo window, sharing, the post menu, and writing a post.
    The posts themselves are drawn by the server; more arrive as you scroll (the last element asks for the next page).
-   Everything here is one set of listeners on the page, so posts that arrive later work without any setup. */
+   Everything here is one set of listeners on the feed and on the photo window (which holds a post while it is open),
+   so posts that arrive later work without any setup. */
 (() => {
   const feed = document.getElementById('feed');
   if (!feed) return;
@@ -33,6 +34,12 @@
     return j;
   }
   const postOf = (n) => n.closest('[data-post]');
+  // The photo window (further down). A post moves into it while its photo is open, so everything below listens on the
+  // feed and on the window alike.
+  const pv = el('div', 'pv'); pv.hidden = true; pv.setAttribute('role', 'dialog'); pv.setAttribute('aria-modal', 'true'); pv.setAttribute('aria-label', 'Photo');
+  pv.innerHTML = '<div class="pv-stage"><img class="pv-img" alt="Photo"><button type="button" class="pv-nav pv-prev" aria-label="The photo before"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><button type="button" class="pv-nav pv-next" aria-label="The next photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button><span class="pv-count" aria-live="polite"></span></div><div class="pv-side"></div><button type="button" class="pv-x" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
+  document.body.append(pv);
+  const listen = (type, fn) => { feed.addEventListener(type, fn); pv.addEventListener(type, fn); };
 
   /* ---------- reactions ---------- */
   function paintLike(post, j) {
@@ -80,30 +87,37 @@
   const LIKES = '[data-like], [data-cm-like]';
   const pickFor = (b) => (b.hasAttribute('data-cm-like') ? (k) => reactComment(b.closest('.cm'), k) : (k) => react(postOf(b), k));
   // A mouse resting on Like, or a finger held on it, opens the other reactions.
-  feed.addEventListener('pointerover', (e) => { const b = e.target.closest(LIKES); if (!b || e.pointerType !== 'mouse' || pick) return; clearTimeout(pickTimer); pickTimer = setTimeout(() => openPick(b, pickFor(b)), 450); });
-  feed.addEventListener('pointerout', (e) => { const b = e.target.closest(`${LIKES}, .react-pick`); if (!b || e.pointerType !== 'mouse') return; clearTimeout(pickTimer); if (pick && !e.relatedTarget?.closest?.(`${LIKES}, .react-pick`)) pickTimer = setTimeout(closePick, 350); });
+  listen('pointerover', (e) => { const b = e.target.closest(LIKES); if (!b || e.pointerType !== 'mouse' || pick) return; clearTimeout(pickTimer); pickTimer = setTimeout(() => openPick(b, pickFor(b)), 450); });
+  listen('pointerout', (e) => { const b = e.target.closest(`${LIKES}, .react-pick`); if (!b || e.pointerType !== 'mouse') return; clearTimeout(pickTimer); if (pick && !e.relatedTarget?.closest?.(`${LIKES}, .react-pick`)) pickTimer = setTimeout(closePick, 350); });
   let held = false;
-  feed.addEventListener('pointerdown', (e) => { const b = e.target.closest(LIKES); if (!b || e.pointerType === 'mouse') return; held = false; clearTimeout(pickTimer); pickTimer = setTimeout(() => { held = true; openPick(b, pickFor(b)); if (navigator.vibrate) navigator.vibrate(8); }, 420); });
-  feed.addEventListener('pointerup', () => { if (!held) clearTimeout(pickTimer); });
-  feed.addEventListener('contextmenu', (e) => { if (e.target.closest(LIKES)) e.preventDefault(); });
+  listen('pointerdown', (e) => { const b = e.target.closest(LIKES); if (!b || e.pointerType === 'mouse') return; held = false; clearTimeout(pickTimer); pickTimer = setTimeout(() => { held = true; openPick(b, pickFor(b)); if (navigator.vibrate) navigator.vibrate(8); }, 420); });
+  listen('pointerup', () => { if (!held) clearTimeout(pickTimer); });
+  listen('contextmenu', (e) => { if (e.target.closest(LIKES)) e.preventDefault(); });
 
   /* ---------- comments ---------- */
+  // One comment: its writer and when, its words and photo, then Like, Reply and (your own) Edit and Delete, each big
+  // enough to tap and always on one row, however far in the reply sits.
+  // The replies to it sit under it (.cm-kids), each a comment of its own that can be answered in turn.
   function commentNode(k) {
-    const li = el('div', `cm${k.parent ? ' reply' : ''}`); li.dataset.cm = k.id;
+    const li = el('div', 'cm'); li.dataset.cm = k.id;
+    const row = el('div', 'cm-row');
     const av = el('a', 'av sm'); av.href = `/trainers/${k.member}`; face(av, { avatar: k.avatar, initial: k.initial, name: k.name });
     const body = el('div', 'cm-body');
     const bub = el('div', 'cm-bub'); const name = el('a', 'cm-name', k.name); name.href = `/trainers/${k.member}`;
-    bub.append(name);
+    const head = el('div', 'cm-head'); head.append(name, el('span', 'cm-when', k.edited ? `${k.when} · Edited` : k.when));
+    bub.append(head);
     if (k.text) bub.append(el('p', '', k.text));
     if (k.image) { const a = el('a', 'cm-photo'); a.href = k.image; a.dataset.photo = ''; const im = el('img'); im.src = k.thumb || k.image; im.alt = 'Photo'; im.loading = 'lazy'; a.append(im); bub.append(a); }
-    const meta = el('div', 'cm-meta'); meta.append(el('span', '', k.edited ? `${k.when} · Edited` : k.when));
-    const like = el('button', 'linkbtn cm-like', 'Like'); like.type = 'button'; like.dataset.cmLike = ''; meta.append(like);
-    const rep = el('button', 'linkbtn', 'Reply'); rep.type = 'button'; rep.dataset.reply = k.parent || k.id; rep.dataset.name = k.name; meta.append(rep);
-    if (me && !k.own) { const r = el('button', 'linkbtn', 'Report'); r.type = 'button'; r.dataset.cmReport = k.id; meta.append(r); }
-    if (k.own) { const ed = el('button', 'linkbtn', 'Edit'); ed.type = 'button'; ed.dataset.cmEdit = k.id; meta.append(ed); }
-    if (k.can_remove) { const d = el('button', `linkbtn${k.own ? '' : ' staff-only'}`, 'Delete'); d.type = 'button'; d.dataset.cmDel = k.id; meta.append(d); }
-    const chip = el('span', 'cm-reacts'); meta.append(chip);
-    body.append(bub, meta); li.append(av, body);
+    const meta = el('div', 'cm-meta');
+    const act = (words, key, val) => { const b = el('button', 'linkbtn cm-act', words); b.type = 'button'; b.dataset[key] = val; meta.append(b); return b; };
+    act('Like', 'cmLike', '').classList.add('cm-like');
+    act('Reply', 'reply', k.id).dataset.name = k.name;
+    if (k.own) act('Edit', 'cmEdit', k.id);
+    if (k.can_remove) { const d = act('Delete', 'cmDel', k.id); if (!k.own) d.classList.add('staff-only'); }
+    if (me && !k.own) act('Report', 'cmReport', k.id);
+    meta.append(el('span', 'cm-reacts'));
+    body.append(bub, meta); row.append(av, body);
+    li.append(row, el('div', 'cm-kids'));
     paintCmLike(li, k);
     return li;
   }
@@ -113,24 +127,31 @@
       box.dataset.ready = '1'; box.hidden = false;
       const list = el('div', 'cm-list'); box.append(list);
       const form = el('form', 'cm-form');
-      form.innerHTML = `<span class="av sm" data-my-face></span><span class="cm-in"><input type="text" maxlength="600" placeholder="Write a comment…" aria-label="Write a comment" autocomplete="off" enterkeyhint="send"><span class="cm-pic" hidden><img alt=""><button type="button" class="cm-pic-x" aria-label="Take the photo off">✕</button></span></span>`
+      form.innerHTML = `<span class="av sm" data-my-face></span><span class="cm-in"><span class="cm-to-row" hidden><span>Replying to <b></b></span><button type="button" class="cm-to-x" aria-label="Cancel the reply">✕</button></span><input type="text" maxlength="600" placeholder="Write a comment…" aria-label="Write a comment" autocomplete="off" enterkeyhint="send"><span class="cm-pic" hidden><img alt=""><button type="button" class="cm-pic-x" aria-label="Take the photo off">✕</button></span></span>`
         + `<label class="ibtn cm-add" title="Add a photo" aria-label="Add a photo">${PHOTO}<input type="file" accept="image/*" hidden data-cm-file></label>`
         + `<label class="ibtn cm-add" title="Take a photo" aria-label="Take a photo">${CAMERA}<input type="file" accept="image/*" capture="environment" data-card-cam="free" hidden data-cm-file></label>`
         + `<button type="submit" class="ibtn" aria-label="Send">${SEND}</button>`;
       form.querySelectorAll('[data-cm-file]').forEach((inp) => inp.addEventListener('change', () => { const f = inp.files && inp.files[0]; inp.value = ''; if (f) setCmPhoto(form, f); }));
       form.querySelector('.cm-pic-x').addEventListener('click', () => setCmPhoto(form, null));
+      form.querySelector('.cm-to-x').addEventListener('click', () => { replyTo(form, null); form.querySelector('input[type="text"]').focus(); });
       face(form.querySelector('[data-my-face]'), me); box.append(form);
       try { const j = await api(`/posts/${post.dataset.post}/comments`); j.comments.forEach((k) => place(list, commentNode(k), k.parent)); } catch (e) { toast(e.message, true); }
     } else box.hidden = false;
     if (focus) box.querySelector('.cm-form input[type="text"]').focus({ preventScroll: false });
   }
-  // A reply sits under the comment it answers, after the replies already there.
+  // A reply sits under the comment it answers, after the replies already there. A reply to a reply says whose it
+  // answers: deep down the threads stop stepping further in, so the name is what tells them apart.
   function place(list, node, parent) {
-    if (!parent) { list.append(node); return; }
-    const top = list.querySelector(`[data-cm="${parent}"]`);
+    const top = parent ? list.querySelector(`.cm[data-cm="${parent}"]`) : null;
     if (!top) { list.append(node); return; }
-    let after = top; while (after.nextElementSibling && after.nextElementSibling.classList.contains('reply')) after = after.nextElementSibling;
-    after.after(node);
+    if (top.parentElement.classList.contains('cm-kids')) node.querySelector('.cm-name').after(el('span', 'cm-to', `to ${top.querySelector('.cm-name').textContent}`));
+    top.querySelector(':scope > .cm-kids').append(node);
+  }
+  // Who the comment box answers: a comment (its writer's name shows above the box, with ✕ to stop), or the post.
+  function replyTo(form, id, name) {
+    const row = form.querySelector('.cm-to-row'), input = form.querySelector('input[type="text"]');
+    if (id) { form.dataset.parent = id; row.querySelector('b').textContent = name; row.hidden = false; input.placeholder = `Reply to ${name}…`; }
+    else { delete form.dataset.parent; row.hidden = true; input.placeholder = 'Write a comment…'; }
   }
   const setCount = (post, n) => { const b = post.querySelector('.post-cn'); b.hidden = !n; b.textContent = `${n} comment${n === 1 ? '' : 's'}`; stats(post); };
   // The photo waiting to go with a comment: shown small in the box, with ✕ to take it off.
@@ -141,7 +162,7 @@
     img.src = form.cmPhotoUrl; box.hidden = !file;
     if (file) form.querySelector('input[type="text"]').focus({ preventScroll: true });
   }
-  feed.addEventListener('submit', async (e) => {
+  listen('submit', async (e) => {
     const f = e.target.closest('.cm-form'); if (!f) return;
     e.preventDefault();
     if (!me) { toLogin(); return; }
@@ -154,7 +175,8 @@
     try {
       const j = await api(`/posts/${post.dataset.post}/comments`, fd);
       place(post.querySelector('.cm-list'), commentNode(j.comment), j.comment.parent);
-      input.value = ''; delete f.dataset.parent; input.placeholder = 'Write a comment…'; setCmPhoto(f, null); setCount(post, j.n);
+      input.value = ''; replyTo(f, null); setCmPhoto(f, null); setCount(post, j.n);
+      post.querySelector(`.cm[data-cm="${j.comment.id}"]`)?.scrollIntoView({ block: 'nearest' });
     } catch (err) { toast(err.message, true); }
     input.disabled = false; input.focus();
   });
@@ -170,7 +192,7 @@
     const kind = post.dataset.kind, written = kind === 'post' || kind === 'share', by = Number(post.dataset.member);
     const mine = !!me && by === me.id, vaults = full && by === 0;
     // Yours to edit: what you wrote, the post about your own listings, and (full admins) anything the vault posted.
-    if ((mine && (written || kind === 'listing')) || vaults) item(written ? 'Edit post' : post.querySelector('.post-text') ? 'Edit the words on this post' : 'Add words to this post', () => compose('edit', post), mine ? '' : 'staff-only');
+    if ((mine && (written || kind === 'listing')) || vaults) item(written ? 'Edit post' : post.querySelector('.post-text') ? 'Edit the words on this post' : 'Add words to this post', () => { closeView(); compose('edit', post); }, mine ? '' : 'staff-only');
     if (mine && kind === 'listing') item('Manage my listings', () => { location.href = '/me/listings'; });
     if (full) item(post.hasAttribute('data-pinned') ? 'Unpin from the top' : 'Pin to the top of the feed', async () => { try { await api(`/posts/${id}/pin`, { on: !post.hasAttribute('data-pinned') }); location.reload(); } catch (e) { toast(e.message, true); } }, 'staff-only');
     item('Copy link', () => share(post, true));
@@ -192,7 +214,7 @@
   }
   async function remove(post, ask) {
     if (!(await sure(ask, { yes: 'Delete', no: 'Keep it' }))) return;
-    try { await api(`/posts/${post.dataset.post}/delete`, {}); post.remove(); toast('Removed.'); } catch (e) { toast(e.message, true); }
+    try { await api(`/posts/${post.dataset.post}/delete`, {}); closeView(); post.remove(); toast('Removed.'); } catch (e) { toast(e.message, true); }
   }
   async function share(post, copyOnly) {
     const url = `${location.origin}/posts/${post.dataset.post}`;
@@ -200,6 +222,7 @@
     if (!copyOnly && navigator.share) { try { await navigator.share({ url, title: document.title }); return; } catch (err) { if (err && err.name === 'AbortError') return; } }
     try { await navigator.clipboard.writeText(url); toast('Link copied.'); } catch (_) { toast(`Copy this link: ${url}`); }
   }
+  // A comment's photo, big: it fits the screen whatever its shape, and ✕ (or a tap beside it, or Esc) closes it.
   function lightbox(src) {
     const o = el('div', 'dm-lightbox'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', 'Photo');
     const img = el('img'); img.src = src; img.alt = 'Photo'; o.append(img);
@@ -212,7 +235,65 @@
     document.body.append(o); x.focus();
   }
 
-  feed.addEventListener('click', (e) => {
+  /* ---------- the photo window: a post's photo big, with the post beside it ---------- */
+  // Like a photo on Facebook (the owner, 20 Nov 2026): the photo fits the screen whatever its shape, ✕ closes it (so do
+  // Esc and the phone's Back), arrows (or a swipe, or the arrow keys) go through the post's photos, and the post sits
+  // beside it (under it on a phone or an upright tablet) with its likes, its comments and the comment box, photo and
+  // camera buttons included. It is the real post, moved here while the window is open: a like or a comment made here
+  // is on the post in the feed.
+  const view = { post: null, hold: null, pics: [], at: 0, back: null, pushed: false };
+  function showPic() {
+    const n = view.pics.length;
+    pv.querySelector('.pv-img').src = view.pics[view.at];
+    pv.querySelectorAll('.pv-nav').forEach((b) => { b.hidden = n < 2; });
+    const count = pv.querySelector('.pv-count'); count.hidden = n < 2; count.textContent = `${view.at + 1} of ${n}`;
+  }
+  const step = (by) => { const n = view.pics.length; if (n < 2) return; view.at = (view.at + by + n) % n; showPic(); };
+  function openView(link) {
+    const post = postOf(link); if (!post || view.post) return;
+    view.pics = [...post.querySelectorAll('.post-media [data-photo]')].map((a) => a.getAttribute('href'));
+    view.at = Math.max(0, view.pics.indexOf(link.getAttribute('href')));
+    view.back = link;
+    // The post's place in the feed is kept, so the feed doesn't jump while it is away.
+    view.hold = el('div', 'pv-hold'); view.hold.style.height = `${post.offsetHeight}px`;
+    post.before(view.hold);
+    pv.querySelector('.pv-side').append(post); post.classList.add('pv-post');
+    view.post = post;
+    pv.hidden = false; pv.scrollTop = 0; document.documentElement.classList.add('pv-open');
+    showPic();
+    if (post.querySelector('[data-comments]')) openComments(post, false);
+    try { history.pushState({ bbvPhoto: 1 }, ''); view.pushed = true; } catch (_) { view.pushed = false; }
+    pv.querySelector('.pv-x').focus({ preventScroll: true });
+  }
+  // `byBack`: the phone's Back (or the browser's) closed it, so the history is already where it should be.
+  function closeView(byBack) {
+    const post = view.post; if (!post) return;
+    closeMenu(); closePick();
+    post.classList.remove('pv-post');
+    if (view.hold.isConnected) view.hold.replaceWith(post); else post.remove();
+    pv.hidden = true; document.documentElement.classList.remove('pv-open');
+    pv.querySelector('.pv-img').removeAttribute('src');
+    const back = view.back, pushed = view.pushed;
+    view.post = null; view.hold = null; view.pushed = false;
+    if (back && back.isConnected) back.focus({ preventScroll: true });
+    if (pushed && !byBack) history.back();
+  }
+  addEventListener('popstate', () => closeView(true));
+  pv.querySelector('.pv-x').addEventListener('click', () => closeView());
+  pv.querySelector('.pv-prev').addEventListener('click', () => step(-1));
+  pv.querySelector('.pv-next').addEventListener('click', () => step(1));
+  // A finger swiping across the photo goes to the next or the one before.
+  let swipe = null;
+  const stage = pv.querySelector('.pv-stage');
+  stage.addEventListener('pointerdown', (e) => { swipe = e.pointerType === 'mouse' ? null : { x: e.clientX, y: e.clientY }; });
+  stage.addEventListener('pointerup', (e) => {
+    if (!swipe) return;
+    const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y; swipe = null;
+    if (Math.abs(dx) > 48 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
+  });
+  stage.addEventListener('pointercancel', () => { swipe = null; });
+
+  listen('click', (e) => {
     const t = e.target;
     const like = t.closest('[data-like]');
     if (like) { if (held) { held = false; return; } react(postOf(like), like.dataset.mine ? '' : 'like'); return; }
@@ -228,39 +309,66 @@
     const mb = t.closest('[data-post-menu]');
     if (mb) { e.stopPropagation(); menu ? closeMenu() : openMenu(mb); return; }
     const rep = t.closest('[data-reply]');
-    if (rep) { const f = postOf(rep).querySelector('.cm-form'), input = f.querySelector('input[type="text"]'); f.dataset.parent = rep.dataset.reply; input.placeholder = `Reply to ${rep.dataset.name}…`; input.focus(); return; }
+    if (rep) {
+      if (!me) { toLogin(); return; }
+      const f = postOf(rep).querySelector('.cm-form'), input = f.querySelector('input[type="text"]');
+      replyTo(f, rep.dataset.reply, rep.dataset.name); input.focus(); f.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    // Your own comment's words, changed where they are: a box with Save and Cancel (Enter saves, Esc cancels).
     const ced = t.closest('[data-cm-edit]');
     if (ced) {
-      const node = ced.closest('.cm'), id = ced.dataset.cmEdit;
-      let par = node.querySelector('.cm-bub p');
-      if (!par) { par = el('p', ''); node.querySelector('.cm-name').after(par); }
-      if (node.querySelector('.cm-edit')) return;
-      const input = el('input', 'cm-edit'); input.type = 'text'; input.maxLength = 600; input.value = par.textContent; input.setAttribute('aria-label', 'Edit your comment');
-      par.hidden = true; par.after(input); input.focus();
-      const done = () => { input.remove(); par.hidden = false; };
-      input.addEventListener('keydown', async (ev) => {
-        if (ev.key === 'Escape') { ev.stopPropagation(); done(); return; }
-        if (ev.key !== 'Enter') return;
-        ev.preventDefault();
-        const text = input.value.trim(); if (!text) return;
-        try { const j = await api(`/comments/${id}/edit`, { text }); const fresh = commentNode(j.comment); node.replaceWith(fresh); } catch (err) { toast(err.message, true); }
+      const node = ced.closest('.cm'), row = node.querySelector(':scope > .cm-row'), id = ced.dataset.cmEdit, bub = row.querySelector('.cm-bub');
+      if (bub.querySelector('.cm-edit')) return;
+      const par = bub.querySelector('p');
+      const box = el('form', 'cm-edit');
+      const input = el('input'); input.type = 'text'; input.maxLength = 600; input.value = par ? par.textContent : ''; input.setAttribute('aria-label', 'Edit your comment'); input.enterKeyHint = 'done'; input.autocomplete = 'off';
+      const save = el('button', 'btn sm', 'Save'); save.type = 'submit';
+      const no = el('button', 'btn ghost sm', 'Cancel'); no.type = 'button';
+      box.append(input, save, no);
+      if (par) par.hidden = true;
+      (par || bub.querySelector('.cm-head')).after(box); input.focus();
+      const done = () => { box.remove(); if (par) par.hidden = false; ced.focus({ preventScroll: true }); };
+      no.addEventListener('click', done);
+      input.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') { ev.preventDefault(); ev.stopPropagation(); done(); } });
+      box.addEventListener('submit', async (ev) => {
+        ev.preventDefault(); ev.stopPropagation();
+        const text = input.value.trim(); if (!text) { input.focus(); return; }
+        save.disabled = true;
+        try {
+          const j = await api(`/comments/${id}/edit`, { text });
+          // Its row is drawn again; the replies under it stay where they are.
+          const to = row.querySelector('.cm-to'), fresh = commentNode(j.comment).querySelector('.cm-row');
+          if (to) fresh.querySelector('.cm-name').after(to);
+          row.replaceWith(fresh); toast('Comment saved.');
+        } catch (err) { toast(err.message, true); save.disabled = false; }
       });
       return;
     }
     const del = t.closest('[data-cm-del]');
     if (del) {
-      const post = postOf(del), id = del.dataset.cmDel;
-      sure('Delete this comment?', { yes: 'Delete', no: 'Keep it' }).then((yes) => yes && api(`/comments/${id}/delete`, {}).then((j) => { post.querySelectorAll(`[data-cm="${id}"]`).forEach((n) => { let nx = n.nextElementSibling; while (nx && nx.classList.contains('reply') && !n.classList.contains('reply')) { const rm = nx; nx = nx.nextElementSibling; rm.remove(); } n.remove(); }); setCount(post, j.n); }).catch((err) => toast(err.message, true)));
+      const post = postOf(del), id = del.dataset.cmDel, node = del.closest('.cm'), under = node.querySelectorAll('.cm-kids .cm').length;
+      const ask = under ? `Delete this comment and the ${under === 1 ? 'reply' : `${under} replies`} under it?` : 'Delete this comment?';
+      sure(ask, { yes: 'Delete', no: 'Keep it' }).then((yes) => yes && api(`/comments/${id}/delete`, {}).then((j) => { node.remove(); setCount(post, j.n); toast('Comment deleted.'); }).catch((err) => toast(err.message, true)));
       return;
     }
+    // A post's photo opens the photo window; a comment's photo (and any photo while that window is open) opens big.
     const ph = t.closest('[data-photo]');
-    if (ph) { e.preventDefault(); lightbox(ph.getAttribute('href')); return; }
+    if (ph) { e.preventDefault(); if (ph.closest('.post-media') && !view.post) openView(ph); else lightbox(ph.getAttribute('href')); return; }
     const comp = t.closest('[data-compose]');
     if (comp) { compose(comp.dataset.compose); }
   });
   document.addEventListener('click', (e) => { if (menu && !e.target.closest('.post-pop')) closeMenu(); if (pick && !e.target.closest('.react-pick, [data-like]')) closePick(); });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { closeMenu(); closePick(); } });
-  feed.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[data-reacts]')) { e.preventDefault(); e.target.click(); } });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (menu || pick) { closeMenu(); closePick(); return; }
+      // The photo window closes last: a bigger photo, a question or the post sheet open over it close first.
+      if (view.post && !document.querySelector('.dm-lightbox, .bbv-ask, .cc') && (!sheet || sheet.hidden)) closeView();
+      return;
+    }
+    if (view.post && (e.key === 'ArrowLeft' || e.key === 'ArrowRight') && !e.target.closest('input, textarea, select')) step(e.key === 'ArrowLeft' ? -1 : 1);
+  });
+  listen('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[data-reacts]')) { e.preventDefault(); e.target.click(); } });
 
   /* ---------- the post sheet: writing a new post, or editing one ---------- */
   let sheet = null, files = [], kept = [], editing = null;
