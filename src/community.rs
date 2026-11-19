@@ -1018,6 +1018,11 @@ pub async fn save_profile(State(app): State<App>, h: HeaderMap, mut mp: Multipar
     if cover.is_some() && m.has_page_cover() {
         admin::remove_upload(&app.uploads, &m.page_cover);
     }
+    // An admin's own page needs no second look: they are who would give it.
+    if m.role == "admin" && m.profile_ok {
+        let id = m.id;
+        with_db(&app, move |c| members::set_profile_ok(c, id, true)).await?;
+    }
     app.forget();
     let id = m.id;
     let fresh = with_db(&app, move |c| members::get(c, id)).await?;
@@ -1219,8 +1224,10 @@ pub async fn drop_photo(State(app): State<App>, h: HeaderMap, Path(pid): Path<i6
 
 #[derive(Deserialize)]
 pub struct VouchAct {
-    /// "delete" (its writer or the owner), "hide" or "show" (the owner)
+    /// "delete" (its writer or the owner), "hide" or "show" (the owner), "edit" (its writer, with `text`)
     action: String,
+    #[serde(default)]
+    text: String,
 }
 
 pub async fn vouch_act(State(app): State<App>, h: HeaderMap, Path(vid): Path<i64>, Json(req): Json<VouchAct>) -> Res {
@@ -1237,9 +1244,32 @@ pub async fn vouch_act(State(app): State<App>, h: HeaderMap, Path(vid): Path<i64
         }
     }
     match req.action.as_str() {
+        // Its writer changes their own words; nobody else's, staff or not.
+        "edit" => {
+            let m = match acting(&app, &h).await? {
+                Ok(m) => m,
+                Err(r) => return Ok(r),
+            };
+            let (me, text) = (m.id, members::clean_text(&req.text, members::TEXT_MAX));
+            let words = text.clone();
+            if !with_db(&app, move |c| members::edit_vouch(c, vid, me, &words)).await? {
+                return Ok(fail(StatusCode::BAD_REQUEST, if text.is_empty() { "Write something first." } else { "That isn't yours to change." }));
+            }
+            app.forget();
+            return Ok(ok(json!({ "ok": true, "text": text })));
+        }
         "hide" | "show" if owner => {
             let hide = req.action == "hide";
-            with_db(&app, move |c| members::set_vouch_hidden(c, vid, hide)).await?;
+            let by = current(&app, &h).await?.map(|m| m.id).unwrap_or(0);
+            with_db(&app, move |c| {
+                members::set_vouch_hidden(c, vid, hide)?;
+                // Hidden by the vault's team: its writer is told (they still see it themselves, so they would wonder).
+                if hide {
+                    tell_vouch_writer(c, vid, by, "hid")?;
+                }
+                Ok(())
+            })
+            .await?;
         }
         "delete" => {
             if !owner {
@@ -1248,7 +1278,15 @@ pub async fn vouch_act(State(app): State<App>, h: HeaderMap, Path(vid): Path<i64
                     return Ok(fail(StatusCode::FORBIDDEN, "That isn't yours to delete."));
                 }
             }
-            for f in with_db(&app, move |c| members::delete_vouch(c, vid)).await? {
+            let by = current(&app, &h).await?.map(|m| m.id).unwrap_or(0);
+            let files = with_db(&app, move |c| {
+                if owner {
+                    tell_vouch_writer(c, vid, by, "took down")?;
+                }
+                members::delete_vouch(c, vid)
+            })
+            .await?;
+            for f in files {
                 admin::remove_upload(&app.uploads, &f);
             }
         }
@@ -1256,6 +1294,20 @@ pub async fn vouch_act(State(app): State<App>, h: HeaderMap, Path(vid): Path<i64
     }
     app.forget();
     Ok(ok(json!({ "ok": true })))
+}
+
+/// A vouch (or a reply under one) the vault's team hid or took down tells its writer, unless they did it themselves:
+/// nobody is left wondering where their words went (the owner, 20 Nov 2026).
+fn tell_vouch_writer(c: &rusqlite::Connection, vid: i64, by: i64, did: &str) -> rusqlite::Result<()> {
+    let found: Option<(i64, String, Option<i64>)> = rusqlite::OptionalExtension::optional(c.query_row("SELECT member_id, text, parent_id FROM vouches WHERE id=?1", [vid], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))))?;
+    let Some((writer, text, parent)) = found else { return Ok(()) };
+    if writer == by || writer == 0 {
+        return Ok(());
+    }
+    let words: String = if text.chars().count() > 80 { format!("{}…", text.chars().take(79).collect::<String>()) } else { text };
+    let what = if parent.is_some() { "reply to a vouch" } else { "vouch" };
+    let said = if words.trim().is_empty() { String::new() } else { format!(": “{words}”") };
+    marcuru_rs::sellers::notify_from(c, writer, 0, "announcement", "", &format!("The vault's team {did} your {what}{said}"), "/vouches")
 }
 
 /// The owner takes a single photo off a vouch.

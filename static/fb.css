@@ -636,6 +636,18 @@ html.sheet-open { overflow: hidden; }
 .cm-edit input { flex: 1 1 180px; min-width: 0; min-height: 40px; padding: 4px 12px; border-radius: var(--pill); }
 .cm-edit .btn { min-height: 36px; }
 
+/* ---------- 15e. Finger-sized: on a touch screen, what a finger aims at is at least 32px tall ---------- */
+/* A sweep of every page on a phone (20 Nov 2026, after the owner couldn't find a comment's tiny Edit and Delete) found
+   these under that. Only touch screens change: a mouse keeps the tighter rows. */
+@media (pointer: coarse) {
+  .reacts[data-reacts] { min-height: 32px; padding-right: 6px; }
+  .caro-h a { display: inline-flex; align-items: center; min-height: 36px; }
+  .tp-fol { min-height: 36px; }
+  button.fd-tip { width: 32px; height: 32px; margin: -10px -4px; }
+  .fd-more .linkbtn { min-height: 44px; padding: 0 16px; }
+  .tr-head .linkbtn, .me-save-row .linkbtn { display: inline-flex; align-items: center; min-height: 40px; }
+}
+
 /* ---------- 15d. A store's own look (Store settings › Store design; `sellers::StoreLook`) ---------- */
 /* The page behind the store is a layer of its own under everything, drawn in the store's colour (--sacc) or from its
    own photo under a dark veil, so words stay on the site's solid panels and stay easy to read. */
@@ -1174,6 +1186,9 @@ img.av { object-fit: cover; }
 .v-act { min-height: 32px; padding: 0 12px; border: 0; border-radius: var(--r-sm); background: none; color: var(--muted); font: 600 .8125rem/1 var(--font); }
 .v-act:hover { background: var(--fill); color: var(--text); }
 .v-act.bad { color: #ff9d94; }
+.v-edit { display: flex; flex-direction: column; gap: 8px; }
+.v-edit textarea { min-height: 88px; }
+.v-edit-acts { display: flex; gap: 8px; }
 .v-replies { display: flex; flex-direction: column; gap: 8px; }
 .v-rep { padding: 8px 12px; border-radius: var(--r); background: var(--surface-2); }
 .v-rep .v-who .av { width: 28px; height: 28px; font-size: .75rem; }

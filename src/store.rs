@@ -1238,6 +1238,10 @@ pub async fn save_settings(State(app): State<App>, h: HeaderMap, mut mp: Multipa
     if new_bg.is_some() && !was_look.photo.is_empty() {
         admin::remove_upload(&app.uploads, &was_look.photo);
     }
+    // An admin's own store needs no second look after a changed link: they are who would give it.
+    if m.role == "admin" && m.profile_ok {
+        with_db(&app, move |c| members::set_profile_ok(c, id, true)).await?;
+    }
     app.forget();
     let me = with_db(&app, move |c| members::get(c, id)).await?;
     Ok(ok(json!({ "ok": true, "cover": me.as_ref().map(|m| m.cover_photo.clone()), "logo": me.as_ref().map(|m| m.store_pic().to_string()), "own_logo": me.as_ref().is_some_and(|m| !m.store_avatar.is_empty()), "bg": me.as_ref().map(|m| m.look().photo), "status": me.as_ref().map(|m| m.status.clone()) })))

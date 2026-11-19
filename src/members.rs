@@ -1789,6 +1789,16 @@ pub fn vouch_owner(c: &Connection, id: i64) -> rusqlite::Result<Option<i64>> {
     c.query_row("SELECT member_id FROM vouches WHERE id=?1", [id], |r| r.get(0)).optional()
 }
 
+/// Its writer changes a vouch's words (or a reply's). False: it isn't theirs, or it would be left with no words and
+/// no photos.
+pub fn edit_vouch(c: &Connection, id: i64, member_id: i64, text: &str) -> rusqlite::Result<bool> {
+    let pics: i64 = c.query_row("SELECT COUNT(*) FROM vouch_images WHERE vouch_id=?1", [id], |r| r.get(0))?;
+    if text.is_empty() && pics == 0 {
+        return Ok(false);
+    }
+    Ok(c.execute("UPDATE vouches SET text=?3 WHERE id=?1 AND member_id=?2", rusqlite::params![id, member_id, text])? == 1)
+}
+
 pub fn set_vouch_hidden(c: &Connection, id: i64, hidden: bool) -> rusqlite::Result<()> {
     c.execute("UPDATE vouches SET hidden=?2 WHERE id=?1", rusqlite::params![id, hidden])?;
     Ok(())
@@ -2285,6 +2295,10 @@ mod tests {
         // No approval needed, and a trainer can post as many as they like.
         let Posted::Yes(v1) = post_vouch(&c, a, None, 0, "Great vault", &[]).unwrap() else { panic!() };
         let Posted::Yes(v2) = post_vouch(&c, a, None, 0, "Still great", &[]).unwrap() else { panic!() };
+        // Its writer can change its words; nobody else can, and it can't be left with nothing.
+        assert!(edit_vouch(&c, v2, a, "Still great, a year on").unwrap());
+        assert!(!edit_vouch(&c, v2, a + 999, "Not mine").unwrap() && !edit_vouch(&c, v2, a, "").unwrap());
+        assert_eq!(c.query_row("SELECT text FROM vouches WHERE id=?1", [v2], |r| r.get::<_, String>(0)).unwrap(), "Still great, a year on");
         assert_eq!(public_vouches(&c, None, None, 10).unwrap().len(), 2);
         assert_eq!(public_vouches(&c, None, Some(v2), 10).unwrap().len(), 1, "Show more starts after the last one");
         // Nothing to say and no photo: nothing is posted.

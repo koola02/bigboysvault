@@ -557,6 +557,16 @@ a.pbtn:hover { text-decoration: none; }
 .st-pick-l small { font-weight: 400; }
 .st-logo-prev .av { width: 88px; height: 88px; font-size: 2rem; }
 .st-pick .chk[hidden] { display: none; }
+/* Finger-sized, in the Managers too (the same sweep as fb.css's): the steppers, the kind buttons, a tile's own links,
+   the star on a card and the fold at the foot of Account Settings. Only touch screens change. */
+@media (pointer: coarse) {
+  .seg button, .seg a { min-height: 36px; line-height: 36px; }
+  .ct-qty, .st-qty { height: 40px; }
+  .ct-qty button, .st-qty button { width: 36px; height: 36px; }
+  .ls-tile-acts .linkbtn.inline { display: inline-flex; align-items: center; min-height: 36px; padding: 0 4px; }
+  .me-c .me-star { width: 36px; height: 36px; }
+  .me-account > summary { padding-block: 12px; }
+}
 /* Store design: each choice is a small picture of itself with its word. */
 .st-choices { display: flex; flex-wrap: wrap; gap: 8px; }
 .st-choice { display: inline-flex; flex-direction: column; align-items: center; gap: 6px; width: 92px; padding: 8px 6px; border-radius: var(--r-sm); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--mgr-line); color: var(--text); font: 600 .8125rem/1.2 var(--font); text-align: center; cursor: pointer; }

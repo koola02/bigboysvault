@@ -1226,27 +1226,35 @@ pub async fn remove(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>) -
     }
     let me = current(&app, &h).await?.map(|m| m.id).unwrap_or(0);
     let staff = admin::power(&app, &h) != admin::Power::Nothing;
-    let out = with_db(&app, move |c| {
-        let Some(p) = social::post(c, 0, id)? else { return Ok(Some(vec![])) };
-        let written = p.kind == "post" || p.kind == "share";
-        if written && (staff || (me != 0 && me == p.member_id)) {
-            // (Staff includes the full admins, who own what the vault itself posted.)
-            return Ok(Some(social::post_remove(c, id)?));
-        }
-        if staff {
-            // 2: hidden by a person, so the automatic refresh never brings it back.
-            c.execute("UPDATE posts SET hidden=2 WHERE id=?1", [id])?;
-            return Ok(Some(vec![]));
-        }
-        Ok(None)
-    })
-    .await?;
+    let out = with_db(&app, move |c| take_post(c, id, me, staff)).await?;
     let Some(files) = out else { return Ok(fail(StatusCode::FORBIDDEN, "That post isn't yours.")) };
     for f in files {
         admin::remove_upload(&app.uploads, &f);
     }
     app.forget();
     Ok(ok(json!({ "ok": true })))
+}
+
+/// A post taken out of the feed by `me` (0: the owner signed in with the admin password alone). None: it isn't theirs
+/// to take. Else the photo files to remove from disk. A trainer's own words taken down by the vault's team tell their
+/// writer, as a comment does (nobody is left wondering where it went); deleting your own tells nobody.
+fn take_post(c: &rusqlite::Connection, id: i64, me: i64, staff: bool) -> rusqlite::Result<Option<Vec<String>>> {
+    let Some(p) = social::post(c, 0, id)? else { return Ok(Some(vec![])) };
+    let written = p.kind == "post" || p.kind == "share";
+    if written && (staff || (me != 0 && me == p.member_id)) {
+        // (Staff includes the full admins, who own what the vault itself posted.)
+        let files = social::post_remove(c, id)?;
+        if p.member_id != 0 && p.member_id != me {
+            sellers::notify_from(c, p.member_id, 0, "announcement", "", &format!("The vault's team took down your post: {}", said(&p.text)), "/")?;
+        }
+        return Ok(Some(files));
+    }
+    if staff {
+        // 2: hidden by a person, so the automatic refresh never brings it back.
+        c.execute("UPDATE posts SET hidden=2 WHERE id=?1", [id])?;
+        return Ok(Some(vec![]));
+    }
+    Ok(None)
 }
 
 #[derive(Deserialize)]
@@ -1410,6 +1418,13 @@ mod tests {
         assert_eq!(take_comment(&c, rude, 0, "", true).unwrap(), Some(Ok((0, vec![]))));
         assert_eq!(said(&c, misty), vec![("announcement".to_string(), "The vault's team took down your comment: a photo".to_string(), 0)]);
         assert_eq!(take_comment(&c, rude, 0, "", true).unwrap(), None, "gone already");
+        // A post goes the same way: its own writer deleting it tells nobody; the vault's team taking it down tells them.
+        assert_eq!(take_post(&c, p, misty, false).unwrap(), None, "not hers to take");
+        let mine = social::post_add(&c, brock, "post", "Selling my Onix", &[], &json!({}), 20).unwrap();
+        assert_eq!(take_post(&c, mine, brock, false).unwrap(), Some(vec![]));
+        assert!(said(&c, brock).is_empty());
+        assert_eq!(take_post(&c, p, 0, true).unwrap(), Some(vec![]));
+        assert_eq!(said(&c, ash).last().unwrap(), &("announcement".to_string(), "The vault's team took down your post: “Look at this pull”".to_string(), 0));
     }
 
     #[test]

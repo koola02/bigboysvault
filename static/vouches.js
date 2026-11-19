@@ -49,8 +49,35 @@
       // Moderators don't overrule other staff.
       const canManage = owner && (full || mine || !v.hasAttribute('data-staff'));
       if (me && !me.locked && v.classList.contains('vouch')) acts.append(button('v-act', '↩ Reply', () => compose(v)));
+      // Your own words can be changed, as a comment's or a post's can.
+      if (mine && !me.locked) acts.append(button('v-act', 'Edit', () => edit(v)));
       if (canManage) acts.append(button(`v-act${mine ? '' : ' staff-only'}`, 'Hide', () => act(id, 'hide')));
       if (mine || canManage) acts.append(button(`v-act bad${mine ? '' : ' staff-only'}`, 'Delete', () => act(id, 'delete')));
+    });
+  }
+  // Edit: the words turn into a box where they are, with Save and Cancel.
+  function edit(v) {
+    if (v.querySelector(':scope > .v-edit')) return;
+    const reply = v.classList.contains('v-rep');
+    const words = v.querySelector(reply ? ':scope > .v-rep-t' : ':scope > blockquote');
+    const box = make('form', 'v-edit');
+    const area = make('textarea'); area.rows = 3; area.maxLength = 1000; area.value = words ? words.textContent : ''; area.setAttribute('aria-label', 'Your words');
+    const row = make('div', 'v-edit-acts');
+    const save = make('button', 'btn sm', 'Save'); save.type = 'submit';
+    const no = button('btn ghost sm', 'Cancel', () => { box.remove(); if (words) words.hidden = false; });
+    row.append(save, no); box.append(area, row);
+    if (words) { words.hidden = true; words.after(box); } else (v.querySelector(':scope > .v-for') || v.querySelector(':scope > .v-head')).after(box);
+    area.focus();
+    box.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      save.disabled = true;
+      try {
+        const j = await send(`/vouches/${v.dataset.vouch}/act`, { action: 'edit', text: area.value });
+        let out = words;
+        if (!out && j.text) { out = make(reply ? 'p' : 'blockquote', reply ? 'v-rep-t' : ''); box.before(out); }
+        if (out) { out.textContent = j.text; out.hidden = !j.text; }
+        box.remove(); say('Saved ✓');
+      } catch (err) { save.disabled = false; say(err.message, true); }
     });
   }
   const gone = (id) => document.querySelectorAll(`[data-vouch="${CSS.escape(id)}"]`).forEach((n) => n.remove());
