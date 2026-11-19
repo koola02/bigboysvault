@@ -99,9 +99,10 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 | `GET /me/sets/search?q=&lang=`, `GET /me/sets/cards?id=&lang=` | By set on Add cards: the card list's sets, newest first (`{ sets, ready }`), and one set's cards (`{ set, cards }`; a vintage set split into its printings). Signed in; the same limit as `/me/search` |
 | `GET /me/scan` | The old Scan a card page's address: forwards a seller to Add cards on Scan a card (`/me/add#scan`), a trainer who doesn't sell to `/me/sell`, a visitor to log in first (`docs/OPERATIONS.md` 4e) |
 | `POST /me/scan` | Multipart `photo` (JPEG, PNG or WebP, 5 MB at most). Answers `{read, exact, versions, versions_total, family, left}`: what Claude read (`read.problem` when the photo can't be used), the card itself with its `finishes` (versions with market prices), its other printings (the best guess marked `guess` when the number couldn't be read), and its evolution family. 403 for a trainer who isn't a seller, 429 past the day's scans, 503 when scanning is off or resting |
-| `GET /me/binders` | Binders page |
+| `GET /me/binders` | Opens the seller's store with the binder editor on (`{store}#edit-binders`). Asked for JSON: the binders as tiles (`key`, `href`, `title`, `pics`, `photo`, `words`, `off`, `count`, `description`, `visibility`) and `max` |
 | `POST /me/binders` | `{ title }` makes one |
 | `POST /me/binders/{id}/edit` | `{ title?, description?, visibility? }` (`Public`, `Unlisted`, `Private`) |
+| `POST /me/binders/{id}/photo` | A form with one `photo`: it becomes the binder's cover and fills its tile (a card picked before lets go; the photo it replaces is deleted). Answers `{ ok, photo }`. Picking a card with `/cover` lets the photo go |
 | `POST /me/binders/{id}/order` | `{ ids }`: the order of cards inside the binder |
 | `POST /me/binders/{id}/sort` | `{ by: "az" \| "za" \| "set" \| "number" \| "evolution" }`: puts the binder's cards in that order and saves it like `/order`. Answers `{ ids, missing }` (the new order; `missing`: cards TCGdex couldn't be asked about just now, put last). Full admins: the same at `/admin/binders/{handle}/sort` |
 | `POST /me/binders/{id}/cover`, `/rename`, `/delete` | As before |
@@ -164,6 +165,7 @@ There is no checkout and no payment: sending the cart places orders, and the sel
 | `GET /cart/lines?v=1,2&c=3` | Fresh title, price, picture and availability for vault products (`v`) and sellers' cards (`c`) |
 | `POST /cart/checkout` | `{ items: [{ kind: "vault" \| "card", id, qty }], message }` → `{ placed, failed }`. The vault's lines become one `vault_orders` row; each seller's card becomes a reservation (`sellers::reserve`), and one seller's cards share a `batch` (the first one's id): one order for that store. 401 when signed out. |
 | `GET /me/orders?tab=buying` | The buyer's reservations, offers and vault orders, with how to pay once accepted |
+| `GET /admin/binders`, `POST /admin/binders/{handle}` | The vault's binders (full admins). The page opens `/store/vault#edit-binders`; asked for JSON, the binders as tiles (as `/me/binders`). The POST takes `{ title?, description?, visibility?, cover?, delete? }`: `visibility` `Public`, `Unlisted` (only with its link: off the store, Stores, feed, menu, sitemap, search) or `Private` (only the staff; its page is a 404 for anyone else) |
 | `GET /admin/store`, `POST /admin/store` | The vault's own Store settings (full admins): a form with `cover` (or `drop_cover`), `bio`, `fb_url`, `fb_group_url`, `ig_url`, `tiktok_url`, `shopee_url`, `links`, `pay_method` ×n, `pay_info`, `border`. Answers `{ ok, cover }` |
 | `POST /me/orders/vault/{id}` | `{ status: "Cancelled" }` while the order is still open; `{ status: "BuyerPaid" }` once it is accepted (`vault_orders.buyer_paid_at`; the admins hear) |
 

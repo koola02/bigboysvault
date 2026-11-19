@@ -248,7 +248,7 @@ pub async fn card(State(app): State<App>, Path(handle): Path<String>) -> Res {
         let Some(p) = db::product(c, &h)? else { return Ok(None) };
         // Only copies still for sale: sold ones stay in the records but can't be bought.
         let copies = db::copies_for_sale(c, p.id)?;
-        let mut st = c.prepare("SELECT co.title FROM collections co JOIN collection_products cp ON cp.collection=co.handle WHERE cp.product_id=?1 AND cp.hidden=0 ORDER BY co.position")?;
+        let mut st = c.prepare("SELECT co.title FROM collections co JOIN collection_products cp ON cp.collection=co.handle WHERE cp.product_id=?1 AND cp.hidden=0 AND co.visibility='Public' ORDER BY co.position")?;
         let binders = st.query_map([p.id], |r| r.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?;
         Ok(Some((p, copies, binders)))
     })
@@ -317,7 +317,7 @@ pub async fn binders(State(app): State<App>) -> Res {
     let (list, total) = with_db(&app, |c| Ok((db::collections(c)?, db::total(c)?))).await?;
     Ok(json(serde_json::json!({
         "total_cards": total,
-        "binders": list.iter().filter(|b| b.count > 0).map(|b| serde_json::json!({ "title": b.title, "handle": b.handle, "cards": b.count, "url": format!("/collections/{}", b.handle) })).collect::<Vec<_>>(),
+        "binders": list.iter().filter(|b| b.count > 0 && b.is_public()).map(|b| serde_json::json!({ "title": b.title, "handle": b.handle, "cards": b.count, "url": format!("/collections/{}", b.handle) })).collect::<Vec<_>>(),
     })))
 }
 

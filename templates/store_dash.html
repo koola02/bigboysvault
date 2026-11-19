@@ -13,7 +13,7 @@
     <a class="kpi" href="/me/orders?tab=sales"><span>Sold</span><b>{{ d.sold_units }}</b><small>{{ d.sales.all_n }} sale{% if d.sales.all_n != 1 %}s{% endif %} ever</small></a>
     <div class="kpi"><span>Views</span><b>{{ d.views7 }}</b><small>last 7 days · {{ d.views30 }} in 30</small></div>
     <button type="button" class="kpi" data-followers="/store/{{ p.m.slug }}/followers" data-followers-title="Who follows your store" aria-haspopup="dialog"><span>Followers</span><b>{{ d.followers }}</b><small>{% if d.reviews > 0 %}★ {{ d.rating }} from {{ d.reviews }} review{% if d.reviews != 1 %}s{% endif %}{% else %}no reviews yet{% endif %}</small></button>
-    <a class="kpi" href="/me/binders"><span>Binders</span><b>{{ d.binders }}</b><small>arrange your cards</small></a>
+    <a class="kpi" href="{{ p.m.store_url() }}#edit-binders"><span>Binders</span><b>{{ d.binders }}</b><small>arrange your cards</small></a>
   </div>
 
   <div class="dash-grid">
@@ -57,7 +57,7 @@
 
     <article class="dash-panel">
       <h2 class="dash-h">Popular binders</h2>
-      {% if d.top_binders.is_empty() %}<p class="dash-sub">Make a binder to group your cards: <a href="/me/binders">Binders</a>.</p>{% else %}
+      {% if d.top_binders.is_empty() %}<p class="dash-sub">Make a binder to group your cards: <a href="{{ p.m.store_url() }}#edit-binders">Binders</a>.</p>{% else %}
       <ul class="dash-list">{% for (b, n) in d.top_binders %}<li><a href="{{ p.m.store_url() }}/binders/{{ b.slug }}"><span class="db-t">{{ b.title }}</span><span class="db-n">{{ b.count }} card{% if b.count != 1 %}s{% endif %} · {{ n }} view{% if *n != 1 %}s{% endif %}</span></a></li>{% endfor %}</ul>{% endif %}
     </article>
 

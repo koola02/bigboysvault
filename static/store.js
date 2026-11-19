@@ -1,4 +1,4 @@
-// The seller panel: listings, binders, orders, settings and notifications. Everything saves right on the page.
+// The seller panel: listings, orders, settings and notifications (binders are edited on the store itself). Everything saves right on the page.
 (() => {
   const A = window.Admin;
   const $ = (id) => document.getElementById(id);
@@ -261,63 +261,6 @@
     paintAll(); sync();
     const focus = root.dataset.focus;
     if (focus && focus !== '0') { const t = rows.querySelector(`.ls-tile[data-id="${focus}"]`); if (t) { t.classList.add('focus'); t.scrollIntoView({ block: 'center' }); } }
-  }
-
-  /* ================= binders ================= */
-  const bRoot = $('storeBinders');
-  if (bRoot) {
-    $('newBinder').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      try { await send('/me/binders', { title: e.target.title.value }); location.reload(); } catch (err) { A.toast(err.message, { kind: 'err' }); }
-    });
-    bRoot.addEventListener('change', async (e) => {
-      const t = e.target, b = t.closest('.st-binder'); if (!b) return;
-      const body = t.matches('[data-title]') ? { title: t.value } : t.matches('[data-desc]') ? { description: t.value } : t.matches('[data-vis]') ? { visibility: t.value } : null;
-      if (!body) return;
-      try { await send(`/me/binders/${b.dataset.id}/edit`, body); flash(t, true); A.toast('Saved ✓', { kind: 'ok' }); } catch (err) { flash(t, false); A.toast(err.message, { kind: 'err' }); }
-    });
-    bRoot.addEventListener('click', async (e) => {
-      const b = e.target.closest('.st-binder');
-      if (e.target.closest('[data-share]') && b) {
-        const url = bRoot.dataset.site + bRoot.dataset.store + '/binders/' + b.dataset.slug;
-        try { await navigator.clipboard.writeText(url); A.toast('Link copied ✓', { kind: 'ok' }); } catch (_) { prompt('Copy this link', url); }
-      }
-      if (e.target.closest('[data-del-binder]') && b) {
-        if (!(await (window.bbvConfirm ? window.bbvConfirm('Delete this binder? The cards stay in your store.', { yes: 'Delete binder', no: 'Keep it' }) : Promise.resolve(confirm('Delete this binder? The cards stay in your store.'))))) return;
-        try { await send(`/me/binders/${b.dataset.id}/delete`, {}); location.reload(); } catch (err) { A.toast(err.message, { kind: 'err' }); }
-      }
-      const cover = e.target.closest('[data-cover-btn]');
-      if (cover && b) {
-        const li = cover.closest('.me-c');
-        try { await send(`/me/binders/${b.dataset.id}/cover`, { card_id: Number(li.dataset.id) }); b.querySelectorAll('.me-c').forEach((x) => x.toggleAttribute('data-cover', x === li)); const img = li.querySelector('img'); if (img) { const c = b.querySelector('.st-binder-cover'); c.replaceChildren(img.cloneNode()); } A.toast('Cover set ✓', { kind: 'ok' }); }
-        catch (err) { A.toast(err.message, { kind: 'err' }); }
-      }
-    });
-    if (window.dragSort) bRoot.querySelectorAll('.st-sort[data-binder]').forEach((list) => {
-      const bid = list.dataset.binder; if (!bid) return;
-      dragSort(list, { item: '.me-c', key: (n) => n.dataset.id, onDrop: async ([ids]) => { try { await send(`/me/binders/${bid}/order`, { ids: ids.map(Number) }); A.toast('Order saved ✓', { kind: 'ok' }); } catch (err) { A.toast(err.message, { kind: 'err' }); } } });
-    });
-    const picks = new Set();
-    const syncMove = () => { $('moveCount').textContent = `${picks.size} selected`; $('moveBar').hidden = picks.size === 0; document.body.classList.toggle('has-sel', picks.size > 0); };
-    bRoot.addEventListener('change', (e) => { const p = e.target.closest('[data-pick]'); if (!p) return; p.checked ? picks.add(+p.dataset.pick) : picks.delete(+p.dataset.pick); syncMove(); });
-    $('moveClear').onclick = () => { picks.clear(); bRoot.querySelectorAll('[data-pick]').forEach((p) => p.checked = false); syncMove(); };
-    $('moveGo').onclick = async () => {
-      const v = $('moveTo').value;
-      try { const j = await send('/me/listings/move', { ids: [...picks], binder_id: v ? Number(v) : null }); A.toast(`Moved ${j.n} ✓`, { kind: 'ok' }); location.reload(); } catch (err) { A.toast(err.message, { kind: 'err' }); }
-    };
-    // Delete the picked cards for good, the same way My listings does: they go at once, with a few seconds to Undo.
-    $('moveDel').onclick = () => {
-      const ids = [...picks], tiles = ids.map((id) => bRoot.querySelector(`.me-c[data-id="${id}"]`)).filter(Boolean), n = ids.length;
-      if (!n) return;
-      A.undoable({
-        label: `Deleted ${n} card${n === 1 ? '' : 's'}`,
-        hide: () => tiles.forEach((t) => { t.hidden = true; }),
-        show: () => tiles.forEach((t) => { t.hidden = false; }),
-        commit: async () => { await send('/me/listings/bulk', { ids, action: 'delete' }); tiles.forEach((t) => t.remove()); },
-      });
-      $('moveClear').onclick();
-    };
-    const loose = bRoot.querySelector('.st-loose .st-sort'); if (loose) $('looseN').textContent = loose.children.length ? `${loose.children.length}` : 'none';
   }
 
   /* ================= orders ================= */

@@ -1,8 +1,11 @@
 /* Binder tools (new look). Whoever owns binders arranges them where they appear, the way an album is edited where you
-   see it: a seller on their own store, a full admin on the vault's store (/store/vault). The same tools for both.
+   see it: a seller on their own store, a full admin on the vault's store (/store/vault). The same tools for both (the
+   owner, 19 Nov 2026: one binder editor; the Managers' Binders lines open the store with it on, at #edit-binders).
    - A store's Binders: "Edit binders" turns the tiles into an editor. Drag a binder to move it (a mouse drags straight
      away; a finger presses and holds first; the arrow keys move the binder whose handle has focus). "+ New binder", and
-     on every binder Rename, Cover and Delete. Tapping a binder's picture opens it, ready to add cards.
+     on every binder one Edit: its cover (one of its cards, or a photo of the owner's own), its name, what's in it, who
+     can see it (everyone, only people with its link, only its owner), its cards, Delete. Tapping a binder's picture
+     opens it, ready to add cards.
    - A binder's own page: "Edit binder" lists its cards with Cover, Hide and Remove (Remove can be undone), drag to put
      them in order, or Sort them all at once (A to Z, Z to A, by set, by number, by evolution; Undo puts them back).
      "Add cards" opens the one Add cards page with this binder chosen (the owner, 18 Nov 2026: one page for adding):
@@ -10,7 +13,6 @@
      every way to add a new card, and Done comes back here. Hide keeps a card in the binder but out of sight: a
      seller's card is hidden everywhere (its listing is Hidden), a vault card only in that binder. Hidden cards show
      faded, with Show.
-   - Store Manager › Binders: each binder has a handle to drag it into place.
    - The Stores page: "Choose what shows" on the owner's own store picks which binders show there and which cards are
      highlighted (a full admin does the same for the vault's store).
    Everything saves by itself and says so in a short message. The server decides who may change what. */
@@ -75,7 +77,7 @@
       list: () => req('/admin/binders'),
       create: (title) => req('/admin/binders', { title }),
       order: (keys) => req('/admin/binders/order', { handles: keys }),
-      rename: (k, title) => req(`/admin/binders/${enc(k)}`, { title }),
+      save: (k, body) => req(`/admin/binders/${enc(k)}`, body),
       remove: (k) => req(`/admin/binders/${enc(k)}`, { delete: true }),
       cover: (k, id) => req(`/admin/binders/${enc(k)}`, { cover: id == null ? 'auto' : String(id) }),
       upload: (k, file) => { const fd = new FormData(); fd.append('photo', file, 'cover.jpg'); return req(`/admin/binders/${enc(k)}/cover`, fd); },
@@ -87,6 +89,8 @@
       hide: (k, c, hidden) => req(`/admin/binders/${enc(k)}/hide`, { id: c.id, hidden }),
       hid: (t) => `“${t}” is hidden in this binder only. It stays in the vault and in any other binder.`,
       nameMax: 40,
+      who: [['Public', 'Everyone'], ['Unlisted', 'Only people with the link'], ['Private', 'Only the vault’s staff']],
+      words: 'Like “Every Pikachu we have, oldest first”',
       auto: 'Automatic: the dearest card',
       stays: 'It stays in the vault.',
       keeps: (n) => (n ? `The ${plural(n, 'card')} in it stay in the vault, and in any other binder they’re in. Only the binder goes away.` : 'It has no cards. Only the binder goes away.'),
@@ -97,10 +101,10 @@
       list: () => req('/me/binders'),
       create: (title) => req('/me/binders', { title }),
       order: (keys) => req('/me/binders/order', { ids: keys.map(Number) }),
-      rename: (k, title) => req(`/me/binders/${enc(k)}/edit`, { title }),
+      save: (k, body) => req(`/me/binders/${enc(k)}/edit`, body),
       remove: (k) => req(`/me/binders/${enc(k)}/delete`, {}),
       cover: (k, id) => req(`/me/binders/${enc(k)}/cover`, { card_id: id == null ? null : Number(id) }),
-      upload: null,
+      upload: (k, file) => { const fd = new FormData(); fd.append('photo', file, 'cover.jpg'); return req(`/me/binders/${enc(k)}/photo`, fd); },
       cards: (k) => req(`/me/binders/${enc(k)}/cards`),
       choices: (k, q) => req(`/me/binders/${enc(k)}/choices?q=${enc(q)}`),
       change: (k, body) => req(`/me/binders/${enc(k)}/cards`, body),
@@ -110,6 +114,8 @@
       hide: (k, c, hidden) => req(`/me/listings/${enc(c.id)}`, { status: hidden ? 'Hidden' : (c.qty > 0 ? 'Active' : 'Out of stock') }),
       hid: (t) => `“${t}” is hidden. Shoppers don’t see it anywhere; you still see it here.`,
       nameMax: 60,
+      who: [['Public', 'Everyone'], ['Unlisted', 'Only people with the link'], ['Private', 'Only me']],
+      words: 'Like “Base Set holos, all Near Mint”',
       auto: 'Automatic: its first card',
       stays: 'It stays in your store.',
       keeps: (n) => (n ? `The ${plural(n, 'card')} in it stay in your store, as cards not in a binder. Only the binder goes away.` : 'It has no cards. Only the binder goes away.'),
@@ -227,51 +233,134 @@
     return { order, at: j };
   }
 
-  /* ---------- the cover: one of the binder's cards (the vault can also upload a photo) ---------- */
-  function coverWindow(api, key, title, done) {
-    const g = dialog(`Cover for “${title}”`); g.d.classList.add('bt-fit');
-    g.body.append(el('p', 'bt-how', 'Tap a card: it shows first on the binder’s tile.'));
-    const opts = el('div', 'bt-cover-opts');
-    const auto = button('btn ghost sm', null, null, api.auto);
-    auto.addEventListener('click', () => pick(null));
-    opts.append(auto);
-    if (api.upload) {
-      const up = el('label', 'btn ghost sm bt-up'); up.append(icon('image'), el('span', '', 'Upload a photo'));
-      const f = el('input', 'sr'); f.type = 'file'; f.accept = 'image/*'; f.setAttribute('aria-label', 'Upload a photo for the cover');
-      up.append(f);
-      f.addEventListener('change', async () => {
-        const file = f.files[0]; if (!file) return;
-        state.textContent = 'Uploading…';
-        try { await api.upload(key, await shrink(file)); g.close(); say('Photo uploaded: it’s the cover now ✓'); done(); }
-        catch (e) { state.textContent = e.message; }
-      });
-      opts.append(up);
-    }
-    g.body.append(opts);
-    const state = el('p', 'bt-state', 'Loading the cards in this binder…');
+  // "Add cards" for one binder: the Add cards page with this binder chosen (the owner, 18 Nov 2026: one page for adding).
+  const addHref = (kind, key) => (kind === 'seller' ? `/me/add?binder=${enc(key)}` : `/admin/quick?binder=${enc(key)}`);
+
+  /* ---------- one binder's Edit window: cover, name, what's in it, who can see it, its cards, Delete ---------- */
+  // The same window for a seller's binders and the vault's (the owner, 19 Nov 2026). The cover is one of the binder's
+  // cards, picks itself, or is a photo of the owner's own. Nothing changes until Save; Delete asks first.
+  function editWindow(api, kind, t, { saved, remove }) {
+    const g = dialog(`Edit “${t.title}”`); g.d.classList.add('bt-edit');
+    let cover = null;                 // what Save does to the cover: null leaves it, { auto }, { card }, { file }
+    let cards = [], loaded = false;
+
+    // The cover as the tile shows it now, and the two ways to change it.
+    const sec = el('section', 'bt-cv'); sec.setAttribute('aria-label', 'Cover');
+    const prev = el('span', 'sf-bcov bt-cv-prev');
+    const paint = (pics, photo) => {
+      prev.className = `sf-bcov bt-cv-prev${photo ? ' sf-bphoto' : ''}`; prev.dataset.n = String(pics.length);
+      prev.replaceChildren(...pics.map((p) => { const im = el('img'); im.src = p; im.alt = ''; im.decoding = 'async'; return im; }));
+      if (!pics.length) { const n = icon('book'); n.setAttribute('class', 'sf-bnone'); prev.append(n); }
+    };
+    paint(t.pics, t.photo);
+    const side = el('div', 'bt-cv-side');
+    const pickBtn = button('btn ghost sm', null, 'star', 'Pick a card'); pickBtn.setAttribute('aria-expanded', 'false');
+    const up = el('label', 'btn ghost sm bt-up'); up.append(icon('image'), el('span', '', 'Upload a photo'));
+    const file = el('input', 'sr'); file.type = 'file'; file.accept = 'image/*'; file.setAttribute('aria-label', 'Upload a photo for the cover');
+    up.append(file);
+    const opts = el('div', 'bt-cover-opts'); opts.append(pickBtn, up);
+    const note = el('p', 'bt-state'); note.setAttribute('aria-live', 'polite');
+    side.append(el('h3', 'bt-sec', 'Cover'), opts, note);
+    sec.append(prev, side);
+
+    // "Pick a card": the binder's cards with a picture, and the cover picking itself.
+    const pick = el('div', 'bt-cv-pick'); pick.hidden = true;
+    const auto = button('btn ghost sm bt-auto', null, null, api.auto);
+    const state = el('p', 'bt-state');
     const list = el('ul', 'bt-covers');
-    g.body.append(state, list);
-    const close = button('btn ghost', null, null, 'Close'); close.addEventListener('click', g.close); g.foot.append(close);
-    async function pick(id) {
-      g.close();
-      try { await api.cover(key, id); say(id == null ? 'The cover picks itself again ✓' : 'Cover changed ✓'); done(); }
-      catch (e) { say(e.message, { bad: true }); }
+    pick.append(auto, state, list);
+    pickBtn.addEventListener('click', () => {
+      pick.hidden = !pick.hidden; pickBtn.setAttribute('aria-expanded', String(!pick.hidden));
+      if (!pick.hidden && !loaded) { loaded = true; load(); }
+      if (!pick.hidden) pick.scrollIntoView({ block: 'nearest' });
+    });
+    function load() {
+      state.textContent = 'Loading the cards in this binder…';
+      api.cards(t.key).then((j) => {
+        cards = (j.cards || []).filter((c) => c.image && !c.hidden);
+        state.textContent = cards.length ? '' : 'No card in this binder has a picture yet. Add cards first, or upload a photo.';
+        list.replaceChildren(...cards.map((c) => {
+          const li = el('li');
+          const b = button('bt-pc', `Make ${c.title} the cover`);
+          b.setAttribute('aria-pressed', String(!t.photo && !!c.cover));
+          const pic = el('span', 'bt-pc-pic'); const im = el('img'); im.src = c.image; im.alt = ''; im.loading = 'lazy'; pic.append(im);
+          const tick = el('span', 'bt-tick'); tick.append(icon('check')); pic.append(tick);
+          b.append(pic, el('span', 'bt-pc-t', c.title));
+          b.addEventListener('click', () => choose(c, b));
+          li.append(b); return li;
+        }));
+        auto.setAttribute('aria-pressed', String(!t.photo && !cards.some((c) => c.cover)));
+      }).catch((e) => { loaded = false; state.textContent = e.message; });
     }
-    api.cards(key).then((j) => {
-      const cards = (j.cards || []).filter((c) => c.image && !c.hidden);
-      state.textContent = cards.length ? '' : `No card in this binder has a picture yet. Add cards first${api.upload ? ', or upload a photo' : ''}.`;
-      list.replaceChildren(...cards.map((c) => {
-        const li = el('li');
-        const b = button('bt-pc', `Make ${c.title} the cover`);
-        b.setAttribute('aria-pressed', String(!!c.cover));
-        const pic = el('span', 'bt-pc-pic'); const im = el('img'); im.src = c.image; im.alt = ''; im.loading = 'lazy'; pic.append(im);
-        if (c.cover) pic.append(el('span', 'bt-flag', 'Cover'));
-        b.append(pic, el('span', 'bt-pc-t', c.title));
-        b.addEventListener('click', () => pick(c.id));
-        li.append(b); return li;
-      }));
-      list.querySelector('[aria-pressed="true"]')?.scrollIntoView({ block: 'nearest' });
-    }).catch((e) => { state.textContent = e.message; });
+    function choose(c, b) {
+      list.querySelectorAll('.bt-pc').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+      auto.setAttribute('aria-pressed', String(!c));
+      file.value = '';
+      cover = c ? { card: c.id } : { auto: true };
+      const rest = cards.filter((x) => !c || x.id !== c.id).map((x) => x.image);
+      paint((c ? [c.image, ...rest] : rest).slice(0, 3), false);
+      note.textContent = c ? `“${c.title}” will be the cover.` : 'The cover will pick itself.';
+    }
+    auto.addEventListener('click', () => choose(null, null));
+    file.addEventListener('change', async () => {
+      const f = file.files[0]; if (!f) return;
+      note.textContent = 'Getting the photo ready…';
+      const small = await shrink(f);
+      cover = { file: small };
+      paint([URL.createObjectURL(small)], true);
+      list.querySelectorAll('.bt-pc').forEach((x) => x.setAttribute('aria-pressed', 'false')); auto.setAttribute('aria-pressed', 'false');
+      note.textContent = 'This photo will be the cover.';
+    });
+
+    // Its name, what's in it, who can see it.
+    const field = (words, input) => { const l = el('label', 'bt-field'); l.append(el('span', 'bt-field-t', words), input); return l; };
+    const name = el('input'); name.type = 'text'; name.value = t.title; name.maxLength = api.nameMax; name.autocomplete = 'off'; name.enterKeyHint = 'done';
+    const desc = el('textarea'); desc.rows = 3; desc.maxLength = 300; desc.value = t.description || ''; desc.placeholder = api.words;
+    const who = el('select');
+    api.who.forEach(([v, words]) => { const o = el('option', '', words); o.value = v; who.append(o); });
+    who.value = t.visibility || 'Public';
+    const copy = button('linkbtn bt-copy', null, null, 'Copy its link');
+    const showCopy = () => { copy.hidden = who.value !== 'Unlisted'; };
+    who.addEventListener('change', showCopy); showCopy();
+    copy.addEventListener('click', async () => {
+      const url = new URL(t.href, location.origin).href;
+      try { await navigator.clipboard.writeText(url); say('Link copied ✓'); } catch (_) { prompt('Copy this link', url); }
+    });
+    const whoBox = field('Who can see it', who); whoBox.append(copy);
+    const fields = el('div', 'bt-fields');
+    fields.append(field('Name', name), field('What’s in it', desc), whoBox);
+
+    // Its cards: add more (the Add cards page), or arrange and take them out (the binder's own page).
+    const cs = el('section', 'bt-cv-cards'); cs.setAttribute('aria-label', 'Cards');
+    const addA = el('a', 'btn ghost sm'); addA.href = addHref(kind, t.key); addA.append(icon('plus'), el('span', '', 'Add cards'));
+    const arrA = el('a', 'btn ghost sm'); arrA.href = `${t.href}#edit`; arrA.append(icon('grip'), el('span', '', 'Arrange or remove'));
+    const row = el('div', 'bt-cover-opts'); row.append(addA, arrA);
+    cs.append(el('h3', 'bt-sec', `Cards · ${t.count.toLocaleString('en-US')}`), row);
+
+    g.body.append(sec, pick, fields, cs);
+    const err = el('span', 'bt-tally bt-err'); err.setAttribute('role', 'alert');
+    const del = button('btn ghost bt-del-b', null, 'trash', 'Delete'), no = button('btn ghost', null, null, 'Cancel'), go = button('btn', null, null, 'Save');
+    g.foot.append(err, del, no, go);
+    no.addEventListener('click', g.close);
+    del.addEventListener('click', () => { g.close(); remove(); });
+    name.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); go.click(); } });
+    go.addEventListener('click', async () => {
+      const v = clean(name.value);
+      if (!v) { err.textContent = 'A binder needs a name.'; name.focus(); return; }
+      const body = {};
+      if (v !== t.title) body.title = v;
+      if (desc.value.trim() !== (t.description || '').trim()) body.description = desc.value.trim();
+      if (who.value !== (t.visibility || 'Public')) body.visibility = who.value;
+      if (!cover && !Object.keys(body).length) { g.close(); return; }
+      err.textContent = ''; go.disabled = true; go.querySelector('span').textContent = 'Saving…';
+      try {
+        if (cover && cover.file) await api.upload(t.key, cover.file);
+        else if (cover && cover.auto) await api.cover(t.key, null);
+        else if (cover) await api.cover(t.key, cover.card);
+        if (Object.keys(body).length) await api.save(t.key, body);
+        g.close(); saved(v);
+      } catch (e) { err.textContent = e.message; go.disabled = false; go.querySelector('span').textContent = 'Save'; }
+    });
   }
 
   /* ================= a store's binders, arranged where they are shown ================= */
@@ -299,8 +388,8 @@
       on = true; saved = [...grid.childNodes];
       grid.classList.add('bt-on');
       toggle.setAttribute('aria-pressed', 'true'); toggle.classList.remove('ghost'); words.textContent = 'Done';
-      hint = el('p', 'bt-hint', coarse ? 'Press and hold a binder, then drag it to move it. Tap its picture to add or remove cards. Everything saves by itself.'
-        : 'Drag a binder to move it. Click its picture to add or remove cards. Everything saves by itself.');
+      hint = el('p', 'bt-hint', coarse ? 'Press and hold a binder to move it. Tap Edit for its cover, name and who can see it, or its picture for its cards.'
+        : 'Drag a binder to move it. Click Edit for its cover, name and who can see it, or its picture for its cards.');
       head.after(hint);
       if (none) none.hidden = true;
       draw();
@@ -334,13 +423,12 @@
       const grip = button('bt-grip', `Move ${t.title}: drag it, or press the arrow keys`, 'grip');
       const txt = el('span', 'sf-btxt'); txt.append(el('b', 'sf-bname', t.title), el('small', '', t.words));
       const acts = el('div', 'bt-acts'); acts.dataset.nodrag = '';
-      const ren = button('bt-act', `Rename ${t.title}`, 'pencil', 'Rename'); ren.dataset.act = 'rename';
-      const cv = button('bt-act', `Choose the cover of ${t.title}`, 'image', 'Cover'); cv.dataset.act = 'cover';
-      const del = button('bt-act bt-del', `Delete ${t.title}`, 'trash', 'Delete'); del.dataset.act = 'delete';
-      ren.addEventListener('click', () => rename(li, t));
-      cv.addEventListener('click', () => coverWindow(api, t.key, t.title, () => { dirty = true; refresh(t.key, '[data-act="cover"]'); }));
-      del.addEventListener('click', () => remove(t));
-      acts.append(ren, cv, del);
+      const ed = button('bt-act', `Edit ${t.title}: its cover, name and who can see it`, 'pencil', 'Edit'); ed.dataset.act = 'edit';
+      ed.addEventListener('click', () => editWindow(api, kind, t, {
+        saved: (title) => { dirty = true; say(`“${title}” is saved ✓`); refresh(t.key, '[data-act="edit"]'); },
+        remove: () => remove(t),
+      }));
+      acts.append(ed);
       box.append(open, grip, txt, acts);
       li.append(box);
       return li;
@@ -367,30 +455,6 @@
       if (on && e.target.closest('.bt-grip')) say(coarse ? 'Press and hold a binder, then drag it where you want it.' : 'Drag the binder where you want it, or use the arrow keys.');
     });
     grid.addEventListener('dragstart', (e) => { if (on) e.preventDefault(); });
-
-    function rename(li, t) {
-      const name = li.querySelector('.sf-bname'); if (!name) return;
-      const input = el('input', 'bt-name-in'); input.type = 'text'; input.value = t.title; input.maxLength = api.nameMax;
-      input.setAttribute('aria-label', `New name for ${t.title}`); input.dataset.nodrag = ''; input.enterKeyHint = 'done'; input.autocomplete = 'off';
-      name.replaceWith(input); input.focus(); input.select();
-      let done = false;
-      const finish = async (keep) => {
-        if (done) return; done = true;
-        const v = clean(input.value);
-        if (!keep || !v || v === t.title) {
-          if (keep && !v) say('A binder needs a name.', { bad: true });
-          input.replaceWith(name); li.querySelector('[data-act="rename"]')?.focus({ preventScroll: true }); return;
-        }
-        input.disabled = true;
-        try { await api.rename(t.key, v); dirty = true; say(`Renamed to “${v}” ✓`); await refresh(t.key, '[data-act="rename"]'); }
-        catch (e) { say(e.message, { bad: true }); input.replaceWith(name); }
-      };
-      input.addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') { e.preventDefault(); finish(true); }
-        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(false); }
-      });
-      input.addEventListener('blur', () => finish(true));
-    }
 
     async function remove(t) {
       if (!await ask(`Delete “${t.title}”?`, api.keeps(t.count), 'Delete binder')) return;
@@ -440,6 +504,16 @@
         } catch (err) { go.disabled = false; say(err.message, { bad: true }); }
       });
     }
+
+    // The Managers' Binders lines open the store at #edit-binders: editing starts at once (the vault's for full admins).
+    const fromLink = () => {
+      if (location.hash !== '#edit-binders') return;
+      const go = () => { history.replaceState(null, '', location.pathname + location.search); head.scrollIntoView({ block: 'start' }); if (!on) enter(); };
+      if (kind === 'seller') go();
+      else if (window.bbvWho) window.bbvWho().then((j) => { if (j && j.full) go(); });
+    };
+    fromLink();
+    addEventListener('hashchange', fromLink);
   }
 
   /* ================= one binder's own page: its cards ================= */
@@ -630,7 +704,7 @@
     // "Add cards": the Add cards page, with this binder chosen.
     function addLink() {
       const a = el('a', 'btn');
-      a.href = kind === 'seller' ? `/me/add?binder=${enc(key)}` : `/admin/quick?binder=${enc(key)}`;
+      a.href = addHref(kind, key);
       a.append(icon('plus'), el('span', '', 'Add cards'));
       return a;
     }
@@ -644,30 +718,6 @@
     };
     fromLink();
     addEventListener('hashchange', fromLink);
-  }
-
-  /* ================= Store Manager › Binders: drag a binder by its handle ================= */
-  function managerOrder(root) {
-    const list = root.querySelector('.st-binders'); if (!list) return;
-    const toast = (m, bad) => (window.Admin && window.Admin.toast ? window.Admin.toast(m, { kind: bad ? 'err' : 'ok' }) : say(m, { bad }));
-    const items = () => [...list.querySelectorAll('.st-binder')];
-    async function save(moved) {
-      const ids = items().map((a) => Number(a.dataset.id));
-      try {
-        await API.seller.order(ids.map(String));
-        toast(`Moved to place ${ids.indexOf(Number(moved)) + 1} of ${ids.length} ✓`);
-      } catch (e) { toast(e.message, true); }
-    }
-    needSort().then(() => window.dragSort(list, { item: '.st-binder', handle: '[data-bgrip]', key: (a) => a.dataset.id, onDrop: (_, a) => save(a.dataset.id) })).catch(() => {});
-    list.addEventListener('keydown', (e) => {
-      const g = e.target.closest('[data-bgrip]'); if (!g) return;
-      const art = g.closest('.st-binder'), all = items();
-      const m = keyMove(e, all, art); if (!m) return;
-      list.replaceChildren(...m.order);
-      g.focus({ preventScroll: true });
-      save(art.dataset.id);
-    });
-    list.addEventListener('click', (e) => { if (e.target.closest('[data-bgrip]')) toast('Drag the handle to move the binder, or use the arrow keys.'); });
   }
 
   /* ================= The Stores page: what a store shows there, chosen by its owner ================= */
@@ -801,5 +851,4 @@
   document.querySelectorAll('[data-bt-edit]').forEach(gridEditor);
   document.querySelectorAll('[data-bt-binder]').forEach(binderEditor);
   document.querySelectorAll('[data-feature]').forEach(featureChooser);
-  const mgr = document.getElementById('storeBinders'); if (mgr) managerOrder(mgr);
 })();

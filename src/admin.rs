@@ -1419,22 +1419,14 @@ pub async fn showcase_save(State(app): State<App>, h: HeaderMap, Json(req): Json
     Ok(ok_json(json!({ "ok": true, "cards": cards })))
 }
 
-// ---------- binders: name, cover, home page ----------
-#[derive(Template)]
-#[template(path = "admin_binders.html")]
-struct BindersPage {
-    nav: Chrome,
-    tab: &'static str,
-    /// Every binder as JSON; the page draws the two grids (home page / hidden) from it.
-    data: String,
-}
-
+// ---------- binders: name, cover, words, who can see them ----------
 fn binder_json(c: &db::Collection) -> Value {
     json!({ "handle": c.handle, "title": c.title, "image": c.img(480), "count": c.count, "on_home": c.on_home, "custom_cover": c.custom_cover })
 }
 
-/// GET /admin/binders: the Manager's Binders page. Asked for JSON (the binder tools on the vault's store page), every
-/// vault binder as the owner arranges them, as tiles, in order. Full admins only.
+/// GET /admin/binders: the Manager's Binders line. The vault's binders are edited on its store, so the page opens
+/// there with editing on (the owner, 19 Nov 2026). Asked for JSON (the binder tools on that page), every vault binder
+/// as the owner arranges them, as tiles, in order. Full admins only.
 pub async fn binders_page(State(app): State<App>, h: HeaderMap) -> Res {
     if wants_json(&h) {
         if !authed(&app, &h) {
@@ -1446,9 +1438,7 @@ pub async fn binders_page(State(app): State<App>, h: HeaderMap) -> Res {
     if !authed(&app, &h) {
         return login_page(&app, false).await;
     }
-    let nav = with_db(&app, |c| chrome(c)).await?;
-    let data = Value::Array(nav.links.iter().map(binder_json).collect()).to_string();
-    rd(BindersPage { nav, tab: "binders", data })
+    Ok(Redirect::to("/store/vault#edit-binders").into_response())
 }
 
 async fn known_binder(app: &App, handle: &str) -> Result<bool, (StatusCode, String)> {
@@ -1470,12 +1460,16 @@ pub struct BinderReq {
     move_by: Option<i64>,
     /// "auto" = the most valuable card; otherwise the id of a card in the collection whose photo becomes the cover.
     cover: Option<String>,
+    /// What's in it, in the owner's words (its page shows them).
+    description: Option<String>,
+    /// Who can see it: "Public", "Unlisted" (only with its link) or "Private" (the vault's staff).
+    visibility: Option<String>,
     /// Remove the binder (its cards stay in the collection).
     #[serde(default)]
     delete: bool,
 }
 
-/// Rename, show/hide on the home page, reorder, or pick a cover. Returns every binder so the page can redraw.
+/// Rename, say what's in it and who can see it, reorder, or pick a cover. Returns every binder so the page can redraw.
 pub async fn binder_update(State(app): State<App>, h: HeaderMap, Path(handle): Path<String>, Json(req): Json<BinderReq>) -> Res {
     if !authed(&app, &h) {
         return Ok(deny(&h));
@@ -1497,6 +1491,8 @@ pub async fn binder_update(State(app): State<App>, h: HeaderMap, Path(handle): P
         if let Some(t) = &title {
             db::rename_binder(c, &handle, t)?;
         }
+        let words = req.description.as_deref().map(|d| marcuru_rs::members::clean_text(d, 300));
+        db::set_binder_words(c, &handle, words.as_deref(), req.visibility.as_deref())?;
         if let Some(on) = req.on_home {
             db::set_binder_home(c, &handle, on)?;
         }

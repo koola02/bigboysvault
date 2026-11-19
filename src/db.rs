@@ -55,6 +55,10 @@ pub struct Collection {
     /// Shown in the site's top menu, at `menu_pos` (its own order, separate from the home page).
     pub in_menu: bool,
     pub menu_pos: i64,
+    /// What's in it, in the owner's words: shown on its page.
+    pub description: String,
+    /// Who can see it: "Public" (everyone), "Unlisted" (only people with its link) or "Private" (the vault's staff).
+    pub visibility: String,
 }
 
 impl Product {
@@ -290,6 +294,19 @@ impl Collection {
     pub fn has_image(&self) -> bool {
         !self.image.is_empty()
     }
+    /// Everyone can see it: on the vault's store, Stores, the feed, search, the sitemap. An "Unlisted" binder opens only
+    /// for people with its link; a "Private" one only for the vault's staff.
+    pub fn is_public(&self) -> bool {
+        self.visibility == "Public"
+    }
+    /// Who can open it, in plain words for its page: "Link only", "Private", or nothing when everyone can.
+    pub fn who_text(&self) -> &'static str {
+        match self.visibility.as_str() {
+            "Unlisted" => "Link only",
+            "Private" => "Private",
+            _ => "",
+        }
+    }
     /// The owner uploaded this binder's cover (a photo of their own, not a card), so it isn't card-shaped:
     /// a binder tile shows it alone, filling the tile.
     pub fn photo_cover(&self) -> bool {
@@ -442,6 +459,12 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         c.execute("ALTER TABLE collections ADD COLUMN menu_pos INTEGER NOT NULL DEFAULT 0", [])?;
         c.execute("UPDATE collections SET menu_pos=position", [])?;
     }
+    // What a vault binder holds, in the owner's words, and who can see it: what a seller's binder has (19 Nov 2026).
+    for (col, def) in [("description", "TEXT NOT NULL DEFAULT ''"), ("visibility", "TEXT NOT NULL DEFAULT 'Public'")] {
+        if !cols.is_empty() && !cols.iter().any(|h| h == col) {
+            c.execute(&format!("ALTER TABLE collections ADD COLUMN {col} {def}"), [])?;
+        }
+    }
     // A card hidden in one binder (its editor's Hide): it stays in the binder and the vault, but the binder's page,
     // count and tile leave it out.
     let mut st = c.prepare("PRAGMA table_info(collection_products)")?;
@@ -468,7 +491,8 @@ CREATE TABLE IF NOT EXISTS products(
   image_w INTEGER NOT NULL DEFAULT 0, image_h INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT '');
 CREATE TABLE IF NOT EXISTS collections(
   handle TEXT PRIMARY KEY, title TEXT NOT NULL, image TEXT NOT NULL DEFAULT '', position INTEGER NOT NULL DEFAULT 0,
-  on_home INTEGER NOT NULL DEFAULT 1, in_menu INTEGER NOT NULL DEFAULT 1, menu_pos INTEGER NOT NULL DEFAULT 0);
+  on_home INTEGER NOT NULL DEFAULT 1, in_menu INTEGER NOT NULL DEFAULT 1, menu_pos INTEGER NOT NULL DEFAULT 0,
+  description TEXT NOT NULL DEFAULT '', visibility TEXT NOT NULL DEFAULT 'Public');
 CREATE TABLE IF NOT EXISTS collection_products(
   collection TEXT NOT NULL, product_id INTEGER NOT NULL, position INTEGER NOT NULL DEFAULT 0,
   hidden INTEGER NOT NULL DEFAULT 0,
@@ -854,7 +878,8 @@ pub fn catalogue_dated(c: &Connection) -> rusqlite::Result<String> {
 
 fn catalogue_file(c: &Connection, dated: bool) -> rusqlite::Result<String> {
     use std::collections::HashMap;
-    let binders = collections(c)?;
+    // Only the binders everyone can see: the search on every visitor's phone reads this file.
+    let binders: Vec<Collection> = collections(c)?.into_iter().filter(|b| b.is_public()).collect();
     let index: HashMap<&str, u16> = binders.iter().enumerate().map(|(i, b)| (b.handle.as_str(), i as u16)).collect();
     let mut member: HashMap<i64, Vec<u16>> = HashMap::new();
     let mut st = c.prepare("SELECT product_id, collection FROM collection_products WHERE hidden=0")?;
@@ -935,15 +960,33 @@ pub fn collections(c: &Connection) -> rusqlite::Result<Vec<Collection>> {
         "SELECT c.handle,c.title,
            COALESCE(NULLIF(c.image,''),(SELECT p.image FROM collection_products cp JOIN products p ON p.id=cp.product_id
              WHERE cp.collection=c.handle AND cp.hidden=0 AND p.image<>'' ORDER BY p.price DESC LIMIT 1),''),
-           (SELECT COUNT(*) FROM collection_products cp JOIN products p ON p.id=cp.product_id WHERE cp.collection=c.handle AND cp.hidden=0), c.on_home, c.image<>'', c.in_menu, c.menu_pos
+           (SELECT COUNT(*) FROM collection_products cp JOIN products p ON p.id=cp.product_id WHERE cp.collection=c.handle AND cp.hidden=0), c.on_home, c.image<>'', c.in_menu, c.menu_pos,
+           c.description, c.visibility
          FROM collections c ORDER BY c.position",
     )?;
     let v = st
         .query_map([], |r| {
-            Ok(Collection { handle: r.get(0)?, title: r.get(1)?, image: r.get(2)?, count: r.get(3)?, on_home: r.get(4)?, custom_cover: r.get(5)?, in_menu: r.get(6)?, menu_pos: r.get(7)? })
+            Ok(Collection { handle: r.get(0)?, title: r.get(1)?, image: r.get(2)?, count: r.get(3)?, on_home: r.get(4)?, custom_cover: r.get(5)?, in_menu: r.get(6)?, menu_pos: r.get(7)?, description: r.get(8)?, visibility: r.get(9)? })
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(v)
+}
+
+/// Who can see one vault binder ("Public", "Unlisted" or "Private"), or None when there is no such binder.
+pub fn binder_visibility(c: &Connection, handle: &str) -> rusqlite::Result<Option<String>> {
+    c.query_row("SELECT visibility FROM collections WHERE handle=?1", [handle], |r| r.get(0)).optional()
+}
+
+/// What a vault binder's page says about it, and who can see it ("Public", "Unlisted" or "Private"; anything else
+/// leaves it as it was). The words are cleaned by the caller.
+pub fn set_binder_words(c: &Connection, handle: &str, description: Option<&str>, visibility: Option<&str>) -> rusqlite::Result<()> {
+    if let Some(d) = description {
+        c.execute("UPDATE collections SET description=?2 WHERE handle=?1", rusqlite::params![handle, d])?;
+    }
+    if let Some(v) = visibility.filter(|v| ["Public", "Unlisted", "Private"].contains(v)) {
+        c.execute("UPDATE collections SET visibility=?2 WHERE handle=?1", rusqlite::params![handle, v])?;
+    }
+    Ok(())
 }
 
 /// For the vault's store page, in one trip: each binder that has cards for sale, with how many copies are for sale and

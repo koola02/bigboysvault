@@ -1545,9 +1545,16 @@ pub async fn me_delete_binder(State(app): State<App>, h: HeaderMap, Path(bid): P
         Err(r) => return Ok(r),
     };
     let id = m.id;
-    let ok_flag = with_db(&app, move |c| members::delete_member_binder(c, id, bid)).await?;
+    let (ok_flag, photo) = with_db(&app, move |c| {
+        let photo = members::binder_photo(c, id, bid)?;
+        Ok((members::delete_member_binder(c, id, bid)?, photo))
+    })
+    .await?;
     if !ok_flag {
         return Ok(fail(StatusCode::NOT_FOUND, "Binder not found."));
+    }
+    if photo.starts_with("/uploads/") {
+        admin::remove_upload(&app.uploads, &photo);
     }
     app.forget();
     Ok(ok(json!({ "ok": true })))
@@ -1559,9 +1566,17 @@ pub async fn me_binder_cover(State(app): State<App>, h: HeaderMap, Path(bid): Pa
         Err(r) => return Ok(r),
     };
     let id = m.id;
-    let ok_flag = with_db(&app, move |c| members::set_member_binder_cover(c, id, bid, req.card_id)).await?;
-    if !ok_flag {
-        return Ok(fail(StatusCode::NOT_FOUND, "Could not set binder cover."));
+    // A card for the cover, or the cover picking itself again: a photo uploaded before lets go (one cover at a time).
+    let done = with_db(&app, move |c| {
+        if !members::set_member_binder_cover(c, id, bid, req.card_id)? {
+            return Ok(None);
+        }
+        members::set_member_binder_photo(c, id, bid, "")
+    })
+    .await?;
+    let Some(old) = done else { return Ok(fail(StatusCode::NOT_FOUND, "Could not set binder cover.")) };
+    if old.starts_with("/uploads/") {
+        admin::remove_upload(&app.uploads, &old);
     }
     app.forget();
     Ok(ok(json!({ "ok": true })))

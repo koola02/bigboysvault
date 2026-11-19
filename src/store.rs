@@ -486,15 +486,6 @@ pub async fn renew_listing(State(app): State<App>, h: HeaderMap, Path(id): Path<
 
 // ---------- binders ----------
 
-#[derive(Template)]
-#[template(path = "store_binders.html")]
-struct BindersPage {
-    nav: Chrome,
-    p: Panel,
-    binders: Vec<MemberBinder>,
-    cards: Vec<MemberCard>,
-}
-
 /// The binder tools (`static/binder-tools.js`) ask for JSON; they get JSON back, errors included, never a page.
 fn wants_json(h: &HeaderMap) -> bool {
     h.get(header::ACCEPT).and_then(|v| v.to_str().ok()).is_some_and(|a| a.contains("application/json"))
@@ -509,8 +500,9 @@ async fn binder_owner(app: &App, h: &HeaderMap) -> Result<Result<Member, Respons
     Ok(seller_only(&m).map(|_| m))
 }
 
-/// GET /me/binders: the Store Manager's Binders page. Asked for JSON (the binder tools on the store page), the seller's
-/// binders as they arrange them: every one, in their order, as tiles.
+/// GET /me/binders: the Store Manager's Binders line. A seller's binders are edited on their store, so the page opens
+/// there with editing on (the owner, 19 Nov 2026). Asked for JSON (the binder tools on that page, the Add window), the
+/// seller's binders as they arrange them: every one, in their order, as tiles.
 pub async fn binders(State(app): State<App>, h: HeaderMap) -> Res {
     if wants_json(&h) {
         let m = match binder_owner(&app, &h).await? {
@@ -525,9 +517,55 @@ pub async fn binders(State(app): State<App>, h: HeaderMap) -> Res {
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
-    let id = m.id;
-    let (nav, p, binders, cards) = with_db(&app, move |c| Ok((chrome(c)?, panel(c, m, "binders")?, members::binders_of(c, id)?, members::cards_of(c, id)?))).await?;
-    Ok(html(render(BindersPage { nav, p, binders, cards })?))
+    Ok(Redirect::to(&format!("{}#edit-binders", m.store_url())).into_response())
+}
+
+/// POST /me/binders/{id}/photo (a form with one `photo`): the seller's own photo becomes the binder's cover, as a vault
+/// binder's can. It fills the binder's tile by itself; picking a card for the cover later lets it go.
+pub async fn binder_photo(State(app): State<App>, h: HeaderMap, Path(bid): Path<i64>, mut mp: Multipart) -> Res {
+    let m = match binder_owner(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let mid = m.id;
+    if !with_db(&app, move |c| Ok(members::binders_of(c, mid)?.iter().any(|b| b.id == bid))).await? {
+        return Ok(fail(StatusCode::NOT_FOUND, "Binder not found."));
+    }
+    if over_limit(&app, format!("bphoto|{mid}"), 30) {
+        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of photos in a row. Please try again later."));
+    }
+    let mut bytes = None;
+    while let Ok(Some(f)) = mp.next_field().await {
+        if f.name() == Some("photo") {
+            match f.bytes().await {
+                Ok(b) if !b.is_empty() => bytes = Some(b.to_vec()),
+                Ok(_) => {}
+                Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "That photo didn't arrive. Please try again.")),
+            }
+        }
+    }
+    let Some(bytes) = bytes else { return Ok(fail(StatusCode::BAD_REQUEST, "Choose a photo first.")) };
+    if with_db(&app, |c| members::photo_bytes(c)).await? >= crate::community::photo_cap_mb() * 1024 * 1024 {
+        return Ok(fail(StatusCode::INSUFFICIENT_STORAGE, "The vault's photo space is full right now. Pick one of the binder's cards for its cover instead."));
+    }
+    let dir = PathBuf::from(&*app.uploads);
+    let stem = format!("mb{mid}-{bid}-{}", members::temp_password());
+    let large = match gated(move || store_photo(bytes, dir, stem)).await? {
+        Ok((large, _, _, _, _)) => large,
+        Err(e) if e == crate::community::TOO_BIG => return Ok(fail(StatusCode::BAD_REQUEST, "That photo is too big. Please use a smaller one.")),
+        Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "That photo couldn't be read. Try a JPEG or PNG.")),
+    };
+    let path = large.clone();
+    match with_db(&app, move |c| members::set_member_binder_photo(c, mid, bid, &path)).await? {
+        None => {
+            admin::remove_upload(&app.uploads, &large);
+            return Ok(fail(StatusCode::NOT_FOUND, "Binder not found."));
+        }
+        Some(old) if old.starts_with("/uploads/") => admin::remove_upload(&app.uploads, &old),
+        Some(_) => {}
+    }
+    app.forget();
+    Ok(ok(json!({ "ok": true, "photo": db::cdn(&large, 360) })))
 }
 
 #[derive(Deserialize)]
@@ -1430,12 +1468,25 @@ pub(crate) struct BinderTile {
     pub off: bool,
     /// Every card in the binder, on sale or not (the binder tools say how many a deleted binder lets go).
     pub count: i64,
+    /// What's in it, in the owner's words, and who can see it ("Public", "Unlisted", "Private"): for its Edit window.
+    pub description: String,
+    pub visibility: String,
 }
 
 impl BinderTile {
     /// For the binder tools (`binder-tools.js`): the tiles as the owner sees them while arranging them.
     fn json(&self) -> serde_json::Value {
-        json!({ "key": self.key, "href": self.href, "title": self.title, "pics": self.pics, "photo": self.photo, "words": self.words, "off": self.off, "count": self.count })
+        json!({ "key": self.key, "href": self.href, "title": self.title, "pics": self.pics, "photo": self.photo, "words": self.words, "off": self.off, "count": self.count,
+                "description": self.description, "visibility": self.visibility })
+    }
+}
+
+/// " · link only", " · private": what a binder's tile adds for its owner when not everyone can see it.
+fn who_words(visibility: &str) -> &'static str {
+    match visibility {
+        "Unlisted" => " · link only",
+        "Private" => " · private",
+        _ => "",
     }
 }
 
@@ -1460,51 +1511,66 @@ fn seller_tiles(m: &Member, binders: &[MemberBinder], listings: &[MemberCard], o
                 return None;
             }
             let mut words = if n == 0 { "No cards for sale".to_string() } else { cards_word(n) };
-            match b.visibility.as_str() {
-                "Unlisted" => words.push_str(" · unlisted"),
-                "Private" => words.push_str(" · private"),
-                _ if n == 0 => words.push_str(" · hidden from visitors"),
-                _ => {}
+            match who_words(&b.visibility) {
+                "" if n == 0 => words.push_str(" · hidden from visitors"),
+                w => words.push_str(w),
             }
-            // A cover the seller picked leads while that card is on sale here. Everything else is the binder's cards on
-            // sale, in its order: never a sold, hidden, highlight or wishlist card.
-            let picked = sellers::picked_cover(b, listings);
-            let cards: Vec<String> = listings.iter().filter(|k| k.binder_id == Some(b.id) && Some(k.id) != b.cover_card && !k.image.is_empty()).map(|k| k.image.clone()).collect();
+            // A photo the seller uploaded fills the tile by itself. Otherwise a cover the seller picked leads while that
+            // card is on sale here, then the binder's cards on sale, in its order: never a sold, hidden, highlight or
+            // wishlist card.
+            let photo = !b.photo.is_empty();
+            let pics = if photo {
+                db::fresh_pics(Some(&db::cdn(&b.photo, 360)), &[], 1, &mut seen)
+            } else {
+                let picked = sellers::picked_cover(b, listings);
+                let cards: Vec<String> = listings.iter().filter(|k| k.binder_id == Some(b.id) && Some(k.id) != b.cover_card && !k.image.is_empty()).map(|k| k.image.clone()).collect();
+                db::fresh_pics(picked.map(|k| k.image.as_str()), &cards, 3, &mut seen)
+            };
             Some(BinderTile {
                 key: b.id.to_string(),
                 href: format!("{}/binders/{}", m.store_url(), b.slug),
                 title: b.title.clone(),
-                pics: db::fresh_pics(picked.map(|k| k.image.as_str()), &cards, 3, &mut seen),
-                photo: false,
+                pics,
+                photo,
                 words,
                 off: n == 0 || b.visibility != "Public",
                 count: b.count,
+                description: b.description.clone(),
+                visibility: b.visibility.clone(),
             })
         })
         .collect()
 }
 
-/// The vault's own binders as tiles: every binder with cards for sale, in the owner's order (Manager › Binders), whether
+/// The vault's own binders as tiles: every binder everyone can see with cards for sale, in the owner's order, whether
 /// or not it is on today's home page or was ever in the menu. `peeks` is `db::binder_peeks`.
 /// A tile says the binder's own count, the same number its page shows. The owner arranging them (`owner_view`) also sees
-/// the binders with nothing for sale, faded, so a new binder can be filled. Pictures repeat as little as they can.
+/// the binders with nothing for sale and those not everyone can see, faded, saying why. Pictures repeat as little as
+/// they can.
 pub(crate) fn vault_tiles(links: &[Collection], peeks: &HashMap<String, (i64, Vec<String>)>, owner_view: bool) -> Vec<BinderTile> {
     let mut seen = std::collections::HashSet::new();
     let none: Vec<String> = vec![];
     links
         .iter()
         .filter_map(|b| {
+            if !b.is_public() && !owner_view {
+                return None;
+            }
             let pics = match peeks.get(&b.handle) {
                 Some((_, pics)) => pics,
                 None if owner_view => &none,
                 None => return None,
             };
-            let off = !peeks.contains_key(&b.handle);
-            let words = match (off, b.count) {
+            let empty = !peeks.contains_key(&b.handle);
+            let mut words = match (empty, b.count) {
                 (false, n) => cards_word(n),
-                (true, 0) => "No cards yet · hidden from visitors".to_string(),
-                (true, n) => format!("{} · none for sale · hidden from visitors", cards_word(n)),
+                (true, 0) => "No cards yet".to_string(),
+                (true, n) => format!("{} · none for sale", cards_word(n)),
             };
+            match who_words(&b.visibility) {
+                "" if empty => words.push_str(" · hidden from visitors"),
+                w => words.push_str(w),
+            }
             Some(BinderTile {
                 key: b.handle.clone(),
                 href: format!("/collections/{}", b.handle),
@@ -1512,8 +1578,10 @@ pub(crate) fn vault_tiles(links: &[Collection], peeks: &HashMap<String, (i64, Ve
                 pics: b.tile_pics_among(pics, 3, &mut seen),
                 photo: b.photo_cover(),
                 words,
-                off,
+                off: empty || !b.is_public(),
                 count: b.count,
+                description: b.description.clone(),
+                visibility: b.visibility.clone(),
             })
         })
         .collect()
@@ -3445,8 +3513,8 @@ mod tests {
         let store_part = &store_part[..store_part.find("</section>").unwrap()];
         assert!(!store_part.contains("href=\"/ask\"") && !store_part.contains("href=\"/chat\""), "Ask the Vault and Vault chat live in the menu, not on a store");
         assert!(html.contains("data-vouches=\"vault\"") && html.contains("<b id=\"followerN\">0</b>") && html.contains("<dt class=\"sf-row-l\">Open since</dt><dd class=\"sf-row-v sf-text\">Jan 2026</dd>"));
-        // The staff's link is in every visitor's page, hidden unless a full admin is signed in: the page can be kept.
-        assert!(html.contains("<a class=\"btn ghost\" href=\"/admin/binders\" data-staff-only data-full-only>"));
+        // Binders are edited right here with Edit binders (hidden unless a full admin is signed in): no other way in.
+        assert!(!html.contains("href=\"/admin/binders\"") && html.contains("data-bt-edit=\"vault\""));
         // Every binder with cards for sale, in the owner's order, menu or not, home page or not; no other.
         let grid = &html[html.find("<ul class=\"sf-bgrid\">").unwrap()..];
         let grid = &grid[..grid.find("</ul>").unwrap()];
@@ -3538,7 +3606,7 @@ mod tests {
         let slug = members::get(&c, s).unwrap().unwrap().slug;
         // No binders yet: the owner still gets the heading, the button and a word on what binders are for.
         let own = page_as(&c, &slug, None, true);
-        assert!(own.contains("data-bt-edit=\"seller\"") && own.contains("class=\"bt-none\"") && own.contains("/static/binder-tools.js?v=6"), "{own}");
+        assert!(own.contains("data-bt-edit=\"seller\"") && own.contains("class=\"bt-none\"") && own.contains("/static/binder-tools.js?v=7"), "{own}");
         let visitor = page(&c, &slug, None);
         assert!(!visitor.contains("data-bt-edit") && !visitor.contains("binder-tools.js") && !visitor.contains(">Binders<"));
         let b = members::create_member_binder(&c, s, "Fire").unwrap();
@@ -3565,6 +3633,72 @@ mod tests {
         assert_eq!((all[2].off, all[2].words.as_str()), (true, "1 card · none for sale · hidden from visitors"));
         assert_eq!((all[3].off, all[3].words.as_str()), (true, "No cards yet · hidden from visitors"));
         assert!(!all[0].off && all[0].count == 3);
+    }
+
+    /// One binder editor for every store (the owner, 19 Nov 2026): a seller's binder can have a photo for its cover, as a
+    /// vault binder can; a vault binder has its own words and "who can see it", as a seller's has. The tiles carry what
+    /// the Edit window shows.
+    #[test]
+    fn one_binder_editor_gives_sellers_photo_covers_and_the_vault_words_and_who_can_see_it() {
+        let c = db();
+        // A seller's photo cover fills the tile by itself; a card picked later lets it go (the caller deletes the file).
+        let s = members::create(&c, "Shop", "h").unwrap().unwrap();
+        members::set_seller(&c, s, true).unwrap();
+        members::set_profile_ok(&c, s, true).unwrap();
+        let b = members::create_member_binder(&c, s, "Fire").unwrap();
+        let Added::Yes(id) = sellers::add_listing(&c, s, "tcgdex:base1-4", "Charizard", "4/102", "Base Set", "/p/zard.webp", "").unwrap() else { panic!() };
+        c.execute("UPDATE member_cards SET kind='sale', status='Active', qty=1, value_own=900 WHERE id=?1", [id]).unwrap();
+        members::move_card_to_binder(&c, s, id, Some(b.id)).unwrap();
+        members::set_member_binder_cover(&c, s, b.id, Some(id)).unwrap();
+        assert_eq!(members::set_member_binder_photo(&c, s, b.id, "/uploads/mb1-1-x_l.jpg").unwrap(), Some(String::new()));
+        assert_eq!(members::set_member_binder_photo(&c, s + 99, b.id, "/uploads/x_l.jpg").unwrap(), None, "not their binder");
+        let m = members::get(&c, s).unwrap().unwrap();
+        let tile = |c: &rusqlite::Connection, owner: bool| seller_tiles(&m, &members::binders_of(c, s).unwrap(), &sellers::storefront_listings(c, s).unwrap(), owner).remove(0);
+        let t = tile(&c, false);
+        assert_eq!((t.pics.clone(), t.photo), (vec!["/uploads/mb1-1-x_s.jpg".to_string()], true));
+        assert_eq!(members::binders_of(&c, s).unwrap()[0].cover_card, None, "one cover at a time: the picked card lets go");
+        let html = page(&c, &m.slug, None);
+        assert!(html.contains("sf-bcov sf-bphoto\" data-n=\"1\"><img src=\"/uploads/mb1-1-x_s.jpg\""), "{html}");
+        members::set_member_binder_cover(&c, s, b.id, Some(id)).unwrap();
+        assert_eq!(members::set_member_binder_photo(&c, s, b.id, "").unwrap().as_deref(), Some("/uploads/mb1-1-x_l.jpg"));
+        let t = tile(&c, false);
+        assert_eq!((t.pics.clone(), t.photo), (vec!["/p/zard.webp".to_string()], false));
+        // Its words and who can see it travel with the tile, for the Edit window; "link only" in plain words.
+        c.execute("UPDATE member_binders SET description='Base Set holos', visibility='Unlisted' WHERE id=?1", [b.id]).unwrap();
+        let t = tile(&c, true);
+        assert_eq!((t.words.as_str(), t.off), ("1 card · link only", true));
+        let j = t.json();
+        assert_eq!((j["description"].as_str(), j["visibility"].as_str()), (Some("Base Set holos"), Some("Unlisted")));
+        assert_eq!(members::binders_of(&c, s).unwrap()[0].who_text(), "Link only");
+        // A trainer who leaves takes their binders, and the photos they uploaded, with them.
+        members::set_member_binder_photo(&c, s, b.id, "/uploads/mb1-1-y_l.jpg").unwrap();
+        let files = members::delete(&c, s).unwrap();
+        assert!(files.contains(&"/uploads/mb1-1-y_l.jpg".to_string()), "{files:?}");
+        assert_eq!(c.query_row("SELECT COUNT(*) FROM member_binders WHERE member_id=?1", [s], |r| r.get::<_, i64>(0)).unwrap(), 0);
+
+        // A vault binder: its words, and who can see it. Not everyone: off its store, Stores and the visitors' search;
+        // its owner still sees it while arranging, saying why.
+        vault(&c);
+        db::set_binder_words(&c, "pikachu-set", Some("Every Pikachu we have"), Some("Unlisted")).unwrap();
+        db::set_binder_words(&c, "pikachu-set", None, Some("Bogus")).unwrap();
+        assert_eq!(db::binder_visibility(&c, "pikachu-set").unwrap().as_deref(), Some("Unlisted"), "anything else leaves it as it was");
+        let tiles = |owner: bool| vault_tiles(&db::collections(&c).unwrap(), &db::binder_peeks(&c, PEEK_CHOICES).unwrap(), owner);
+        assert!(tiles(false).iter().all(|t| t.key != "pikachu-set"));
+        assert!(!vault_html(&c, "").contains("href=\"/collections/pikachu-set\""));
+        let all = tiles(true);
+        let p = all.iter().find(|t| t.key == "pikachu-set").unwrap();
+        assert_eq!((p.words.as_str(), p.off, p.description.as_str(), p.visibility.as_str()), ("3 cards · link only", true, "Every Pikachu we have", "Unlisted"));
+        let pika = db::collections(&c).unwrap().into_iter().find(|b| b.handle == "pikachu-set").unwrap();
+        assert_eq!((pika.is_public(), pika.who_text()), (false, "Link only"));
+        assert!(!db::catalogue_dated(&c).unwrap().contains("B	pikachu-set	"));
+        db::set_binder_words(&c, "pikachu-set", None, Some("Public")).unwrap();
+        assert!(db::catalogue_dated(&c).unwrap().contains("B	pikachu-set	") && tiles(false).iter().any(|t| t.key == "pikachu-set"));
+        // With no binder for visitors yet, Edit binders is still there for full admins.
+        for h in ["pikachu-set", "graded-cards", "trainers", "legendary-collections"] {
+            db::set_binder_words(&c, h, None, Some("Private")).unwrap();
+        }
+        let html = vault_html(&c, "");
+        assert!(html.contains("<div class=\"bt-head\" data-full-only><h2 class=\"h2\">Binders</h2>") && html.contains("<ul class=\"sf-bgrid\" data-full-only>"), "{html}");
     }
 
     /// The same few dearest cards sit in several binders: each tile shows cards the tiles before it don't, when it can.

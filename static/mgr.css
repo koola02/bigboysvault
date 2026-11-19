@@ -571,24 +571,7 @@ body:has(.admin > .st-head:first-child) main { max-width: 912px; }
 #announceForm .btn { align-self: flex-start; }
 #announceForm textarea { min-height: 72px; }
 
-/* ---------- 8. A seller's binders ---------- */
-.st-newbinder { display: flex; flex-wrap: wrap; gap: 8px; max-width: 640px; }
-.st-newbinder input { flex: 1 1 220px; width: auto; }
-.st-binders { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 440px), 1fr)); gap: 12px; align-items: start; }
-.st-binders:empty { display: none; }
-.st-binder { display: grid; grid-template-columns: 96px minmax(0, 1fr); gap: 14px; padding: 14px; border-radius: var(--r); background: var(--surface); box-shadow: inset 0 0 0 1px var(--mgr-line); }
-.st-binder:has(.st-binder-cards[open]) { grid-column: 1 / -1; }
-.st-binder-cover img, .st-binder-cover .thumb-empty { display: grid; width: 96px; height: 134px; border-radius: var(--r-sm); background: var(--surface-3); font-size: .75rem; object-fit: cover; }
-.st-binder-body { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-.st-binder-title { font-size: 1rem; font-weight: 700; }
-textarea.st-binder-desc { min-height: 56px; font-size: .875rem; }
-.st-binder-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; font-size: .8125rem; }
-.st-binder-row select { width: auto; min-height: 36px; padding: 4px 28px 4px 10px; font-size: .8125rem; }
-.st-binder-n { color: var(--muted); font-weight: 600; }
-.st-binder-row .linkbtn { font-size: .8125rem; }
-.st-binder-row .danger { margin-left: auto; }
-.st-binder-cards > summary { padding: 4px 0; color: var(--gold); font-size: .875rem; font-weight: 600; cursor: pointer; }
-.st-binder-cards > .me-how { margin: 6px 0; }
+/* ---------- 8. A trainer's cards in Account Settings ---------- */
 .me-binder { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 14px 10px; margin: 0; padding: 0; list-style: none; }
 .me-binder:empty { display: none; }
 .me-c { display: flex; flex-direction: column; gap: 2px; min-width: 0; cursor: grab; touch-action: manipulation; }
@@ -598,14 +581,10 @@ textarea.st-binder-desc { min-height: 56px; font-size: .875rem; }
 .me-c:has(input:checked) .me-c-pic { box-shadow: 0 0 0 2px var(--gold); }
 .me-star { position: absolute; top: 4px; right: 4px; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: rgba(11,13,20,.82); color: var(--steel-hi); font-size: .9375rem; }
 .me-c[data-cover] .me-star, .me-c.star .me-star { background: var(--gold); color: var(--gold-ink); }
-.st-sort .ct-chk { position: absolute; top: 4px; left: 4px; z-index: 1; width: 28px; height: 28px; margin: 0 !important; border-radius: 6px; background: rgba(11,13,20,.82); }
 .me-c-t { margin-top: 4px; font-size: .8125rem; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .me-c-s { color: var(--muted); font-size: .75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-loose { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
 .selbar select { width: auto; min-height: 34px; padding: 4px 28px 4px 10px; border-color: rgba(20,22,31,.25); background-color: #fff; color: #14161f; font-size: .8125rem; }
 @media (max-width: 699px) {
-  .st-binder { grid-template-columns: 72px minmax(0, 1fr); gap: 10px; padding: 12px; }
-  .st-binder-cover img, .st-binder-cover .thumb-empty { width: 72px; height: 100px; }
   .me-binder { grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); }
 }
 

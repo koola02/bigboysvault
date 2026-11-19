@@ -284,11 +284,17 @@ As of 12 November 2026, behind the new-look switch:
   link). A binder with nothing for sale is hidden from visitors; tiles count only what the binder page shows and
   prefer pictures no earlier tile shows.
 - **Binder tools, for sellers and admins alike, where the binders are** (static/binder-tools.js): "Edit binders" on
-  the store (drag to reposition, + New binder, rename, cover, delete — cards are never deleted with a binder),
-  "Edit binder" on a binder's page (add cards from a picker, remove, drag to order, make cover), and in the Manager
-  (seller Binders: drag to reorder, add/remove cards; admin Binders: delete, add/remove cards). Vault binders: full
-  admins only. The owner: "sellers should be able to do that as well and admins too ... add/remove cards in the
-  binders, add/remove binders, select the cover of the binders and the ability to reposition their binders."
+  the store (drag to reposition, + New binder, and one Edit window per binder — cards are never deleted with a
+  binder), and "Edit binder" on a binder's page (remove, hide, drag to order, sort, make cover; Add cards opens the
+  Add cards page with the binder chosen). Vault binders: full admins only. The owner: "sellers should be able to do
+  that as well and admins too ... add/remove cards in the binders, add/remove binders, select the cover of the
+  binders and the ability to reposition their binders."
+- **One binder editor** (19 Nov 2026, Release 6b): the Managers' own Binders pages are gone; their Binders lines open
+  the store with editing on (`#edit-binders`). Every binder's Edit window has the same tools for a seller and the
+  vault: the cover (one of its cards, the automatic one, or an uploaded photo that fills the tile), Name, What's in
+  it, Who can see it (Everyone · Only people with the link · Only me, or Only the vault's staff), Add cards, Arrange
+  or remove, Delete; nothing changes until Save. A binder not everyone can see is left off every list and search;
+  its page says "Link only" or "Private".
 - **Sort and Hide in a binder's editor** (18 Nov 2026): "Sort:" A to Z, Z to A, By set (oldest set first, by
   `card_sets` release dates), By number (the number part: "4/102" is 4, "SV001" is 1) and By evolution (Pokédex
   order, each evolution line together from Basic up, then Trainers, Energy, unknown cards). The site works the order

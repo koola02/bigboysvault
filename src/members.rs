@@ -406,6 +406,8 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
     for (col, def) in [
         ("description", "TEXT NOT NULL DEFAULT ''"),
         ("visibility", "TEXT NOT NULL DEFAULT 'Public'"),
+        // A photo the seller uploaded as the binder's cover: the vault's binders could have one, now theirs can (19 Nov 2026).
+        ("photo", "TEXT NOT NULL DEFAULT ''"),
     ] {
         let there: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('member_binders') WHERE name=?1", [col], |r| r.get(0))?;
         if there == 0 {
@@ -529,9 +531,20 @@ pub struct MemberBinder {
     pub cover_image: String,
     pub description: String,
     pub visibility: String,
+    /// A photo the seller uploaded as the cover (`/uploads/mb…_l.jpg`): it fills the binder's tile by itself. Empty: the
+    /// tile shows the binder's cards.
+    pub photo: String,
 }
 
 impl MemberBinder {
+    /// Who can open it, in plain words for its page: "Link only", "Private", or nothing when everyone can.
+    pub fn who_text(&self) -> &'static str {
+        match self.visibility.as_str() {
+            "Unlisted" => "Link only",
+            "Private" => "Private",
+            _ => "",
+        }
+    }
     pub fn count_text(&self) -> String {
         self.count.to_string()
     }
@@ -1048,7 +1061,7 @@ pub fn binders_of(c: &Connection, member_id: i64) -> rusqlite::Result<Vec<Member
     let sql = format!("SELECT b.id, b.member_id, b.title, b.slug, b.cover_card, b.position, b.created_at,
                       (SELECT COUNT(*) FROM member_cards x WHERE x.binder_id=b.id AND x.member_id=b.member_id),
                       {BINDER_COVER},
-                      b.description, b.visibility
+                      b.description, b.visibility, b.photo
                FROM member_binders b
                WHERE b.member_id=?1
                ORDER BY b.position ASC, b.id ASC");
@@ -1066,6 +1079,7 @@ pub fn binders_of(c: &Connection, member_id: i64) -> rusqlite::Result<Vec<Member
             cover_image: r.get(8)?,
             description: r.get(9)?,
             visibility: r.get(10)?,
+            photo: r.get(11)?,
         })
     })?.collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
@@ -1075,7 +1089,7 @@ pub fn binder_by_slug(c: &Connection, member_id: i64, slug: &str) -> rusqlite::R
     let sql = format!("SELECT b.id, b.member_id, b.title, b.slug, b.cover_card, b.position, b.created_at,
                       (SELECT COUNT(*) FROM member_cards x WHERE x.binder_id=b.id AND x.member_id=b.member_id),
                       {BINDER_COVER},
-                      b.description, b.visibility
+                      b.description, b.visibility, b.photo
                FROM member_binders b
                WHERE b.member_id=?1 AND b.slug=?2");
     c.query_row(&sql, rusqlite::params![member_id, slug], |r| {
@@ -1091,6 +1105,7 @@ pub fn binder_by_slug(c: &Connection, member_id: i64, slug: &str) -> rusqlite::R
             cover_image: r.get(8)?,
             description: r.get(9)?,
             visibility: r.get(10)?,
+            photo: r.get(11)?,
         })
     }).optional()
 }
@@ -1132,6 +1147,7 @@ pub fn create_member_binder(c: &Connection, member_id: i64, title: &str) -> rusq
         cover_image: String::new(),
         description: String::new(),
         visibility: "Public".to_string(),
+        photo: String::new(),
     })
 }
 
@@ -1167,6 +1183,26 @@ pub fn set_member_binder_cover(c: &Connection, member_id: i64, binder_id: i64, c
         rusqlite::params![binder_id, member_id, card_id],
     )?;
     Ok(changed > 0)
+}
+
+/// The photo a seller uploaded as this binder's cover ('' when there is none), to delete when the binder goes.
+pub fn binder_photo(c: &Connection, member_id: i64, binder_id: i64) -> rusqlite::Result<String> {
+    Ok(c.query_row("SELECT photo FROM member_binders WHERE id=?1 AND member_id=?2", rusqlite::params![binder_id, member_id], |r| r.get(0)).optional()?.unwrap_or_default())
+}
+
+/// An uploaded photo becomes the binder's cover, and a card picked before lets go: one cover at a time. `""` takes the
+/// photo away (a card is picked, or the cover picks itself again). Returns the photo it replaced, for the caller to
+/// delete, or None when the binder isn't this trainer's.
+pub fn set_member_binder_photo(c: &Connection, member_id: i64, binder_id: i64, photo: &str) -> rusqlite::Result<Option<String>> {
+    let Some(old) = c.query_row("SELECT photo FROM member_binders WHERE id=?1 AND member_id=?2", rusqlite::params![binder_id, member_id], |r| r.get::<_, String>(0)).optional()? else {
+        return Ok(None);
+    };
+    if photo.is_empty() {
+        c.execute("UPDATE member_binders SET photo='' WHERE id=?1 AND member_id=?2", rusqlite::params![binder_id, member_id])?;
+    } else {
+        c.execute("UPDATE member_binders SET photo=?3, cover_card=NULL WHERE id=?1 AND member_id=?2", rusqlite::params![binder_id, member_id, photo])?;
+    }
+    Ok(Some(old))
 }
 
 pub fn move_card_to_binder(c: &Connection, member_id: i64, card_id: i64, binder_id: Option<i64>) -> rusqlite::Result<bool> {
@@ -1316,6 +1352,10 @@ pub fn delete(c: &Connection, id: i64) -> rusqlite::Result<Vec<String>> {
         }
         // Their orders and the orders on their cards must not keep holding anything.
         crate::sellers::close_member_orders(c, id)?;
+        // Their binders go too, with the cover photos they uploaded.
+        let mut st = c.prepare("SELECT photo FROM member_binders WHERE member_id=?1 AND photo<>''")?;
+        files.extend(st.query_map([id], |r| r.get::<_, String>(0))?.collect::<Result<Vec<_>, _>>()?);
+        c.execute("DELETE FROM member_binders WHERE member_id=?1", [id])?;
         c.execute("DELETE FROM member_cards WHERE member_id=?1", [id])?;
         c.execute("DELETE FROM chat_messages WHERE member_id=?1", [id])?;
         c.execute("DELETE FROM member_sessions WHERE member_id=?1", [id])?;

@@ -52,7 +52,7 @@
     const trainer = scope.querySelector('[data-trainer]') || mcard;
     const theirs = trainer && (full || !trainer.dataset.ownerRole);
     if (trainer && staff && theirs) return { href: `/admin/trainers#trainer-${trainer.dataset.trainer || trainer.dataset.owner}`, text: 'Manage this trainer', mcard: mcard?.dataset.mcard };
-    if (scope.querySelector('.bf') && full) return { href: '/admin/binders', text: 'Edit binders' };
+    if (scope.querySelector('.bf') && full) return { href: '/store/vault#edit-binders', text: 'Edit binders' };
     // The new look has Admin in its menu: only the buttons about what's on screen float there.
     if (document.documentElement.dataset.look === 'fb') return null;
     if (full) return { href: '/admin', text: 'Admin' };

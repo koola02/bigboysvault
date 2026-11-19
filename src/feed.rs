@@ -338,7 +338,7 @@ fn vault_shop(c: &rusqlite::Connection, links: &[db::Collection], s: &StoreCard)
     let peeks = db::binder_peeks(c, 1)?;
     let shelves = links
         .iter()
-        .filter(|b| peeks.get(&b.handle).is_some_and(|(_, pics)| !pics.is_empty()))
+        .filter(|b| b.is_public() && peeks.get(&b.handle).is_some_and(|(_, pics)| !pics.is_empty()))
         .map(|b| Shelf { title: format!("From {} · {}", s.name, b.title), url: format!("/collections/{}", b.handle), total: b.count, cards: ShelfCards::Vault(b.handle.clone()) })
         .collect();
     Ok(Shop { view, shelves })

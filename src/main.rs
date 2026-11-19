@@ -177,7 +177,7 @@ fn chrome(c: &rusqlite::Connection) -> rusqlite::Result<Chrome> {
         seo: Seo::default(),
     })
     .map(|mut ch| {
-        let mut m: Vec<Collection> = ch.links.iter().filter(|x| x.in_menu).cloned().collect();
+        let mut m: Vec<Collection> = ch.links.iter().filter(|x| x.in_menu && x.is_public()).cloned().collect();
         m.sort_by_key(|x| x.menu_pos);
         ch.menu = m;
         ch
@@ -259,6 +259,9 @@ struct CollectionPage {
     items: Vec<Product>,
     next: Option<usize>,
     nav: Chrome,
+    /// A vault binder's own words, and who can open it ("Link only", "Private"; nothing when everyone can).
+    description: String,
+    who: &'static str,
 }
 
 impl CollectionPage {
@@ -353,22 +356,31 @@ async fn browse(app: App, headers: HeaderMap, collection: Option<String>, p: Par
         in_stock: p.stock.as_deref() == Some("1"),
         page: p.page_no().min(500),
     };
+    // A vault binder only the staff may see (Private) isn't there for anyone else. One for "only people with the link"
+    // (Unlisted) opens for whoever has it, but nothing offers it and search engines don't keep it.
+    if let Some(h) = collection.clone() {
+        if with_db(&app, move |c| db::binder_visibility(c, &h)).await?.as_deref() == Some("Private") && !admin::can_moderate(&app, &headers) {
+            let nav = with_db(&app, |c| chrome(c)).await?;
+            return Ok((StatusCode::NOT_FOUND, page(render(NotFound { nav })?)).into_response());
+        }
+    }
     let htmx = is_htmx(&headers);
     let key = format!("{htmx}|{q:?}");
     let a = app.clone();
     cached(&app, key, || async move {
         let q2 = q.clone();
-        let (nav, title, items, (tiles, total)) = with_db(&a, move |c| {
+        let (nav, title, binder, items, (tiles, total)) = with_db(&a, move |c| {
             let nav = chrome(c)?;
+            let binder = q2.collection.as_ref().and_then(|h| nav.links.iter().find(|x| &x.handle == h).cloned());
             let title = match &q2.collection {
-                Some(h) => nav.links.iter().find(|x| &x.handle == h).map(|x| x.title.clone()),
+                Some(_) => binder.as_ref().map(|x| x.title.clone()),
                 None if q2.q.is_empty() => Some("All cards".into()),
                 None => Some(format!("Results for “{}”", q2.q)),
             };
             let (items, tiles) = db::list(c, &q2)?;
             // A whole binder says how many cards it holds, the same number as everywhere else. A search says how many it found.
             let shown = if q2.q.is_empty() && !q2.in_stock { db::cards_in(c, q2.collection.as_deref())? } else { tiles };
-            Ok((nav, title, items, (tiles, shown)))
+            Ok((nav, title, binder, items, (tiles, shown)))
         })
         .await?;
         let Some(title) = title else {
@@ -384,8 +396,10 @@ async fn browse(app: App, headers: HeaderMap, collection: Option<String>, p: Par
         } else {
             let mut nav = nav;
             // A binder and All cards are pages worth finding. A typed search isn't; its cards are found through these.
+            // Nor is a binder that not everyone can see.
             let path = match &q.collection {
-                Some(h) => format!("/collections/{h}"),
+                Some(h) if binder.as_ref().is_some_and(|b| b.is_public()) => format!("/collections/{h}"),
+                Some(_) => String::new(),
                 None if q.q.is_empty() => "/all".into(),
                 None => String::new(),
             };
@@ -411,7 +425,8 @@ async fn browse(app: App, headers: HeaderMap, collection: Option<String>, p: Par
                     path,
                 };
             }
-            render(CollectionPage { title, base, q: q.q, sort: q.sort, cond: q.cond, in_stock: q.in_stock, total, items, next, nav })
+            let (description, who) = binder.as_ref().map(|b| (b.description.clone(), b.who_text())).unwrap_or_default();
+            render(CollectionPage { title, base, q: q.q, sort: q.sort, cond: q.cond, in_stock: q.in_stock, total, items, next, nav, description, who })
         }
     })
     .await
@@ -636,7 +651,7 @@ async fn sitemap(State(app): State<App>) -> Res {
         for (path, when) in [("/", newest.as_str()), ("/all", newest.as_str()), ("/trainers", ""), ("/stores", ""), ("/store/vault", newest.as_str()), ("/vouches", "")] {
             x.push_str(&format!("<url><loc>{site}{path}</loc>{}</url>\n", lm(when)));
         }
-        for l in links.iter().filter(|l| l.count > 0) {
+        for l in links.iter().filter(|l| l.count > 0 && l.is_public()) {
             x.push_str(&format!("<url><loc>{site}/collections/{}</loc>{}</url>\n", xml_escape(&l.handle), lm(&newest)));
         }
         for (handle, title, when, img) in &cards {
@@ -849,10 +864,11 @@ mod tests {
         c.execute_batch(members::SCHEMA).unwrap();
         members::migrate(&c).unwrap();
         db::migrate(&c).unwrap();
-        let page = |base: &str, title: &str, total: i64| {
-            let html = CollectionPage { title: title.into(), base: base.into(), q: String::new(), sort: String::new(), cond: String::new(), in_stock: false, total, items: vec![], next: None, nav: chrome(&c).unwrap() }.render().unwrap();
+        let page_with = |base: &str, title: &str, total: i64, description: &str, who: &'static str| {
+            let html = CollectionPage { title: title.into(), base: base.into(), q: String::new(), sort: String::new(), cond: String::new(), in_stock: false, total, items: vec![], next: None, nav: chrome(&c).unwrap(), description: description.into(), who }.render().unwrap();
             html
         };
+        let page = |base: &str, title: &str, total: i64| page_with(base, title, total, "", "");
         let binder = page("/collections/affordable-common-uncommon", "Affordable Common/Uncommon", 1117);
         assert!(binder.contains("<a class=\"sf-bx\" href=\"/store/vault\" aria-label=\"Close\" title=\"Back to Big Boys Vault\" data-binder-close>"), "{binder}");
         assert!(binder.contains("<h1 class=\"sf-bh\">Affordable Common/Uncommon</h1>"));
@@ -860,7 +876,11 @@ mod tests {
         assert!(binder.contains("class=\"wrap mk mk-bpage\"") && binder.contains("<form class=\"filters\"") && binder.contains("id=\"grid\""), "its search and cards stay");
         assert!(!binder.contains("<p class=\"sub\">"));
         // Full admins arrange its cards right there: the button is in every visitor's page (it is kept), hidden unless they are signed in.
-        assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=6"));
+        assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=7"));
+        assert!(!binder.contains("sf-desc"), "no words: nothing under the bar");
+        // Its own words under the bar, and who can open it beside its count when not everyone can.
+        let words = page_with("/collections/pikachu-set", "Pikachu Set", 3, "Every Pikachu we have, oldest first", "Link only");
+        assert!(words.contains("<span>by <a href=\"/store/vault\">Big Boys Vault</a></span><span>Link only</span></p>") && words.contains("<p class=\"sf-desc\">Every Pikachu we have, oldest first</p>"), "{words}");
         // The Vault (all cards) and a search: no bar.
         for (base, title) in [("/search", "All cards"), ("/search", "Results for “pika”")] {
             let other = page(base, title, 3);
@@ -1130,6 +1150,7 @@ async fn main() {
         .route("/me/binders/{id}/rename", post(community::me_rename_binder))
         .route("/me/binders/{id}/delete", post(community::me_delete_binder))
         .route("/me/binders/{id}/cover", post(community::me_binder_cover))
+        .route("/me/binders/{id}/photo", post(store::binder_photo).layer(big()))
         .route("/me/binders/{id}/edit", post(store::edit_binder))
         .route("/me/binders/{id}/order", post(store::order_binder))
         .route("/me/binders/{id}/sort", post(store::sort_binder))

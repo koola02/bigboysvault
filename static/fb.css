@@ -1496,10 +1496,12 @@ dialog.sv .float-panel { width: min(680px, 100%); padding: 0; gap: 0; }
 /* One of the vault's binders opened (/collections/...): the bar hangs under the site's header, as on a trainer's binder. */
 .mk-bpage { padding-top: 0; }
 .mk > .sf-bbar { margin: 0 0 16px; }
+.mk > .sf-desc { max-width: 70ch; margin: 0 0 16px; }
+@media (max-width: 699px) { .mk > .sf-desc { padding-inline: 12px; } }
 
 /* ---------- 35. Binder tools: owners arrange their binders, and a binder's cards, where they are shown (binder-tools.js) ---------- */
 /* A seller on their own store, a full admin on the vault's: "Edit binders" beside the heading, "Edit binder" in a binder's bar. */
-.bt-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; }
+.bt-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; scroll-margin-top: calc(var(--hd-h, 56px) + 12px); }
 .bt-head > .h2 { min-width: 0; margin-top: 4px; font-size: 1.25rem; }
 .btn.bt-toggle, .btn.bt-bedit { flex: none; min-height: 40px; }
 .bt-none, .bt-hint { margin: 0; max-width: var(--feed); color: var(--muted); font-size: .875rem; line-height: 1.4; }
@@ -1525,10 +1527,9 @@ dialog.sv .float-panel { width: min(680px, 100%); padding: 0; gap: 0; }
 .bt-act > span { display: none; }
 .bt-act[aria-pressed="true"] { background: var(--gold-tint); color: var(--gold-hi); box-shadow: inset 0 0 0 1px var(--gold-edge); }
 .bt-del { color: #ffb4ad; }
-/* Their words show when there is room: a card has two buttons, a binder three. */
+/* Their words show when there is room: a card has two buttons; a binder has one, Edit, always with its word. */
 @container (min-width: 166px) { .bt-card .bt-act > span { display: inline; } }
-@container (min-width: 236px) { .bt-tile .bt-act > span { display: inline; } }
-.bt-name-in { min-height: 40px; font-weight: 600; }
+.bt-tile .bt-act > span { display: inline; }
 .bt-new { min-width: 0; }
 .bt-newbtn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 100%; min-height: 168px; padding: 16px; border: 2px dashed var(--line-2); border-radius: var(--r); background: none; color: var(--gold); font: 700 .9375rem/1.2 var(--font); }
 .bt-newbtn:hover { border-color: var(--gold-edge); background: var(--gold-tint); }
@@ -1621,11 +1622,28 @@ html.bt-modal { overflow: hidden; }
 .bt-undo { flex: none; min-height: 40px; padding: 0 16px; border: 0; border-radius: var(--r-sm); background: #14161f; color: #fcefc9; font: 700 .875rem/1 var(--font); }
 @media (max-width: 699px) { .bt-toast { bottom: calc(var(--bt-h) + 16px + var(--sab)); } }
 
-/* Store Manager › Binders: a handle under each binder's cover drags it into place; the vault's Manager links to a binder's cards. */
-.st-binder-cover { display: flex; flex-direction: column; align-items: stretch; gap: 8px; }
-.bt-grip.st-bgrip { position: static; display: inline-flex; align-items: center; justify-content: center; gap: 4px; width: 100%; height: 40px; padding: 0 4px; border-radius: var(--r-sm); background: var(--surface-3); box-shadow: none; font: 600 .8125rem/1 var(--font); }
-.st-binder.dragging { cursor: grabbing; }
-.bd-cards { align-self: flex-start; min-height: 40px; }
+/* One binder's Edit window: its cover beside the ways to change it, then its name, words and who can see it, its cards. */
+.bt-cv { display: grid; grid-template-columns: 168px minmax(0, 1fr); gap: 16px; align-items: start; }
+.bt-cv-prev { --fw: 43%; --sw: 36%; --off: 24%; aspect-ratio: 4 / 3; border-radius: var(--r); box-shadow: 0 0 0 1px var(--line); }
+.bt-cv-side { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.bt-cv-pick { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.bt-cv-pick .bt-covers { align-self: stretch; }
+.btn.bt-auto[aria-pressed="true"] { background: var(--gold-tint); color: var(--gold-hi); box-shadow: inset 0 0 0 1px var(--gold-edge); }
+.bt-fields { display: flex; flex-direction: column; gap: 12px; }
+.bt-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.bt-field-t { font-weight: 700; }
+.bt-field input, .bt-field select { min-height: 44px; }
+.bt-field textarea { min-height: 76px; resize: vertical; }
+.bt-copy { align-self: flex-start; min-height: 40px; }
+.bt-copy[hidden] { display: none; }
+.bt-cv-cards { display: flex; flex-direction: column; gap: 8px; padding-top: 12px; border-top: 1px solid var(--line); }
+.bt-cv-cards .btn, .bt-cv .btn { min-height: 40px; }
+.btn.bt-del-b { margin-right: auto; color: #ffb4ad; }
+.bt-err { color: #ffb4ad; }
+@media (max-width: 699px) {
+  .bt-cv { grid-template-columns: 120px minmax(0, 1fr); gap: 12px; }
+  .bt-dlg-f .btn.bt-del-b { flex: 0 0 auto; }
+}
 
 /* ---------- 36. The Stores page: each store shows its binders and the cards its owner highlights ---------- */
 /* A row of binder tiles (each opens its binder's page) and a row of highlighted cards (each opens in the card window),

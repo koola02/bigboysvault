@@ -122,7 +122,7 @@ pub fn build(c: &Connection) -> rusqlite::Result<Index> {
     };
     push(names, "card", 1.0);
     push(sets, "set", 0.6);
-    let mut st = c.prepare("SELECT c.handle,c.title,(SELECT COUNT(*) FROM collection_products WHERE collection=c.handle) FROM collections c")?;
+    let mut st = c.prepare("SELECT c.handle,c.title,(SELECT COUNT(*) FROM collection_products WHERE collection=c.handle) FROM collections c WHERE c.visibility='Public'")?;
     let bs = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?)))?;
     for b in bs {
         let (handle, title, n) = b?;
