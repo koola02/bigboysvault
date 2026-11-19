@@ -9,6 +9,7 @@ pub mod market;
 pub mod insights;
 pub mod members;
 pub mod pricing;
+pub mod rich;
 pub mod sellers;
 pub mod similar;
 pub mod social;

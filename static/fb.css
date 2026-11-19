@@ -636,6 +636,62 @@ html.sheet-open { overflow: hidden; }
 .cm-edit input { flex: 1 1 180px; min-width: 0; min-height: 40px; padding: 4px 12px; border-radius: var(--pill); }
 .cm-edit .btn { min-height: 36px; }
 
+/* ---------- 15f. The post box, and the styles a post's words can have (feed.js, rich.rs) ---------- */
+/* The owner, 19 Nov 2026: "When creating a post, the space for typing is too small and the font is too big, fix that,
+   take inspo from how Facebook does it. Also give the option to bold, change font size in 3 levels of any text within
+   a post." A tall box to type in (on a phone it takes all the room there is), words in the size they are read in, one
+   row of styles, "Add To Your Post", and one wide Post button. The box is 16px so a phone doesn't zoom in on it. */
+.sheet-post { gap: 10px; }
+.sheet-post .sheet-h { gap: 8px; }
+.sheet-post .sheet-h [data-x] { order: 2; }
+.sheet-go-top { display: none; min-height: 36px; padding: 0 16px; }
+.sheet-tools { display: flex; flex-direction: column; gap: 10px; }
+.rt { flex: 1 0 auto; min-height: 220px; padding: 4px 0; color: var(--text); font-size: 1rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; outline: none; cursor: text; }
+.rt.is-empty::before { content: attr(data-ph); float: left; height: 0; color: var(--muted); pointer-events: none; }
+.rt.is-off { opacity: .55; cursor: default; }
+/* The three sizes, the same in the box and on the post. In rem, so a size inside a size never multiplies. */
+.rt-s, .rt font[size="1"], .rt font[size="2"] { font-size: .8125rem; }
+.rt font[size="3"], .rt font[size="4"] { font-size: 1rem; }
+.rt-l, .rt font[size="5"], .rt font[size="6"], .rt font[size="7"] { font-size: 1.375rem; line-height: 1.3; }
+.post-text b, .rt b, .rt strong { font-weight: 700; }
+.rt-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 4px; border: 1px solid var(--line-2); border-radius: var(--r); }
+.rt-b { display: inline-grid; place-items: center; min-width: 40px; height: 40px; padding: 0 8px; border: 0; border-radius: var(--r-sm); background: none; color: var(--text); font: 600 1.0625rem/1 var(--font); cursor: pointer; }
+.rt-b:hover { background: var(--fill); }
+.rt-b.on { background: var(--gold-tint); color: var(--gold-hi); box-shadow: inset 0 0 0 1px var(--gold-edge); }
+.rt-b:disabled { opacity: .45; cursor: default; }
+.rt-b b { font-weight: 800; }
+.rt-b i { font-family: Georgia, "Times New Roman", serif; font-style: italic; }
+.rt-b u { text-underline-offset: 3px; }
+.rt-a1 { font-size: .8125rem; } .rt-a2 { font-size: 1.0625rem; } .rt-a3 { font-size: 1.4375rem; }
+.rt-sep { flex: none; width: 1px; height: 24px; margin: 0 6px; background: var(--line-2); }
+.rt-count { margin-left: auto; padding: 0 8px; color: var(--muted); font-size: .8125rem; white-space: nowrap; }
+.rt-count.over { color: var(--bad); font-weight: 700; }
+.sheet-add { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border: 1px solid var(--line-2); border-radius: var(--r); }
+.sheet-add[hidden] { display: none; }
+.sheet-add > span { flex: 1; min-width: 0; font-weight: 600; }
+.sheet-add .btn { gap: 6px; }
+.sheet-add .btn svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sheet-go { width: 100%; }
+/* A computer or a tablet: the window never grows past what can be seen (a tablet's keyboard takes room too). */
+@media (min-width: 700px) { .sheet-post { max-height: calc(var(--seen, 100dvh) - 32px); } }
+/* A phone, laid out like Facebook's: Close, the title and Post along the top; the words take the screen; the styles
+   and the photo buttons share one row at the bottom, which feed.js keeps just above the keyboard. */
+@media (max-width: 699px) {
+  .sheet-post { padding-bottom: calc(10px + var(--sab)); }
+  .sheet-post .sheet-h [data-x] { order: 0; }
+  .sheet-post .sheet-h b { padding-left: 0; }
+  .sheet-go-top { display: inline-flex; }
+  .sheet-go { display: none; }
+  .rt { flex: 1 1 0; min-height: 72px; overflow-y: auto; }
+  .sheet-tools { flex-direction: row; align-items: center; gap: 6px; }
+  .sheet-tools .rt-bar { flex: 1; min-width: 0; padding: 0; border: 0; }
+  .sheet-tools .sheet-add { flex: none; padding: 0; border: 0; gap: 4px; }
+  .sheet-add > span, .sheet-add .btn span { display: none; }
+  .sheet-add .btn { width: 40px; min-width: 40px; height: 40px; padding: 0; }
+  .rt-b { min-width: 34px; padding: 0 4px; }
+  .rt-sep { margin: 0 2px; }
+}
+
 /* ---------- 15e. Finger-sized: on a touch screen, what a finger aims at is at least 32px tall ---------- */
 /* A sweep of every page on a phone (19 Nov 2026, after the owner couldn't find a comment's tiny Edit and Delete) found
    these under that. Only touch screens change: a mouse keeps the tighter rows. */

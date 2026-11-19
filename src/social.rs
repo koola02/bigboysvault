@@ -106,6 +106,8 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
     for (table, col, kind) in [
         ("posts", "note", "TEXT NOT NULL DEFAULT ''"),
         ("posts", "edited_at", "INTEGER NOT NULL DEFAULT 0"),
+        // The post's words with their bold, italic, underline and sizes (`rich.rs`), when any are formatted.
+        ("posts", "rich", "TEXT NOT NULL DEFAULT ''"),
         ("comments", "edited_at", "INTEGER NOT NULL DEFAULT 0"),
         ("comments", "like_n", "INTEGER NOT NULL DEFAULT 0"),
         ("comments", "image", "TEXT NOT NULL DEFAULT ''"),
@@ -146,6 +148,8 @@ pub struct Post {
     /// Words added by the seller (their listing post) or an admin (the vault's posts) to an automatic post.
     pub note: String,
     pub edited_at: i64,
+    /// The words (`text`, or `note` on an automatic post) cut into styled pieces, as JSON (`rich.rs`). "" when plain.
+    pub rich: String,
     /// The viewer's own reaction ("" when none).
     pub mine: String,
 }
@@ -157,7 +161,7 @@ impl Post {
     }
 }
 
-const POST_COLS: &str = "p.id, p.member_id, p.kind, p.text, p.payload, p.like_n, p.comment_n, p.share_n, p.pinned, p.hidden, p.created_at, p.note, p.edited_at";
+const POST_COLS: &str = "p.id, p.member_id, p.kind, p.text, p.payload, p.like_n, p.comment_n, p.share_n, p.pinned, p.hidden, p.created_at, p.note, p.edited_at, p.rich";
 
 fn map_post(r: &Row) -> rusqlite::Result<Post> {
     let payload: String = r.get(4)?;
@@ -175,7 +179,8 @@ fn map_post(r: &Row) -> rusqlite::Result<Post> {
         created_at: r.get(10)?,
         note: r.get(11)?,
         edited_at: r.get(12)?,
-        mine: r.get(13)?,
+        rich: r.get(13)?,
+        mine: r.get(14)?,
     })
 }
 
@@ -422,13 +427,19 @@ pub fn post_edit(c: &Connection, id: i64, text: &str, keep: &[i64], add: &[Photo
     for (path, thumb, w, h, bytes) in add {
         c.execute("INSERT INTO post_images(post_id, path, thumb, w, h, bytes) VALUES(?1,?2,?3,?4,?5,?6)", params![id, path, thumb, w, h, bytes])?;
     }
-    c.execute("UPDATE posts SET text=?2, edited_at=?3 WHERE id=?1", params![id, text, now])?;
+    // New words are plain until `post_rich` says how they are formatted: old styles never sit on new words.
+    c.execute("UPDATE posts SET text=?2, rich='', edited_at=?3 WHERE id=?1", params![id, text, now])?;
     Ok(files)
+}
+
+/// How a post's words are formatted: the runs `rich::clean` made for those same words, or "" for plain.
+pub fn post_rich(c: &Connection, id: i64, rich: &str) -> rusqlite::Result<()> {
+    c.execute("UPDATE posts SET rich=?2 WHERE id=?1", params![id, rich]).map(|_| ())
 }
 
 /// The words a seller or an admin puts on an automatic post. The site's refresh never touches them.
 pub fn post_note(c: &Connection, id: i64, note: &str, now: i64) -> rusqlite::Result<()> {
-    c.execute("UPDATE posts SET note=?2, edited_at=?3 WHERE id=?1", params![id, note, now]).map(|_| ())
+    c.execute("UPDATE posts SET note=?2, rich='', edited_at=?3 WHERE id=?1", params![id, note, now]).map(|_| ())
 }
 
 pub fn comment_edit(c: &Connection, id: i64, text: &str, now: i64) -> rusqlite::Result<bool> {

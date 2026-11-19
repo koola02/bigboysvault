@@ -180,6 +180,8 @@ Order: welcome banner (signed-out only: logo, one line, Join / Log in) → **Sto
 - `src/social.rs` (lib), `src/feed.rs` (handlers), `src/look.rs`.
 - `crates/finder/src/lib.rs`: the finder's view split into a filter column and a grid so CSS can place them per device (finder version bump in `base.html`).
 
+**The post box (19 Nov 2026):** laid out as Facebook's. A computer or tablet: a 520px window with who is posting, a 220px box to type in (16px letters), one row of styles (Bold, Italic, Underline, Small, Normal, Large), Add To Your Post, a wide Post button. A phone: the whole screen, with Close, the title and Post along the top and one row of tools at the bottom, kept above the keyboard. A post's words can be bold, italic, underlined and in three sizes (13px, 15px, 22px); see `src/rich.rs`.
+
 **Routes:** `GET /` (feed under the new look), `GET /feed?before=`, `POST /posts`, `POST /posts/{id}/react`, `GET|POST /posts/{id}/comments`, `POST /posts/{id}/hide|delete|report`, `POST /follow/{id}`, `GET|POST /stories`, `POST /stories/{id}/seen`, `POST /share`, `GET /admin/look` (style guide).
 
 **Kept for search engines:** every URL, titles, descriptions, structured data, sitemap; the signed-out feed is real server-made HTML.

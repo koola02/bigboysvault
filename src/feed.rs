@@ -16,7 +16,7 @@ use axum::{
     http::{HeaderMap, StatusCode},
     Json,
 };
-use marcuru_rs::{blocks, db, dm, members, sellers, social};
+use marcuru_rs::{blocks, db, dm, members, rich, sellers, social};
 use marcuru_rs::members::MemberCard;
 use crate::store::StoreCard;
 use serde::Deserialize;
@@ -51,6 +51,8 @@ pub struct PostView {
     pub headline: String,
     pub when: String,
     pub text: String,
+    /// The same words as HTML when any are formatted (bold, italic, underline, a size); "" shows `text` as it is.
+    pub rich: String,
     pub tiles: Vec<Tile>,
     /// Cards beyond the ones shown ("+12" on the last picture).
     pub more: i64,
@@ -199,14 +201,16 @@ fn who(c: &rusqlite::Connection, id: i64, brand: &str, store: bool) -> rusqlite:
 /// One post, drawn from what the site holds right now. None: nothing left to show (cards sold, trainer gone).
 fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i64) -> rusqlite::Result<Option<PostView>> {
     let Some(author) = who(c, p.member_id, brand, matches!(p.kind.as_str(), "listing" | "arrivals"))? else { return Ok(None) };
+    // An automatic post shows the words its seller or an admin added, if any.
+    let text = if p.written() || p.kind == "vouch" { p.text.clone() } else { p.note.clone() };
     let mut v = PostView {
         id: p.id,
         kind: p.kind.clone(),
         who: author,
         headline: String::new(),
         when: members::ago(p.created_at),
-        // An automatic post shows the words its seller or an admin added, if any.
-        text: if p.written() || p.kind == "vouch" { p.text.clone() } else { p.note.clone() },
+        rich: if p.kind == "vouch" { String::new() } else { rich::html_for(&p.rich, &text) },
+        text,
         tiles: vec![],
         more: 0,
         link: String::new(),
@@ -724,11 +728,12 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
     if recent >= social::POSTS_PER_HOUR {
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of posts for one hour. Please take a short break."));
     }
-    let (mut text, mut files, mut card, mut as_vault) = (String::new(), Vec::<Vec<u8>>::new(), messages::CardRef::default(), false);
+    let (mut text, mut styled, mut files, mut card, mut as_vault) = (String::new(), String::new(), Vec::<Vec<u8>>::new(), messages::CardRef::default(), false);
     let bad = |_| (StatusCode::BAD_REQUEST, "That didn't upload. Please try again.".to_string());
     while let Some(f) = mp.next_field().await.map_err(bad)? {
         match f.name().unwrap_or("") {
             "text" => text = f.text().await.map_err(bad)?,
+            "rich" => styled = f.text().await.map_err(bad)?,
             "photo" => {
                 let b = f.bytes().await.map_err(bad)?;
                 if !b.is_empty() && files.len() < social::PHOTOS_MAX {
@@ -741,7 +746,7 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
             _ => {}
         }
     }
-    let text = members::clean_text(&text, social::TEXT_MAX);
+    let (text, styled) = words(&text, &styled);
     if text.is_empty() && files.is_empty() && card.vault.is_none() && card.card.is_none() {
         return Ok(fail(StatusCode::BAD_REQUEST, "Write something or add a photo first."));
     }
@@ -777,6 +782,9 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
             }
         }
         let pid = social::post_add(c, author, kind, &text, &photos, &payload, now)?;
+        if !styled.is_empty() {
+            social::post_rich(c, pid, &styled)?;
+        }
         let nav = crate::chrome(c)?;
         tell_post_followers(c, author, id, pid, &text, &nav.brand)?;
         let p = social::post(c, brand_viewer, pid)?;
@@ -791,6 +799,15 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
         Ok(Some(v)) => Ok(html(part(vec![Item { post: Some(v), stores: vec![], binder: None }])?)),
         Ok(None) => Ok(fail(StatusCode::INTERNAL_SERVER_ERROR, "That post didn't save. Please try again.")),
         Err(e) => Ok(fail(StatusCode::BAD_REQUEST, e)),
+    }
+}
+
+/// The words of a post as they are kept: plain, and the same words in styled pieces when the editor sent any
+/// (`rich`, runs as JSON; see `rich.rs`). Words sent without styles, or with styles that can't be read, are plain.
+fn words(text: &str, styled: &str) -> (String, String) {
+    match if styled.trim().is_empty() { None } else { rich::clean(styled, social::TEXT_MAX) } {
+        Some(both) => both,
+        None => (members::clean_text(text, social::TEXT_MAX), String::new()),
     }
 }
 
@@ -811,11 +828,12 @@ pub async fn edit(State(app): State<App>, h: HeaderMap, Path(pid): Path<i64>, mu
     let Some(p) = with_db(&app, move |c| social::post(c, me, pid)).await?.filter(|p| may_edit(p, me, full)) else {
         return Ok(fail(StatusCode::FORBIDDEN, "That post isn't yours to edit."));
     };
-    let (mut text, mut keep, mut files) = (String::new(), Vec::<i64>::new(), Vec::<Vec<u8>>::new());
+    let (mut text, mut styled, mut keep, mut files) = (String::new(), String::new(), Vec::<i64>::new(), Vec::<Vec<u8>>::new());
     let bad = |_| (StatusCode::BAD_REQUEST, "That didn't upload. Please try again.".to_string());
     while let Some(f) = mp.next_field().await.map_err(bad)? {
         match f.name().unwrap_or("") {
             "text" => text = f.text().await.map_err(bad)?,
+            "rich" => styled = f.text().await.map_err(bad)?,
             "keep" => keep = f.text().await.map_err(bad)?.split(',').filter_map(|x| x.trim().parse().ok()).collect(),
             "photo" => {
                 let b = f.bytes().await.map_err(bad)?;
@@ -826,7 +844,7 @@ pub async fn edit(State(app): State<App>, h: HeaderMap, Path(pid): Path<i64>, mu
             _ => {}
         }
     }
-    let text = members::clean_text(&text, social::TEXT_MAX);
+    let (text, styled) = words(&text, &styled);
     let written = p.written();
     let mut photos: Vec<social::Photo> = vec![];
     if written {
@@ -852,6 +870,9 @@ pub async fn edit(State(app): State<App>, h: HeaderMap, Path(pid): Path<i64>, mu
             social::post_note(c, pid, &text, now)?;
             vec![]
         };
+        if !styled.is_empty() {
+            social::post_rich(c, pid, &styled)?;
+        }
         let nav = crate::chrome(c)?;
         let view = match social::post(c, me, pid)? {
             Some(p) => post_view(c, &p, &nav.brand, me)?,
@@ -1425,6 +1446,35 @@ mod tests {
         assert!(said(&c, brock).is_empty());
         assert_eq!(take_post(&c, p, 0, true).unwrap(), Some(vec![]));
         assert_eq!(said(&c, ash).last().unwrap(), &("announcement".to_string(), "The vault's team took down your post: “Look at this pull”".to_string(), 0));
+    }
+
+    /// The owner, 19 Nov 2026: "give the option to bold, change font size in 3 levels of any text within a post". A
+    /// post's words keep their styles through saving, are drawn with a few safe tags and nothing else, and are plain
+    /// again once they are edited to plain words.
+    #[test]
+    fn a_posts_words_keep_their_bold_and_sizes() {
+        let c = db();
+        let (ash, _, _) = town(&c);
+        let (text, styled) = words("ignored when styles come", r#"[{"t":"BIG pull\n","b":true,"s":"l"},{"t":"  <b>not a tag</b> & small print ","s":"s"}]"#);
+        assert_eq!(text, "BIG pull\n<b>not a tag</b> & small print");
+        let p = social::post_add(&c, ash, "post", &text, &[], &json!({}), 10).unwrap();
+        social::post_rich(&c, p, &styled).unwrap();
+        let draw = |c: &rusqlite::Connection, id: i64| {
+            let post = social::post(c, 0, id).unwrap().unwrap();
+            let v = post_view(c, &post, "Big Boys Vault", 0).unwrap().unwrap();
+            part(vec![Item { post: Some(v), stores: vec![], binder: None }]).unwrap()
+        };
+        let html = draw(&c, p);
+        assert!(html.contains("<p class=\"post-text\"><span class=\"rt-l\"><b>BIG pull\n</b></span><span class=\"rt-s\">&lt;b&gt;not a tag&lt;/b&gt; &amp; small print</span></p>"), "{html}");
+        // Plain words (no styles sent, or "styles" that aren't) are kept as they always were.
+        assert_eq!(words("  Just   words \n\n\n more ", ""), ("Just words\n\nmore".to_string(), String::new()));
+        assert_eq!(words("Fallback words", "<b>html is not styles</b>"), ("Fallback words".to_string(), String::new()));
+        // Edited to plain words: the old styles go with the old words, and styles about other words are never drawn.
+        social::post_edit(&c, p, "New plain words", &[], &[], 20).unwrap();
+        let html = draw(&c, p);
+        assert!(html.contains("<p class=\"post-text\">New plain words</p>") && !html.contains("rt-l"), "{html}");
+        social::post_rich(&c, p, &styled).unwrap();
+        assert!(draw(&c, p).contains("<p class=\"post-text\">New plain words</p>"));
     }
 
     #[test]

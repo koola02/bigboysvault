@@ -372,26 +372,123 @@
   });
   listen('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches && e.target.matches('[data-reacts]')) { e.preventDefault(); e.target.click(); } });
 
+  /* ---------- the words of a post: bold, italic, underline and three sizes ---------- */
+  // The owner, 19 Nov 2026: "give the option to bold, change font size in 3 levels of any text within a post".
+  // The box is a page the browser lets you type in. What it holds is read back as pieces of words, each with its
+  // style, and only those pieces are sent: the server tidies them and draws the post from them (rich.rs), so nothing
+  // typed or pasted here is ever kept as HTML.
+  const RT_MAX = 2000;
+  function runsOf(ed) {
+    const base = parseFloat(getComputedStyle(ed).fontSize) || 16, out = [], none = { b: false, i: false, u: false, s: '' };
+    const push = (t, f) => { if (!t) return; const last = out[out.length - 1]; if (last && last.b === f.b && last.i === f.i && last.u === f.u && last.s === f.s) last.t += t; else out.push({ t, b: f.b, i: f.i, u: f.u, s: f.s }); };
+    const ended = () => !out.length || out[out.length - 1].t.endsWith('\n');
+    const styleOf = (node) => {
+      if (node === ed) return none;
+      const cs = getComputedStyle(node), w = cs.fontWeight, ratio = parseFloat(cs.fontSize) / base;
+      let u = false; for (let n = node; n && n !== ed; n = n.parentElement) { if ((getComputedStyle(n).textDecorationLine || '').includes('underline')) { u = true; break; } }
+      return { b: w === 'bold' || Number(w) >= 600, i: cs.fontStyle === 'italic' || cs.fontStyle === 'oblique', u, s: ratio < 0.93 ? 's' : ratio > 1.12 ? 'l' : '' };
+    };
+    const walk = (node) => { for (const n of node.childNodes) {
+      if (n.nodeType === 3) push(n.nodeValue.replace(/ /g, ' '), styleOf(n.parentElement));
+      else if (n.nodeType === 1) {
+        if (n.tagName === 'BR') { push('\n', none); continue; }
+        const block = /^(DIV|P|LI|UL|OL|H[1-6]|BLOCKQUOTE|PRE)$/.test(n.tagName);
+        if (block && !ended()) push('\n', none);
+        walk(n);
+        if (block && !ended()) push('\n', none);
+      } } };
+    walk(ed);
+    return out;
+  }
+  // The writing box and its row of styles. `el` is the box; `bar` the row; `runs()` what was written.
+  function wordsBox(ed, bar, onChange) {
+    const cmd = (name, value) => { try { document.execCommand('styleWithCSS', false, false); return document.execCommand(name, false, value); } catch (e) { return false; } };
+    const inside = () => { const sel = document.getSelection(); return !!sel && sel.rangeCount > 0 && ed.contains(sel.anchorNode); };
+    let pending = null;
+    const sizeAt = () => {
+      const sel = document.getSelection(); if (!inside()) return '';
+      if (pending && sel.isCollapsed && pending.node === sel.focusNode && pending.at === sel.focusOffset) return pending.s;
+      let n = sel.focusNode; if (n && n.nodeType === 3) n = n.parentElement;
+      if (!n || !ed.contains(n) || n === ed) return '';
+      const ratio = parseFloat(getComputedStyle(n).fontSize) / (parseFloat(getComputedStyle(ed).fontSize) || 16);
+      return ratio < 0.93 ? 's' : ratio > 1.12 ? 'l' : '';
+    };
+    const paint = () => {
+      ed.classList.toggle('is-empty', !ed.textContent.trim());
+      const live = inside();
+      bar.querySelectorAll('[data-cmd]').forEach((b) => { let on = false; try { on = live && document.queryCommandState(b.dataset.cmd); } catch (e) { on = false; } b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+      const size = live ? sizeAt() : '';
+      bar.querySelectorAll('[data-size]').forEach((b) => { const on = b.dataset.size === size; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+    };
+    const count = () => {
+      const n = [...runsOf(ed).map((r) => r.t).join('').trim()].length, out = bar.querySelector('[data-count]');
+      out.hidden = n < RT_MAX - 200; out.textContent = `${n.toLocaleString()} of ${RT_MAX.toLocaleString()}`; out.classList.toggle('over', n > RT_MAX);
+    };
+    // A tap on a style button must not take the cursor out of the words.
+    ['mousedown', 'pointerdown'].forEach((t) => bar.addEventListener(t, (e) => { if (e.target.closest('button')) e.preventDefault(); }));
+    bar.addEventListener('click', (e) => {
+      const b = e.target.closest('button'); if (!b || b.disabled) return;
+      if (!inside()) { ed.focus(); const r = document.createRange(); r.selectNodeContents(ed); r.collapse(false); const sel = document.getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+      if (b.dataset.cmd) cmd(b.dataset.cmd);
+      else if ('size' in b.dataset) {
+        cmd('fontSize', b.dataset.size === 's' ? '2' : b.dataset.size === 'l' ? '5' : '3');
+        const sel = document.getSelection(); pending = sel && sel.isCollapsed ? { node: sel.focusNode, at: sel.focusOffset, s: b.dataset.size } : null;
+      }
+      paint(); count(); if (onChange) onChange();
+    });
+    ed.addEventListener('input', () => { pending = null; paint(); count(); if (onChange) onChange(); });
+    document.addEventListener('selectionchange', () => { if (!ed.isConnected || ed.closest('[hidden]')) return; paint(); });
+    // Pasted or dropped words come in plain: no pictures, no outside styles.
+    ed.addEventListener('paste', (e) => { e.preventDefault(); const t = (e.clipboardData || window.clipboardData)?.getData('text/plain') || ''; if (t) cmd('insertText', t.replace(/\r\n?/g, '\n')); });
+    ed.addEventListener('drop', (e) => { e.preventDefault(); const t = e.dataTransfer?.getData('text/plain') || ''; if (t) { ed.focus(); cmd('insertText', t.replace(/\r\n?/g, '\n')); } });
+    return {
+      el: ed,
+      runs: () => runsOf(ed),
+      text: () => runsOf(ed).map((r) => r.t).join('').trim(),
+      // `html` is a post's words as the server drew them (already safe), or '' for an empty box.
+      set(html) { ed.innerHTML = html || ''; pending = null; paint(); count(); },
+      off(is) { ed.contentEditable = is ? 'false' : 'true'; ed.classList.toggle('is-off', is); bar.querySelectorAll('button').forEach((b) => { b.disabled = is; }); },
+      focus() { ed.focus(); const r = document.createRange(); r.selectNodeContents(ed); r.collapse(false); const sel = document.getSelection(); sel.removeAllRanges(); sel.addRange(r); },
+    };
+  }
+
   /* ---------- the post sheet: writing a new post, or editing one ---------- */
-  let sheet = null, files = [], kept = [], editing = null;
+  // Laid out the way Facebook's is (the owner, 19 Nov 2026: "the space for typing is too small and the font is too
+  // big ... take inspo from how Facebook does it"): who is posting, a tall box to type in (the whole screen on a
+  // phone) in the size the post will be read in, the styles, "Add To Your Post", and one wide Post button. On a
+  // phone Post sits in the top bar and the styles and photo buttons share one row that stays just above the keyboard.
+  let sheet = null, files = [], kept = [], editing = null, words = null;
   function compose(start, post) {
     if (!me) { toLogin('post'); return; }
     if (!sheet) {
       // Not a <dialog>: the camera opens above it, and a modal dialog would cover the camera.
       sheet = el('div', 'sheet'); sheet.hidden = true; sheet.setAttribute('role', 'dialog'); sheet.setAttribute('aria-modal', 'true');
-      sheet.innerHTML = `<form class="sheet-in">
-        <header class="sheet-h"><b data-title>Create post</b><button type="button" class="ibtn" data-x aria-label="Close">✕</button></header>
+      sheet.innerHTML = `<form class="sheet-in sheet-post">
+        <header class="sheet-h"><button type="button" class="ibtn" data-x aria-label="Close">✕</button><b data-title>Create Post</b><button type="submit" class="btn sheet-go-top" data-go>Post</button></header>
         <div class="row"><span class="av" data-face></span><span class="row-t"><b data-name></b><small data-sub>Everyone on the site can see this</small></span>
-          <select data-as aria-label="Post as" hidden><option value="me">Post as me</option><option value="vault">Post as Big Boys Vault</option></select></div>
-        <textarea maxlength="2000" placeholder="What did you pull today?" aria-label="Your post"></textarea>
+          <select data-as aria-label="Post As" hidden><option value="me">Post As Me</option><option value="vault">Post As Big Boys Vault</option></select></div>
+        <div class="rt is-empty" data-ed contenteditable="true" role="textbox" aria-multiline="true" aria-label="Your post" data-ph="What did you pull today?" spellcheck="true"></div>
         <div class="sheet-pics" data-pics></div>
-        <div class="sheet-acts">
-          <label class="btn ghost" data-pic-btn>Photos<input type="file" accept="image/*" multiple hidden data-add></label>
-          <label class="btn ghost" data-pic-btn>Camera<input type="file" accept="image/*" capture="environment" data-card-cam="free" hidden data-add></label>
-          <button type="submit" class="btn" data-go>Post</button>
-        </div></form>`;
+        <div class="sheet-tools">
+        <div class="rt-bar" data-bar role="toolbar" aria-label="Text Style">
+          <button type="button" class="rt-b" data-cmd="bold" aria-label="Bold" title="Bold"><b>B</b></button>
+          <button type="button" class="rt-b" data-cmd="italic" aria-label="Italic" title="Italic"><i>I</i></button>
+          <button type="button" class="rt-b" data-cmd="underline" aria-label="Underline" title="Underline"><u>U</u></button>
+          <span class="rt-sep" aria-hidden="true"></span>
+          <button type="button" class="rt-b rt-a1" data-size="s" aria-label="Small Text" title="Small Text">A</button>
+          <button type="button" class="rt-b rt-a2" data-size="" aria-label="Normal Text" title="Normal Text">A</button>
+          <button type="button" class="rt-b rt-a3" data-size="l" aria-label="Large Text" title="Large Text">A</button>
+          <small class="rt-count" data-count hidden></small>
+        </div>
+        <div class="sheet-add"><span>Add To Your Post</span>
+          <label class="btn ghost" data-pic-btn><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg><span>Photos</span><input type="file" accept="image/*" multiple hidden data-add></label>
+          <label class="btn ghost" data-pic-btn><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span>Camera</span><input type="file" accept="image/*" capture="environment" data-card-cam="free" hidden data-add></label>
+        </div>
+        </div>
+        <button type="submit" class="btn sheet-go" data-go>Post</button></form>`;
       document.body.append(sheet);
       const pics = sheet.querySelector('[data-pics]'), as = sheet.querySelector('[data-as]');
+      words = wordsBox(sheet.querySelector('[data-ed]'), sheet.querySelector('[data-bar]'));
       const pic = (src, off) => { const d = el('div', 'sheet-pic'); const img = el('img'); img.src = src; img.alt = ''; const x = el('button', 'ibtn', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Remove this photo'); x.addEventListener('click', off); d.append(img, x); return d; };
       const paint = () => pics.replaceChildren(
         ...kept.map((k, i) => pic(k.src, () => { kept.splice(i, 1); paint(); })),
@@ -406,63 +503,79 @@
       };
       as.addEventListener('change', sheet.who);
       sheet.querySelectorAll('[data-add]').forEach((inp) => inp.addEventListener('change', () => { for (const f of inp.files) { if (kept.length + files.length < 4) files.push(f); else toast('Four photos at most.'); } inp.value = ''; paint(); }));
-      sheet.close = () => { sheet.hidden = true; document.documentElement.classList.remove('sheet-open'); };
+      // Post is there twice (the top bar on a phone, the wide button elsewhere): both say and do the same.
+      sheet.go = (label, off) => sheet.querySelectorAll('[data-go]').forEach((g) => { if (label) g.textContent = label; g.disabled = !!off; });
+      // The box takes the part of the screen that can be seen: with a phone's keyboard up, the tools sit just above it.
+      const vv = window.visualViewport;
+      sheet.fit = () => {
+        const on = !!vv && !sheet.hidden && Math.abs(vv.scale - 1) < 0.01;
+        sheet.style.top = on ? `${vv.offsetTop}px` : ''; sheet.style.height = on ? `${vv.height}px` : '';
+        sheet.style.setProperty('--seen', on ? `${vv.height}px` : '100dvh');
+      };
+      if (vv) { vv.addEventListener('resize', sheet.fit); vv.addEventListener('scroll', sheet.fit); }
+      sheet.close = () => { sheet.hidden = true; document.documentElement.classList.remove('sheet-open'); sheet.fit(); };
       sheet.querySelector('[data-x]').addEventListener('click', () => sheet.close());
       sheet.addEventListener('click', (e) => { if (e.target === sheet) sheet.close(); });
       document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !sheet.hidden && !document.querySelector('.cc')) sheet.close(); });
       sheet.querySelector('form').addEventListener('submit', async (e) => {
         e.preventDefault();
-        const ta = sheet.querySelector('textarea'), go = sheet.querySelector('[data-go]'), was = go.textContent;
-        if (!editing && !ta.value.trim() && !files.length) { ta.focus(); return; }
-        const fd = new FormData(); fd.append('text', ta.value); files.forEach((f) => fd.append('photo', f, f.name || 'photo.jpg'));
+        const was = sheet.querySelector('[data-go]').textContent;
+        const runs = words.runs(), text = runs.map((r) => r.t).join('').trim();
+        if (!editing && !text && !files.length) { words.focus(); return; }
+        if ([...text].length > RT_MAX) { toast(`That is too long. A post holds ${RT_MAX.toLocaleString()} letters.`, true); return; }
+        const fd = new FormData(); fd.append('text', text); files.forEach((f) => fd.append('photo', f, f.name || 'photo.jpg'));
+        // Styles ride along only when there are some; plain words go as they always did.
+        if (runs.some((r) => r.b || r.i || r.u || r.s)) fd.append('rich', JSON.stringify(runs));
         if (editing) fd.append('keep', kept.map((k) => k.id).join(',')); else if (!as.hidden && as.value === 'vault') fd.append('as', 'vault');
-        go.disabled = true; go.textContent = editing ? 'Saving…' : 'Posting…';
+        sheet.go(editing ? 'Saving…' : 'Posting…', true);
         try {
           const j = await api(editing ? `/posts/${editing.id}/edit` : '/posts', fd);
           const holder = el('div'); holder.innerHTML = j.html;
           const fresh = holder.querySelector('[data-post]');
           if (editing) { const old = feed.querySelector(`[data-post="${editing.id}"]`); if (old && fresh) old.replaceWith(fresh); toast('Saved.'); }
           else { const anchor = feed.querySelector('.composer'); if (fresh) anchor.after(fresh); toast('Posted.'); }
-          ta.value = ''; files = []; kept = []; paint(); sheet.close();
+          words.set(''); files = []; kept = []; paint(); sheet.close();
         } catch (err) { toast(err.message, true); }
-        go.disabled = false; go.textContent = was;
+        sheet.go(was, false);
       });
     }
-    const ta = sheet.querySelector('textarea'), as = sheet.querySelector('[data-as]');
+    const ed = words.el, as = sheet.querySelector('[data-as]');
     files = []; kept = [];
     if (start === 'edit' && post) {
       const kind = post.dataset.kind, written = kind === 'post' || kind === 'share';
       editing = { id: post.dataset.post, by: Number(post.dataset.member), written };
-      ta.value = post.querySelector('.post-text')?.textContent || '';
+      // The words as the page shows them: the server drew them, styles and all, so they go in as they are.
+      words.set(post.querySelector('.post-text')?.innerHTML || '');
       if (written) kept = [...post.querySelectorAll('[data-img]')].filter((a) => a.dataset.img !== '0').map((a) => ({ id: a.dataset.img, src: a.dataset.thumb || a.getAttribute('href') }));
-      sheet.querySelector('[data-title]').textContent = written ? 'Edit post' : 'Words on this post';
-      sheet.querySelector('[data-go]').textContent = 'Save';
+      sheet.querySelector('[data-title]').textContent = written ? 'Edit Post' : 'Words On This Post';
+      sheet.go('Save', false);
       sheet.querySelector('[data-sub]').textContent = written ? 'Everyone on the site can see this' : 'The cards on this post stay as they are; you are adding your own words';
-      ta.placeholder = written ? 'What did you pull today?' : 'Say something about these cards';
+      ed.dataset.ph = written ? 'What did you pull today?' : 'Say something about these cards';
       sheet.querySelectorAll('[data-pic-btn]').forEach((b) => { b.hidden = !written; });
       as.hidden = true;
     } else {
-      editing = null; ta.value = '';
-      sheet.querySelector('[data-title]').textContent = 'Create post';
-      sheet.querySelector('[data-go]').textContent = 'Post';
+      editing = null; words.set('');
+      sheet.querySelector('[data-title]').textContent = 'Create Post';
+      sheet.go('Post', false);
       sheet.querySelector('[data-sub]').textContent = 'Everyone on the site can see this';
-      ta.placeholder = 'What did you pull today?';
+      ed.dataset.ph = 'What did you pull today?';
       sheet.querySelectorAll('[data-pic-btn]').forEach((b) => { b.hidden = false; });
       as.hidden = !(full && me.role === 'admin'); as.value = 'me';
     }
+    sheet.querySelector('.sheet-add').hidden = [...sheet.querySelectorAll('[data-pic-btn]')].every((b) => b.hidden);
     // A trainer whose page the vault's team hid can't post: say so before they write anything, not after.
     const waiting = !editing && me.page_hidden === true && !staff;
     let wait = sheet.querySelector('[data-wait]');
     if (!wait) { wait = el('p', 'sheet-wait', 'The vault\'s team has hidden your page, so you can\'t post for now. You can still react, comment and message.'); wait.dataset.wait = ''; sheet.querySelector('.row').after(wait); }
-    wait.hidden = !waiting; ta.disabled = waiting; sheet.querySelector('[data-go]').disabled = waiting;
-    sheet.querySelectorAll('[data-pic-btn]').forEach((b) => { if (waiting) b.hidden = true; });
+    wait.hidden = !waiting; words.off(waiting); sheet.go('', waiting);
+    if (waiting) { sheet.querySelectorAll('[data-pic-btn]').forEach((b) => { b.hidden = true; }); sheet.querySelector('.sheet-add').hidden = true; }
     sheet.setAttribute('aria-label', sheet.querySelector('[data-title]').textContent);
     sheet.who(); sheet.paint();
-    sheet.hidden = false; document.documentElement.classList.add('sheet-open');
+    sheet.hidden = false; document.documentElement.classList.add('sheet-open'); sheet.fit();
     if (waiting) sheet.querySelector('[data-x]').focus();
     else if (start === 'photo') sheet.querySelector('input[multiple]').click();
     else if (start === 'camera') sheet.querySelector('input[data-card-cam]').click();
-    else ta.focus();
+    else words.focus();
   }
 
   // A shared link opens one post with its comments showing.

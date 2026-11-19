@@ -5,7 +5,7 @@
     <div class="post-who"><b><a href="{{ p.who.url }}">{{ p.who.name }}</a></b>{% if !p.headline.is_empty() %} {{ p.headline }}{% endif %}<small><a href="/posts/{{ p.id }}">{{ p.when }}</a>{% if p.edited %} · Edited{% endif %}{% if p.pinned %} · Pinned{% endif %}</small></div>
     <button type="button" class="ibtn" data-post-menu aria-label="More about this post" aria-haspopup="true">⋯</button>
   </header>
-  {% if !p.text.is_empty() %}<p class="post-text">{{ p.text }}</p>{% endif %}
+  {% if !p.text.is_empty() %}<p class="post-text">{% if p.rich.is_empty() %}{{ p.text }}{% else %}{{ p.rich|safe }}{% endif %}</p>{% endif %}
   {% if let Some(a) = p.attach %}<a class="attach" href="{{ a.url }}">{% if !a.img.is_empty() %}<img src="{{ a.img }}" loading="lazy" decoding="async" alt="">{% endif %}<span><b>{{ a.title }}</b><small>{{ a.sub }}{% if !a.cond.is_empty() %} · {{ a.cond }}{% endif %}</small></span></a>{% endif %}
   {% if !p.photos.is_empty() %}<div class="post-media n{{ p.photos.len() }}">{% for (pid, full, small) in p.photos %}<a href="{{ full }}" data-photo data-img="{{ pid }}" data-thumb="{{ small }}"><img src="{% if p.photos.len() == 1 %}{{ full }}{% else %}{{ small }}{% endif %}" loading="lazy" decoding="async" alt="Photo"></a>{% endfor %}</div>{% endif %}
   {% if p.tiles.len() == 1 %}{% for t in p.tiles %}<a class="attach" href="{{ t.url }}">{% if !t.img.is_empty() %}<img src="{{ t.img }}" loading="lazy" decoding="async" alt="">{% endif %}<span><b>{{ t.title }}</b><small>{{ t.sub }}{% if !t.cond.is_empty() %} · {{ t.cond }}{% endif %}</small></span></a>{% endfor %}
