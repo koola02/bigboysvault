@@ -8,7 +8,7 @@
   const hidden = () => document.documentElement.hasAttribute('data-staff-hide');
   const label = () => document.querySelectorAll('[data-staff-toggle]').forEach((b) => {
     b.setAttribute('aria-pressed', String(!hidden()));
-    const t = b.querySelector('[data-staff-word]') || b; t.textContent = hidden() ? 'Show admin buttons' : 'Hide admin buttons';
+    const t = b.querySelector('[data-staff-word]') || b; t.textContent = hidden() ? 'Show Admin Buttons' : 'Hide Admin Buttons';
   });
   const setHidden = (on) => {
     try { on ? localStorage.setItem(KEY, '1') : localStorage.removeItem(KEY); } catch (_) {}
@@ -27,10 +27,10 @@
   // A trainer's own card can be taken down by staff too.
   const off = document.createElement('button');
   off.type = 'button'; off.className = 'staff-off'; off.hidden = true;
-  off.innerHTML = '<span>Take this card down</span>';
+  off.innerHTML = '<span>Take This Card Down</span>';
   const hide = document.createElement('button');
   hide.type = 'button'; hide.className = 'staff-hide'; hide.hidden = true;
-  hide.title = 'Hide admin buttons (bring them back from My profile)'; hide.setAttribute('aria-label', 'Hide admin buttons');
+  hide.title = 'Hide admin buttons (bring them back from My profile)'; hide.setAttribute('aria-label', 'Hide Admin Buttons');
   hide.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3l18 18M10.6 6.1A10 10 0 0 1 12 6c5 0 9 6 9 6a17 17 0 0 1-3.2 3.7M6.6 6.6C4.2 8.2 3 12 3 12s4 6 9 6a9.3 9.3 0 0 0 4.4-1.1M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>';
   hide.addEventListener('click', () => {
     setHidden(true);
@@ -47,12 +47,12 @@
     const open = !!document.querySelector('dialog.float[open]');
     if (open ? !!scope.querySelector('.bf, [data-hit]') : /^\/(all|search|collections|products)(\/|$)/.test(location.pathname)) return null;
     const card = scope.querySelector('[data-hit]');
-    if (card && full) return { href: `/admin/edit/${card.dataset.hit}`, text: 'Edit this card' };
+    if (card && full) return { href: `/admin/edit/${card.dataset.hit}`, text: 'Edit This Card' };
     const mcard = scope.querySelector('[data-mcard]');
     const trainer = scope.querySelector('[data-trainer]') || mcard;
     const theirs = trainer && (full || !trainer.dataset.ownerRole);
-    if (trainer && staff && theirs) return { href: `/admin/trainers#trainer-${trainer.dataset.trainer || trainer.dataset.owner}`, text: 'Manage this trainer', mcard: mcard?.dataset.mcard };
-    if (scope.querySelector('.bf') && full) return { href: '/store/vault#edit-binders', text: 'Edit binders' };
+    if (trainer && staff && theirs) return { href: `/admin/trainers#trainer-${trainer.dataset.trainer || trainer.dataset.owner}`, text: 'Manage This Trainer', mcard: mcard?.dataset.mcard };
+    if (scope.querySelector('.bf') && full) return { href: '/store/vault#edit-binders', text: 'Edit Binders' };
     // The new look has Admin in its menu: only the buttons about what's on screen float there.
     if (document.documentElement.dataset.look === 'fb') return null;
     if (full) return { href: '/admin', text: 'Admin' };

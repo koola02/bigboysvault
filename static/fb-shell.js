@@ -197,7 +197,7 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     if (!root.hasAttribute('data-full')) return;
     document.querySelectorAll('a.card[href^="/products/"]:not([data-pen])').forEach((a) => {
       a.dataset.pen = '1';
-      const b = document.createElement('span'); b.className = 'card-pen staff-only'; b.setAttribute('role', 'link'); b.tabIndex = 0; b.title = 'Edit this card';
+      const b = document.createElement('span'); b.className = 'card-pen staff-only'; b.setAttribute('role', 'link'); b.tabIndex = 0; b.title = 'Edit This Card';
       b.setAttribute('aria-label', `Edit ${a.querySelector('.card-t')?.textContent || 'this card'}`);
       b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>';
       (a.querySelector('.card-img') || a).append(b);
@@ -211,8 +211,8 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
 
   /* ---------- Ask the Vault and the vault chat: chat windows, like a message, not pages of their own ---------- */
   const TALK = {
-    ask: { title: 'Ask the Vault', sub: 'Prices, stock and ideas', part: '/ask?part=1', page: '/ask', mark: '[data-ask]' },
-    chat: { title: 'Vault chat', sub: 'Everyone’s here', part: '/chat?part=1', page: '/chat', mark: '[data-chat]' },
+    ask: { title: 'Ask The Vault', sub: 'Prices, Stock And Ideas', part: '/ask?part=1', page: '/ask', mark: '[data-ask]' },
+    chat: { title: 'Vault Chat', sub: 'Everyone’s Here', part: '/chat?part=1', page: '/chat', mark: '[data-chat]' },
   };
   const talks = {};
   const talkBox = (kind) => (talks[kind]?.win || document).querySelector(`${TALK[kind].mark} [data-text]`);
@@ -303,7 +303,7 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     document.dispatchEvent(new CustomEvent('float:filled', { detail: body }));
     box.focus({ preventScroll: true });
     try {
-      cwTools = cwTools || Promise.all([import('/static/holo.js?v=6'), import('/static/card-lang.js?v=4')]);
+      cwTools = cwTools || Promise.all([import('/static/holo.js?v=6'), import('/static/card-lang.js?v=6')]);
       const [holo, lang] = await cwTools;
       if (mine !== cwSeq || cw.hidden) return;
       cwStop = holo.mountHolo(body); lang.mountLang(body);
@@ -344,7 +344,7 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
       row.before(wrap); wrap.append(row);
       const arrow = (back) => {
         const b = document.createElement('button'); b.type = 'button'; b.className = `slide-btn ${back ? 'slide-prev' : 'slide-next'}`; b.hidden = true;
-        b.setAttribute('aria-label', back ? 'Show the ones before' : 'Show more'); b.tabIndex = -1;   // keyboard users tab along the row itself
+        b.setAttribute('aria-label', back ? 'Show The Ones Before' : 'Show More'); b.tabIndex = -1;   // keyboard users tab along the row itself
         b.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${back ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7'}"/></svg>`;
         b.addEventListener('click', () => row.scrollBy({ left: (back ? -1 : 1) * Math.max(160, row.clientWidth * 0.8), behavior: 'smooth' }));
         wrap.append(b); return b;
@@ -373,7 +373,7 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
   document.addEventListener('click', (e) => {
     const z = e.target.closest('[data-zoom]'); if (!z) return;
     e.preventDefault();
-    const o = document.createElement('div'); o.className = 'dm-lightbox zoomable'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', 'The card, up close');
+    const o = document.createElement('div'); o.className = 'dm-lightbox zoomable'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', 'The Card, Up Close');
     const img = document.createElement('img'); img.src = z.dataset.zoom; img.alt = ''; o.append(img);
     const x = document.createElement('button'); x.type = 'button'; x.className = 'dm-ib dm-lb-x'; x.textContent = '✕'; x.setAttribute('aria-label', 'Close'); o.append(x);
     const close = () => { o.remove(); document.removeEventListener('keydown', esc); if (z.isConnected) z.focus({ preventScroll: true }); };
@@ -395,7 +395,7 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
   // The card finder names its page "All cards" each time the search changes; here that page is called The Vault.
   const vaultH = document.querySelector('.mk > .h1');
   if (vaultH) {
-    const rename = () => { if (vaultH.textContent.trim() === 'All cards') vaultH.textContent = 'The Vault'; };
+    const rename = () => { if (vaultH.textContent.trim() === 'All Cards') vaultH.textContent = 'The Vault'; };
     new MutationObserver(rename).observe(vaultH, { childList: true, characterData: true, subtree: true });
     rename();
   }
@@ -409,13 +409,13 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     {
       const say = () => {
         for (const n of countEl.childNodes) {
-          if (n.nodeType !== 3 || /different|match/.test(n.data)) continue;
-          let m = n.data.match(/^\s*([\d,]+) of [\d,]+ cards? · ([\d,]+) cop(?:y|ies)\s*$/);
-          if (m) { n.data = `${m[2]} card${m[2] === '1' ? '' : 's'} match (${m[1]} different)`; continue; }
-          m = n.data.match(/^\s*([\d,]+) cards? · ([\d,]+) cop(?:y|ies)\s*$/);
-          if (m) { n.data = `${m[2]} cards (${m[1]} different)`; continue; }
-          m = n.data.match(/^\s*([\d,]+) of [\d,]+ cards?\s*$/);
-          if (m) n.data = `${m[1]} card${m[1] === '1' ? '' : 's'} match`;
+          if (n.nodeType !== 3 || /different|match/i.test(n.data)) continue;
+          let m = n.data.match(/^\s*([\d,]+) of [\d,]+ cards? · ([\d,]+) cop(?:y|ies)\s*$/i);
+          if (m) { n.data = `${m[2]} Card${m[2] === '1' ? '' : 's'} Match (${m[1]} Different)`; continue; }
+          m = n.data.match(/^\s*([\d,]+) cards? · ([\d,]+) cop(?:y|ies)\s*$/i);
+          if (m) { n.data = `${m[2]} Cards (${m[1]} Different)`; continue; }
+          m = n.data.match(/^\s*([\d,]+) of [\d,]+ cards?\s*$/i);
+          if (m) n.data = `${m[1]} Card${m[1] === '1' ? '' : 's'} Match`;
         }
       };
       new MutationObserver(say).observe(countEl, { childList: true, characterData: true, subtree: true });
@@ -426,7 +426,7 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     const fdf = document.querySelector('.fd-filters');
     if (fdf && countEl) {
       const go = document.createElement('button'); go.type = 'button'; go.className = 'btn fd-show';
-      const paint = () => { const m = (countEl.textContent || '').match(/([\d,]+) cards?/); go.textContent = m ? (m[1] === '0' ? 'No cards match' : `Show ${m[1]} card${m[1] === '1' ? '' : 's'}`) : 'Show the cards'; go.disabled = !!m && m[1] === '0'; };
+      const paint = () => { const m = (countEl.textContent || '').match(/([\d,]+) cards?/); go.textContent = m ? (m[1] === '0' ? 'No Cards Match' : `Show ${m[1]} Card${m[1] === '1' ? '' : 's'}`) : 'Show The Cards'; go.disabled = !!m && m[1] === '0'; };
       go.addEventListener('click', () => { fdf.open = false; countEl.scrollIntoView({ block: 'start', behavior: 'smooth' }); });
       fdf.append(go); paint();
       new MutationObserver(paint).observe(countEl, { childList: true, characterData: true, subtree: true });
@@ -451,7 +451,7 @@ window.bbvWho = window.bbvWho || (() => (window.bbvWhoAnswer ||= fetch('/me/who'
     const box = document.createElement('div'); box.className = 'bbv-ask-in';
     const p = document.createElement('p'); p.className = 'bbv-ask-q'; p.id = 'bbvAskQ' + Date.now(); p.textContent = question; o.setAttribute('aria-labelledby', p.id);
     const row = document.createElement('div'); row.className = 'bbv-ask-acts';
-    const no = document.createElement('button'); no.type = 'button'; no.className = 'btn ghost'; no.textContent = opt.no || 'Keep it';
+    const no = document.createElement('button'); no.type = 'button'; no.className = 'btn ghost'; no.textContent = opt.no || 'Keep It';
     const yes = document.createElement('button'); yes.type = 'button'; yes.className = 'btn' + (opt.danger === false ? '' : ' bbv-ask-danger'); yes.textContent = opt.yes || 'Yes';
     // Inside an open modal dialog when there is one (the vouch form): the rest of the page can't be clicked then.
     const host = [...document.querySelectorAll('dialog[open]')].pop() || document.body;

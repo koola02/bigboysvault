@@ -12,7 +12,7 @@ use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
 const STEP: usize = 48;
-/// The vault's own picture, beside its name on its cards and its "Sold by" button.
+/// The vault's own picture, beside its name on its cards and its "Sold By" button.
 const LOGO: &str = "/static/img/logo-sm-144.png?v=1";
 
 /// The site's name as the page gives it (the owner can change it).
@@ -158,7 +158,7 @@ fn Tile(card: Arc<Card>, store: Option<Arc<Store>>, brand: Arc<str>, me: RwSigna
     let priced = card.price > 0.0;
     // A store's card with no price yet is asked about; a vault card shows its price as it always has.
     let ask = store.is_some() && !priced;
-    let price = if ask { "Ask for a price".to_string() } else { peso(card.price) };
+    let price = if ask { "Ask For A Price".to_string() } else { peso(card.price) };
     // Whose card it is. A store's card is a listing, with its own page, cart line (static/cart.js) and message (static/dm.js).
     let (href, by, by_pic, sid) = match &store {
         Some(s) => (format!("/trainers/{}/cards/{}", s.id, card.lid), s.title.clone(), s.img.clone(), s.id),
@@ -167,17 +167,17 @@ fn Tile(card: Arc<Card>, store: Option<Arc<Store>>, brand: Arc<str>, me: RwSigna
     let (by_letter, has_pic) = (initial(&by), !by_pic.is_empty());
     // A vault card's product number is the tail of its handle; the cart wants it on the tile. Never read from a listing.
     let pid: i64 = if store.is_none() { card.handle.rsplit('-').next().and_then(|t| t.parse().ok()).unwrap_or(0) } else { 0 };
-    let (buy, buy_title, buy_price, buy_img, buy_url, buy_label) = (pid > 0 && priced && card.qty > 0, short.clone(), format!("{}", card.price), card.img.clone(), href.clone(), format!("Add {short} to cart"));
-    // A store's card: Message whenever a copy is left, the cart only with a price ("Ask for a price" means a message first).
+    let (buy, buy_title, buy_price, buy_img, buy_url, buy_label) = (pid > 0 && priced && card.qty > 0, short.clone(), format!("{}", card.price), card.img.clone(), href.clone(), format!("Add {short} To Cart"));
+    // A store's card: Message whenever a copy is left, the cart only with a price ("Ask For A Price" means a message first).
     let (lid, sells, seller_name, seller_slug) = (card.lid, sid > 0 && card.lid > 0 && card.qty > 0, by.clone(), store.as_ref().map(|s| s.slug.clone()).unwrap_or_default());
     let (s_title, s_price, s_img, s_url, s_label) = (buy_title.clone(), buy_price.clone(), buy_img.clone(), buy_url.clone(), buy_label.clone());
     let store_cart = move || {
         (sells && priced && me.get() != sid).then(|| {
             let (t, p, i, u, l, n, g) = (s_title.clone(), s_price.clone(), s_img.clone(), s_url.clone(), s_label.clone(), seller_name.clone(), seller_slug.clone());
-            view! { <span class="cart-mini" role="button" tabindex="0" data-cart-card=lid data-title=t data-price=p data-image=i data-url=u data-seller=n data-seller-slug=g aria-label=l title="Add to cart">"+"</span> }
+            view! { <span class="cart-mini" role="button" tabindex="0" data-cart-card=lid data-title=t data-price=p data-image=i data-url=u data-seller=n data-seller-slug=g aria-label=l title="Add To Cart">"+"</span> }
         })
     };
-    let store_dm = move || (sells && me.get() != sid).then(|| view! { <span class="dm-mini" role="button" tabindex="0" data-dm-card=lid aria-label="Message the seller" title="Message the seller"></span> });
+    let store_dm = move || (sells && me.get() != sid).then(|| view! { <span class="dm-mini" role="button" tabindex="0" data-dm-card=lid aria-label="Message The Seller" title="Message The Seller"></span> });
     let (title, title2, img, grade, qty) = (short.clone(), card.title.clone(), card.img.clone(), card.grade.clone(), card.qty);
     let (set, cond_c, cond, sym) = (card.set.clone(), vault_search::cond_class(&card.variant), vault_search::tile_condition(&card.variant), card.sym.clone());
     let foil = vault_search::foil_class(&format!("{} {}", card.title, card.variant));
@@ -197,7 +197,7 @@ fn Tile(card: Arc<Card>, store: Option<Arc<Store>>, brand: Arc<str>, me: RwSigna
             </div>
             {(!tags.is_empty()).then(|| view! { <div class="card-tags">{tags.into_iter().map(|t| view! { <span class="tag-hl">{t}</span> }).collect_view()}</div> })}
             {(!notes.is_empty()).then(|| view! { <div class="card-note">{notes}</div> })}
-            <div class="card-p" class:card-ask=ask>{price}{buy.then(|| view! { <span class="dm-mini" role="button" tabindex="0" data-dm-vault=pid aria-label="Message the seller" title="Message the seller"></span> })}{buy.then(|| view! { <span class="cart-mini" role="button" tabindex="0" data-cart-vault=pid data-title=buy_title data-price=buy_price data-image=buy_img data-url=buy_url aria-label=buy_label title="Add to cart">"+"</span> })}{store_dm}{store_cart}</div>
+            <div class="card-p" class:card-ask=ask>{price}{buy.then(|| view! { <span class="dm-mini" role="button" tabindex="0" data-dm-vault=pid aria-label="Message The Seller" title="Message The Seller"></span> })}{buy.then(|| view! { <span class="cart-mini" role="button" tabindex="0" data-cart-vault=pid data-title=buy_title data-price=buy_price data-image=buy_img data-url=buy_url aria-label=buy_label title="Add To Cart">"+"</span> })}{store_dm}{store_cart}</div>
             <div class="card-by">
                 {has_pic.then(|| view! { <img class="card-by-av" src=by_pic width="16" height="16" loading="lazy" decoding="async" alt=""/> })}
                 {(!has_pic).then(|| view! { <span class="card-by-av" aria-hidden="true">{by_letter}</span> })}
@@ -213,7 +213,7 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
     let param = move |k: &str| if embedded { None } else { url_param(k) };
     let input: Option<web_sys::HtmlInputElement> = if embedded { None } else { document().query_selector("form.search input").ok().flatten().and_then(|e| e.dyn_into().ok()) };
     // An old link to a binder still shows just that binder's cards. The binders have no buttons here any more, so while
-    // one is on, a button in the "Sold by" row names it and takes it off (`binder_chip`).
+    // one is on, a button in the "Sold By" row names it and takes it off (`binder_chip`).
     let start_binder = param("binder").and_then(|h| binders.iter().position(|b| b.handle == h)).map(|i| i as u16);
     let binders = StoredValue::new(binders);
     // Who sells the cards shown: None for everyone, Some(0) the vault, Some(n) the n-th store. `?store=vault` or a store's address.
@@ -338,7 +338,7 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
         applied.with(|t| write_url(qv.trim(), s, h.as_deref(), st.as_deref(), t, min_price(), max_price()));
         if let Some(h1) = document().query_selector("main h1").ok().flatten() {
             let t = qv.trim();
-            h1.set_text_content(Some(&if t.is_empty() { "All cards".to_string() } else { format!("Results for “{t}”") }));
+            h1.set_text_content(Some(&if t.is_empty() { "All Cards".to_string() } else { format!("Results For “{t}”") }));
         }
     });
 
@@ -404,7 +404,7 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
                 if out.len() >= 8 { break; }
                 let t = Token::Name(name.clone());
                 if norm(name).contains(&want) && !draft.with(|d| d.contains(&t)) {
-                    out.push((t, format!("{n} card{}", if *n == 1 { "" } else { "s" })));
+                    out.push((t, format!("{n} Card{}", if *n == 1 { "" } else { "s" })));
                 }
             }
         });
@@ -445,7 +445,7 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
         }
     };
 
-    // "Sold by": everyone, then every seller, the vault among the stores, most cards first, each with its count.
+    // "Sold By": everyone, then every seller, the vault among the stores, most cards first, each with its count.
     // A press shows only that seller's cards; pressing it again, or All, shows everyone's. All is lit only when nothing
     // narrows whose cards these are, so a binder turns it off too, and pressing All takes the binder off as well.
     let sold_chip = move |pick: Option<u16>, name: String, pic: Option<String>, n: usize| {
@@ -482,7 +482,7 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
         let (title, img) = binders.with_value(|bs| binder.get().and_then(|b| bs.get(usize::from(b))).map(|b| (b.title.clone(), b.img.clone())))?;
         let (letter, aria) = (initial(&title), format!("Binder: {title}. Press to show every card again"));
         Some(view! {
-            <button type="button" class="fd-b fd-b-binder on" aria-label=aria title="Take the binder off" on:click=move |_| { binder.set(None); shown.set(STEP); }>
+            <button type="button" class="fd-b fd-b-binder on" aria-label=aria title="Take The Binder Off" on:click=move |_| { binder.set(None); shown.set(STEP); }>
                 <span class="fd-b-pic">{if img.is_empty() {
                     view! { <span class="fd-b-l" aria-hidden="true">{letter}</span> }.into_any()
                 } else {
@@ -510,7 +510,7 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
                 }
             });
         }
-        let label = if has_stores { "Sold by" } else { "Binder" };
+        let label = if has_stores { "Sold By" } else { "Binder" };
         view! { <div class="fd-sold" hidden=move || !has_stores && binder.get().is_none()><span class="fd-flabel">{label}</span><div class="fd-binders" role="group" aria-label=label>{chips}</div></div> }
     });
 
@@ -564,7 +564,7 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
             <span class="fd-tipw" class:on=shown
                 on:pointerenter=move |e| if mouse(&e) { tip_hover.set(Some(key)) }
                 on:pointerleave=move |e| if mouse(&e) { tip_hover.set(None) }>
-                <button type="button" class="fd-tip" aria-label=format!("About picking {group}") aria-describedby=id.clone()
+                <button type="button" class="fd-tip" aria-label=format!("About Picking {group}") aria-describedby=id.clone()
                     on:click=move |_| tip_open.update(|o| *o = if *o == Some(key) { None } else { Some(key) })
                     on:focus=move |e| {
                         // Only a keyboard's focus shows it: a tap focuses the button too, and the tap itself opens it.
@@ -589,17 +589,17 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
         <div class="fd-tools">
             {sold_row}
             <form class="fd-adv" on:submit=move |e: leptos::ev::SubmitEvent| { e.prevent_default(); confirm(); }>
-                <label class="fd-adv-h" for=adv_id>"Advanced search"<small>"Combine anything, like Near Mint, Holofoil, Pikachu, Mewtwo"</small></label>
+                <label class="fd-adv-h" for=adv_id>"Advanced Search"<small>"Combine anything, like Near Mint, Holofoil, Pikachu, Mewtwo"</small></label>
                 <div class="fd-bar">
                     <div class="fd-field" on:click=move |_| { if let Some(i) = box_ref.get() { let _ = i.focus(); } }>
                         {move || draft.get().into_iter().map(|t| {
                             let c = cond_data(&t);
                             let (t1, label) = (t.clone(), t.label());
-                            let aria = format!("Take out {label}");
+                            let aria = format!("Take Out {label}");
                             view! { <span class="fd-tok" data-c=c>{label}<button type="button" aria-label=aria on:click=move |_| { draft.update(|d| d.retain(|x| *x != t1)); applied.update(|a| a.retain(|x| *x != t1)); shown.set(STEP); }>"✕"</button></span> }
                         }).collect_view()}
                         <input id=adv_id type="text" node_ref=box_ref autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search"
-                            placeholder=move || if draft.with(Vec::is_empty) { "Type a condition, finish or Pokémon" } else { "Add more" }
+                            placeholder=move || if draft.with(Vec::is_empty) { "Type a condition, finish or Pokémon" } else { "Add More" }
                             prop:value=move || typed.get()
                             on:input=move |e| { typed.set(event_target_value(&e)); picked_at.set(None); }
                             on:blur=move |_| picked_at.set(None)
@@ -641,19 +641,19 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
                 </summary>
                 <div class="fd-f-rows">
                     // One condition at a time; the group's name says so to a screen reader, and only one chip is ever pressed.
-                    <div class="fd-frow"><span class="fd-flabel">"Condition"</span><div class="fd-opts" role="group" aria-label="Condition, pick one">{cond_chips}</div></div>
-                    <div class="fd-frow"><div class="fd-fhead"><span class="fd-flabel">"Finish"</span>{tip("Fin", "finishes", "Pick as many as you like. Cards with any one of these finishes show up.")}</div><div class="fd-opts" role="group" aria-label="Finish, pick one or more">{finish_chips}</div></div>
-                    <div class="fd-frow"><div class="fd-fhead"><span class="fd-flabel">"Language"</span>{tip("Lang", "languages", "Pick as many as you like. Cards in any one of these languages show up.")}</div><div class="fd-opts" role="group" aria-label="Language, pick one or more">{lang_chips}</div></div>
+                    <div class="fd-frow"><span class="fd-flabel">"Condition"</span><div class="fd-opts" role="group" aria-label="Condition, Pick One">{cond_chips}</div></div>
+                    <div class="fd-frow"><div class="fd-fhead"><span class="fd-flabel">"Finish"</span>{tip("Fin", "Finishes", "Pick as many as you like. Cards with any one of these finishes show up.")}</div><div class="fd-opts" role="group" aria-label="Finish, Pick One Or More">{finish_chips}</div></div>
+                    <div class="fd-frow"><div class="fd-fhead"><span class="fd-flabel">"Language"</span>{tip("Lang", "Languages", "Pick as many as you like. Cards in any one of these languages show up.")}</div><div class="fd-opts" role="group" aria-label="Language, Pick One Or More">{lang_chips}</div></div>
                     <div class="fd-frow"><span class="fd-flabel">"Price"</span>
                         <div class="fd-price">
                             <output class="fd-p-v">{move || peso(price_at(pmin.get(), price_lo, price_hi))}</output>
                             <div class="fd-range" style=move || format!("--a:{};--b:{}", pmin.get(), pmax.get())>
                                 <span class="fd-track"></span><span class="fd-fill"></span>
-                                <input type="range" min="0" max="100" step="1" aria-label="Lowest price" class:top=move || { pmin.get() > 90 }
+                                <input type="range" min="0" max="100" step="1" aria-label="Lowest Price" class:top=move || { pmin.get() > 90 }
                                     prop:value=move || pmin.get().to_string()
                                     aria-valuetext=move || peso(price_at(pmin.get(), price_lo, price_hi))
                                     on:input=move |e| { let v: u32 = event_target_value(&e).parse().unwrap_or(0); pmin.set(v.min(pmax.get_untracked().saturating_sub(1))); shown.set(STEP); }/>
-                                <input type="range" min="0" max="100" step="1" aria-label="Highest price"
+                                <input type="range" min="0" max="100" step="1" aria-label="Highest Price"
                                     prop:value=move || pmax.get().to_string()
                                     aria-valuetext=move || peso(price_at(pmax.get(), price_lo, price_hi))
                                     on:input=move |e| { let v: u32 = event_target_value(&e).parse().unwrap_or(100); pmax.set(v.max(pmin.get_untracked() + 1)); shown.set(STEP); }/>
@@ -665,8 +665,8 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
                         <label class="fd-sort">
                             <select aria-label="Sort" on:change=move |e| { sort.set(Sort::parse(&event_target_value(&e))); shown.set(STEP); }>
                                 <option value="" prop:selected=move || sort.get() == Sort::Newest>"Newest"</option>
-                                <option value="price-asc" prop:selected=move || sort.get() == Sort::PriceAsc>"Price: low to high"</option>
-                                <option value="price-desc" prop:selected=move || sort.get() == Sort::PriceDesc>"Price: high to low"</option>
+                                <option value="price-asc" prop:selected=move || sort.get() == Sort::PriceAsc>"Price: Low To High"</option>
+                                <option value="price-desc" prop:selected=move || sort.get() == Sort::PriceDesc>"Price: High To Low"</option>
                                 <option value="title" prop:selected=move || sort.get() == Sort::Name>"Name"</option>
                             </select>
                         </label>
@@ -682,14 +682,14 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
                     // My cards in the admin counts the same way, so the two pages always agree.
                     let n = hits.len();
                     let copies: usize = all.with_value(|c| hits.iter().map(|i| c[*i].copies_in(binder.get()).min(c[*i].qty) as usize).sum());
-                    let word = if n == 1 { "card" } else { "cards" };
-                    let tail = if copies == n { String::new() } else { format!(" · {} cop{}", commas(copies), if copies == 1 { "y" } else { "ies" }) };
+                    let word = if n == 1 { "Card" } else { "Cards" };
+                    let tail = if copies == n { String::new() } else { format!(" · {} Cop{}", commas(copies), if copies == 1 { "y" } else { "ies" }) };
                     let (nn, tt) = (commas(n), commas(total_listed));
-                    if n == total_listed { format!("{nn} {word}{tail}") } else if typo { format!("Closest spelling: {nn} {word}{tail}") } else { format!("{nn} of {tt} {word}{tail}") }
+                    if n == total_listed { format!("{nn} {word}{tail}") } else if typo { format!("Closest Spelling: {nn} {word}{tail}") } else { format!("{nn} Of {tt} {word}{tail}") }
                 }}
             </p>
             <Show when=anything_set>
-                <button type="button" class="fd-clear" on:click=reset>"✕ Clear all"</button>
+                <button type="button" class="fd-clear" on:click=reset>"✕ Clear All"</button>
             </Show>
         </div>
         <div class="grid fd-grid">
@@ -709,11 +709,11 @@ fn Finder(binders: Vec<Binder>, stores: Vec<Store>, cards: Vec<Arc<Card>>, embed
         <Show when=move || found.get().0.is_empty()>
             <div class="fd-none">
                 <p>"No card for sale matches that."</p>
-                <button type="button" class="btn" on:click=reset>"Show all cards"</button>
+                <button type="button" class="btn" on:click=reset>"Show All Cards"</button>
             </div>
         </Show>
         <Show when=move || { shown.get() < found.get().0.len() }>
-            <div class="fd-more"><button type="button" class="linkbtn" on:click=move |_| shown.update(|n| *n += STEP)>"Show more cards"</button></div>
+            <div class="fd-more"><button type="button" class="linkbtn" on:click=move |_| shown.update(|n| *n += STEP)>"Show More Cards"</button></div>
         </Show>
     }
 }

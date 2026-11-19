@@ -9,7 +9,7 @@
   function build() {
     dialog = document.createElement('dialog');
     dialog.className = 'float';
-    dialog.innerHTML = '<div class="float-panel" tabindex="-1"></div><p class="float-hint">Tap outside the card to close</p>';
+    dialog.innerHTML = '<div class="float-panel" tabindex="-1"></div><p class="float-hint">Tap Outside The Card To Close</p>';
     panel = dialog.firstChild;
     document.body.append(dialog);
     // Closes only when the press both starts and ends outside, so selecting text past the edge doesn't shut it.
@@ -74,7 +74,7 @@
 
   /* ---------- every copy of the card, each with its own finish, price and condition ---------- */
   const CONDS = ['Near Mint', 'LP-NM', 'Lightly Played', 'MP-LP', 'Moderately Played', 'HP-MP', 'Heavily Played', 'Damaged-HP', 'Damaged', 'Sealed', 'PSA 10', 'PSA 9', 'CGC 10', 'CGC 9.5', 'BGS 9.5'];
-  const FINISHES = [['normal', 'Normal'], ['holofoil', 'Holofoil'], ['reverseHolofoil', 'Reverse Holo'], ['1stEditionHolofoil', '1st Ed. Holo'], ['1stEditionNormal', '1st Ed.'], ['full-art', 'Full art'], ['illustration', 'Illustration']];
+  const FINISHES = [['normal', 'Normal'], ['holofoil', 'Holofoil'], ['reverseHolofoil', 'Reverse Holo'], ['1stEditionHolofoil', '1st Ed. Holo'], ['1stEditionNormal', '1st Ed.'], ['full-art', 'Full Art'], ['illustration', 'Illustration']];
   const peso = (n) => '₱' + Math.round(n || 0).toLocaleString('en-US');
   const make = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 
@@ -108,9 +108,9 @@
     const head = make('div', 'fc-head');
     const title = make('p', 'step-n');
     const qty = make('div', 'qa-qty');
-    const minus = make('button', null, '−'); minus.type = 'button'; minus.setAttribute('aria-label', 'One copy fewer');
+    const minus = make('button', null, '−'); minus.type = 'button'; minus.setAttribute('aria-label', 'One Copy Fewer');
     const n = make('span');
-    const plus = make('button', null, '+'); plus.type = 'button'; plus.setAttribute('aria-label', 'One more copy');
+    const plus = make('button', null, '+'); plus.type = 'button'; plus.setAttribute('aria-label', 'One More Copy');
     qty.append(minus, n, plus);
     head.append(title); if (!solo) head.append(qty);
     const note = make('p', 'fc-note');
@@ -126,23 +126,23 @@
 
     function paint() {
       n.textContent = rows.length;
-      title.textContent = solo ? 'Just this card' : rows.length === 1 ? 'This card' : `Your ${rows.length} copies`;
+      title.textContent = solo ? 'Just This Card' : rows.length === 1 ? 'This Card' : `Your ${rows.length} Copies`;
       note.textContent = solo ? 'Anything you change here is for this one card. If it ends up different, it becomes its own card.'
         : 'Give a copy its own condition, finish or price and it becomes its own card when you save.';
       shared.textContent = solo ? '' : rows.length > 1 ? `The name, photo, binders and notes below are for all ${rows.length} copies.` : '';
       shared.hidden = !shared.textContent;
       list.replaceChildren(...rows.map((c, i) => {
         const row = make('li', 'qa-copy');
-        const label = make('span', 'qa-copy-n', (solo ? 'This card' : `Card ${i + 1}`) + (c.sold ? ' · sold' : ''));
-        const fin = document.createElement('select'); fin.setAttribute('aria-label', `Finish of card ${i + 1}`);
-        if (!c.finish) fin.append(new Option('Pick a finish', '', true, true));
+        const label = make('span', 'qa-copy-n', (solo ? 'This Card' : `Card ${i + 1}`) + (c.sold ? ' · sold' : ''));
+        const fin = document.createElement('select'); fin.setAttribute('aria-label', `Finish Of Card ${i + 1}`);
+        if (!c.finish) fin.append(new Option('Pick A Finish', '', true, true));
         const A = window.Admin;
         const finLabel = (f) => `${f.label} · ${peso(A.suggest(f.php, c.cond) ?? f.php)}`;
         finishes.forEach((f) => fin.append(new Option(finLabel(f), f.key, false, f.key === c.finish)));
         const known = new Set(finishes.map((f) => f.key));
         FINISHES.filter(([k]) => !known.has(k)).forEach(([k, l]) => { known.add(k); fin.append(new Option(l, k, false, k === c.finish)); });
         if (c.finish && !known.has(c.finish)) fin.append(new Option(pretty(c.finish), c.finish, true, true));
-        const pr = document.createElement('input'); pr.className = 'qa-price'; pr.inputMode = 'decimal'; pr.placeholder = '₱0'; pr.value = c.price; pr.setAttribute('aria-label', `Price of card ${i + 1} in pesos`);
+        const pr = document.createElement('input'); pr.className = 'qa-price'; pr.inputMode = 'decimal'; pr.placeholder = '₱0'; pr.value = c.price; pr.setAttribute('aria-label', `Price Of Card ${i + 1} In Pesos`);
         const sug = make('p', 'qa-sug');
         const marketOf = (key) => finishes.find((x) => x.key === key);
         const usePrice = (v) => { c.price = String(v); c.market = true; c.src = 'suggested'; pr.value = c.price; changed(); sync(); paintSug(); };
@@ -162,15 +162,15 @@
         };
         fin.onchange = () => { const pf = c.finish; c.finish = fin.value; follow(pf, c.cond); changed(); sync(); paintSug(); };
         pr.oninput = () => { c.price = pr.value.replace(/[^\d.]/g, ''); c.market = false; c.src = 'own'; changed(); sync(); paintSug(); };
-        const cond = document.createElement('select'); cond.setAttribute('aria-label', `Condition of card ${i + 1}`);
-        if (!c.cond) cond.append(new Option('Pick a condition', '', true, true));
+        const cond = document.createElement('select'); cond.setAttribute('aria-label', `Condition Of Card ${i + 1}`);
+        if (!c.cond) cond.append(new Option('Pick A Condition', '', true, true));
         else if (!CONDS.includes(c.cond)) cond.append(new Option(c.cond, c.cond, true, true));
         CONDS.forEach((v) => cond.append(new Option(v, v, false, v === c.cond)));
         cond.append(new Option('Type my own…', '__own'));
         cond.onchange = () => {
           const pc = c.cond;
           if (cond.value === '__own') {
-            const v = (prompt('Condition or grade') || '').trim().slice(0, 80);
+            const v = (prompt('Condition Or Grade') || '').trim().slice(0, 80);
             if (v) c.cond = v;
             if (!CONDS.includes(c.cond) && ![...cond.options].some((o) => o.value === c.cond)) cond.insertBefore(new Option(c.cond, c.cond), cond.firstChild);
             cond.value = c.cond;
@@ -179,12 +179,12 @@
         };
         const acts = make('span', 'fc-acts');
         if (!solo && rows.length > 1 && c.id) {
-          const one = make('button', 'fc-one', '✎ Just this one'); one.type = 'button'; one.setAttribute('aria-label', `Edit only card ${i + 1}: its name, photo and more`);
+          const one = make('button', 'fc-one', '✎ Just This One'); one.type = 'button'; one.setAttribute('aria-label', `Edit only card ${i + 1}: its name, photo and more`);
           one.onclick = () => { if (!okToLeave()) return; dirty = false; open(`/admin/edit/${c.id}`, [c.id], true); };
           acts.append(one);
         }
         if (rows.length > 1) {
-          const x = make('button', 'qa-copy-x', '✕'); x.type = 'button'; x.setAttribute('aria-label', `Take out card ${i + 1}`);
+          const x = make('button', 'qa-copy-x', '✕'); x.type = 'button'; x.setAttribute('aria-label', `Take Out Card ${i + 1}`);
           x.onclick = () => { rows.splice(rows.indexOf(c), 1); if (c.id) removed.push(c.id); changed(); sync(); paint(); };
           acts.append(x);
         }
@@ -258,7 +258,7 @@
     wrap.className = 'wrap float-edit';
     wrap.dataset.editing = source.dataset.editing;
     wrap.dataset.id = source.dataset.id;
-    const h = document.createElement('h1'); h.className = 'h1'; h.textContent = 'Edit card';
+    const h = document.createElement('h1'); h.className = 'h1'; h.textContent = 'Edit Card';
     const note = doc.getElementById('toast');
     // The new look has no "tap outside" hint, and on a phone the window fills the screen: it gets a close button.
     let head = h;
@@ -304,7 +304,7 @@
       del.addEventListener('submit', async (e) => {
         e.preventDefault();
         if (!(await (window.bbvConfirm ? window.bbvConfirm('Delete this card? This can’t be undone.', { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm('Delete this card? This can’t be undone.'))))) return;
-        try { await A.post(del.getAttribute('action')); finish('Card deleted'); }
+        try { await A.post(del.getAttribute('action')); finish('Card Deleted'); }
         catch (err) { A.toast(err.message, { kind: 'err' }); }
       });
     }

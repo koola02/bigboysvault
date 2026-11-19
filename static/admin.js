@@ -30,7 +30,7 @@ window.mountCardForm = () => {
 
   /* ---------- live preview ---------- */
   function preview() {
-    $('pvTitle').textContent = el.title.value.trim() || 'Card name';
+    $('pvTitle').textContent = el.title.value.trim() || 'Card Name';
     $('pvPrice').textContent = peso(num(el.price.value));
     const g = grade(el.variant.value);
     $('pvGrade').hidden = !g; $('pvGrade').textContent = g;
@@ -85,7 +85,7 @@ window.mountCardForm = () => {
       const r = await fetch('/admin/photo/' + rmBtn.dataset.id + '/remove', { method: 'POST', headers: { Accept: 'application/json' }, credentials: 'same-origin' });
       if (!r.ok) throw new Error('x');
       el.shot.removeAttribute('src'); el.shot.hidden = true; el.dropT.hidden = false; el.retake.hidden = true; rmBtn.hidden = true; blob = null; el.photo.value = '';
-      toast('Photo removed', 'ok'); preview();
+      toast('Photo Removed', 'ok'); preview();
     } catch (_) { toast('Couldn’t remove the photo.', 'err'); }
   });
 
@@ -108,7 +108,7 @@ window.mountCardForm = () => {
       if (t.length < 3) return;
       const r = await safe(() => fetch(`/admin/check?title=${encodeURIComponent(t)}&id=${root.dataset.id || 0}`, { headers: { Accept: 'application/json' } }));
       const j = r && r.ok ? await r.json().catch(() => null) : null;
-      if (j && j.similar.length) { el.titleHint.className = 'hint warn'; el.titleHint.textContent = 'Already have: ' + j.similar.map((s) => s.title).join(' · '); }
+      if (j && j.similar.length) { el.titleHint.className = 'hint warn'; el.titleHint.textContent = 'Already Have: ' + j.similar.map((s) => s.title).join(' · '); }
     }, 350);
   });
 
@@ -233,7 +233,7 @@ window.mountCardForm = () => {
   mk.use.addEventListener('click', () => { if (curFinish) { setPrice(curFinish.php, 'market'); mk.use.hidden = true; } });
   mk.photo.addEventListener('click', () => {
     if (!current) return; const u = current.image_large || current.image;
-    mk.purl.value = u; blob = null; el.photo.value = ''; el.shot.src = u; el.shot.hidden = false; el.dropT.hidden = true; el.retake.hidden = false; preview(); toast('Using the official card image ✓', 'ok');
+    mk.purl.value = u; blob = null; el.photo.value = ''; el.shot.src = u; el.shot.hidden = false; el.dropT.hidden = true; el.retake.hidden = false; preview(); toast('Using The Official Card Image ✓', 'ok');
   });
 
   // Preselect binders carried over from "save & add another" in the no-JS flow.

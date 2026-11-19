@@ -46,9 +46,9 @@
       const words = make('p', 'msg-text', m.text);
       body.append(head, words);
       if (mine || who.full || (who.admin && !m.role)) {
-        const x = make('button', mine ? 'msg-x' : 'msg-x staff-only', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Delete this message');
+        const x = make('button', mine ? 'msg-x' : 'msg-x staff-only', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Delete This Message');
         x.addEventListener('click', async () => {
-          if (!(await (window.bbvConfirm ? window.bbvConfirm('Delete this message?', { yes: 'Delete', no: 'Keep it' }) : Promise.resolve(confirm('Delete this message?'))))) return;
+          if (!(await (window.bbvConfirm ? window.bbvConfirm('Delete this message?', { yes: 'Delete', no: 'Keep It' }) : Promise.resolve(confirm('Delete this message?'))))) return;
           try { await jsonPost(`/chat/messages/${m.id}/delete`, {}); n.remove(); tidy(); } catch (e) { say(e.message); }
         });
         body.append(x);
@@ -76,7 +76,7 @@
       tidy();
       if (prepend) log.scrollTop = log.scrollHeight - had;
       else if (fresh.length) { if (stick || fresh.some((m) => m.member === who.member?.id)) toEnd(true); else newer.hidden = false; }
-      if (j.here != null) online.textContent = j.here === 1 ? 'Just you here now' : `${j.here} here now`;
+      if (j.here != null) online.textContent = j.here === 1 ? 'Just You Here Now' : `${j.here} here now`;
       if (j.v) version = j.v;
     }
 
@@ -157,9 +157,9 @@
     const p = make('div', 'card-p', c.price);
     // The "+" only shows when the server sent the card's own number and real price: that means it is still for sale.
     const mini = () => {
-      const d = make('span', 'dm-mini'); d.setAttribute('role', 'button'); d.tabIndex = 0; d.title = 'Message the seller'; d.setAttribute('aria-label', `Message the seller about ${c.title}`);
+      const d = make('span', 'dm-mini'); d.setAttribute('role', 'button'); d.tabIndex = 0; d.title = 'Message The Seller'; d.setAttribute('aria-label', `Message The Seller About ${c.title}`);
       const b = make('span', 'cart-mini', '+');
-      b.setAttribute('role', 'button'); b.tabIndex = 0; b.title = 'Add to cart'; b.setAttribute('aria-label', `Add ${c.title} to cart`);
+      b.setAttribute('role', 'button'); b.tabIndex = 0; b.title = 'Add To Cart'; b.setAttribute('aria-label', `Add ${c.title} To Cart`);
       p.append(d, b);
       return [d, b];
     };

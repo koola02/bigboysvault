@@ -3,15 +3,15 @@
 {% block content %}
 <section class="wrap vouch-wall">
   <div class="tr-head">
-    <p class="eyebrow plate">The community</p>
+    <p class="eyebrow plate">The Community</p>
     <h1 class="h1">Vouches</h1>
     <p class="tr-sub">What trainers say about the stores on {{ nav.brand }}. Each store's own vouches are under Vouches on its page.</p>
-    {% if me.is_none() %}<a class="btn" href="/join">Register to vouch</a>{% endif %}
+    {% if me.is_none() %}<a class="btn" href="/join">Register To Vouch</a>{% endif %}
   </div>
   {% if vouches.is_empty() %}<p class="empty" data-empty>No vouches yet. Be the first.</p>{% endif %}
   <div class="vouch-grid" data-wall>
     {% for v in vouches %}{% include "vouch_card.html" %}{% endfor %}
   </div>
-  {% if let Some(n) = next %}<div class="v-load-row"><button type="button" class="btn ghost v-load" data-before="{{ n }}">Show more</button></div>{% endif %}
+  {% if let Some(n) = next %}<div class="v-load-row"><button type="button" class="btn ghost v-load" data-before="{{ n }}">Show More</button></div>{% endif %}
 </section>
 {% endblock %}

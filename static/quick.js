@@ -74,14 +74,14 @@
   /* ---------- add by set: search sets, open one, tap its cards ---------- */
   const S = setMode ? { list: $('qaSets'), head: $('qaSetHead'), back: $('qaBack'), logo: $('qaSetLogo'), name: $('qaSetName'), meta: $('qaSetMeta') } : null;
   // A vintage set comes in printings: big buttons to see just one kind (1st Edition, Unlimited...).
-  const ED_KINDS = [['', 'Every printing'], ['first', '1st Edition'], ['unlimited', 'Unlimited'], ['shadowless', 'Shadowless'], ['other', 'Other prints']];
+  const ED_KINDS = [['', 'Every Printing'], ['first', '1st Edition'], ['unlimited', 'Unlimited'], ['shadowless', 'Shadowless'], ['other', 'Other Prints']];
   const edKind = (e) => (!e ? '' : /^1st/.test(e) ? 'first' : e === 'Unlimited' ? 'unlimited' : /^Shadowless/.test(e) ? 'shadowless' : 'other');
   let edPick = '';
   let edBar = null;
   function paintEdBar(cards) {
     edBar?.remove(); edBar = null; edPick = '';
     if (!cards.some((c) => c.edition)) return;
-    edBar = document.createElement('div'); edBar.className = 'qa-eds'; edBar.setAttribute('role', 'group'); edBar.setAttribute('aria-label', 'Show one printing');
+    edBar = document.createElement('div'); edBar.className = 'qa-eds'; edBar.setAttribute('role', 'group'); edBar.setAttribute('aria-label', 'Show One Printing');
     for (const [k, label] of ED_KINDS) {
       const n = k ? cards.filter((c) => edKind(c.edition) === k).length : cards.length;
       if (!n) continue;
@@ -188,13 +188,13 @@
     if (c.edition) { const ed = document.createElement('span'); ed.className = 'qa-ed' + (/^1st/.test(c.edition) ? ' first' : ''); ed.textContent = c.edition; fig.append(ed); }
     if (c.owned) { const o = document.createElement('span'); o.className = 'qa-own'; o.textContent = `Have ${c.owned}`; fig.append(o); }
     const cap = document.createElement('span'); cap.className = 'qa-cap';
-    cap.innerHTML = '<b></b><small></small>'; cap.firstChild.textContent = c.name; cap.lastChild.textContent = `${c.en ? c.en + ' · ' : ''}${c.set || 'Unknown set'} · ${no(c)}`;
+    cap.innerHTML = '<b></b><small></small>'; cap.firstChild.textContent = c.name; cap.lastChild.textContent = `${c.en ? c.en + ' · ' : ''}${c.set || 'Unknown Set'} · ${no(c)}`;
     b.append(fig, cap); b.addEventListener('click', () => add(c, card));
     // − / + under every card, so an accidental tap is undone right where it happened.
     const step = document.createElement('div'); step.className = 'qa-step';
-    const minus = document.createElement('button'); minus.type = 'button'; minus.className = 'qa-minus'; minus.textContent = '−'; minus.setAttribute('aria-label', `One fewer ${c.name}`);
+    const minus = document.createElement('button'); minus.type = 'button'; minus.className = 'qa-minus'; minus.textContent = '−'; minus.setAttribute('aria-label', `One Fewer ${c.name}`);
     const cnt = document.createElement('span'); cnt.className = 'qa-cnt'; cnt.setAttribute('aria-live', 'polite');
-    const plus = document.createElement('button'); plus.type = 'button'; plus.className = 'qa-plus'; plus.textContent = '+'; plus.setAttribute('aria-label', `One more ${c.name}`);
+    const plus = document.createElement('button'); plus.type = 'button'; plus.className = 'qa-plus'; plus.textContent = '+'; plus.setAttribute('aria-label', `One More ${c.name}`);
     minus.addEventListener('click', () => remove(c, card)); plus.addEventListener('click', () => add(c, card));
     step.append(minus, cnt, plus);
     const card = document.createElement('div'); card.className = 'qa-card'; card.dataset.id = c.id;
@@ -246,13 +246,13 @@
     el.count.textContent = `${n} card${n === 1 ? '' : 's'}`;
     el.value.textContent = st.tray.some((t) => !t.priced) ? `${peso(value())} · pricing…` : peso(value());
     el.thumbs.replaceChildren(...st.tray.filter((t) => t.image).slice(-5).map((t) => { const i = document.createElement('img'); i.src = t.image; i.alt = ''; return i; }));
-    el.save.textContent = `Save all ${n} card${n === 1 ? '' : 's'}`;
+    el.save.textContent = `Save All ${n} Card${n === 1 ? '' : 's'}`;
   }
 
   /* ---------- review sheet ---------- */
   const CONDS = ['Near Mint', 'LP-NM', 'Lightly Played', 'MP-LP', 'Moderately Played', 'HP-MP', 'Heavily Played', 'Damaged-HP', 'Damaged', 'Sealed', 'PSA 10', 'PSA 9', 'CGC 10', 'CGC 9.5', 'BGS 9.5'];
   // Every finish can be chosen, including ones with no market price to look up.
-  const FINISHES = [['normal', 'Normal'], ['holofoil', 'Holofoil'], ['reverseHolofoil', 'Reverse Holo'], ['1stEditionHolofoil', '1st Ed. Holo'], ['1stEditionNormal', '1st Ed.'], ['full-art', 'Full art'], ['illustration', 'Illustration']];
+  const FINISHES = [['normal', 'Normal'], ['holofoil', 'Holofoil'], ['reverseHolofoil', 'Reverse Holo'], ['1stEditionHolofoil', '1st Ed. Holo'], ['1stEditionNormal', '1st Ed.'], ['full-art', 'Full Art'], ['illustration', 'Illustration']];
   function paintDefaults() {
     el.binders.querySelectorAll('input').forEach((i) => { i.checked = st.binders.includes(i.value); });
   }
@@ -262,16 +262,16 @@
   function copyRow(it, c, i) {
     const row = document.createElement('li'); row.className = 'qa-copy' + (c.err ? ' err' : '');
     const n = document.createElement('span'); n.className = 'qa-copy-n'; n.textContent = `Card ${i + 1}`;
-    const fin = document.createElement('select'); fin.setAttribute('aria-label', `Finish of card ${i + 1}`);
-    if (!c.finish) fin.append(new Option(it.priced ? 'Pick a finish' : 'Pricing…', '', true, true));
+    const fin = document.createElement('select'); fin.setAttribute('aria-label', `Finish Of Card ${i + 1}`);
+    if (!c.finish) fin.append(new Option(it.priced ? 'Pick A Finish' : 'Pricing…', '', true, true));
     // Each finish shows its suggested price for this copy's condition (graded and sealed: the Near Mint price).
     const finLabel = (f) => `${f.label} · ${peso(A.suggest(f.php, c.cond) ?? f.php)}`;
     it.finishes.forEach((f) => fin.append(new Option(finLabel(f), f.key, false, f.key === c.finish)));
     // A finish the price list already shows under the same name isn't offered twice.
     FINISHES.filter(([k, label]) => !it.finishes.some((f) => f.key === k || (f.label === label && k !== c.finish))).forEach(([k, label]) => fin.append(new Option(label, k, false, k === c.finish)));
     const sug = document.createElement('p'); sug.className = 'qa-sug';
-    const pr = document.createElement('input'); pr.className = 'qa-price'; pr.inputMode = 'decimal'; pr.placeholder = '₱0'; pr.value = c.price; pr.setAttribute('aria-label', `Value of card ${i + 1} in pesos`);
-    const cond = document.createElement('select'); cond.setAttribute('aria-label', `Condition of card ${i + 1}`);
+    const pr = document.createElement('input'); pr.className = 'qa-price'; pr.inputMode = 'decimal'; pr.placeholder = '₱0'; pr.value = c.price; pr.setAttribute('aria-label', `Value Of Card ${i + 1} In Pesos`);
+    const cond = document.createElement('select'); cond.setAttribute('aria-label', `Condition Of Card ${i + 1}`);
     const known = CONDS.includes(c.cond) ? CONDS : [c.cond, ...CONDS];
     known.forEach((v) => cond.append(new Option(v, v, false, v === c.cond)));
     const market = () => it.finishes.find((x) => x.key === c.finish);
@@ -293,7 +293,7 @@
     pr.oninput = () => { c.price = pr.value.replace(/[^\d.]/g, ''); c.market = false; persist(); paintBar(); paintSug(); };
     cond.onchange = () => { c.cond = cond.value; follow(); persist(); paintBar(); paintSug(); };
     document.addEventListener('bbv:shares', () => { if (row.isConnected) { follow(); paintSug(); } }, { once: true });
-    const x = document.createElement('button'); x.type = 'button'; x.className = 'qa-copy-x'; x.textContent = '✕'; x.setAttribute('aria-label', `Take out card ${i + 1}`);
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'qa-copy-x'; x.textContent = '✕'; x.setAttribute('aria-label', `Take Out Card ${i + 1}`);
     x.onclick = () => { it.copies.splice(it.copies.indexOf(c), 1); if (!it.copies.length) st.tray = st.tray.filter((t) => t !== it); afterChange(); };
     row.append(n, fin, pr, cond, x, sug);
     if (c.err) { const e = document.createElement('p'); e.className = 'qa-err'; e.textContent = c.err; row.append(e); }
@@ -309,16 +309,16 @@
       const s = document.createElement('small'); s.textContent = `${it.edition ? it.edition + ' · ' : ''}${it.set || ''} · ${no(it)}`;
       info.append(h, s);
       const q = document.createElement('div'); q.className = 'qa-qty';
-      const minus = document.createElement('button'); minus.type = 'button'; minus.textContent = it.copies.length > 1 ? '−' : '✕'; minus.setAttribute('aria-label', it.copies.length > 1 ? 'One fewer' : 'Remove');
+      const minus = document.createElement('button'); minus.type = 'button'; minus.textContent = it.copies.length > 1 ? '−' : '✕'; minus.setAttribute('aria-label', it.copies.length > 1 ? 'One Fewer' : 'Remove');
       const n = document.createElement('span'); n.textContent = it.copies.length;
-      const plus = document.createElement('button'); plus.type = 'button'; plus.textContent = '+'; plus.setAttribute('aria-label', 'One more');
+      const plus = document.createElement('button'); plus.type = 'button'; plus.textContent = '+'; plus.setAttribute('aria-label', 'One More');
       minus.onclick = () => { it.copies.pop(); if (!it.copies.length) st.tray = st.tray.filter((x) => x !== it); afterChange(); };
       plus.onclick = () => { it.copies.push(newCopy(it)); afterChange(); };
       q.append(minus, n, plus);
       const list = document.createElement('ol'); list.className = 'qa-copies';
       list.append(...it.copies.map((c, i) => copyRow(it, c, i)));
       const acts = document.createElement('div'); acts.className = 'qa-row-acts';
-      const all = document.createElement('button'); all.type = 'button'; all.className = 'qa-all'; all.textContent = 'Remove all'; all.setAttribute('aria-label', `Remove all of ${it.name}`);
+      const all = document.createElement('button'); all.type = 'button'; all.className = 'qa-all'; all.textContent = 'Remove All'; all.setAttribute('aria-label', `Remove All Of ${it.name}`);
       all.onclick = () => { st.tray = st.tray.filter((x) => x !== it); afterChange(); };
       acts.append(q, all);
       li.append(im, info, acts, list); return li;
@@ -331,7 +331,7 @@
   $('qaClear').addEventListener('click', async () => {
     const n = count();
     if (!n || !(await (window.bbvConfirm ? window.bbvConfirm(`Remove all ${n} card${n === 1 ? '' : 's'} from your tray?`, { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm(`Remove all ${n} card${n === 1 ? '' : 's'} from your tray?`))))) return;
-    st.tray = []; afterChange(); A.toast('Tray emptied', { kind: 'ok' });
+    st.tray = []; afterChange(); A.toast('Tray Emptied', { kind: 'ok' });
   });
   el.sheet.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeSheet(); });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !el.sheet.hidden) closeSheet(); });
@@ -365,10 +365,10 @@
         try {
           const r = await fetch('/admin/save', { method: 'POST', body: form(it, c), headers: { Accept: 'application/json' }, credentials: 'same-origin' });
           const j = await r.json().catch(() => ({}));
-          if (!r.ok || !j.ok) throw new Error(j.error || 'Not saved');
+          if (!r.ok || !j.ok) throw new Error(j.error || 'Not Saved');
           it.copies.splice(it.copies.indexOf(c), 1); c.err = '';
           savedBy.set(it.id, (savedBy.get(it.id) || 0) + 1);
-        } catch (e) { failed += 1; c.err = e.message || 'Not saved'; }
+        } catch (e) { failed += 1; c.err = e.message || 'Not Saved'; }
         done += 1; el.prog.textContent = `Saving ${done} of ${total}…`;
       }
     }
@@ -379,7 +379,7 @@
     if (el.total) el.total.textContent = (Number(el.total.textContent.replace(/\D/g, '')) + saved).toLocaleString('en-US');
     paintBar(); paintTiles();
     shown.forEach((c) => { const n = savedBy.get(c.id) || 0; if (n > 0) c.owned = (c.owned || 0) + n; });
-    if (!failed) { closeSheet(); A.toast(`Saved ${saved} card${saved === 1 ? '' : 's'} ✓`, { kind: 'ok' }); if (shown.size) { el.grid.replaceChildren(...[...shown.values()].map(tile)); if (openSet) filterSet(); } }
+    if (!failed) { closeSheet(); A.toast(`Saved ${saved} Card${saved === 1 ? '' : 's'} ✓`, { kind: 'ok' }); if (shown.size) { el.grid.replaceChildren(...[...shown.values()].map(tile)); if (openSet) filterSet(); } }
     else { el.prog.textContent = `Saved ${saved}. ${failed} didn’t save; they’re still in the tray. Tap “Save all” to try again.`; paintList(); }
   });
 
@@ -437,7 +437,7 @@
     const mq = $('qaMineQ'), list = $('qaMineList'), mstate = $('qaMineState'), go = $('qaMineGo');
     const chosen = new Set();
     let mseq = 0, mt = 0;
-    const paintGo = () => { go.disabled = !chosen.size; go.textContent = chosen.size ? `Add ${chosen.size} card${chosen.size === 1 ? '' : 's'} to this binder` : 'Add to this binder'; };
+    const paintGo = () => { go.disabled = !chosen.size; go.textContent = chosen.size ? `Add ${chosen.size} Card${chosen.size === 1 ? '' : 's'} To This Binder` : 'Add To This Binder'; };
     const mineTile = (c) => {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'me-res';
       const on = chosen.has(c.id); b.classList.toggle('in', on); b.setAttribute('aria-pressed', String(on));
@@ -467,7 +467,7 @@
         const r = await fetch(`/admin/binders/${encodeURIComponent(BH)}/cards`, { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ add: [...chosen] }) });
         const j = await r.json().catch(() => ({}));
         if (!r.ok) throw new Error(j.error || 'That didn’t save. Please try again.');
-        A.toast(`Added ${j.added ?? chosen.size} card${(j.added ?? chosen.size) === 1 ? '' : 's'} to the binder ✓`, { kind: 'ok' });
+        A.toast(`Added ${j.added ?? chosen.size} Card${(j.added ?? chosen.size) === 1 ? '' : 's'} To The Binder ✓`, { kind: 'ok' });
         chosen.clear(); paintGo(); mine();
       } catch (e) { A.toast(e.message, { kind: 'err' }); paintGo(); }
     });

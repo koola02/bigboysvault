@@ -260,7 +260,7 @@ pub struct StoreLook {
     pub note: String,
 }
 
-pub const LOOK_BGS: [(&str, &str); 5] = [("", "Plain"), ("glow", "Glow"), ("dots", "Dots"), ("lines", "Lines"), ("photo", "Your photo")];
+pub const LOOK_BGS: [(&str, &str); 5] = [("", "Plain"), ("glow", "Glow"), ("dots", "Dots"), ("lines", "Lines"), ("photo", "Your Photo")];
 pub const LOOK_NAMES: [(&str, &str); 3] = [("", "Plain"), ("glow", "Glow"), ("line", "Underline")];
 pub const LOOK_TILES: [(&str, &str); 3] = [("", "Standard"), ("l", "Large"), ("s", "Small")];
 
@@ -1180,13 +1180,17 @@ impl Order {
     pub fn buyer_paid_text(&self) -> String {
         if self.buyer_paid_at > 0 { ago(self.buyer_paid_at) } else { String::new() }
     }
+    /// How it was paid, as shown (proper case).
+    pub fn paid_via_text(&self) -> String {
+        members::proper(&self.paid_via)
+    }
     /// The step it is at, in the words the buttons use ("Accept" makes it "Accepted").
     pub fn status_text(&self) -> &str {
         match self.status.as_str() {
             "Pending" => "New",
             "Confirmed" => "Accepted",
-            "Expired" => "Ran out",
-            "Withdrawn" => "Taken back",
+            "Expired" => "Ran Out",
+            "Withdrawn" => "Taken Back",
             s => s,
         }
     }
@@ -1430,7 +1434,7 @@ pub fn reserve(c: &Connection, buyer: i64, seller: i64, card_id: i64, qty: i64, 
         };
         let open: i64 = c.query_row("SELECT COUNT(*) FROM reservations WHERE buyer_id=?1 AND card_id=?2 AND status IN ('Pending','Confirmed')", [buyer, card_id], |r| r.get(0))?;
         if open > 0 {
-            return Ok(Err("You've already ordered this card. Check My orders."));
+            return Ok(Err("You've already ordered this card. Check My Orders."));
         }
         if card.worth() <= 0.0 {
             return Ok(Err("This card has no price yet. Ask the seller, or make an offer."));
@@ -1618,7 +1622,7 @@ pub fn make_offer(c: &Connection, buyer: i64, seller: i64, card_id: i64, amount:
     }
     let open: i64 = c.query_row("SELECT COUNT(*) FROM offers WHERE sender_id=?1 AND card_id=?2 AND status IN ('Pending','Countered')", [buyer, card_id], |r| r.get(0))?;
     if open > 0 {
-        return Ok(Err("You already have an offer on this card. Check My orders."));
+        return Ok(Err("You already have an offer on this card. Check My Orders."));
     }
     let t = now();
     c.execute(
@@ -1830,6 +1834,10 @@ pub struct Sale {
 }
 
 impl Sale {
+    /// How it was paid, as shown (proper case).
+    pub fn paid_via_text(&self) -> String {
+        members::proper(&self.paid_via)
+    }
     pub fn amount_text(&self) -> String {
         vault_search::peso(self.amount)
     }
@@ -2288,7 +2296,7 @@ pub fn popular_binders(c: &Connection, seller: i64) -> rusqlite::Result<Vec<(Mem
 /// The others are about their own store.
 pub const EVENTS: [(&str, &str); 17] = [
     ("message", "Private messages"),
-    ("my_order", "My orders: accepted, declined, a counter offer, a reply"),
+    ("my_order", "My Orders: accepted, declined, a counter offer, a reply"),
     ("reservation", "Someone orders one of my cards"),
     ("offer", "Someone makes an offer on my card"),
     ("inquiry", "Someone asks me a question"),
@@ -2299,7 +2307,7 @@ pub const EVENTS: [(&str, &str); 17] = [
     ("following", "Someone I follow posts or puts up cards"),
     ("wish", "A card on my wishlist is for sale"),
     ("announcement", "News from the vault"),
-    ("staff", "Trainers waiting, reports (staff)"),
+    ("staff", "New trainers, reports (staff)"),
     ("view", "People look at or save my cards (once a day per card)"),
     ("price", "My price is far from today's market"),
     ("expiry", "A card's end date passes"),
@@ -2415,13 +2423,13 @@ pub fn notify_from(c: &Connection, member: i64, actor: i64, kind: &str, group: &
 pub fn kind_label(kind: &str) -> &'static str {
     match kind {
         "message" | "dm_watch" => "Message",
-        "my_order" => "My order",
+        "my_order" => "My Order",
         "reservation" | "order" => "Order",
         "offer" => "Offer",
         "inquiry" => "Question",
         "follow" => "Follow",
         "following" => "Following",
-        "social" => "Like or comment",
+        "social" => "Like Or Comment",
         "review" => "Vouch",
         "wish" => "Wishlist",
         "announcement" => "News",
@@ -2750,7 +2758,7 @@ pub fn decide_application(c: &Connection, id: i64, approve: bool, reason: &str, 
 pub fn ago(t: i64) -> String {
     let s = (now() - t).max(0);
     if s < 60 {
-        "just now".into()
+        "Just now".into()
     } else if s < 3600 {
         format!("{} min ago", s / 60)
     } else if s < 86400 {
@@ -2842,6 +2850,10 @@ pub struct VaultOrder {
 }
 
 impl VaultOrder {
+    /// How it was paid, as shown (proper case).
+    pub fn paid_via_text(&self) -> String {
+        members::proper(&self.paid_via)
+    }
     /// When the buyer said they paid, in words ("" when they haven't).
     pub fn buyer_paid_text(&self) -> String {
         if self.buyer_paid_at > 0 { ago(self.buyer_paid_at) } else { String::new() }
@@ -3107,7 +3119,7 @@ pub struct VaultStore {
 impl VaultStore {
     /// Its links as (label, address, the address in short), as a seller's store shows them.
     pub fn social_links(&self) -> Vec<(String, String, String)> {
-        let mut v: Vec<(String, String, String)> = [("Facebook", &self.fb_url), ("Facebook group", &self.fb_group_url), ("Instagram", &self.ig_url), ("TikTok", &self.tiktok_url), ("Shopee", &self.shopee_url)]
+        let mut v: Vec<(String, String, String)> = [("Facebook", &self.fb_url), ("Facebook Group", &self.fb_group_url), ("Instagram", &self.ig_url), ("TikTok", &self.tiktok_url), ("Shopee", &self.shopee_url)]
             .into_iter()
             .filter(|(_, u)| !u.is_empty())
             .map(|(l, u)| (l.to_string(), u.clone(), members::short_link(u)))

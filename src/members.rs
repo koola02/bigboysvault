@@ -244,7 +244,7 @@ impl Member {
     pub fn social_links(&self) -> Vec<(String, String, String)> {
         let short = short_link;
         let mut v = vec![];
-        for (label, url) in [("Facebook", &self.fb_url), ("Facebook group", &self.fb_group_url), ("Instagram", &self.ig_url), ("TikTok", &self.tiktok_url), ("Shopee", &self.shopee_url)] {
+        for (label, url) in [("Facebook", &self.fb_url), ("Facebook Group", &self.fb_group_url), ("Instagram", &self.ig_url), ("TikTok", &self.tiktok_url), ("Shopee", &self.shopee_url)] {
             if !url.is_empty() {
                 v.push((label.to_string(), url.clone(), short(url)));
             }
@@ -257,6 +257,14 @@ impl Member {
             v.push((label, url, s));
         }
         v
+    }
+    /// The ways to pay as they are shown: in proper case, like every label ("Bank transfer" reads "Bank Transfer").
+    pub fn pay_labels(&self) -> Vec<String> {
+        self.pay_list().iter().map(|m| proper(m)).collect()
+    }
+    /// One way to pay as it is shown (the stored word stays as it is).
+    pub fn pay_label(&self, method: &str) -> String {
+        proper(method)
     }
     pub fn pay_list(&self) -> Vec<String> {
         self.pay_methods.split(',').map(str::trim).filter(|m| !m.is_empty()).map(String::from).collect()
@@ -286,11 +294,29 @@ fn span(secs: i64) -> String {
 }
 
 /// "3 days ago". The page refreshes these in the browser, so a saved page never goes stale.
+/// A stored word as a label: every word starts with a capital, the rest of each word as it is ("Out of stock" is
+/// shown as "Out Of Stock", "GCash" stays "GCash"). The site's labels are in proper case (the owner, 19 Nov 2026:
+/// "fix all capitalizations on the entire site ... use proper case"); words the site stores and compares are not
+/// rewritten, only shown through this.
+pub fn proper(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut start = true;
+    for ch in s.chars() {
+        if start && ch.is_lowercase() {
+            out.extend(ch.to_uppercase());
+        } else {
+            out.push(ch);
+        }
+        start = ch.is_whitespace();
+    }
+    out
+}
+
 pub fn ago(t: i64) -> String {
     let s = (now() - t).max(0);
     let say = |n: i64, unit: &str| format!("{n} {unit}{} ago", if n == 1 { "" } else { "s" });
     match s {
-        0..=59 => "just now".to_string(),
+        0..=59 => "Just now".to_string(),
         60..=3_599 => say(s / 60, "minute"),
         3_600..=86_399 => say(s / 3_600, "hour"),
         86_400..=1_209_599 => say(s / 86_400, "day"),
@@ -602,10 +628,10 @@ pub struct MemberBinder {
 }
 
 impl MemberBinder {
-    /// Who can open it, in plain words for its page: "Link only", "Private", or nothing when everyone can.
+    /// Who can open it, in plain words for its page: "Link Only", "Private", or nothing when everyone can.
     pub fn who_text(&self) -> &'static str {
         match self.visibility.as_str() {
-            "Unlisted" => "Link only",
+            "Unlisted" => "Link Only",
             "Private" => "Private",
             _ => "",
         }
@@ -666,6 +692,10 @@ pub struct MemberCard {
 }
 
 impl MemberCard {
+    /// Its status as it is shown: in proper case ("Out of stock" reads "Out Of Stock"). The stored word is unchanged.
+    pub fn status_label(&self) -> String {
+        proper(&self.status)
+    }
     /// A photo the trainer took themselves, rather than a card from the catalogue. It isn't part of the vault.
     pub fn own_photo(&self) -> bool {
         self.card_id.starts_with("own:")
@@ -718,11 +748,11 @@ impl MemberCard {
         }
         let left = self.expires_at - now();
         if left < 0 {
-            "ended".into()
+            "Ended".into()
         } else if left < 86400 {
-            "ends today".into()
+            "Ends Today".into()
         } else {
-            format!("{} days left", left / 86400)
+            format!("{} Days Left", left / 86400)
         }
     }
     /// The finish in words ("Reverse Holo"), or nothing for a plain one.
@@ -734,9 +764,9 @@ impl MemberCard {
     }
     pub fn qty_text(&self) -> String {
         match self.qty {
-            0 => "Sold out".into(),
-            1 => "1 left".into(),
-            n => format!("{n} in stock"),
+            0 => "Sold Out".into(),
+            1 => "1 Left".into(),
+            n => format!("{n} In Stock"),
         }
     }
     pub fn when(&self) -> String {
@@ -751,10 +781,10 @@ impl MemberCard {
     pub fn is_own(&self) -> bool {
         !self.is_sale() && !self.is_wish()
     }
-    /// "Highlight", "For sale" or "Wishlist".
+    /// "Highlight", "For Sale" or "Wishlist".
     pub fn kind_label(&self) -> &'static str {
         match self.kind.as_str() {
-            "sale" => "For sale",
+            "sale" => "For Sale",
             "wish" => "Wishlist",
             _ => "Highlight",
         }

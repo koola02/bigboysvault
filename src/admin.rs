@@ -1995,7 +1995,7 @@ fn ops_rows(c: &rusqlite::Connection, now: i64) -> rusqlite::Result<Vec<OpsRow>>
 fn ago(secs: i64) -> String {
     let s = secs.max(0);
     let (n, unit) = if s < 60 {
-        return "just now".into();
+        return "Just now".into();
     } else if s < 3600 {
         (s / 60, "minute")
     } else if s < 86_400 {
@@ -2187,7 +2187,7 @@ mod tests {
 
     #[test]
     fn how_long_ago_in_words() {
-        assert_eq!(ago(10), "just now");
+        assert_eq!(ago(10), "Just now");
         assert_eq!(ago(60), "1 minute ago");
         assert_eq!(ago(3 * 3600 + 5), "3 hours ago");
         assert_eq!(ago(2 * 86_400), "2 days ago");

@@ -12,7 +12,7 @@
     {#- Trainers asking to sell: first on the page, with a number on the Sellers tab and the Overview. The whole application
         is also a chat with the vault (Open the chat); approving or declining writes the answer into that chat. -#}
     <article class="dash-panel dash-wide ap-panel" id="applications">
-      <h2 class="dash-h">Applications to sell{% if !waiting.is_empty() %} <span class="seg-n">{{ waiting.len() }}</span>{% endif %}</h2>
+      <h2 class="dash-h">Applications To Sell{% if !waiting.is_empty() %} <span class="seg-n">{{ waiting.len() }}</span>{% endif %}</h2>
       {% if waiting.is_empty() %}<p class="dash-sub">None waiting. When a trainer applies, it shows here first, with a number on the Sellers tab.</p>{% else %}
       <p class="dash-sub">Oldest first. Approving opens their store straight away. Your answer goes into their chat with the vault.</p>
       <ul class="ap-list">
@@ -20,18 +20,18 @@
         <li class="ap-item" data-app="{{ a.id }}">
           <div class="ap-who">
             <a href="/trainers/{{ a.member_id }}" data-float>{% if !a.avatar.is_empty() %}<img class="av" src="{{ a.avatar }}" width="48" height="48" alt="">{% else %}<span class="av">{{ a.initial() }}</span>{% endif %}<b>{{ a.name }}</b></a>
-            <small>applied {{ a.when() }}</small>
+            <small>Applied {{ a.when() }}</small>
           </div>
           {% if a.note.is_empty() %}<p class="ap-note ap-none">No note.</p>{% else %}<p class="ap-note">{{ a.note }}</p>{% endif %}
-          {% if !a.photos.is_empty() %}<div class="ap-proof">{% for (big, small) in a.pics() %}<a href="{{ big }}" target="_blank" rel="noopener" aria-label="See this photo bigger"><img src="{{ small }}" width="120" height="120" alt="" loading="lazy"></a>{% endfor %}</div>{% endif %}
+          {% if !a.photos.is_empty() %}<div class="ap-proof">{% for (big, small) in a.pics() %}<a href="{{ big }}" target="_blank" rel="noopener" aria-label="See This Photo Bigger"><img src="{{ small }}" width="120" height="120" alt="" loading="lazy"></a>{% endfor %}</div>{% endif %}
           <div class="ap-iacts">
-            <button type="button" class="btn" data-apply="approve" data-id="{{ a.id }}" data-name="{{ a.name }}" data-full-only>Approve: open their store</button>
+            <button type="button" class="btn" data-apply="approve" data-id="{{ a.id }}" data-name="{{ a.name }}" data-full-only>Approve: Open Their Store</button>
             <button type="button" class="btn ghost" data-apply="decline" data-id="{{ a.id }}" data-full-only>Decline</button>
-            <a class="btn ghost" href="/admin/messages?t={{ a.thread_id }}">Open the chat</a>
+            <a class="btn ghost" href="/admin/messages?t={{ a.thread_id }}">Open The Chat</a>
           </div>
           <form class="ap-why" data-why="{{ a.id }}" hidden>
-            <input maxlength="300" placeholder="Why? (optional, they see it)" aria-label="Why it isn't approved">
-            <button class="btn" type="submit">Send decline</button>
+            <input maxlength="300" placeholder="Why? (optional, they see it)" aria-label="Why It Isn't Approved">
+            <button class="btn" type="submit">Send Decline</button>
           </form>
         </li>
         {% endfor %}
@@ -39,50 +39,50 @@
       {% endif %}
       {% if !answered.is_empty() %}
       <details class="ap-done">
-        <summary>Answered lately ({{ answered.len() }})</summary>
-        <ul class="dash-list">{% for a in answered %}<li><a href="/admin/messages?t={{ a.thread_id }}"><span class="db-t">{{ a.name }} <small>({% if a.status == "Approved" %}approved{% else %}declined{% endif %})</small></span><span class="db-n">{{ a.decided_when() }}{% if !a.reason.is_empty() %} · {{ a.reason }}{% endif %}</span></a></li>{% endfor %}</ul>
+        <summary>Answered Lately ({{ answered.len() }})</summary>
+        <ul class="dash-list">{% for a in answered %}<li><a href="/admin/messages?t={{ a.thread_id }}"><span class="db-t">{{ a.name }} <small>({% if a.status == "Approved" %}Approved{% else %}Declined{% endif %})</small></span><span class="db-n">{{ a.decided_when() }}{% if !a.reason.is_empty() %} · {{ a.reason }}{% endif %}</span></a></li>{% endfor %}</ul>
       </details>
       {% endif %}
     </article>
 
     <article class="dash-panel dash-wide">
-      <h2 class="dash-h">Tell every seller something</h2>
+      <h2 class="dash-h">Tell Every Seller Something</h2>
       <p class="dash-sub">Goes to everyone's bell and notifications page (and email, for those who turned it on).</p>
       <form id="announceForm" class="sheet-form">
         <textarea name="message" rows="3" maxlength="500" required class="sheet-input" placeholder="New: you can now set an end date on a listing…"></textarea>
         <input name="link" class="sheet-input" maxlength="200" placeholder="A link to open (optional), like /me/listings">
-        <button class="btn" type="submit">Send to everyone</button>
+        <button class="btn" type="submit">Send To Everyone</button>
       </form>
     </article>
 
     <article class="dash-panel">
-      <h2 class="dash-h">Custom cards to check{% if !flagged.is_empty() %} <span class="seg-n">{{ flagged.len() }}</span>{% endif %}</h2>
+      <h2 class="dash-h">Custom Cards To Check{% if !flagged.is_empty() %} <span class="seg-n">{{ flagged.len() }}</span>{% endif %}</h2>
       {% if flagged.is_empty() %}<p class="dash-sub">None waiting.</p>{% else %}
       <ul class="dash-list st-top">{% for (c, who) in flagged %}<li data-flag="{{ c.id }}"><a href="/trainers/{{ c.member_id }}/cards/{{ c.id }}" data-float>{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="36" height="50" alt="" loading="lazy">{% endif %}<span class="db-t">{{ c.title }}</span><span class="db-n">{{ who }} · {{ c.cond }} · {{ c.price_text() }}</span></a><button type="button" class="linkbtn inline" data-clear-flag="{{ c.id }}">Checked ✓</button></li>{% endfor %}</ul>{% endif %}
     </article>
 
     <article class="dash-panel">
-      <h2 class="dash-h">Latest reviews</h2>
+      <h2 class="dash-h">Latest Reviews</h2>
       {% if reviews.is_empty() %}<p class="dash-sub">No reviews yet.</p>{% else %}
       <ul class="dash-list">{% for r in reviews %}<li data-review="{{ r.id }}"{% if r.hidden %} class="is-hidden"{% endif %}><span class="db-t">{{ r.stars() }} {{ r.reviewer_name }} → <a href="/trainers/{{ r.seller_id }}" data-float>{{ r.seller_name }}</a>{% if !r.text.is_empty() %}: “{{ r.text }}”{% endif %}</span><span class="db-n">{{ r.when() }} · <button type="button" class="linkbtn inline" data-hide-review="{{ r.id }}" data-hidden="{{ r.hidden }}">{% if r.hidden %}Show{% else %}Hide{% endif %}</button></span></li>{% endfor %}</ul>{% endif %}
     </article>
 
     <article class="dash-panel dash-wide">
-      <h2 class="dash-h">Stores with cards on sale</h2>
+      <h2 class="dash-h">Stores With Cards On Sale</h2>
       {% if stores.is_empty() %}<p class="dash-sub">None yet.</p>{% else %}
-      <ul class="dash-list">{% for (m, s, cards) in stores %}<li><a href="{{ m.store_url() }}" target="_blank" rel="noopener"><span class="db-t">{{ m.store_title() }} <small>({{ m.name }})</small></span><span class="db-n">{{ s.on_sale }} on sale · {{ s.sold }} sold · {{ s.followers }} followers{% if s.reviews > 0 %} · ★ {{ s.rating }}{% endif %} · {{ m.status }}</span></a></li>{% endfor %}</ul>{% endif %}
+      <ul class="dash-list">{% for (m, s, cards) in stores %}<li><a href="{{ m.store_url() }}" target="_blank" rel="noopener"><span class="db-t">{{ m.store_title() }} <small>({{ m.name }})</small></span><span class="db-n">{{ s.on_sale }} On Sale · {{ s.sold }} Sold · {{ s.followers }} Followers{% if s.reviews > 0 %} · ★ {{ s.rating }}{% endif %} · {{ m.status }}</span></a></li>{% endfor %}</ul>{% endif %}
     </article>
   </div>
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-<script src="/static/admin-ui.js?v=10" defer></script>
+<script src="/static/admin-ui.js?v=12" defer></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   const A = window.Admin;
   document.getElementById('announceForm')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target, btn = f.querySelector('button'); btn.disabled = true;
-    try { const j = await A.postJSON('/admin/sellers/announce', { message: f.message.value, link: f.link.value }); A.toast(`Sent to ${j.n} trainers ✓`, { kind: 'ok' }); f.reset(); }
+    try { const j = await A.postJSON('/admin/sellers/announce', { message: f.message.value, link: f.link.value }); A.toast(`Sent To ${j.n} Trainers ✓`, { kind: 'ok' }); f.reset(); }
     catch (err) { A.toast(err.message, { kind: 'err' }); }
     btn.disabled = false;
   });
@@ -91,7 +91,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const b = e.target.closest('[data-apply]'); if (!b) return;
     const li = b.closest('.ap-item');
     if (b.dataset.apply === 'decline') { const f = li.querySelector('.ap-why'); f.hidden = !f.hidden; if (!f.hidden) f.querySelector('input').focus(); return; }
-    if (!(await window.bbvConfirm(`Open a store for ${b.dataset.name}? They can sell straight away.`, { yes: 'Approve', no: 'Not yet' }))) return;
+    if (!(await window.bbvConfirm(`Open a store for ${b.dataset.name}? They can sell straight away.`, { yes: 'Approve', no: 'Not Yet' }))) return;
     b.disabled = true;
     try { await A.postJSON(`/admin/applications/${b.dataset.id}`, { action: 'approve' }); li.remove(); A.toast('Approved ✓ They were told in their chat.', { kind: 'ok' }); }
     catch (err) { A.toast(err.message, { kind: 'err' }); b.disabled = false; }

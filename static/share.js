@@ -26,7 +26,7 @@
   };
   async function copy(link, said) {
     try { await navigator.clipboard.writeText(link); toast(said || 'Link copied.'); }
-    catch (_) { window.prompt('Copy this link', link); }
+    catch (_) { window.prompt('Copy This Link', link); }
   }
   const touch = () => matchMedia('(pointer: coarse)').matches;
 
@@ -53,13 +53,13 @@
     x.addEventListener('click', close);
     d.addEventListener('mousedown', (e) => { if (e.target === d) close(); });
 
-    if (ref) row('chat', 'Send in a message', () => {
+    if (ref) row('chat', 'Send In A Message', () => {
       close();
       if (window.bbvDM && window.bbvDM.share) window.bbvDM.share(ref); else location.href = '/login';
     }, 'sh-main');
     if (navigator.share && touch()) {
       // A phone: its own share menu lists Messenger, Viber and whatever else is on it.
-      row('bolt', 'Messenger and other apps', async () => {
+      row('bolt', 'Messenger And Other Apps', async () => {
         try { await navigator.share({ title: name, url: link }); close(); }
         catch (err) { if (!err || err.name !== 'AbortError') copy(link, 'The link is copied: paste it in a chat.'); }
       });
@@ -76,7 +76,7 @@
       row('bolt', 'Messenger', async () => { await copy(link, 'Link copied. Paste it in a Messenger chat.'); window.open('https://www.messenger.com/', '_blank', 'noopener'); close(); });
     }
     row('fb', 'Facebook', () => { window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(link)}`, '_blank', 'noopener'); close(); });
-    row('link', 'Copy link', async () => { await copy(link); close(); });
+    row('link', 'Copy Link', async () => { await copy(link); close(); });
     body.append(list);
     d.append(head, body);
     document.body.append(d);

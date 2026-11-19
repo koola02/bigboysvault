@@ -11,12 +11,12 @@
     let kept = [];
     let tags = (target ? target.value.split(',') : (box.dataset.tags || '').split('|')).map((t) => t.trim()).filter(Boolean);
     if (target) { kept = tags.filter((t) => SYSTEM.test(t)); tags = tags.filter((t) => !SYSTEM.test(t)); }
-    const input = make('input', 'tag-in'); input.type = 'text'; input.maxLength = 30; input.placeholder = '＋ Tag'; input.setAttribute('aria-label', 'Add a tag');
+    const input = make('input', 'tag-in'); input.type = 'text'; input.maxLength = 30; input.placeholder = '＋ Tag'; input.setAttribute('aria-label', 'Add A Tag');
     input.setAttribute('enterkeyhint', 'done');
     const paint = () => {
       box.replaceChildren(...tags.map((t) => {
         const chip = make('span', 'tag-hl', t);
-        const x = make('button', 'tag-x', '✕'); x.type = 'button'; x.setAttribute('aria-label', `Take off the tag ${t}`);
+        const x = make('button', 'tag-x', '✕'); x.type = 'button'; x.setAttribute('aria-label', `Take Off The Tag ${t}`);
         x.addEventListener('click', () => { tags = tags.filter((y) => y !== t); changed(); });
         chip.append(x);
         return chip;

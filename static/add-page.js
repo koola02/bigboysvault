@@ -237,7 +237,7 @@
         if (seller && fd.get('flag')) await send(`/me/listings/${j.card.id}`, { flag: true });
         if (seller && binderId) await send('/me/listings/move', { ids: [j.card.id], binder_id: binderId });
         added(j.card);
-        toast(seller ? (binderId ? 'Added to your store and this binder ✓' : 'Added to your store ✓') : 'Added to your binder ✓');
+        toast(seller ? (binderId ? 'Added to your store and this binder ✓' : 'Added To Your Store ✓') : 'Added To Your Binder ✓');
         own.reset(); shot.hidden = true; hint.hidden = false;
       } catch (err) { toast(err.message, true); }
       btn.disabled = false; btn.textContent = was;
@@ -256,7 +256,7 @@
       b.append(pic, make('b', null, c.title || 'Card'));
       const sub = [c.sub, c.price].filter(Boolean).join(' · ');
       if (sub) b.append(make('small', null, sub));
-      if (c.inside) b.append(make('small', 'ad-moves', `In “${c.inside}”: moves here`));
+      if (c.inside) b.append(make('small', 'ad-moves', `In “${c.inside}”: Moves Here`));
       b.addEventListener('click', async () => {
         if (b.classList.contains('in') || !window.bbvAddCard) return;
         b.classList.add('busy');

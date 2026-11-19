@@ -59,7 +59,7 @@ export function mountLang(root = document) {
       }
       if (wanted === lang) show(cache.get(lang), lang);
     } catch (e) {
-      console.debug('Translate failed', e);
+      console.debug('Translate Failed', e);
       if (wanted === lang) { wanted = original; mark(original); showOriginal(); }
     }
     sw.classList.remove('busy');

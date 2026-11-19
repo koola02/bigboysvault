@@ -12,19 +12,19 @@
    messages and notifications scripts work unchanged. #}
 <header class="hd" id="fbHeader">
   <div class="hd-l">
-    <a class="hd-logo" href="/" aria-label="{{ nav.brand }}, home"><img src="/static/img/logo-sm-144.png?v=1" width="40" height="40" alt=""></a>
+    <a class="hd-logo" href="/" aria-label="{{ nav.brand }}, Home"><img src="/static/img/logo-sm-144.png?v=1" width="40" height="40" alt=""></a>
     <a class="hd-word" href="/">{{ nav.brand }}</a>
     <form class="search hd-search" action="/search" role="search">
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
       <input type="search" name="q" placeholder="Search {{ nav.brand }}" aria-label="Search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false" data-suggest>
-      <button type="button" class="hd-search-x" data-search-close aria-label="Close search"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
+      <button type="button" class="hd-search-x" data-search-close aria-label="Close Search"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg></button>
     </form>
   </div>
   <nav class="hd-tabs" aria-label="Primary">
     <a href="/"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11l9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg><span>Home</span></a>
     <a href="/stores"><img class="tab-logo" src="/static/img/logo-sm-144.png?v=1" width="26" height="26" alt=""><span>Stores</span></a>
     <a href="/trainers"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg><span>Trainers</span></a>
-    <a href="/chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg><span>Vault chat</span></a>
+    <a href="/chat"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg><span>Vault Chat</span></a>
   </nav>
   <div class="hd-r">
     <button type="button" class="hd-ib hd-search-btn" data-search-open aria-label="Search"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></button>
@@ -32,42 +32,42 @@
     <div class="hd-pop" id="dmDropdown" hidden>
       <a class="hd-ib" id="barDm" href="/me/messages" hidden aria-label="Messages" title="Messages" aria-expanded="false" aria-controls="dmMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.3 9 9 0 0 1-3.8-.8L3 20l1.2-4.3A8 8 0 0 1 3 11.5 8.4 8.4 0 0 1 12 3.2a8.4 8.4 0 0 1 9 8.3z"/></svg><span class="notif-badge" id="dmBadge" hidden>0</span></a>
       <div class="notif-menu dm-menu" id="dmMenu" hidden>
-        <div class="notif-head"><b>Messages</b><span class="dm-menu-acts"><a class="hd-ib" href="/me/messages" aria-label="Open the full inbox" title="Open the full inbox"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></a><button type="button" class="hd-ib" data-dm-new aria-label="New message" title="New message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button></span></div>
+        <div class="notif-head"><b>Messages</b><span class="dm-menu-acts"><a class="hd-ib" href="/me/messages" aria-label="Open The Full Inbox" title="Open The Full Inbox"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></a><button type="button" class="hd-ib" data-dm-new aria-label="New Message" title="New Message"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button></span></div>
         <div class="alerts-card" data-alerts="panel" hidden></div>
         <div class="dm-menu-list" id="dmMenuList"></div>
-        <a class="dm-menu-all" href="/me/messages">Open the full inbox</a>
+        <a class="dm-menu-all" href="/me/messages">Open The Full Inbox</a>
       </div>
     </div>
     <div class="hd-pop" id="notifDropdown" hidden>
       <a class="hd-ib" id="notifBtn" href="/me/notifications" aria-label="Notifications" title="Notifications" aria-expanded="false" aria-controls="notifMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg><span class="notif-badge" id="notifBadge" hidden>0</span></a>
       <div class="notif-menu" id="notifMenu" hidden>
-        <div class="notif-head"><b>Notifications</b><button type="button" id="notifRead" class="btn ghost">Mark all read</button></div>
+        <div class="notif-head"><b>Notifications</b><button type="button" id="notifRead" class="btn ghost">Mark All Read</button></div>
         <ul class="notif-list" id="notifList"></ul>
-        <a class="dm-menu-all" href="/me/notifications">See all</a>
+        <a class="dm-menu-all" href="/me/notifications">See All</a>
       </div>
     </div>
-    <button type="button" class="hd-me" id="barMe" hidden aria-label="Your account" aria-expanded="false" aria-controls="meMenu"><span class="av" id="barMeAv"></span><span class="sr" id="barMeT">Your account</span></button>
+    <button type="button" class="hd-me" id="barMe" hidden aria-label="Your Account" aria-expanded="false" aria-controls="meMenu"><span class="av" id="barMeAv"></span><span class="sr" id="barMeT">Your Account</span></button>
     <a class="btn ghost hd-reg" href="/join" data-guest-only>Register</a>
-    <a class="btn hd-login" id="barLogin" href="/login">Log in</a>
+    <a class="btn hd-login" id="barLogin" href="/login">Log In</a>
   </div>
 </header>
 <div class="fb-app">
 <aside class="fb-left" id="fbMenu" aria-label="Menu">
   <div class="mn-head"><b>Menu</b></div>
   <nav class="mn" aria-label="Places">
-    <a class="mn-i" href="/me/page" id="mnMe" data-me-only><span class="av sm" id="mnMeAv"></span><span id="mnMeT">My profile</span></a>
-    <a class="mn-i" href="/login" data-guest-only><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg><span>Log in or register</span></a>
+    <a class="mn-i" href="/me/page" id="mnMe" data-me-only><span class="av sm" id="mnMeAv"></span><span id="mnMeT">My Profile</span></a>
+    <a class="mn-i" href="/login" data-guest-only><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg><span>Log In Or Register</span></a>
     <a class="mn-i" href="/trainers" data-mn="tab"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM23 21v-2a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8"/></svg><span>Trainers</span></a>
-    <a class="mn-i mn-ask" href="/ask" data-mn="ask"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg><span>Ask the Vault</span></a>
-    <a class="mn-i" href="/chat" data-mn="tab"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg><span>Vault chat</span></a>
+    <a class="mn-i mn-ask" href="/ask" data-mn="ask"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></svg><span>Ask The Vault</span></a>
+    <a class="mn-i" href="/chat" data-mn="tab"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H10l-5 4v-4H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/></svg><span>Vault Chat</span></a>
     <a class="mn-i" href="/vouches"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1-5.4-2.9-5.4 2.9 1-6.1L3.2 9.500l6.100-.900z"/></svg><span>Vouches</span></a>
-    <a class="mn-i" href="/me/sell" data-me-only data-buyer-only><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9M4 9v11h16V9M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0M10 20v-6h4v6"/></svg><span>Apply as a seller</span></a>
-    <a class="mn-i" href="/me/store/page" data-seller-only data-my-store><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 7h8M8 11h8M8 15h5"/></svg><span>My store</span></a>
+    <a class="mn-i" href="/me/sell" data-me-only data-buyer-only><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9l1.5-5h15L21 9M4 9v11h16V9M3 9a3 3 0 0 0 6 0 3 3 0 0 0 6 0 3 3 0 0 0 6 0M10 20v-6h4v6"/></svg><span>Apply As A Seller</span></a>
+    <a class="mn-i" href="/me/store/page" data-seller-only data-my-store><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="3"/><path d="M8 7h8M8 11h8M8 15h5"/></svg><span>My Store</span></a>
     <a class="mn-i" href="/me/orders" data-me-only><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2h12v20l-3-2-3 2-3-2-3 2zM9 7h6M9 11h6M9 15h4"/></svg><span>Orders</span></a>
     <button type="button" class="mn-i mn-cart" id="cartFab" aria-label="Cart" aria-expanded="false" aria-controls="cartDrawer"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></svg><span>Cart</span><span class="mn-n cart-n" id="cartN">0</span></button>
     <a class="mn-i" href="/me/bookmarks" data-me-only><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12a1 1 0 0 1 1 1v17l-7-4-7 4V4a1 1 0 0 1 1-1z"/></svg><span>Bookmarks</span><span class="mn-n mn-n-soft" data-bm-count hidden></span></a>
     <a class="mn-i" href="/admin/dashboard" data-staff-only><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l8 4v6c0 5-3.500 8.500-8 10-4.500-1.500-8-5-8-10V6z"/></svg><span>Admin</span></a>
   </nav>
-  <form class="mn-out" method="post" action="/signout" data-me-only><button type="submit" class="mn-i"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>Log out</span></button></form>
+  <form class="mn-out" method="post" action="/signout" data-me-only><button type="submit" class="mn-i"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg><span>Log Out</span></button></form>
   <p class="mn-foot">© {{ nav.years }} {{ nav.brand }}. Pokémon and all related names are trademarks of Nintendo, Creatures and GAME FREAK. {{ nav.brand }} is a private collection and isn’t affiliated with them.</p>
 </aside>

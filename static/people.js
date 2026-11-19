@@ -62,7 +62,7 @@
   /* ---------- Follow on a trainer's page, and how many follow them ---------- */
   const count = (id, n) => document.querySelectorAll(`[data-follower-n="${id}"]`).forEach((c) => {
     c.textContent = n;
-    const box = c.closest('[data-followers]'); if (box) { box.hidden = false; const w = box.querySelector('[data-follower-w]'); if (w) w.textContent = n === 1 ? 'follower' : 'followers'; }
+    const box = c.closest('[data-followers]'); if (box) { box.hidden = false; const w = box.querySelector('[data-follower-w]'); if (w) w.textContent = n === 1 ? 'Follower' : 'Followers'; }
   });
   const seen = new Set();
   document.querySelectorAll('[data-follow-trainer]').forEach((btn) => {

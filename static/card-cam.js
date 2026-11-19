@@ -31,26 +31,26 @@
 
   function open(target, free, scan) {
     close();
-    const title = free ? 'Take a photo' : scan ? 'Scan a card' : 'Card photo';
+    const title = free ? 'Take A Photo' : scan ? 'Scan A Card' : 'Card Photo';
     const o = el('div', free ? 'cc free' : 'cc'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', title);
     o.innerHTML = `
       <header class="cc-top">
         <button type="button" class="cc-ib" data-x aria-label="Close">${svg(ICON.x)}</button>
         <b class="cc-title">${title}</b>
-        <button type="button" class="cc-ib" data-flip aria-label="Switch camera" hidden>${svg(ICON.flip)}</button>
+        <button type="button" class="cc-ib" data-flip aria-label="Switch Camera" hidden>${svg(ICON.flip)}</button>
       </header>
       <div class="cc-stage">
         <video class="cc-video" playsinline muted autoplay></video>
         <img class="cc-pic" alt="" hidden draggable="false">
         <div class="cc-frame"><i></i><i></i><i></i><i></i></div>
-        <p class="cc-hint">Fit the card inside the frame</p>
+        <p class="cc-hint">Fit The Card Inside The Frame</p>
       </div>
       <input class="cc-zoom" type="range" min="1" max="4" step="0.01" value="1" aria-label="Zoom" hidden>
       <footer class="cc-bot">
         <button type="button" class="cc-side" data-pick>${svg(ICON.pics)}<span>Photos</span></button>
-        <button type="button" class="cc-shut" data-shoot aria-label="Take the photo"><span></span></button>
+        <button type="button" class="cc-shut" data-shoot aria-label="Take The Photo"><span></span></button>
         <button type="button" class="cc-side" data-cam hidden>${svg(ICON.cam)}<span>Camera</span></button>
-        <button type="button" class="btn cc-use" data-use hidden>${free ? 'Send photo' : scan ? 'Scan this card' : 'Use photo'}</button>
+        <button type="button" class="btn cc-use" data-use hidden>${free ? 'Send Photo' : scan ? 'Scan This Card' : 'Use Photo'}</button>
       </footer>`;
     // Inside an open window (the Add window is a modal <dialog>, which keeps everything outside it out of reach).
     (target.closest('dialog[open]') || document.body).append(o);
@@ -110,8 +110,8 @@
     q('[data-pick]').hidden = false; q('[data-cam]').hidden = live || !navigator.mediaDevices?.getUserMedia;
     q('.cc-zoom').hidden = !editing || ui.free;
     q('.cc-hint').textContent = ui.free
-      ? (live ? 'Tap the button to take the photo' : editing ? 'Send this photo, or take another' : 'Choose a photo')
-      : (live ? (ui.scan ? 'Fit the card inside the frame, then tap the button' : 'Fit the card inside the frame') : editing ? 'Drag or zoom so the card fills the frame' : 'Choose a photo of the card');
+      ? (live ? 'Tap the button to take the photo' : editing ? 'Send this photo, or take another' : 'Choose A Photo')
+      : (live ? (ui.scan ? 'Fit the card inside the frame, then tap the button' : 'Fit The Card Inside The Frame') : editing ? 'Drag or zoom so the card fills the frame' : 'Choose A Photo Of The Card');
   }
 
   // The camera can take a while to start (the browser may first ask to allow it). A photo picked, the window closed or

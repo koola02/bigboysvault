@@ -3,19 +3,19 @@
 {% block content %}
 <div class="stack" data-no-float>
   <section class="box box-p stack">
-    <h1 class="h1">The look</h1>
+    <h1 class="h1">The Look</h1>
     <p class="lg-note">Every piece of the site's look on one page, in the frame it lives in. Try it on a phone, a tablet and a computer.</p>
   </section>
 
   <section class="box box-p stack" id="auto">
-    <h2 class="h2">Automatic posts in the feed</h2>
+    <h2 class="h2">Automatic Posts In The Feed</h2>
     <p class="lg-note">The site writes these posts by itself. Switch a kind off and its posts leave the feed (their likes and comments are kept); switch it on and they come back.{% if !full %} Only a full admin can change these.{% endif %}</p>
-    {% for (kind, label, on) in autos %}<div class="row"><span class="row-t"><b>{{ label }}</b><small>{% if on %}On{% else %}Off{% endif %}</small></span>{% if full %}<button type="button" class="btn sm {% if on %}ghost{% else %}soft{% endif %}" data-auto="{{ kind }}" data-on="{% if on %}0{% else %}1{% endif %}">{% if on %}Turn off{% else %}Turn on{% endif %}</button>{% else %}<span class="tag{% if on %} gold{% endif %}">{% if on %}On{% else %}Off{% endif %}</span>{% endif %}</div>{% endfor %}
+    {% for (kind, label, on) in autos %}<div class="row"><span class="row-t"><b>{{ label }}</b><small>{% if on %}On{% else %}Off{% endif %}</small></span>{% if full %}<button type="button" class="btn sm {% if on %}ghost{% else %}soft{% endif %}" data-auto="{{ kind }}" data-on="{% if on %}0{% else %}1{% endif %}">{% if on %}Turn Off{% else %}Turn On{% endif %}</button>{% else %}<span class="tag{% if on %} gold{% endif %}">{% if on %}On{% else %}Off{% endif %}</span>{% endif %}</div>{% endfor %}
   </section>
 
   <section class="stories" aria-label="Stories">
-    <button type="button" class="story add">{% if let Some(p) = items.first() %}<img src="{{ p.img(360) }}" alt="">{% endif %}<span class="plus">+</span><b>Add story</b></button>
-    {% for p in items.iter().take(6) %}<button type="button" class="story{% if loop.index > 4 %} seen{% endif %}"><img src="{{ p.img(360) }}" loading="lazy" alt=""><span class="av sm"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span><b>{% if loop.first %}Showcase{% else if loop.index == 2 %}New arrivals{% else if loop.index == 3 %}Graded{% else %}{{ p.short_title() }}{% endif %}</b></button>{% endfor %}
+    <button type="button" class="story add">{% if let Some(p) = items.first() %}<img src="{{ p.img(360) }}" alt="">{% endif %}<span class="plus">+</span><b>Add Story</b></button>
+    {% for p in items.iter().take(6) %}<button type="button" class="story{% if loop.index > 4 %} seen{% endif %}"><img src="{{ p.img(360) }}" loading="lazy" alt=""><span class="av sm"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span><b>{% if loop.first %}Showcase{% else if loop.index == 2 %}New Arrivals{% else if loop.index == 3 %}Graded{% else %}{{ p.short_title() }}{% endif %}</b></button>{% endfor %}
   </section>
 
   <section class="box composer">
@@ -28,10 +28,10 @@
   </section>
 
   <article class="box post">
-    <header class="post-h"><span class="av"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span><div class="post-who"><b><a href="#">{{ nav.brand }}</a></b> listed {{ items.len() }} cards for sale<small>2 h</small></div><button type="button" class="ibtn" aria-label="More">⋯</button></header>
+    <header class="post-h"><span class="av"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span><div class="post-who"><b><a href="#">{{ nav.brand }}</a></b> Listed {{ items.len() }} Cards For Sale<small>2 H</small></div><button type="button" class="ibtn" aria-label="More">⋯</button></header>
     <p class="post-text">Fresh pulls just went in. Tap a card to see it.</p>
     <div class="post-cards">{% for p in items.iter().take(4) %}<a href="#"><img src="{{ p.img(360) }}" loading="lazy" alt="{{ p.short_title() }}">{% if loop.last && items.len() > 4 %}<span class="more">+{{ items.len() - 4 }}</span>{% endif %}</a>{% endfor %}</div>
-    <div class="post-stats"><span class="reacts"><i>👍</i><i>🔥</i><i>❤️</i><span>24</span></span><span>6 comments · 2 shares</span></div>
+    <div class="post-stats"><span class="reacts"><i>👍</i><i>🔥</i><i>❤️</i><span>24</span></span><span>6 Comments · 2 Shares</span></div>
     <div class="post-acts">
       <button type="button" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v11H3V10zM7 10l4-8a2.5 2.5 0 0 1 2.500 3L13 9h6a2 2 0 0 1 2 2.300l-1.300 8A2 2 0 0 1 17.700 21H7"/></svg>Like</button>
       <button type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.400 8.400 0 0 1-9 8.300 9 9 0 0 1-3.800-.800L3 20l1.200-4.300A8 8 0 0 1 3 11.500 8.400 8.400 0 0 1 12 3.200a8.400 8.400 0 0 1 9 8.300z"/></svg>Comment</button>
@@ -40,17 +40,17 @@
   </article>
 
   <section class="box">
-    <div class="caro-h"><h2 class="h2">Stores</h2><small>Suggested for you</small></div>
+    <div class="caro-h"><h2 class="h2">Stores</h2><small>Suggested For You</small></div>
     <div class="caro">
-      {% for p in items.iter().take(5) %}<div class="caro-i"><div class="caro-pic"><img src="{{ p.img(360) }}" loading="lazy" alt=""><span class="av"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span></div><div class="caro-t"><b>{% if loop.first %}Hayme's store{% else if loop.index == 2 %}Selhio pop-up store{% else %}A trainer's store{% endif %}</b><small>{{ loop.index + 1 }} on sale · {{ p.short_title() }}</small></div><div class="caro-acts"><button type="button" class="btn soft">Follow</button><button type="button" class="btn ghost">Visit</button></div></div>{% endfor %}
+      {% for p in items.iter().take(5) %}<div class="caro-i"><div class="caro-pic"><img src="{{ p.img(360) }}" loading="lazy" alt=""><span class="av"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span></div><div class="caro-t"><b>{% if loop.first %}Hayme's Store{% else if loop.index == 2 %}Selhio Pop-up Store{% else %}A Trainer's Store{% endif %}</b><small>{{ loop.index + 1 }} On Sale · {{ p.short_title() }}</small></div><div class="caro-acts"><button type="button" class="btn soft">Follow</button><button type="button" class="btn ghost">Visit</button></div></div>{% endfor %}
     </div>
   </section>
 
   <article class="box post">
-    <header class="post-h"><span class="av">B</span><div class="post-who"><b><a href="#">Buyer Bob</a></b> shared a card<small>Yesterday at 8:14 PM</small></div><button type="button" class="ibtn" aria-label="More">⋯</button></header>
+    <header class="post-h"><span class="av">B</span><div class="post-who"><b><a href="#">Buyer Bob</a></b> Shared A Card<small>Yesterday At 8:14 PM</small></div><button type="button" class="ibtn" aria-label="More">⋯</button></header>
     <p class="post-text">Finally found this one. Anyone else chasing the set?</p>
     {% if let Some(p) = items.get(1) %}<a class="attach" href="#"><img src="{{ p.img(360) }}" loading="lazy" alt=""><span><b>{{ p.short_title() }}</b><small>{{ p.set_text() }} · {{ p.tile_cond() }}</small></span></a>{% endif %}
-    <div class="post-stats"><span class="reacts"><i>👍</i><span>3</span></span><span>1 comment</span></div>
+    <div class="post-stats"><span class="reacts"><i>👍</i><span>3</span></span><span>1 Comment</span></div>
     <div class="post-acts">
       <button type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10v11H3V10zM7 10l4-8a2.500 2.500 0 0 1 2.500 3L13 9h6a2 2 0 0 1 2 2.300l-1.300 8A2 2 0 0 1 17.700 21H7"/></svg>Like</button>
       <button type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.500a8.400 8.400 0 0 1-9 8.300 9 9 0 0 1-3.800-.800L3 20l1.200-4.300A8 8 0 0 1 3 11.500 8.400 8.400 0 0 1 12 3.200a8.400 8.400 0 0 1 9 8.300z"/></svg>Comment</button>
@@ -59,8 +59,8 @@
   </article>
 
   <section class="box box-p stack">
-    <h2 class="h2">Vault tiles <small>picture, price, name, set and condition</small></h2>
-    <div class="chips"><button type="button" class="chip on">All cards</button><button type="button" class="chip">Graded</button><button type="button" class="chip">Under ₱500</button><button type="button" class="chip">Near Mint</button><button type="button" class="chip">Japanese</button><button type="button" class="chip">Holo</button></div>
+    <h2 class="h2">Vault Tiles <small>Picture, price, name, set and condition</small></h2>
+    <div class="chips"><button type="button" class="chip on">All Cards</button><button type="button" class="chip">Graded</button><button type="button" class="chip">Under ₱500</button><button type="button" class="chip">Near Mint</button><button type="button" class="chip">Japanese</button><button type="button" class="chip">Holo</button></div>
     <div class="grid">{% for p in items %}{% include "card.html" %}{% endfor %}</div>
   </section>
 
@@ -71,22 +71,22 @@
       <div style="background:var(--gold);color:var(--gold-ink)">Gold<br>#efc873</div><div style="background:var(--gold-hi);color:var(--gold-ink)">Price<br>#fcefc9</div><div style="background:var(--red)">Badge<br>#e5484d</div><div style="background:var(--ok);color:#06250f">Good<br>#7ee2a8</div>
     </div>
     <h2 class="h2">Words</h2>
-    <p class="h1">Page title in the brand font</p>
+    <p class="h1">Page Title In The Brand Font</p>
     <p>Body text uses the device's own font, like Facebook does: it loads instantly and reads well at small sizes. <a href="#">Links are gold.</a> <span class="muted">Secondary text is soft grey.</span></p>
-    <p class="card-p">₱8,000 <span class="worth">prices in the brand font</span></p>
+    <p class="card-p">₱8,000 <span class="worth">Prices In The Brand Font</span></p>
   </section>
 
   <section class="box box-p stack">
-    <h2 class="h2">Buttons and fields</h2>
-    <div class="lg-row"><button type="button" class="btn">Add to cart</button><button type="button" class="btn ghost"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.500a8.400 8.400 0 0 1-9 8.300 9 9 0 0 1-3.800-.800L3 20l1.200-4.300A8 8 0 0 1 3 11.500 8.400 8.400 0 0 1 12 3.200a8.400 8.400 0 0 1 9 8.300z"/></svg>Message</button><button type="button" class="btn soft">Follow</button><button type="button" class="btn bad">Remove</button><button type="button" class="btn" disabled>Sold out</button><button type="button" class="btn sm ghost">Small</button><button type="button" class="ibtn" aria-label="More">⋯</button></div>
+    <h2 class="h2">Buttons And Fields</h2>
+    <div class="lg-row"><button type="button" class="btn">Add To Cart</button><button type="button" class="btn ghost"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.500a8.400 8.400 0 0 1-9 8.300 9 9 0 0 1-3.800-.800L3 20l1.200-4.300A8 8 0 0 1 3 11.500 8.400 8.400 0 0 1 12 3.200a8.400 8.400 0 0 1 9 8.300z"/></svg>Message</button><button type="button" class="btn soft">Follow</button><button type="button" class="btn bad">Remove</button><button type="button" class="btn" disabled>Sold Out</button><button type="button" class="btn sm ghost">Small</button><button type="button" class="ibtn" aria-label="More">⋯</button></div>
     <div class="lg-row"><span class="tag" data-c="nm">Near Mint</span><span class="tag" data-c="lp">Lightly Played</span><span class="tag" data-c="mp">Moderately Played</span><span class="tag" data-c="hp">Heavily Played</span><span class="tag" data-c="gr">PSA 10</span><span class="tag gold">Admin</span></div>
     <div class="lg-2">
-      <label class="f">Card name<input type="text" placeholder="Charizard ex"></label>
+      <label class="f">Card Name<input type="text" placeholder="Charizard ex"></label>
       <label class="f">Condition<select><option>Near Mint</option><option>Lightly Played</option></select></label>
-      <label class="f">A note for the seller<textarea placeholder="Meetup, shipping, questions"></textarea></label>
-      <div class="stack"><div class="row"><span class="av">H</span><span class="row-t"><b>Hayme</b><small>Active now</small></span><button type="button" class="btn sm soft">Follow</button></div><div class="row"><span class="av">S</span><span class="row-t"><b>Selhio pop-up store</b><small>3 on sale · 12 followers</small></span><button type="button" class="btn sm ghost">Visit</button></div></div>
+      <label class="f">A Note For The Seller<textarea placeholder="Meetup, Shipping, Questions"></textarea></label>
+      <div class="stack"><div class="row"><span class="av">H</span><span class="row-t"><b>Hayme</b><small>Active Now</small></span><button type="button" class="btn sm soft">Follow</button></div><div class="row"><span class="av">S</span><span class="row-t"><b>Selhio Pop-up Store</b><small>3 On Sale · 12 Followers</small></span><button type="button" class="btn sm ghost">Visit</button></div></div>
     </div>
-    <nav class="fb-tabs" aria-label="Sample tabs"><a href="#" aria-current="page">Posts</a><a href="#">Cards</a><a href="#">For sale</a><a href="#">Wishlist</a><a href="#">Vouches</a><a href="#">About</a></nav>
+    <nav class="fb-tabs" aria-label="Sample Tabs"><a href="#" aria-current="page">Posts</a><a href="#">Cards</a><a href="#">For Sale</a><a href="#">Wishlist</a><a href="#">Vouches</a><a href="#">About</a></nav>
   </section>
 </div>
 {% endblock %}
@@ -97,8 +97,8 @@
 </section>
 <section class="rr-sec">
   <h2 class="rr-h">Contacts</h2>
-  <a class="rr-i" href="#"><span class="av">H</span><span><b>Hayme</b><small>Active now</small></span></a>
-  <a class="rr-i" href="#"><span class="av">S</span><span><b>Selhio</b><small>Active 12 min ago</small></span></a>
-  <a class="rr-i" href="#"><span class="av"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span><span><b>Vault chat</b><small>3 trainers here</small></span></a>
+  <a class="rr-i" href="#"><span class="av">H</span><span><b>Hayme</b><small>Active Now</small></span></a>
+  <a class="rr-i" href="#"><span class="av">S</span><span><b>Selhio</b><small>Active 12 Min Ago</small></span></a>
+  <a class="rr-i" href="#"><span class="av"><img src="/static/img/logo-sm-144.png?v=1" alt=""></span><span><b>Vault Chat</b><small>3 Trainers Here</small></span></a>
 </section>
 {% endblock %}

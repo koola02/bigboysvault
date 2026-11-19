@@ -34,7 +34,7 @@
       // The small round button says what pressing it does now (screen readers and the tooltip).
       if (b.classList.contains('cart-mini')) {
         const t = b.dataset.title || 'this card';
-        b.setAttribute('aria-label', inCart ? `Take ${t} out of your cart` : `Add ${t} to your cart`); b.title = inCart ? 'In your cart: tap to take it out' : 'Add to cart';
+        b.setAttribute('aria-label', inCart ? `Take ${t} Out Of Your Cart` : `Add ${t} To Your Cart`); b.title = inCart ? 'In your cart: tap to take it out' : 'Add To Cart';
       }
     });
   }
@@ -140,22 +140,22 @@
         const pic = el('a', 'cart-pic'); pic.href = l.url || '#'; if (l.image) { const i = el('img'); i.src = l.image; i.alt = ''; i.width = 48; i.height = 67; pic.append(i); }
         const body = el('div', 'cart-body');
         const name = el('a', 'cart-t', l.title || 'Card'); name.href = l.url || '#'; body.append(name);
-        if (l.ok === false) body.append(el('small', 'cart-why', l.why || 'Not available'));
+        if (l.ok === false) body.append(el('small', 'cart-why', l.why || 'Not Available'));
         else body.append(el('small', null, `${peso(l.price)} each` + (l.left > 0 && (l.qty || 1) >= l.left ? ` · ${l.left === 1 ? 'only 1 there' : `all ${l.left} there`}` : '')));
         const qty = el('div', 'cart-qty');
-        const minus = el('button', null, '−'); minus.type = 'button'; minus.setAttribute('aria-label', 'One fewer');
+        const minus = el('button', null, '−'); minus.type = 'button'; minus.setAttribute('aria-label', 'One Fewer');
         const num = el('span', null, String(l.qty || 1));
-        const plus = el('button', null, '+'); plus.type = 'button'; plus.setAttribute('aria-label', 'One more');
+        const plus = el('button', null, '+'); plus.type = 'button'; plus.setAttribute('aria-label', 'One More');
         // Changing how many clears "not available", so the line can be sent again (the server checks it once more).
         minus.onclick = () => { l.qty = (l.qty || 1) - 1; if (l.qty <= 0) lines = lines.filter((x) => x !== l); unmark(l); save(); paint(); };
         // '+' never lowers the count, even when fewer are left than asked for (the line then stays as it is).
         plus.onclick = () => { const q = l.qty || 1; l.qty = Math.min(99, l.left ? Math.max(q, Math.min(l.left, q + 1)) : q + 1); unmark(l); save(); paint(); };
         // Every copy there is is already in the cart: '+' is switched off and the line says so.
         const atMost = l.left > 0 && (l.qty || 1) >= l.left;
-        if (atMost) { plus.disabled = true; plus.setAttribute('aria-label', `Only ${l.left} there`); plus.title = `Only ${l.left} there`; }
+        if (atMost) { plus.disabled = true; plus.setAttribute('aria-label', `Only ${l.left} There`); plus.title = `Only ${l.left} There`; }
         qty.append(minus, num, plus);
         const line = el('b', 'cart-sum', peso((l.price || 0) * (l.qty || 1)));
-        const x = el('button', 'cart-x', '✕'); x.type = 'button'; x.setAttribute('aria-label', `Take ${l.title} out`); x.onclick = () => { lines = lines.filter((y) => y !== l); save(); paint(); };
+        const x = el('button', 'cart-x', '✕'); x.type = 'button'; x.setAttribute('aria-label', `Take ${l.title} Out`); x.onclick = () => { lines = lines.filter((y) => y !== l); save(); paint(); };
         li.append(pic, body, qty, line, x);
         list.append(li);
         if (l.ok !== false) { sum += (l.price || 0) * (l.qty || 1); okCount += 1; }
@@ -164,7 +164,7 @@
     total.textContent = peso(sum);
     empty.hidden = lines.length > 0;
     go.disabled = okCount === 0;
-    go.textContent = okCount ? `Send order · ${peso(sum)}` : 'Send order';
+    go.textContent = okCount ? `Send Order · ${peso(sum)}` : 'Send Order';
     badge();
   }
 
@@ -204,7 +204,7 @@
       // The message stays in the drawer (paint() isn't run again after it), with the way to the orders.
       if ((j.placed || []).length) {
         toast('Order sent ✓ You’ll see how to pay once it’s accepted.');
-        const done = el('p', 'cart-done'); done.innerHTML = 'Order sent. Follow it under <a href="/me/orders?tab=buying">My orders</a>.'; list.prepend(done);
+        const done = el('p', 'cart-done'); done.innerHTML = 'Order sent. Follow it under <a href="/me/orders?tab=buying">My Orders</a>.'; list.prepend(done);
         // The seller's answer can reach this phone even with the site closed: offered here, once, if alerts are off.
         const ask = el('div', 'alerts-card'); ask.dataset.alerts = 'order'; ask.hidden = true; done.after(ask);
         if (window.bbvAlerts) window.bbvAlerts.paint();

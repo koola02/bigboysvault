@@ -85,7 +85,7 @@
 
     function apply(tile, card) {
       Object.assign(tile.dataset, { status: card.status, market: card.market, own: card.value_own, cond: card.cond, qty: card.qty, kind: card.kind });
-      const st = tile.querySelector('.st-status'); st.textContent = card.status; st.dataset.s = card.status;
+      const st = tile.querySelector('.st-status'); st.textContent = String(card.status).replace(/(^|\s)([a-z])/g, (m, a, b) => a + b.toUpperCase()); st.dataset.s = card.status;
       tile.querySelector('[data-status]').value = card.status;
       tile.querySelectorAll('[data-kind]').forEach((b) => { const on = b.dataset.kind === card.kind; b.classList.toggle('on', on); b.setAttribute('aria-pressed', String(on)); });
       const sale = tile.querySelector('.ls-sale'); if (sale) sale.hidden = card.kind !== 'sale';
@@ -95,7 +95,7 @@
       const pr = tile.querySelector('[data-price]'); pr.value = card.value_own > 0 ? String(Math.round(card.value_own)) : ''; pr.placeholder = card.market > 0 ? card.price_text : 'Price';
       // Same words as the page: an expired card, or one past its end date, needs renewing.
       const late = card.status === 'Expired' || (card.expires_at > 0 && card.expires_at < Date.now() / 1000);
-      const renew = tile.querySelector('[data-renew]'); renew.textContent = late ? 'Renew for 30 days' : card.expires_at > 0 ? 'Change end date' : 'Set an end date';
+      const renew = tile.querySelector('[data-renew]'); renew.textContent = late ? 'Renew For 30 Days' : card.expires_at > 0 ? 'Change End Date' : 'Set An End Date';
       const exp = tile.querySelector('.st-exp');
       if (card.expires_text) { if (exp) exp.textContent = card.expires_text; else { tile.querySelector('.st-meta').append(el('span', 'st-exp', card.expires_text)); } }
       else exp?.remove();
@@ -176,7 +176,7 @@
       price() {
         let mode = 'set'; const node = el('div', 'sheet-form'); const inp = el('input', 'sheet-input'); inp.inputMode = 'decimal'; inp.placeholder = '₱ amount';
         const hint = el('p', 'hint show', 'Every selected card gets exactly this price.');
-        node.append(segment([['set', 'Set to'], ['up', 'Raise %'], ['down', 'Lower %'], ['market', 'Follow the market']], (v) => {
+        node.append(segment([['set', 'Set To'], ['up', 'Raise %'], ['down', 'Lower %'], ['market', 'Follow The Market']], (v) => {
           mode = v; inp.hidden = v === 'market'; inp.placeholder = v === 'set' ? '₱ amount' : '% change';
           hint.textContent = { set: 'Every selected card gets exactly this price.', up: 'Raises every price by this percentage.', down: 'Lowers every price by this percentage.', market: 'Clears your own prices: these cards follow today’s market price for their condition.' }[v];
         }), inp, hint);
@@ -202,7 +202,7 @@
         A.sheet.open(`Binder · ${plural(sel.size)}`, node, async () => { await bulk({ action: 'edit', binder_id: s.value ? Number(s.value) : null }, (j) => `Moved ${plural(j.n)}`); }, 'Move');
       },
       stock() {
-        const node = el('div', 'sheet-form'); const inp = el('input', 'sheet-input'); inp.type = 'number'; inp.min = '0'; inp.max = '9999'; inp.inputMode = 'numeric'; inp.placeholder = 'Copies in stock';
+        const node = el('div', 'sheet-form'); const inp = el('input', 'sheet-input'); inp.type = 'number'; inp.min = '0'; inp.max = '9999'; inp.inputMode = 'numeric'; inp.placeholder = 'Copies In Stock';
         node.append(el('p', 'hint show', 'Every selected card gets this many copies in stock. 0 means sold out.'), inp);
         A.sheet.open(`Stock · ${plural(sel.size)}`, node, async () => { const n = Math.min(9999, Math.round(Number(inp.value))); if (!Number.isFinite(n) || n < 0) throw new Error('Type how many.'); await bulk({ action: 'edit', qty: n }, (j) => `Updated ${plural(j.n)}`); }, 'Apply');
       },
@@ -220,9 +220,9 @@
       kind() {
         const node = el('div', 'sheet-form'); const inp = el('input', 'sheet-input'); inp.hidden = true;
         const chips = el('div', 'chips');
-        for (const [v, t] of [['own', 'Highlight'], ['sale', 'For sale'], ['wish', 'Wishlist']]) { const b = el('button', null, t); b.type = 'button'; b.onclick = () => { inp.value = v; chips.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); }; chips.append(b); }
+        for (const [v, t] of [['own', 'Highlight'], ['sale', 'For Sale'], ['wish', 'Wishlist']]) { const b = el('button', null, t); b.type = 'button'; b.onclick = () => { inp.value = v; chips.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); }; chips.append(b); }
         node.append(el('p', 'hint show', 'Highlights are shown off, For sale goes in your store, Wishlist is what you’re after.'), chips);
-        A.sheet.open(`What are they · ${plural(sel.size)}`, node, async () => { if (!inp.value) throw new Error('Pick one.'); await bulk({ action: 'edit', kind: inp.value }, (j) => `Updated ${plural(j.n)}`); }, 'Apply');
+        A.sheet.open(`What Are They · ${plural(sel.size)}`, node, async () => { if (!inp.value) throw new Error('Pick one.'); await bulk({ action: 'edit', kind: inp.value }, (j) => `Updated ${plural(j.n)}`); }, 'Apply');
       },
       clear,
     };
@@ -230,12 +230,12 @@
     function renewSheet(tiles, many) {
       const node = el('div', 'sheet-form'); const inp = el('input', 'sheet-input'); inp.hidden = true;
       node.append(el('p', 'hint show', 'When the date comes, the card comes off sale and you get a note to renew it. Pick “No end date” to keep it up for good.'),
-        chips(['30 days', '60 days', '90 days', 'No end date'], inp));
-      A.sheet.open(many ? `End date · ${plural(sel.size)}` : 'End date', node, async () => {
+        chips(['30 days', '60 days', '90 days', 'No End Date'], inp));
+      A.sheet.open(many ? `End Date · ${plural(sel.size)}` : 'End Date', node, async () => {
         if (!inp.value) throw new Error('Pick one.');
         const days = parseInt(inp.value) || 0;
         if (many) await bulk({ action: 'edit', expires_days: days }, (j) => `Updated ${plural(j.n)}`);
-        else { const t = tiles[0]; const my = turn(t); const j = await send(`/me/listings/${t.dataset.id}/renew`, { days }); if (fresh(t, my)) apply(t, j.card); A.sheet.close(); A.toast(days ? `Ends in ${days} days ✓` : 'No end date ✓', { kind: 'ok' }); }
+        else { const t = tiles[0]; const my = turn(t); const j = await send(`/me/listings/${t.dataset.id}/renew`, { days }); if (fresh(t, my)) apply(t, j.card); A.sheet.close(); A.toast(days ? `Ends In ${days} Days ✓` : 'No End Date ✓', { kind: 'ok' }); }
       }, 'Apply');
     }
     function count() { const n = rows.querySelectorAll('.ls-tile').length; $('shownN').textContent = n; const empty = $('listEmpty'); if (empty && n > 0) empty.hidden = true; }
@@ -275,7 +275,7 @@
         const rows = [...group.querySelectorAll('.st-order[data-kind="reservation"]')].filter((r) => want.includes(r.dataset.status));
         if (!rows.length) return;
         const n = rows.length === 1 ? 'this card' : `these ${rows.length} cards`;
-        if (status === 'Declined' && !(await (window.bbvConfirm ? window.bbvConfirm(`Decline ${n}? The buyer is told.`, { yes: 'Decline', no: 'Keep them' }) : Promise.resolve(confirm(`Decline ${n}? The buyer is told.`))))) return;
+        if (status === 'Declined' && !(await (window.bbvConfirm ? window.bbvConfirm(`Decline ${n}? The buyer is told.`, { yes: 'Decline', no: 'Keep Them' }) : Promise.resolve(confirm(`Decline ${n}? The buyer is told.`))))) return;
         const via = group.querySelector('.st-group-h [data-via]')?.value || '';
         all.disabled = true;
         let done = 0;
@@ -290,9 +290,9 @@
       const res = e.target.closest('[data-res]');
       if (res) {
         const status = res.dataset.res;
-        if (status === 'Declined' && !(await (window.bbvConfirm ? window.bbvConfirm('Decline this order? The buyer is told.', { yes: 'Decline', no: 'Keep it' }) : Promise.resolve(confirm('Decline this order? The buyer is told.'))))) return;
-        if (status === 'Cancelled' && !(await (window.bbvConfirm ? window.bbvConfirm('Cancel this order?', { yes: 'Cancel it', no: 'Keep it' }) : Promise.resolve(confirm('Cancel this order?'))))) return;
-        if (status === 'BuyerPaid' && !(await (window.bbvConfirm ? window.bbvConfirm('Tell the seller you’ve paid? They check their app, then mark it paid.', { yes: 'Yes, I’ve paid', no: 'Not yet' }) : Promise.resolve(confirm('Tell the seller you’ve paid?'))))) return;
+        if (status === 'Declined' && !(await (window.bbvConfirm ? window.bbvConfirm('Decline this order? The buyer is told.', { yes: 'Decline', no: 'Keep It' }) : Promise.resolve(confirm('Decline this order? The buyer is told.'))))) return;
+        if (status === 'Cancelled' && !(await (window.bbvConfirm ? window.bbvConfirm('Cancel this order?', { yes: 'Cancel It', no: 'Keep It' }) : Promise.resolve(confirm('Cancel this order?'))))) return;
+        if (status === 'BuyerPaid' && !(await (window.bbvConfirm ? window.bbvConfirm('Tell the seller you’ve paid? They check their app, then mark it paid.', { yes: 'Yes, I’ve Paid', no: 'Not Yet' }) : Promise.resolve(confirm('Tell the seller you’ve paid?'))))) return;
         const via = li.querySelector('[data-via]')?.value || '';
         res.disabled = true;
         try { await send(`/me/orders/reservations/${li.dataset.id}`, { status, paid_via: via }); A.toast(status === 'Paid' ? 'Marked paid ✓ The sale is done.' : status === 'BuyerPaid' ? 'Sent ✓ The seller checks, then marks it paid.' : 'Saved ✓', { kind: 'ok' }); location.reload(); }
@@ -308,14 +308,14 @@
       }
       const vp = e.target.closest('[data-vpaid]');
       if (vp) {
-        if (!(await (window.bbvConfirm ? window.bbvConfirm('Tell the vault you’ve paid? The team checks, then marks it paid.', { yes: 'Yes, I’ve paid', no: 'Not yet' }) : Promise.resolve(confirm('Tell the vault you’ve paid?'))))) return;
+        if (!(await (window.bbvConfirm ? window.bbvConfirm('Tell the vault you’ve paid? The team checks, then marks it paid.', { yes: 'Yes, I’ve Paid', no: 'Not Yet' }) : Promise.resolve(confirm('Tell the vault you’ve paid?'))))) return;
         vp.disabled = true;
         try { await send(`/me/orders/vault/${li.dataset.id}`, { status: 'BuyerPaid' }); A.toast('Sent ✓ The vault checks, then marks it paid.', { kind: 'ok' }); location.reload(); } catch (err) { vp.disabled = false; A.toast(err.message, { kind: 'err' }); }
         return;
       }
       const vc = e.target.closest('[data-vcancel]');
       if (vc) {
-        if (!(await (window.bbvConfirm ? window.bbvConfirm('Cancel this order?', { yes: 'Cancel order', no: 'Keep it' }) : Promise.resolve(confirm('Cancel this order?'))))) return;
+        if (!(await (window.bbvConfirm ? window.bbvConfirm('Cancel this order?', { yes: 'Cancel Order', no: 'Keep It' }) : Promise.resolve(confirm('Cancel this order?'))))) return;
         vc.disabled = true;
         try { await send(`/me/orders/vault/${li.dataset.id}`, { status: 'Cancelled' }); location.reload(); } catch (err) { vc.disabled = false; A.toast(err.message, { kind: 'err' }); }
         return;
@@ -335,7 +335,7 @@
         e.preventDefault();
         const rating = Number(f.querySelector('input[type=radio]:checked')?.value) || 0;
         if (!rating) { A.toast('Pick how many stars.', { kind: 'err' }); return; }
-        try { await send('/me/reviews', { transaction_id: Number(f.dataset.review), rating, text: f.querySelector('input[maxlength]').value }); A.toast('Thanks for the review ✓', { kind: 'ok' }); location.reload(); }
+        try { await send('/me/reviews', { transaction_id: Number(f.dataset.review), rating, text: f.querySelector('input[maxlength]').value }); A.toast('Thanks For The Review ✓', { kind: 'ok' }); location.reload(); }
         catch (err) { A.toast(err.message, { kind: 'err' }); }
       }
     });
@@ -348,7 +348,7 @@
   if (sRoot) {
     $('slugForm').addEventListener('submit', async (e) => {
       e.preventDefault(); const f = e.target;
-      try { const j = await send('/me/settings/slug', { slug: f.slug.value.trim().toLowerCase() }); $('slugNow').textContent = j.slug; f.slug.value = j.slug; sRoot.querySelectorAll('a[href^="/store/"], a[href^="/trainer/"]').forEach((a) => a.href = j.url); A.toast('Address changed ✓', { kind: 'ok' }); }
+      try { const j = await send('/me/settings/slug', { slug: f.slug.value.trim().toLowerCase() }); $('slugNow').textContent = j.slug; f.slug.value = j.slug; sRoot.querySelectorAll('a[href^="/store/"], a[href^="/trainer/"]').forEach((a) => a.href = j.url); A.toast('Address Changed ✓', { kind: 'ok' }); }
       catch (err) { A.toast(err.message, { kind: 'err' }); }
     });
     $('coverFile').addEventListener('change', () => { const f = $('coverFile').files[0]; if (!f) return; $('coverImg').src = URL.createObjectURL(f); $('coverPrev').hidden = false; });
@@ -387,7 +387,7 @@
   /* ================= notifications ================= */
   const nRoot = $('storeNotifs');
   if (nRoot) {
-    $('readAll').onclick = async () => { try { await send('/api/notifications/read', {}); nRoot.querySelectorAll('.st-note.unread').forEach((n) => n.classList.remove('unread')); A.toast('All read ✓', { kind: 'ok' }); } catch (err) { A.toast(err.message, { kind: 'err' }); } };
+    $('readAll').onclick = async () => { try { await send('/api/notifications/read', {}); nRoot.querySelectorAll('.st-note.unread').forEach((n) => n.classList.remove('unread')); A.toast('All Read ✓', { kind: 'ok' }); } catch (err) { A.toast(err.message, { kind: 'err' }); } };
     // One choice per kind: Phone and bell, Bell only, or Off. It saves at once.
     const how = (row) => row.querySelector('[data-how][aria-pressed="true"]')?.dataset.how || 'bell';
     const savePref = (row) => {
@@ -414,7 +414,7 @@
         const j = await send('/me/notifications/prefs', { address: f.address.value.trim() });
         f.address.value = j.email || '';
         nRoot.querySelectorAll('[data-ch="email"]').forEach((b) => { b.disabled = !j.email; if (!j.email) b.checked = false; });
-        A.toast(j.email ? 'Email saved ✓' : 'Email removed ✓', { kind: 'ok' });
+        A.toast(j.email ? 'Email Saved ✓' : 'Email Removed ✓', { kind: 'ok' });
       } catch (err) { A.toast(err.message, { kind: 'err' }); }
       btn.disabled = false;
     });

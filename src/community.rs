@@ -363,7 +363,7 @@ pub async fn login_page(State(app): State<App>, h: HeaderMap, Query(q): Query<Lo
     let nav = with_db(&app, chrome).await?;
     let error = if q.wrong.is_some() { "That password isn't right.".to_string() } else { String::new() };
     let next = safe_next(&q.next).unwrap_or("").to_string();
-    Ok(html(render(LoginPage { nav: titled(nav, "Log in"), error, name: String::new(), next })?))
+    Ok(html(render(LoginPage { nav: titled(nav, "Log In"), error, name: String::new(), next })?))
 }
 
 #[derive(Deserialize)]
@@ -378,7 +378,7 @@ async fn join_again(app: &App, code: StatusCode, mode: &'static str, name: Strin
     let nav = with_db(app, chrome).await?;
     let next = safe_next(next).unwrap_or("").to_string();
     if mode == "signin" {
-        return Ok((code, html(render(LoginPage { nav: titled(nav, "Log in"), error: error.to_string(), name, next })?)).into_response());
+        return Ok((code, html(render(LoginPage { nav: titled(nav, "Log In"), error: error.to_string(), name, next })?)).into_response());
     }
     Ok((code, html(render(JoinPage { nav: titled(nav, "Register"), error: error.to_string(), name, next })?)).into_response())
 }
@@ -2007,7 +2007,7 @@ pub async fn chat_page(State(app): State<App>, Query(q): Query<PartQs>) -> Res {
         return Ok(html(render(ChatPart)?));
     }
     let nav = with_db(&app, |c| chrome(c)).await?;
-    Ok(html(render(ChatPage { nav: titled(nav, "Vault chat") })?))
+    Ok(html(render(ChatPage { nav: titled(nav, "Vault Chat") })?))
 }
 
 pub async fn ask_page(State(app): State<App>, Query(q): Query<PartQs>) -> Res {
@@ -2015,7 +2015,7 @@ pub async fn ask_page(State(app): State<App>, Query(q): Query<PartQs>) -> Res {
         return Ok(html(render(AskPart { ai: crate::vault_ai::enabled() })?));
     }
     let nav = with_db(&app, |c| chrome(c)).await?;
-    Ok(html(render(AskPage { nav: titled(nav, "Ask the Vault"), ai: crate::vault_ai::enabled() })?))
+    Ok(html(render(AskPage { nav: titled(nav, "Ask The Vault"), ai: crate::vault_ai::enabled() })?))
 }
 
 fn chat_json(m: &ChatMessage) -> Value {
@@ -2482,7 +2482,7 @@ mod tests {
             render(TrainerPage { nav: chrome(c).unwrap(), t, cards: vec![], wishes: vec![], selling: vec![], highlight: None, is_me, full: true, vouches: vec![], awards: vec![] }).unwrap()
         };
         let html = page(&c, false);
-        assert!(!html.contains("palletcards") && !html.contains("carousell") && !html.contains("cover-store") && !html.contains("Find me on"), "nothing of the store's on the trainer's own page: {html}");
+        assert!(!html.contains("palletcards") && !html.contains("carousell") && !html.contains("cover-store") && !html.contains("Find Me On"), "nothing of the store's on the trainer's own page: {html}");
         // Account Settings: the page's own cover and links (a bad link is dropped). The store's stay as they are.
         assert!(members::save_page(&c, &m, &members::PageSave { name: "Ash", bio: "I collect Pikachu", avatar: None, cover: Some("/uploads/pcover-ash_l.jpg"), fb_url: "https://facebook.com/ash.ketchum", ig_url: "javascript:alert(1)", tiktok_url: "", links: "YouTube | https://youtube.com/@ash" }).unwrap());
         let m = members::get(&c, s).unwrap().unwrap();
@@ -2527,8 +2527,8 @@ mod tests {
         // A seller: the pictures, ★ and their order here; everything else in Listings.
         members::set_seller(&c, s, true).unwrap();
         let html = page(&c);
-        assert!(html.contains("<a class=\"btn\" href=\"/me/listings\">Manage them in Listings</a>") && html.contains("data-star") && !html.contains("data-kind") && !html.contains("data-cond"), "{html}");
-        assert!(html.contains("<span><b>0</b> for sale</span><span><b>1</b> highlight</span>"));
+        assert!(html.contains("<a class=\"btn\" href=\"/me/listings\">Manage Them In Listings</a>") && html.contains("data-star") && !html.contains("data-kind") && !html.contains("data-cond"), "{html}");
+        assert!(html.contains("<span><b>0</b> For Sale</span><span><b>1</b> Highlight</span>"));
         // One menu from a tablet up: the account menu has the cart, the header has no ☰.
         assert!(html.contains("data-cart-open") && html.contains("class=\"hd-ib hd-cart\"") && !html.contains("hd-menu-btn"));
     }
@@ -2545,13 +2545,13 @@ mod tests {
         let t = members::get(&c, s).unwrap().unwrap();
         let card = members::card(&c, s, id).unwrap().unwrap();
         let html = render(MemberCardPart { t: t.clone(), c: card.clone(), left: 2, related: vec![], trend: None, viewer: 0 }).unwrap();
-        assert!(html.contains("<small>Sold by</small><b class=\"mco-name\">Pallet Cards</b>") && html.contains(&format!("href=\"{}\"", t.store_url())), "{html}");
-        assert!(html.contains("<dt>Finish</dt><dd>Reverse Holo</dd>") && html.contains("<dd>2 left</dd>") && html.contains("<dt>Seller's note</dt><dd>Light whitening on the back.</dd>"), "{html}");
+        assert!(html.contains("<small>Sold By</small><b class=\"mco-name\">Pallet Cards</b>") && html.contains(&format!("href=\"{}\"", t.store_url())), "{html}");
+        assert!(html.contains("<dt>Finish</dt><dd>Reverse Holo</dd>") && html.contains("<dd>2 Left</dd>") && html.contains("<dt>Seller's Note</dt><dd>Light whitening on the back.</dd>"), "{html}");
         assert!(!html.contains("Ask in the store"), "asking is Message");
         // A card that isn't for sale belongs to its trainer: "Owned by", and the box opens their page.
         c.execute("UPDATE member_cards SET kind='own' WHERE id=?1", [id]).unwrap();
         let html = render(MemberCardPart { t, c: members::card(&c, s, id).unwrap().unwrap(), left: 0, related: vec![], trend: None, viewer: 0 }).unwrap();
-        assert!(html.contains("<small>Owned by</small><b class=\"mco-name\">Ash</b>") && html.contains(&format!("href=\"/trainers/{s}\"")) && !html.contains("left</dd>"), "{html}");
+        assert!(html.contains("<small>Owned By</small><b class=\"mco-name\">Ash</b>") && html.contains(&format!("href=\"/trainers/{s}\"")) && !html.contains("Left</dd>"), "{html}");
     }
 
     #[test]

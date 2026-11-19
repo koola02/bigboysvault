@@ -53,7 +53,7 @@
       try {
         const j = await send(`/store/${slug}/follow`);
         paintFollow(j.following, j.followers);
-        toast(j.following ? 'You follow this store now ✓' : 'Unfollowed');
+        toast(j.following ? 'You Follow This Store Now ✓' : 'Unfollowed');
       } catch (err) { toast(err.message, true); }
       followBtn.disabled = false;
     });
@@ -62,7 +62,7 @@
   /* ----- the Vouches window ----- */
   async function vouches(btn) {
     const d = make('dialog', 'float sv');
-    d.setAttribute('aria-label', `Vouches for ${name}`);
+    d.setAttribute('aria-label', `Vouches For ${name}`);
     const panel = make('div', 'float-panel sv-panel'); panel.tabIndex = -1;
     const head = make('header', 'sv-h');
     const titles = make('div', 'sv-t');
@@ -110,7 +110,7 @@
     body.addEventListener('submit', async (e) => {
       const f = e.target.closest('[data-review-reply]'); if (!f) return;
       e.preventDefault();
-      try { await send(`/me/reviews/${f.dataset.reviewReply}/reply`, { text: f.querySelector('input').value }); await fill(); toast('Reply posted ✓'); }
+      try { await send(`/me/reviews/${f.dataset.reviewReply}/reply`, { text: f.querySelector('input').value }); await fill(); toast('Reply Posted ✓'); }
       catch (err) { toast(err.message, true); }
     });
     fill();

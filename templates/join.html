@@ -11,12 +11,12 @@
     {% if !error.is_empty() %}<p class="join-err" role="alert">{{ error }}</p>{% endif %}
     <form class="join-form" method="post" action="/join">
       <input type="hidden" name="next" value="{{ next }}">
-      <label>Trainer name<input type="text" name="name" value="{{ name }}" maxlength="24" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
-      <label>Password <small>at least 8 characters</small><input name="password" type="password" minlength="8" autocomplete="new-password" required></label>
+      <label>Trainer Name<input type="text" name="name" value="{{ name }}" maxlength="24" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
+      <label>Password <small>At Least 8 Characters</small><input name="password" type="password" minlength="8" autocomplete="new-password" required></label>
       <label class="join-trap" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
-      <button class="btn" type="submit">Create my trainer</button>
+      <button class="btn" type="submit">Create My Trainer</button>
     </form>
-    <p class="join-switch">Already a trainer? <a href="/login{% if !next.is_empty() %}?next={{ next|urlencode }}{% endif %}">Log in</a></p>
+    <p class="join-switch">Already a trainer? <a href="/login{% if !next.is_empty() %}?next={{ next|urlencode }}{% endif %}">Log In</a></p>
     <p class="join-note">Write down your password. There's no email, so only the vault owner can reset it.</p>
   </div>
 </section>

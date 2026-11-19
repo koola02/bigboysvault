@@ -226,7 +226,7 @@ for (const [size, viewport] of Object.entries(SIZES)) {
     if (!(await until(() => shown('#cartDrawer'), 8000))) { why = 'the cart did not open'; break; }
     // The cart asks the site whether each line can still be bought: wait for that answer to settle.
     await sleep(1800);
-    const line = await page.evaluate(() => ({ off: !!document.querySelector('#cartList .cart-line.off'), ready: /^Send order/.test(document.getElementById('cartGo').textContent.trim()) && !document.getElementById('cartGo').disabled }));
+    const line = await page.evaluate(() => ({ off: !!document.querySelector('#cartList .cart-line.off'), ready: /^Send order/i.test(document.getElementById('cartGo').textContent.trim()) && !document.getElementById('cartGo').disabled }));
     if (line.off) { why = 'every card tried is held by an open order'; continue; }
     if (!line.ready) { why = '“Send order” is not ready'; break; }
     if (broke.length) { why = broke.slice(0, 3).join(' | '); break; }
@@ -251,7 +251,7 @@ for (const [size, viewport] of Object.entries(SIZES)) {
       let sent = false;
       if (again && (await until(async () => !(await page.evaluate(() => document.getElementById('cartGo').disabled)), 10000))) {
         await page.click('#cartGo');
-        sent = await until(async () => /Order sent/.test(await text('.cart-toast')) || (await text('#cartN')) === '0', 15000);
+        sent = await until(async () => /Order sent/i.test(await text('.cart-toast')) || (await text('#cartN')) === '0', 15000);
       }
       let listed = false;
       if (sent) { await page.goto(BASE + '/me/orders?tab=buying', { waitUntil: 'networkidle2' }); listed = (await count('.st-order')) > 0; }

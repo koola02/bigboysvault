@@ -57,7 +57,7 @@
         const group = row.closest('.bm-group'); row.remove();
         if (group && !group.querySelector('.bm-card')) group.remove();
       }
-      say(j.on ? 'Bookmarked ✓ Find it under Bookmarks in the menu.' : 'Taken out of your bookmarks');
+      say(j.on ? 'Bookmarked ✓ Find it under Bookmarks in the menu.' : 'Taken Out Of Your Bookmarks');
     } catch (err) { say(err.message, true); }
     b.disabled = false;
   }, true);

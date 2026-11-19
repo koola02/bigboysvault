@@ -1,37 +1,37 @@
 {% extends "base.html" %}
-{% block title %}Apply as a seller · {{ nav.brand }}{% endblock %}
+{% block title %}Apply As A Seller · {{ nav.brand }}{% endblock %}
 {% block content %}
 {#- "Apply as a seller" from the account menu. The note and the photos are both optional; sending opens the trainer's chat
     with the vault's team, where the whole application goes on (static/apply.js). -#}
 <section class="wrap apply-page">
   <div class="tr-head">
-    <h1 class="h1">Apply as a seller</h1>
+    <h1 class="h1">Apply As A Seller</h1>
     <p class="tr-sub">Open your own store on {{ nav.brand }}: your binders, your prices, buyers who pay you directly. An admin looks at every application.</p>
   </div>
   {% if waiting %}{% if let Some(a) = sent %}
   <div class="ap-state">
     <b>Your application is with the admins.</b>
     <span>Sent {{ a.when() }}. Their questions and their answer come in your chat with the vault.</span>
-    <a class="btn" href="/me/messages?t={{ a.thread_id }}">Open the chat</a>
+    <a class="btn" href="/me/messages?t={{ a.thread_id }}">Open The Chat</a>
   </div>
   {% endif %}{% else %}
-  {% if let Some(a) = sent %}{% if a.status == "Declined" %}<div class="ap-state ap-no"><b>Your last application wasn't approved.</b><span>{% if !a.reason.is_empty() %}{{ a.reason }} {% endif %}You can apply again below.</span><a class="linkbtn" href="/me/messages?t={{ a.thread_id }}">See the chat</a></div>{% endif %}{% endif %}
+  {% if let Some(a) = sent %}{% if a.status == "Declined" %}<div class="ap-state ap-no"><b>Your last application wasn't approved.</b><span>{% if !a.reason.is_empty() %}{{ a.reason }} {% endif %}You can apply again below.</span><a class="linkbtn" href="/me/messages?t={{ a.thread_id }}">See The Chat</a></div>{% endif %}{% endif %}
   <form class="ap-form" id="applyForm" novalidate>
     <label class="ap-f">
-      <b>Tell us about yourself as a seller <small>(optional)</small></b>
+      <b>Tell us about yourself as a seller <small>(Optional)</small></b>
       <textarea name="note" rows="5" maxlength="1000" placeholder="How long you've sold cards, where (Facebook groups, meetups, Shopee), what you sell…"></textarea>
     </label>
     <div class="ap-f">
-      <b>Proof you're a reliable seller <small>(optional)</small></b>
+      <b>Proof You're A Reliable Seller <small>(Optional)</small></b>
       <span class="ap-how">Screenshots of past sales, buyers' feedback, your selling page. Up to 8 photos.</span>
       <div class="vc-pics ap-pics" id="applyPics">
-        <label class="vc-add"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg><span>Add photos</span><input class="sr" type="file" accept="image/*" multiple aria-label="Add photos" id="applyFile"></label>
+        <label class="vc-add"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg><span>Add Photos</span><input class="sr" type="file" accept="image/*" multiple aria-label="Add Photos" id="applyFile"></label>
       </div>
     </div>
     <p class="vc-err" id="applyErr" role="alert"></p>
-    <div class="ap-acts"><a class="btn ghost" href="/me">Cancel</a><button class="btn" type="submit" id="applyGo">Send application</button></div>
+    <div class="ap-acts"><a class="btn ghost" href="/me">Cancel</a><button class="btn" type="submit" id="applyGo">Send Application</button></div>
   </form>
   {% endif %}
 </section>
-<script src="/static/apply.js?v=1" defer></script>
+<script src="/static/apply.js?v=3" defer></script>
 {% endblock %}

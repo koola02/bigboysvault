@@ -100,7 +100,7 @@
           const j = await send(`/me/cards/${li.dataset.id}`, { action: 'value', value: 0 });
           const inp = li.querySelector('[data-value]');
           if (inp) { inp.value = ''; if (j.card_market && j.card_market !== '₱0') inp.placeholder = j.card_market; }
-          worth(j); paintSug(li, j); say('Back to the suggested value ✓');
+          worth(j); paintSug(li, j); say('Back To The Suggested Value ✓');
         } catch (err) { say(err.message, true); }
       } : null,
     });
@@ -113,18 +113,18 @@
     const pic = document.createElement('span'); pic.className = 'me-c-pic';
     if (c.image) { const i = document.createElement('img'); i.src = c.image; i.width = 245; i.height = 342; i.alt = ''; i.draggable = false; pic.append(i); }
     const star = document.createElement('button'); star.type = 'button'; star.className = 'me-star'; star.dataset.nodrag = ''; star.dataset.star = ''; star.textContent = '★'; star.setAttribute('aria-label', `Highlight ${c.title || ''}`);
-    const x = document.createElement('button'); x.type = 'button'; x.className = 'me-x'; x.dataset.nodrag = ''; x.dataset.remove = ''; x.textContent = '✕'; x.setAttribute('aria-label', `Take ${c.title || ''} out`);
+    const x = document.createElement('button'); x.type = 'button'; x.className = 'me-x'; x.dataset.nodrag = ''; x.dataset.remove = ''; x.textContent = '✕'; x.setAttribute('aria-label', `Take ${c.title || ''} Out`);
     pic.append(star, x);
     const t = document.createElement('b'); t.className = 'me-c-t'; t.textContent = c.title || '';
     const s = document.createElement('small'); s.className = 'me-c-s'; s.textContent = [c.set, c.number].filter(Boolean).join(' · ');
-    const kind = document.createElement('select'); kind.dataset.nodrag = ''; kind.dataset.kind = ''; kind.setAttribute('aria-label', `What ${c.title || ''} is`);
-    const kinds = [['own', 'Highlight'], ...(root.dataset.seller === 'true' ? [['sale', 'For sale']] : []), ['wish', 'Wishlist']];
+    const kind = document.createElement('select'); kind.dataset.nodrag = ''; kind.dataset.kind = ''; kind.setAttribute('aria-label', `What ${c.title || ''} Is`);
+    const kinds = [['own', 'Highlight'], ...(root.dataset.seller === 'true' ? [['sale', 'For Sale']] : []), ['wish', 'Wishlist']];
     kinds.forEach(([v, t]) => kind.append(new Option(t, v, v === (c.kind || 'own'), v === (c.kind || 'own'))));
-    const sel = document.createElement('select'); sel.dataset.nodrag = ''; sel.dataset.cond = ''; sel.setAttribute('aria-label', `Condition of ${c.title || ''}`);
+    const sel = document.createElement('select'); sel.dataset.nodrag = ''; sel.dataset.cond = ''; sel.setAttribute('aria-label', `Condition Of ${c.title || ''}`);
     conds.forEach((o) => sel.append(new Option(o, o, o === c.cond, o === c.cond)));
     const val = document.createElement('label'); val.className = 'me-val'; val.dataset.nodrag = '';
     const vl = document.createElement('span'); vl.textContent = 'Value ₱';
-    const vi = document.createElement('input'); vi.type = 'number'; vi.min = '0'; vi.step = '1'; vi.inputMode = 'numeric'; vi.dataset.value = ''; vi.placeholder = c.value && c.value !== '₱0' ? c.value : 'Not known yet'; vi.setAttribute('aria-label', `Value of ${c.title || ''} in pesos`);
+    const vi = document.createElement('input'); vi.type = 'number'; vi.min = '0'; vi.step = '1'; vi.inputMode = 'numeric'; vi.dataset.value = ''; vi.placeholder = c.value && c.value !== '₱0' ? c.value : 'Not Known Yet'; vi.setAttribute('aria-label', `Value Of ${c.title || ''} In Pesos`);
     if (c.value_own > 0) vi.value = Math.round(c.value_own);
     val.append(vl, vi);
     const sugP = document.createElement('p'); sugP.className = 'me-c-sug';
@@ -158,7 +158,7 @@
     const kindSel = e.target.closest('[data-kind]');
     if (kindSel) {
       const li = kindSel.closest('.me-c');
-      try { const j = await send(`/me/cards/${li.dataset.id}`, { action: 'kind', kind: kindSel.value }); worth(j); say(kindSel.value === 'sale' ? 'For sale ✓ Set its stock and price in My store › Listings.' : 'Saved ✓'); }
+      try { const j = await send(`/me/cards/${li.dataset.id}`, { action: 'kind', kind: kindSel.value }); worth(j); say(kindSel.value === 'sale' ? 'For sale ✓ Set its stock and price in My Store › Listings.' : 'Saved ✓'); }
       catch (err) { say(err.message, true); }
       return;
     }
@@ -173,7 +173,7 @@
   });
   if (window.dragSort) dragSort(binder, {
     item: '.me-c', key: (n) => n.dataset.id,
-    onDrop: async ([ids]) => { try { await send('/me/cards/order', { ids: ids.map(Number) }); say('Order saved ✓'); } catch (err) { say(err.message, true); } },
+    onDrop: async ([ids]) => { try { await send('/me/cards/order', { ids: ids.map(Number) }); say('Order Saved ✓'); } catch (err) { say(err.message, true); } },
   });
 
   /* (Adding cards is the Add cards page's: /me/add, static/add-page.js.) */
@@ -182,10 +182,10 @@
   const pass = $('mePass');
   pass.addEventListener('submit', async (e) => {
     e.preventDefault();
-    try { await send('/me/password', { current: pass.elements.current.value, new: pass.elements.new.value }); pass.reset(); say('Password changed ✓'); } catch (err) { say(err.message, true); }
+    try { await send('/me/password', { current: pass.elements.current.value, new: pass.elements.new.value }); pass.reset(); say('Password Changed ✓'); } catch (err) { say(err.message, true); }
   });
   $('meDelete').addEventListener('click', async () => {
-    if (!(await (window.bbvConfirm ? window.bbvConfirm('Delete your trainer, cards and vouch for good? This can’t be undone.', { yes: 'Delete my trainer', no: 'Keep it' }) : Promise.resolve(confirm('Delete your trainer, cards and vouch for good? This can’t be undone.'))))) return;
+    if (!(await (window.bbvConfirm ? window.bbvConfirm('Delete your trainer, cards and vouch for good? This can’t be undone.', { yes: 'Delete My Trainer', no: 'Keep It' }) : Promise.resolve(confirm('Delete your trainer, cards and vouch for good? This can’t be undone.'))))) return;
     try { await send('/me/delete'); location.href = '/trainers'; } catch (err) { say(err.message, true); }
   });
 

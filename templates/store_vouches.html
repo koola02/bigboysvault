@@ -1,7 +1,7 @@
 {#- A store's Vouches window (GET /store/{slug}/vouches), opened over its page by static/store-head.js. Vouches people
     wrote for the store and, for a seller, the reviews from its finished sales: one list, newest first. -#}
 <div class="sv-body" data-store="{{ store }}" data-name="{{ name }}">
-  <div class="sv-write" data-sv-write hidden><button type="button" class="btn" data-sv-new><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg><span>Write a vouch</span></button></div>
+  <div class="sv-write" data-sv-write hidden><button type="button" class="btn" data-sv-new><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg><span>Write A Vouch</span></button></div>
   {% if items.is_empty() %}<p class="sv-empty" data-sv-empty>No vouches yet.</p>{% endif %}
   <div class="vouch-grid sv-list" data-store="{{ store }}">
     {% for it in items %}
@@ -11,12 +11,12 @@
     {% when VouchItem::Review with (r) %}
     <article class="vouch sv-review" id="review-{{ r.id }}">
       <header class="v-head">
-        <span class="v-who">{% if !r.reviewer_avatar.is_empty() %}<img class="av" src="{{ r.reviewer_avatar }}" width="56" height="56" alt="" loading="lazy">{% else %}<span class="av">{{ r.initial() }}</span>{% endif %}<span class="v-name"><b>{{ r.reviewer_name }}</b><span class="sf-stars" aria-label="{{ r.rating }} of 5 stars">{{ r.stars() }}</span></span></span>
+        <span class="v-who">{% if !r.reviewer_avatar.is_empty() %}<img class="av" src="{{ r.reviewer_avatar }}" width="56" height="56" alt="" loading="lazy">{% else %}<span class="av">{{ r.initial() }}</span>{% endif %}<span class="v-name"><b>{{ r.reviewer_name }}</b><span class="sf-stars" aria-label="{{ r.rating }} Of 5 Stars">{{ r.stars() }}</span></span></span>
         <time data-at="{{ r.created_at }}">{{ r.when() }}</time>
       </header>
-      <p class="sv-sale">Bought{% if !r.title.is_empty() %} {{ r.title }}{% endif %} from {{ name }}</p>
+      <p class="sv-sale">Bought{% if !r.title.is_empty() %} {{ r.title }}{% endif %} From {{ name }}</p>
       {% if !r.text.is_empty() %}<blockquote>{{ r.text }}</blockquote>{% endif %}
-      {% if !r.reply.is_empty() %}<p class="sf-review-reply"><b>{{ name }}:</b> {{ r.reply }}</p>{% else if is_me %}<form class="st-reply" data-review-reply="{{ r.id }}"><input maxlength="400" placeholder="Reply (optional)" aria-label="Reply"><button class="linkbtn inline" type="submit">Reply</button></form>{% endif %}
+      {% if !r.reply.is_empty() %}<p class="sf-review-reply"><b>{{ name }}:</b> {{ r.reply }}</p>{% else if is_me %}<form class="st-reply" data-review-reply="{{ r.id }}"><input maxlength="400" placeholder="Reply (Optional)" aria-label="Reply"><button class="linkbtn inline" type="submit">Reply</button></form>{% endif %}
     </article>
     {% endmatch %}
     {% endfor %}

@@ -167,7 +167,7 @@ pub fn preview(m: &New) -> String {
     let short = |s: &str| if s.chars().count() > 80 { format!("{}…", s.chars().take(79).collect::<String>()) } else { s.to_string() };
     match m.kind.as_str() {
         "photo" => "📷 Photo".into(),
-        "voice" => "🎤 Voice message".into(),
+        "voice" => "🎤 Voice Message".into(),
         "call" => short(&words),
         "card" => {
             // A card, or something shared (a binder, a store, a post), which brings its own little picture.

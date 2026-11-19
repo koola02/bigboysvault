@@ -14,7 +14,7 @@
     if (!input) return;
 
     const row = make('div', 'ai-ask');
-    const btn = make('button', 'ai-btn', '✨ Read my sentence'); btn.type = 'button';
+    const btn = make('button', 'ai-btn', '✨ Read My Sentence'); btn.type = 'button';
     const note = make('span', 'ai-note');
     row.append(btn, note); row.hidden = true;
     finder.before(row);
@@ -35,7 +35,7 @@
           session = await LanguageModel.create({
             ...langs,
             initialPrompts: [{ role: 'system', content: 'You turn a sentence about Pokémon cards into search filters for a card collection. "words" holds only Pokémon names, card names or set names from the sentence. Prices are in Philippine pesos. Leave out anything the sentence does not say.' }],
-            monitor(m) { m.addEventListener('downloadprogress', (e) => { note.textContent = `Getting ready ${Math.round(e.loaded * 100)}%`; }); },
+            monitor(m) { m.addEventListener('downloadprogress', (e) => { note.textContent = `Getting Ready ${Math.round(e.loaded * 100)}%`; }); },
           });
         }
         const titles = binders.map((b) => b.title);
@@ -60,7 +60,7 @@
         note.textContent = '';
         refresh();
       } catch (e) {
-        console.debug('On-device AI failed', e);
+        console.debug('On-device AI Failed', e);
         note.textContent = 'Couldn’t work that out. Try just the card name.';
       }
       btn.disabled = false;

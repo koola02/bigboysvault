@@ -6,15 +6,15 @@
   <div class="join-card">
     <img class="join-mark" src="/static/img/logo-sm-144.png?v=1" width="88" height="88" alt="">
     <p class="join-why" id="loginWhy" role="status" hidden></p>
-    <h1 class="h1">Welcome back</h1>
+    <h1 class="h1">Welcome Back</h1>
     <p class="join-sub">Your binder, your store and your orders.</p>
     {% if !error.is_empty() %}<p class="join-err" role="alert">{{ error }}</p>{% endif %}
     <form class="join-form" method="post" action="/signin">
       <input type="hidden" name="next" value="{{ next }}" id="loginNext">
       <label>Name<input type="text" name="name" value="{{ name }}" autocomplete="username" autocapitalize="off" spellcheck="false" required autofocus></label>
-      <label>Password<span class="pw-wrap"><input name="password" type="password" autocomplete="current-password" required id="pw"><button type="button" class="pw-eye" id="pwEye" aria-label="Show password" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
-      <label class="chk login-remember"><input type="checkbox" class="sr" name="remember" value="1" checked><span class="chk-box"></span> Remember me on this device</label>
-      <button class="btn" type="submit">Log in</button>
+      <label>Password<span class="pw-wrap"><input name="password" type="password" autocomplete="current-password" required id="pw"><button type="button" class="pw-eye" id="pwEye" aria-label="Show Password" aria-pressed="false"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg></button></span></label>
+      <label class="chk login-remember"><input type="checkbox" class="sr" name="remember" value="1" checked><span class="chk-box"></span> Remember Me On This Device</label>
+      <button class="btn" type="submit">Log In</button>
     </form>
     <div class="join-or"><span>New here?</span><a class="btn ghost" href="/join{% if !next.is_empty() %}?next={{ next|urlencode }}{% endif %}" id="joinLink">Register</a><small>A trainer profile and a binder, no email needed.</small></div>
     <p class="join-note">Forgot your password? Ask the vault owner for a new one.</p>
@@ -23,7 +23,7 @@
 <script>
 (() => {
   const pw = document.getElementById('pw'), eye = document.getElementById('pwEye');
-  eye.addEventListener('click', () => { const show = pw.type === 'password'; pw.type = show ? 'text' : 'password'; eye.setAttribute('aria-pressed', String(show)); eye.setAttribute('aria-label', show ? 'Hide password' : 'Show password'); eye.classList.toggle('on', show); pw.focus(); });
+  eye.addEventListener('click', () => { const show = pw.type === 'password'; pw.type = show ? 'text' : 'password'; eye.setAttribute('aria-pressed', String(show)); eye.setAttribute('aria-label', show ? 'Hide Password' : 'Show Password'); eye.classList.toggle('on', show); pw.focus(); });
 })();
 </script>
 <script>

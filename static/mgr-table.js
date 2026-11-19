@@ -68,7 +68,7 @@
       if (!select) return;
       const spec = write(st);
       select.querySelectorAll('option[data-columns]').forEach((o) => { if (o.value !== spec) o.remove(); });
-      if (spec && ![...select.options].some((o) => o.value === spec)) { const o = el('option', null, 'By column: ' + said(st)); o.value = spec; o.dataset.columns = ''; select.append(o); }
+      if (spec && ![...select.options].some((o) => o.value === spec)) { const o = el('option', null, 'By Column: ' + said(st)); o.value = spec; o.dataset.columns = ''; select.append(o); }
       select.value = spec;
       select.dispatchEvent(new Event('change', { bubbles: true }));
     }
@@ -82,14 +82,14 @@
         line.append('Sorted by ');
         state.forEach((s, i) => { if (i) line.append(', then '); line.append(el('b', null, nameOf(s[0])), ` (${wayOf(s)})`); });
         line.append('. ');
-        const back = el('button', 'linkbtn', select && select.options[0] ? `Back to ${select.options[0].textContent.trim().replace(/\s*\(.*\)$/, '').toLowerCase()}` : 'Clear'); back.type = 'button';
+        const back = el('button', 'linkbtn', select && select.options[0] ? `Back To ${select.options[0].textContent.trim().replace(/\s*\(.*\)$/, '')}` : 'Clear'); back.type = 'button';
         back.onclick = () => go([]);
         line.append(back);
       }
       // No how-to words (the owner, 18 Nov 2026: "no need to have these descriptions"): the line only says how the
       // table is sorted, with the way back, and offers to reset widths that were changed; otherwise it isn't shown.
       if (hasWidths()) {
-        const reset = el('button', 'linkbtn', 'Reset column widths'); reset.type = 'button';
+        const reset = el('button', 'linkbtn', 'Reset Column Widths'); reset.type = 'button';
         reset.onclick = () => { w = {}; keep(root, w); apply(root, head, w); drawLine(); };
         if (state.length) line.append(' · ');
         line.append(reset);
@@ -99,7 +99,7 @@
     (head.closest('.mgr-scroll') || head).before(line);
 
     // The option the server drew for a column sort gets its words.
-    if (select && state.length) { const o = [...select.options].find((x) => x.value === write(state)); if (o) { o.textContent = 'By column: ' + said(state); o.dataset.columns = ''; } }
+    if (select && state.length) { const o = [...select.options].find((x) => x.value === write(state)); if (o) { o.textContent = 'By Column: ' + said(state); o.dataset.columns = ''; } }
 
     head.setAttribute('role', 'row');
     [...head.children].forEach((cell) => {
@@ -111,7 +111,7 @@
         if (state.length > 1) cell.append(el('i', 'mgr-ord', String(at + 1)));
         if (at === 0) cell.setAttribute('aria-sort', state[0][1] === 'desc' ? 'descending' : 'ascending');
       }
-      cell.title = at === 0 ? `Sorted by ${nameOf(col)} (${wayOf(state[0])}). Tap to change.` : `Sort by ${nameOf(col)}`;
+      cell.title = at === 0 ? `Sorted by ${nameOf(col)} (${wayOf(state[0])}). Tap to change.` : `Sort By ${nameOf(col)}`;
       const sort = () => go(next(state, col, cell.dataset.first === 'desc' ? 'desc' : 'asc'));
       cell.addEventListener('click', (e) => { if (!e.target.closest('.mgr-rz')) sort(); });
       cell.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); sort(); } });

@@ -95,7 +95,7 @@ impl PostView {
         self.tiles.len().min(4)
     }
     pub fn comments_text(&self) -> String {
-        format!("{} comment{}", self.comment_n, if self.comment_n == 1 { "" } else { "s" })
+        format!("{} Comment{}", self.comment_n, if self.comment_n == 1 { "" } else { "s" })
     }
 }
 
@@ -256,7 +256,7 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
             v.tiles.truncate(4);
             v.more = count - v.tiles.len() as i64;
             v.link = v.who.url.clone();
-            v.link_text = "Visit the store".into();
+            v.link_text = "Visit The Store".into();
         }
         "listing" => {
             for id in ids("cards") {
@@ -272,7 +272,7 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
             v.tiles.truncate(4);
             v.more = (n - v.tiles.len()) as i64;
             v.link = v.who.url.clone();
-            v.link_text = "Visit the store".into();
+            v.link_text = "Visit The Store".into();
         }
         "vouch" => {
             v.headline = format!("vouched for {brand}");
@@ -338,7 +338,7 @@ fn store_view(s: &StoreCard, pic: String, title: &str) -> StoreView {
         avatar: s.avatar.clone(),
         initial: s.initial.clone(),
         pic: if pic.is_empty() { s.cover.clone() } else { pic },
-        sub: format!("{} on sale{}", s.on_sale_text(), if title.is_empty() { String::new() } else { format!(" · {title}") }),
+        sub: format!("{} On Sale{}", s.on_sale_text(), if title.is_empty() { String::new() } else { format!(" · {title}") }),
     }
 }
 
@@ -665,7 +665,7 @@ async fn feed_html(app: &App, viewer: i64, only: Option<i64>) -> Result<String, 
         // The welcome line can hold "{count}": the number of cards for sale on the site.
         let tagline = blocks::welcome(c)?.replace("{count}", &db::thousands(cards_for_sale(c)?));
         let stores = store_views(shops.all()?, 0).into_iter().take(6).collect();
-        nav.seo = if single { Seo { title: format!("A post · {}", nav.brand), ..Default::default() } } else { seo(&nav) };
+        nav.seo = if single { Seo { title: format!("A Post · {}", nav.brand), ..Default::default() } } else { seo(&nav) };
         let end = !single && next.is_empty();
         Ok(FeedPage { nav, stories, items, next, tagline, stores, single, end })
     })
@@ -1619,7 +1619,7 @@ mod tests {
         assert_eq!((thing(&post, 0), thing(&post, b), link_of(p, 0), link_of(p, b)), ("your post", "your photo", format!("/posts/{p}"), format!("/posts/{p}?photo={b}")));
         // The photo as its own small post: which photo it is, its own counts, no menu, and it says which photo it is.
         let html = part(vec![Item { post: photo_view(&c, &post, &own, "Big Boys Vault").unwrap(), stores: vec![], binder: None }]).unwrap();
-        assert!(html.contains(&format!("data-post=\"{p}\" data-image=\"{b}\"")) && html.contains("Photo 2 Of 3 · ") && html.contains("2 comments") && !html.contains("data-post-menu") && html.contains("data-mine=\"love\""), "{html}");
+        assert!(html.contains(&format!("data-post=\"{p}\" data-image=\"{b}\"")) && html.contains("Photo 2 Of 3 · ") && html.contains("2 Comments") && !html.contains("data-post-menu") && html.contains("data-mine=\"love\""), "{html}");
         // And the post in the feed tells the page its photos have their own.
         let feed_post = part(vec![Item { post: post_view(&c, &post, "Big Boys Vault", 0).unwrap(), stores: vec![], binder: None }]).unwrap();
         assert!(feed_post.contains("class=\"post-media n3\" data-photo-threads") && !feed_post.contains("data-image="), "{feed_post}");
@@ -1709,9 +1709,9 @@ mod tests {
         assert_eq!(pika.tiles.iter().map(|t| t.url.as_str()).collect::<Vec<_>>(), vec!["/products/c2", "/products/c1"], "cards for sale only");
         let html = feed_part(items, next);
         assert!(!html.contains('₱'), "the sets of cards show no prices: only where cards are shopped");
-        assert!(html.contains(&format!("<a href=\"/store/{slug}/binders/fire\">See all 2</a>")), "{html}");
+        assert!(html.contains(&format!("<a href=\"/store/{slug}/binders/fire\">See All 2</a>")), "{html}");
         assert!(html.contains(&format!("<a class=\"vu\" href=\"/trainers/{ash}/cards/{}\"", ids[0])));
-        assert!(html.contains("<h2 class=\"h2\">From Big Boys Vault · Pikachu Set</h2>") && html.contains("<a href=\"/collections/pikachu-set\">See all 3</a>"));
+        assert!(html.contains("<h2 class=\"h2\">From Big Boys Vault · Pikachu Set</h2>") && html.contains("<a href=\"/collections/pikachu-set\">See All 3</a>"));
         assert!(html.contains("hx-get=\"/feed?c=v:2\""));
         // The next page goes on where this one stopped; after the last binder, round again.
         let (items, next) = build(&c, &nav, 0, cursor("v:4"), &mut shops).unwrap();
@@ -1734,7 +1734,7 @@ mod tests {
         assert_eq!(views.iter().map(|s| (s.id, s.name.clone(), s.url.clone())).collect::<Vec<_>>(), vec![(ash, "Ash".to_string(), url(ash)), (0, "Big Boys Vault".into(), "/store/vault".into()), (brock, "Brock".into(), url(brock))], "the Stores page's order");
         let v = &views[1];
         assert_eq!((v.avatar.as_str(), v.pic.as_str()), ("/static/img/logo-sm-144.png?v=1", "/uploads/c0-5_s.jpg"));
-        assert!(v.sub.starts_with("3 on sale · "), "{}", v.sub);
+        assert!(v.sub.starts_with("3 On Sale · "), "{}", v.sub);
         assert_eq!(store_views(shops.all().unwrap(), 1)[0].id, 0, "a later carousel starts further along");
         // In the feed, after the second post: the vault's store is one of the stores, its Message button hidden from the
         // full admins (they are the vault).
@@ -1764,7 +1764,7 @@ mod tests {
         let v = post_view(&c, &p, "Big Boys Vault", 0).unwrap().unwrap();
         assert_eq!((v.who.name.as_str(), v.who.url.as_str()), ("Big Boys Vault", "/store/vault"));
         assert_eq!(v.headline, "listed 3 cards for sale");
-        assert_eq!((v.link.as_str(), v.link_text.as_str()), ("/store/vault", "Visit the store"));
+        assert_eq!((v.link.as_str(), v.link_text.as_str()), ("/store/vault", "Visit The Store"));
         // A post the vault wrote itself still opens the home page.
         let id = social::post_add(&c, 0, "post", "Hello", &[], &json!({}), 100).unwrap();
         let p = social::post(&c, 0, id).unwrap().unwrap();

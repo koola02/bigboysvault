@@ -135,22 +135,22 @@
     const words = el('div', 'alerts-t');
     const btns = el('div', 'alerts-b');
     if (st === 'on') {
-      words.append(el('b', null, 'Alerts reach this device ✓'), el('span', null, android ? ANDROID_TIP : 'Orders, messages and calls, even with the site closed.'));
-      const off = el('button', 'btn ghost sm', 'Turn off'); off.type = 'button';
+      words.append(el('b', null, 'Alerts Reach This Device ✓'), el('span', null, android ? ANDROID_TIP : 'Orders, messages and calls, even with the site closed.'));
+      const off = el('button', 'btn ghost sm', 'Turn Off'); off.type = 'button';
       off.addEventListener('click', async () => { off.disabled = true; await disable(); say('Alerts are off on this device.'); paint(); });
       btns.append(off);
     } else if (st === 'blocked') {
-      words.append(el('b', null, 'Alerts are blocked for this site'), el('span', null, 'Allow notifications for this site in your browser’s settings, then come back here to turn them on.'));
+      words.append(el('b', null, 'Alerts Are Blocked For This Site'), el('span', null, 'Allow notifications for this site in your browser’s settings, then come back here to turn them on.'));
     } else if (st === 'homescreen') {
-      words.append(el('b', null, 'Get alerts on your iPhone'), el('span', null, 'Tap Share, then “Add to Home Screen”. Open Big Boys Vault from your Home Screen and turn alerts on there.'));
+      words.append(el('b', null, 'Get Alerts On Your iPhone'), el('span', null, 'Tap Share, then “Add to Home Screen”. Open Big Boys Vault from your Home Screen and turn alerts on there.'));
     } else {
       words.append(el('b', null, 'Hear about orders and messages, even with the site closed'), el('span', null, 'Your phone shows new orders, offers and messages, and rings for a call, like an app.'));
-      const on = el('button', 'btn sm', 'Turn on'); on.type = 'button';
+      const on = el('button', 'btn sm', 'Turn On'); on.type = 'button';
       on.addEventListener('click', async () => {
         on.disabled = true;
         try {
           const r = await enable();
-          if (r === 'on') say(android ? `Alerts on ✓ ${ANDROID_TIP}` : 'Alerts on ✓ Orders, messages and calls now reach this device.');
+          if (r === 'on') say(android ? `Alerts On ✓ ${ANDROID_TIP}` : 'Alerts on ✓ Orders, messages and calls now reach this device.');
           else if (r === 'blocked') say('Alerts are blocked for this site. Allow them in your browser’s settings.', true);
           else if (r === 'homescreen') say('On iPhone, add Big Boys Vault to your Home Screen first.', true);
         } catch (err) { say(err.message || 'Couldn’t turn alerts on.', true); }
@@ -158,13 +158,13 @@
       });
       btns.append(on);
       if (kind !== 'settings') {
-        const no = el('button', 'btn ghost sm', 'Not now'); no.type = 'button';
+        const no = el('button', 'btn ghost sm', 'Not Now'); no.type = 'button';
         no.addEventListener('click', () => { ls.set('bbv:alerts-later', String(Date.now() + 7 * 864e5)); paint(); });
         btns.append(no);
       }
     }
     if (st === 'homescreen' && kind !== 'settings') {
-      const no = el('button', 'btn ghost sm', 'Got it'); no.type = 'button';
+      const no = el('button', 'btn ghost sm', 'Got It'); no.type = 'button';
       no.addEventListener('click', () => { ls.set('bbv:alerts-later', String(Date.now() + 14 * 864e5)); paint(); });
       btns.append(no);
     }

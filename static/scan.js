@@ -44,7 +44,7 @@
     } finally {
       busy = false; shoot.classList.remove('off'); shoot.removeAttribute('aria-disabled');
       file.value = '';
-      word.textContent = 'Scan another card';
+      word.textContent = 'Scan Another Card';
     }
   });
 
@@ -60,12 +60,12 @@
   // The photo with what was read (or what went wrong).
   function card(r, trouble) {
     const box = make('div', 'sc-read');
-    const pic = make('img', 'sc-shot'); pic.src = photo; pic.alt = 'Your photo';
+    const pic = make('img', 'sc-shot'); pic.src = photo; pic.alt = 'Your Photo';
     const t = make('div', 'sc-what');
     if (trouble) t.append(make('b', 'sc-bad', trouble));
     else {
-      t.append(make('small', null, 'We read'));
-      const name = r.name || r.name_en || 'This card';
+      t.append(make('small', null, 'We Read'));
+      const name = r.name || r.name_en || 'This Card';
       t.append(make('b', null, r.name_en && r.name_en !== name ? `${name} (${r.name_en})` : name));
       const bits = [r.number, r.set_name, LANG[r.language]].filter(Boolean).join(' · ');
       if (bits) t.append(make('span', null, bits));
@@ -84,15 +84,15 @@
   function tile(c, fin) {
     const b = make('button', 'sc-tile'); b.type = 'button';
     const pic = make('span', 'sc-pic');
-    const none = make('span', 'sc-nopic', 'No picture yet');
+    const none = make('span', 'sc-nopic', 'No Picture Yet');
     if (c.image) { const i = make('img'); i.src = c.image; i.alt = ''; i.loading = 'lazy'; i.decoding = 'async'; i.width = 245; i.height = 342; i.onerror = () => i.replaceWith(none); pic.append(i); } else pic.append(none);
     const plus = make('span', 'sc-plus', '+'); plus.setAttribute('aria-hidden', 'true');
     b.append(pic, plus, make('b', 'sc-name', c.name || 'Card'));
-    if (c.guess) { b.classList.add('guess'); b.append(make('span', 'sc-guess', 'Best guess')); }
+    if (c.guess) { b.classList.add('guess'); b.append(make('span', 'sc-guess', 'Best Guess')); }
     if (fin) b.append(make('span', 'sc-fin', fin.label));
     b.append(make('small', null, [c.en && c.en !== c.name ? c.en : '', c.set, numberOf(c)].filter(Boolean).join(' · ')));
-    if (fin && fin.php > 0) b.append(make('small', 'sc-mk', `Market about ${peso(fin.php)}`));
-    b.setAttribute('aria-label', `Add ${c.name || 'this card'}${fin ? `, ${fin.label}` : ''}, ${[c.set, numberOf(c)].filter(Boolean).join(' ')}, to your store`);
+    if (fin && fin.php > 0) b.append(make('small', 'sc-mk', `Market About ${peso(fin.php)}`));
+    b.setAttribute('aria-label', `Add ${c.name || 'this card'}${fin ? `, ${fin.label}` : ''}, ${[c.set, numberOf(c)].filter(Boolean).join(' ')}, To Your Store`);
     b.addEventListener('click', () => {
       if (!window.bbvAddCard) { out.prepend(note('Please reload the page and try again.')); return; }
       const pick = { ...c };
@@ -116,7 +116,7 @@
     tiles.forEach((t, i) => { t.hidden = i >= shown; grid.append(t); });
     s.append(h, grid);
     if (tiles.length > shown) {
-      const more = make('button', 'btn ghost sc-more', `Show ${tiles.length - shown} more`); more.type = 'button';
+      const more = make('button', 'btn ghost sc-more', `Show ${tiles.length - shown} More`); more.type = 'button';
       more.addEventListener('click', () => { tiles.forEach((t) => { t.hidden = false; }); more.remove(); });
       s.append(more);
     }
@@ -141,22 +141,22 @@
         const fins = (c.finishes || []).filter((f) => f.key && f.key !== 'market');
         return fins.length ? fins.map((f) => tile(c, f)) : [tile(c, null)];
       });
-      parts.push(group('h2', 'This card', tiles, 0, tiles.length));
+      parts.push(group('h2', 'This Card', tiles, 0, tiles.length));
     } else {
       const first = r.number ? `We couldn’t match number ${r.number} exactly.` : 'We couldn’t read the card’s number.';
       parts.push(note(`${first} ${versions[0] && versions[0].guess ? 'Our best guess is first: check it against your card.' : 'Pick your card from these.'}`));
       if (!r.number) parts.push(make('p', 'sc-tip', 'Tip: hold the card flat and close, so the small number at the bottom is sharp.'));
     }
     if (versions.length) {
-      parts.push(group('h2', exact.length ? 'Other versions' : `Cards called ${name}`, versions.map((c) => tile(c, null)), j.versions_total || versions.length, 24));
+      parts.push(group('h2', exact.length ? 'Other Versions' : `Cards Called ${name}`, versions.map((c) => tile(c, null)), j.versions_total || versions.length, 24));
     }
     if (family.length) {
       const fam = make('section', 'sc-sec sc-fam');
-      fam.append(make('h2', 'h2', 'Its evolutions'));
+      fam.append(make('h2', 'h2', 'Its Evolutions'));
       family.forEach((g) => fam.append(group('h3', g.name, (g.cards || []).map((c) => tile(c, null)), g.total || 0, 6)));
       parts.push(fam);
     }
-    const again = make('button', 'btn sc-again', 'Scan another card'); again.type = 'button';
+    const again = make('button', 'btn sc-again', 'Scan Another Card'); again.type = 'button';
     again.addEventListener('click', () => file.click());
     parts.push(again);
     out.replaceChildren(...parts);

@@ -89,9 +89,9 @@
       hide: (k, c, hidden) => req(`/admin/binders/${enc(k)}/hide`, { id: c.id, hidden }),
       hid: (t) => `“${t}” is hidden in this binder only. It stays in the vault and in any other binder.`,
       nameMax: 40,
-      who: [['Public', 'Everyone'], ['Unlisted', 'Only people with the link'], ['Private', 'Only the vault’s staff']],
+      who: [['Public', 'Everyone'], ['Unlisted', 'Only People With The Link'], ['Private', 'Only The Vault’s Staff']],
       words: 'Like “Every Pikachu we have, oldest first”',
-      auto: 'Automatic: the dearest card',
+      auto: 'Automatic: The Dearest Card',
       stays: 'It stays in the vault.',
       keeps: (n) => (n ? `The ${plural(n, 'card')} in it stay in the vault, and in any other binder they’re in. Only the binder goes away.` : 'It has no cards. Only the binder goes away.'),
       find: 'Search the vault’s cards: name, number or tag',
@@ -114,9 +114,9 @@
       hide: (k, c, hidden) => req(`/me/listings/${enc(c.id)}`, { status: hidden ? 'Hidden' : (c.qty > 0 ? 'Active' : 'Out of stock') }),
       hid: (t) => `“${t}” is hidden. Shoppers don’t see it anywhere; you still see it here.`,
       nameMax: 60,
-      who: [['Public', 'Everyone'], ['Unlisted', 'Only people with the link'], ['Private', 'Only me']],
+      who: [['Public', 'Everyone'], ['Unlisted', 'Only People With The Link'], ['Private', 'Only Me']],
       words: 'Like “Base Set holos, all Near Mint”',
-      auto: 'Automatic: its first card',
+      auto: 'Automatic: Its First Card',
       stays: 'It stays in your store.',
       keeps: (n) => (n ? `The ${plural(n, 'card')} in it stay in your store, as cards not in a binder. Only the binder goes away.` : 'It has no cards. Only the binder goes away.'),
       find: 'Search your cards: name, number or set',
@@ -254,9 +254,9 @@
     };
     paint(t.pics, t.photo);
     const side = el('div', 'bt-cv-side');
-    const pickBtn = button('btn ghost sm', null, 'star', 'Pick a card'); pickBtn.setAttribute('aria-expanded', 'false');
-    const up = el('label', 'btn ghost sm bt-up'); up.append(icon('image'), el('span', '', 'Upload a photo'));
-    const file = el('input', 'sr'); file.type = 'file'; file.accept = 'image/*'; file.setAttribute('aria-label', 'Upload a photo for the cover');
+    const pickBtn = button('btn ghost sm', null, 'star', 'Pick A Card'); pickBtn.setAttribute('aria-expanded', 'false');
+    const up = el('label', 'btn ghost sm bt-up'); up.append(icon('image'), el('span', '', 'Upload A Photo'));
+    const file = el('input', 'sr'); file.type = 'file'; file.accept = 'image/*'; file.setAttribute('aria-label', 'Upload A Photo For The Cover');
     up.append(file);
     const opts = el('div', 'bt-cover-opts'); opts.append(pickBtn, up);
     const note = el('p', 'bt-state'); note.setAttribute('aria-live', 'polite');
@@ -281,7 +281,7 @@
         state.textContent = cards.length ? '' : 'No card in this binder has a picture yet. Add cards first, or upload a photo.';
         list.replaceChildren(...cards.map((c) => {
           const li = el('li');
-          const b = button('bt-pc', `Make ${c.title} the cover`);
+          const b = button('bt-pc', `Make ${c.title} The Cover`);
           b.setAttribute('aria-pressed', String(!t.photo && !!c.cover));
           const pic = el('span', 'bt-pc-pic'); const im = el('img'); im.src = c.image; im.alt = ''; im.loading = 'lazy'; pic.append(im);
           const tick = el('span', 'bt-tick'); tick.append(icon('check')); pic.append(tick);
@@ -319,21 +319,21 @@
     const who = el('select');
     api.who.forEach(([v, words]) => { const o = el('option', '', words); o.value = v; who.append(o); });
     who.value = t.visibility || 'Public';
-    const copy = button('linkbtn bt-copy', null, null, 'Copy its link');
+    const copy = button('linkbtn bt-copy', null, null, 'Copy Its Link');
     const showCopy = () => { copy.hidden = who.value !== 'Unlisted'; };
     who.addEventListener('change', showCopy); showCopy();
     copy.addEventListener('click', async () => {
       const url = new URL(t.href, location.origin).href;
-      try { await navigator.clipboard.writeText(url); say('Link copied ✓'); } catch (_) { prompt('Copy this link', url); }
+      try { await navigator.clipboard.writeText(url); say('Link Copied ✓'); } catch (_) { prompt('Copy This Link', url); }
     });
-    const whoBox = field('Who can see it', who); whoBox.append(copy);
+    const whoBox = field('Who Can See It', who); whoBox.append(copy);
     const fields = el('div', 'bt-fields');
-    fields.append(field('Name', name), field('What’s in it', desc), whoBox);
+    fields.append(field('Name', name), field('What’s In It', desc), whoBox);
 
     // Its cards: add more (the Add cards page), or arrange and take them out (the binder's own page).
     const cs = el('section', 'bt-cv-cards'); cs.setAttribute('aria-label', 'Cards');
-    const addA = el('a', 'btn ghost sm'); addA.href = addHref(kind, t.key); addA.append(icon('plus'), el('span', '', 'Add cards'));
-    const arrA = el('a', 'btn ghost sm'); arrA.href = `${t.href}#edit`; arrA.append(icon('grip'), el('span', '', 'Arrange or remove'));
+    const addA = el('a', 'btn ghost sm'); addA.href = addHref(kind, t.key); addA.append(icon('plus'), el('span', '', 'Add Cards'));
+    const arrA = el('a', 'btn ghost sm'); arrA.href = `${t.href}#edit`; arrA.append(icon('grip'), el('span', '', 'Arrange Or Remove'));
     const row = el('div', 'bt-cover-opts'); row.append(addA, arrA);
     cs.append(el('h3', 'bt-sec', `Cards · ${t.count.toLocaleString('en-US')}`), row);
 
@@ -403,7 +403,7 @@
       // What visitors see is drawn by the site: after a change, the page comes back fresh.
       if (dirty) { toggle.disabled = true; location.reload(); return; }
       on = false; grid.classList.remove('bt-on'); grid.replaceChildren(...saved); hint?.remove(); if (none) none.hidden = false;
-      toggle.setAttribute('aria-pressed', 'false'); toggle.classList.add('ghost'); words.textContent = 'Edit binders';
+      toggle.setAttribute('aria-pressed', 'false'); toggle.classList.add('ghost'); words.textContent = 'Edit Binders';
       toggle.focus({ preventScroll: true });
     }
     toggle.addEventListener('click', () => (on ? leave() : enter()));
@@ -442,7 +442,7 @@
       try {
         await api.order(tiles.map((t) => t.key)); dirty = true;
         const at = tiles.findIndex((t) => t.key === moved);
-        say(at >= 0 ? `Moved to place ${at + 1} of ${tiles.length} ✓` : 'Order saved ✓');
+        say(at >= 0 ? `Moved To Place ${at + 1} Of ${tiles.length} ✓` : 'Order Saved ✓');
       } catch (e) { tiles = was; draw(); say(e.message, { bad: true }); }
     }
     grid.addEventListener('keydown', (e) => {
@@ -457,7 +457,7 @@
     grid.addEventListener('dragstart', (e) => { if (on) e.preventDefault(); });
 
     async function remove(t) {
-      if (!await ask(`Delete “${t.title}”?`, api.keeps(t.count), 'Delete binder')) return;
+      if (!await ask(`Delete “${t.title}”?`, api.keeps(t.count), 'Delete Binder')) return;
       const i = tiles.findIndex((x) => x.key === t.key);
       try {
         await api.remove(t.key); dirty = true;
@@ -470,7 +470,7 @@
 
     function newTile() {
       const li = el('li', 'bt-new');
-      const b = button('bt-newbtn', null, 'plus', 'New binder');
+      const b = button('bt-newbtn', null, 'plus', 'New Binder');
       b.addEventListener('click', startNew);
       li.append(b);
       return li;
@@ -478,11 +478,11 @@
     function startNew() {
       const li = grid.querySelector('.bt-new'); if (!li) return;
       const f = el('form', 'bt-newf'); f.noValidate = true;
-      const lab = el('label', 'bt-newf-t', 'New binder');
+      const lab = el('label', 'bt-newf-t', 'New Binder');
       const input = el('input'); input.type = 'text'; input.maxLength = api.nameMax; input.placeholder = 'Its name, like “Base Set”'; input.autocomplete = 'off'; input.enterKeyHint = 'done';
       input.id = `btNew${++uid}`; lab.htmlFor = input.id;
       const acts = el('div', 'bt-newf-acts');
-      const no = button('btn ghost sm', null, null, 'Cancel'), go = el('button', 'btn sm', 'Make it'); go.type = 'submit';
+      const no = button('btn ghost sm', null, null, 'Cancel'), go = el('button', 'btn sm', 'Make It'); go.type = 'submit';
       acts.append(no, go);
       f.append(lab, input, acts);
       li.replaceChildren(f); input.focus();
@@ -526,8 +526,8 @@
     let title = toggle.dataset.title || 'this binder';
     let cards = [], on = false, dirty = false, box = null, list = null, count = null, empty = null, sorted = false, sortBar = null, sorting = false;
     // The ways to sort, and what the message says after each.
-    const SORTS = [['az', 'A to Z'], ['za', 'Z to A'], ['set', 'By set'], ['number', 'By number'], ['evolution', 'By evolution']];
-    const SORTED = { az: 'A to Z', za: 'Z to A', set: 'by set', number: 'by number', evolution: 'by evolution' };
+    const SORTS = [['az', 'A To Z'], ['za', 'Z To A'], ['set', 'By Set'], ['number', 'By Number'], ['evolution', 'By Evolution']];
+    const SORTED = { az: 'A To Z', za: 'Z To A', set: 'by set', number: 'by number', evolution: 'by evolution' };
 
     async function load() { const j = await api.cards(key); cards = j.cards || []; if (j.title) title = j.title; }
     async function enter() {
@@ -552,7 +552,7 @@
       if (dirty) { toggle.disabled = true; location.reload(); return; }
       on = false; box?.remove();
       page.querySelectorAll('[data-bt-hid]').forEach((n) => { n.hidden = false; delete n.dataset.btHid; });
-      toggle.setAttribute('aria-pressed', 'false'); toggle.classList.add('ghost'); words.textContent = 'Edit binder';
+      toggle.setAttribute('aria-pressed', 'false'); toggle.classList.add('ghost'); words.textContent = 'Edit Binder';
       toggle.focus({ preventScroll: true });
     }
     toggle.addEventListener('click', () => (on ? leave() : enter()));
@@ -564,7 +564,7 @@
         : 'Drag a card to change the order, or sort them all below. Everything saves by itself.');
       const add = addLink(); add.dataset.add = '';
       top.append(how, add);
-      sortBar = el('div', 'bt-sort'); sortBar.setAttribute('role', 'group'); sortBar.setAttribute('aria-label', 'Sort the cards');
+      sortBar = el('div', 'bt-sort'); sortBar.setAttribute('role', 'group'); sortBar.setAttribute('aria-label', 'Sort The Cards');
       sortBar.append(el('span', 'bt-sort-t', 'Sort:'));
       SORTS.forEach(([by, words]) => {
         const b = button('btn ghost sm bt-sort-b', null, null, words); b.dataset.sort = by;
@@ -611,12 +611,12 @@
       if (c.sub) txt.append(el('small', '', c.sub));
       txt.append(el('small', 'bt-price', c.price));
       const acts = el('div', 'bt-acts'); acts.dataset.nodrag = '';
-      const cv = button('bt-act', c.cover ? `${c.title} is the cover. Tap to let the cover pick itself again` : `Make ${c.title} the cover`, 'star', 'Cover');
+      const cv = button('bt-act', c.cover ? `${c.title} is the cover. Tap to let the cover pick itself again` : `Make ${c.title} The Cover`, 'star', 'Cover');
       cv.dataset.act = 'cover'; cv.setAttribute('aria-pressed', String(!!c.cover));
-      const hd = c.hidden ? button('bt-act bt-show', `Show ${c.title} again`, 'eye', 'Show')
-        : button('bt-act', kind === 'vault' ? `Hide ${c.title} in this binder` : `Hide ${c.title} from shoppers`, 'eyeoff', 'Hide');
+      const hd = c.hidden ? button('bt-act bt-show', `Show ${c.title} Again`, 'eye', 'Show')
+        : button('bt-act', kind === 'vault' ? `Hide ${c.title} In This Binder` : `Hide ${c.title} From Shoppers`, 'eyeoff', 'Hide');
       hd.dataset.act = 'hide';
-      const rm = button('bt-act bt-del', `Take ${c.title} out of this binder`, 'out', 'Remove'); rm.dataset.act = 'remove';
+      const rm = button('bt-act bt-del', `Take ${c.title} Out Of This Binder`, 'out', 'Remove'); rm.dataset.act = 'remove';
       cv.addEventListener('click', () => makeCover(c));
       hd.addEventListener('click', () => toggleHidden(c, hd));
       rm.addEventListener('click', () => takeOut(c));
@@ -633,7 +633,7 @@
       try {
         await api.arrange(key, cards.map((c) => c.id)); dirty = true;
         const at = cards.findIndex((c) => c.id === moved);
-        say(at >= 0 ? `Moved to place ${at + 1} of ${cards.length} ✓` : 'Order saved ✓');
+        say(at >= 0 ? `Moved To Place ${at + 1} Of ${cards.length} ✓` : 'Order Saved ✓');
       } catch (e) { cards = was; draw(); say(e.message, { bad: true }); }
     }
     // One tap puts every card in order; the site works it out and saves it like a drag. Undo puts the old order back.
@@ -651,7 +651,7 @@
         put((j.ids || []).map(Number));
         const miss = j.missing ? ` ${plural(j.missing, 'card')} couldn’t be looked up just now and went last: sort again later to place them.` : '';
         say(`Sorted ${SORTED[by]} ✓${miss}`, {
-          undo: async () => { await api.arrange(key, before); put(before); say('Back to the order you had ✓'); },
+          undo: async () => { await api.arrange(key, before); put(before); say('Back To The Order You Had ✓'); },
         });
       } catch (e) { say(e.message, { bad: true }); }
       finally {
@@ -678,7 +678,7 @@
         await api.cover(key, to); dirty = true;
         cards.forEach((x) => { x.cover = to != null && x.id === to; });
         draw(); focusCard(c.id, '[data-act="cover"]');
-        say(to == null ? 'The cover picks itself again ✓' : `“${c.title}” is the cover now ✓ It shows first on the binder’s tile.`);
+        say(to == null ? 'The Cover Picks Itself Again ✓' : `“${c.title}” is the cover now ✓ It shows first on the binder’s tile.`);
       } catch (e) { say(e.message, { bad: true }); }
     }
     async function takeOut(c) {
@@ -705,7 +705,7 @@
     function addLink() {
       const a = el('a', 'btn');
       a.href = addHref(kind, key);
-      a.append(icon('plus'), el('span', '', 'Add cards'));
+      a.append(icon('plus'), el('span', '', 'Add Cards'));
       return a;
     }
 
@@ -732,7 +732,7 @@
     },
     seller: {
       get: () => req('/me/featured'), choices: (q) => req(`/me/featured/choices?q=${enc(q)}`), save: (b) => req('/me/featured', b),
-      title: 'What your store shows on Stores', order: 'They show in your store’s order (Edit binders on your store changes it).',
+      title: 'What Your Store Shows On Stores', order: 'They show in your store’s order (Edit binders on your store changes it).',
       find: 'Search your cards: name, number or set', start: '',
       none: 'None of your binders has cards for sale yet. Make one with Edit binders on your store, then come back.',
     },
@@ -769,7 +769,7 @@
       // Highlighted cards: the chosen ones in order (each can come off), then a search to add more.
       const ch = el('h3', 'bt-sec');
       const chow = el('p', 'bt-how', `Pick up to ${max} cards to show off. Tap a card again to take it off.`);
-      const chosen = el('ul', 'bt-fchosen'); chosen.setAttribute('aria-label', 'Highlighted cards, in order');
+      const chosen = el('ul', 'bt-fchosen'); chosen.setAttribute('aria-label', 'Highlighted Cards, In Order');
       const find = el('input', 'bt-find'); find.type = 'search'; find.placeholder = api.find; find.setAttribute('aria-label', api.find);
       find.autocomplete = 'off'; find.enterKeyHint = 'search'; find.spellcheck = false;
       const status = el('p', 'bt-state'); status.setAttribute('aria-live', 'polite');
@@ -783,7 +783,7 @@
 
       function sync() {
         const nb = on.size, nc = picked.size;
-        ch.textContent = `Highlighted cards · ${nc} of ${max}`;
+        ch.textContent = `Highlighted Cards · ${nc} Of ${max}`;
         tally.textContent = !nb && !nc ? 'Only your store’s name and its Visit store button will show.'
           : `${plural(nb, 'binder')} and ${plural(nc, 'card')} will show.`;
       }
@@ -792,7 +792,7 @@
           const li = el('li', 'bt-fc');
           const pic = el('span', 'bt-fc-pic');
           if (c.image) { const im = el('img'); im.src = c.image; im.alt = ''; im.decoding = 'async'; pic.append(im); }
-          const x = button('bt-fc-x', `Take ${c.title} off`, 'x');
+          const x = button('bt-fc-x', `Take ${c.title} Off`, 'x');
           x.addEventListener('click', () => { picked.delete(String(c.id)); drawChosen(); mark(); sync(); find.focus({ preventScroll: true }); });
           li.append(pic, el('span', 'bt-fc-t', c.title), x);
           return li;

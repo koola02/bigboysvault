@@ -40,18 +40,18 @@
 
   function open() {
     if (form) return;
-    form = el('form', 'ce'); form.noValidate = true; form.setAttribute('aria-label', 'Edit this card');
+    form = el('form', 'ce'); form.noValidate = true; form.setAttribute('aria-label', 'Edit This Card');
     form.innerHTML = `
-      <div class="ce-top"><b>Edit this card</b><small></small></div>
+      <div class="ce-top"><b>Edit This Card</b><small></small></div>
       <label class="f ce-f">Price
-        <span class="ce-price"><i aria-hidden="true">₱</i><input type="number" name="price" min="0" step="any" inputmode="decimal" enterkeyhint="done" aria-label="Price in pesos"></span>
+        <span class="ce-price"><i aria-hidden="true">₱</i><input type="number" name="price" min="0" step="any" inputmode="decimal" enterkeyhint="done" aria-label="Price In Pesos"></span>
       </label>
       <div class="f ce-f"><span id="ceCondL">Condition</span>
         <div class="ce-conds" role="group" aria-labelledby="ceCondL"></div>
         <input type="text" name="cond" maxlength="80" placeholder="Or type your own, like CGC 9.5" aria-labelledby="ceCondL" autocapitalize="words">
       </div>
       <label class="f ce-f">Description
-        <textarea name="notes" maxlength="4000" rows="3" placeholder="Anything a buyer should know (optional)"></textarea>
+        <textarea name="notes" maxlength="4000" rows="3" placeholder="Anything A Buyer Should Know (Optional)"></textarea>
       </label>
       <label class="f ce-f">Tags
         <input type="text" name="tags" maxlength="300" placeholder="starter, gift idea, vintage" autocapitalize="none">
@@ -59,14 +59,14 @@
       </label>
       <div class="f ce-f"><span>Photo</span>
         <div class="ce-photo">
-          <span class="ce-thumb" hidden><img alt=""><button type="button" class="ibtn" data-ce-nophoto aria-label="Keep the photo it has now">✕</button></span>
-          <label class="btn ghost sm">Change photo<input type="file" accept="image/*" data-card-cam hidden></label>
+          <span class="ce-thumb" hidden><img alt=""><button type="button" class="ibtn" data-ce-nophoto aria-label="Keep The Photo It Has Now">✕</button></span>
+          <label class="btn ghost sm">Change Photo<input type="file" accept="image/*" data-card-cam hidden></label>
           <small data-ce-photo-t>The card camera lines the card up for you.</small>
         </div>
       </div>
       <p class="ce-err" role="alert" hidden></p>
       <div class="ce-acts">
-        <a class="linkbtn" href="/admin/edit/${id}">More options</a>
+        <a class="linkbtn" href="/admin/edit/${id}">More Options</a>
         <button type="button" class="btn ghost" data-ce-cancel>Cancel</button>
         <button type="submit" class="btn" data-ce-save>Save</button>
       </div>`;
@@ -103,7 +103,7 @@
   // Leaving with changes asks once, on the button itself, instead of a pop-up.
   function cancel() {
     const c = form.querySelector('[data-ce-cancel]');
-    if (dirty() && !c.classList.contains('bad')) { c.textContent = 'Discard changes'; c.classList.add('bad'); return; }
+    if (dirty() && !c.classList.contains('bad')) { c.textContent = 'Discard Changes'; c.classList.add('bad'); return; }
     close();
   }
 

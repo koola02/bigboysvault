@@ -139,7 +139,7 @@ window.Admin = (() => {
       let img = thumb.querySelector('img');
       if (!img) { img = document.createElement('img'); img.alt = ''; thumb.prepend(img); thumb.querySelector('.thumb-empty')?.remove(); }
       img.src = j.src + '?t=' + Date.now();
-      A.toast('Photo updated ✓', { kind: 'ok' });
+      A.toast('Photo Updated ✓', { kind: 'ok' });
     } catch (err) { A.toast(err.message, { kind: 'err' }); }
     finally { thumb.classList.remove('busy'); inp.value = ''; }
   });
@@ -159,8 +159,8 @@ window.Admin = (() => {
     if (all) { all.checked = vis.length > 0 && vis.every((b) => b.checked); all.indeterminate = !all.checked && vis.some((b) => b.checked); }
     const note = $('selNote');
     if (note) {
-      if (allMatching) { note.hidden = false; note.replaceChildren(document.createTextNode(`All ${total().toLocaleString()} matching cards are selected. `), btn('Clear selection', clear)); }
-      else if (all?.checked && total() > vis.length) { note.hidden = false; note.replaceChildren(document.createTextNode(`${vis.length} cards on this page are selected. `), btn(`Select all ${total().toLocaleString()}`, () => { allMatching = true; sync(); })); }
+      if (allMatching) { note.hidden = false; note.replaceChildren(document.createTextNode(`All ${total().toLocaleString()} matching cards are selected. `), btn('Clear Selection', clear)); }
+      else if (all?.checked && total() > vis.length) { note.hidden = false; note.replaceChildren(document.createTextNode(`${vis.length} cards on this page are selected. `), btn(`Select All ${total().toLocaleString()}`, () => { allMatching = true; sync(); })); }
       else note.hidden = true;
     }
   }
@@ -214,7 +214,7 @@ window.Admin = (() => {
   function binderSheet() {
     let mode = 'add'; const picked = new Set(); const node = el('div', 'sheet-form');
     const hint = el('p', 'hint show', 'Pick the binders to add these cards to.');
-    node.append(segment([['add', 'Add to'], ['remove', 'Remove from'], ['move', 'Move to']], (v) => { mode = v; hint.textContent = { add: 'Pick the binders to add these cards to.', remove: 'Pick the binders to take these cards out of.', move: 'These cards will be in only the binders you pick.' }[v]; }), hint);
+    node.append(segment([['add', 'Add To'], ['remove', 'Remove From'], ['move', 'Move To']], (v) => { mode = v; hint.textContent = { add: 'Pick the binders to add these cards to.', remove: 'Pick the binders to take these cards out of.', move: 'These cards will be in only the binders you pick.' }[v]; }), hint);
     const pills = el('div', 'pills');
     for (const [h, t] of binderList()) { const lab = el('label', 'pill'); const i = el('input'); i.type = 'checkbox'; i.onchange = () => (i.checked ? picked.add(h) : picked.delete(h)); lab.append(i, el('span', null, t)); pills.append(lab); }
     node.append(pills);
@@ -225,9 +225,9 @@ window.Admin = (() => {
   }
 
   function gradeSheet() {
-    const node = el('div', 'sheet-form'); const chips = el('div', 'chips'); const inp = el('input'); inp.type = 'text'; inp.placeholder = 'Or type your own'; inp.className = 'sheet-input';
+    const node = el('div', 'sheet-form'); const chips = el('div', 'chips'); const inp = el('input'); inp.type = 'text'; inp.placeholder = 'Or Type Your Own'; inp.className = 'sheet-input';
     for (const g of ['Near Mint', 'LP-NM', 'Lightly Played', 'MP-LP', 'Moderately Played', 'HP-MP', 'Damaged-HP', 'Sealed', 'PSA 10', 'PSA 9', 'CGC 10', 'CGC 9.5', 'BGS 9.5']) { const b = el('button', null, g); b.type = 'button'; b.onclick = () => { inp.value = g; chips.querySelectorAll('button').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); }; chips.append(b); }
-    const clearBtn = el('button', 'pbtn danger', 'Clear grade'); clearBtn.type = 'button'; clearBtn.onclick = () => { inp.value = ''; A.sheet.save(); };
+    const clearBtn = el('button', 'pbtn danger', 'Clear Grade'); clearBtn.type = 'button'; clearBtn.onclick = () => { inp.value = ''; A.sheet.save(); };
     node.append(el('p', 'hint show', 'Sets the grade or condition on every selected card.'), chips, inp, clearBtn);
     A.sheet.open(`Grade · ${plural(selCount())}`, node, async () => { await run({ action: 'grade', text: inp.value }, (j) => `Updated ${plural(j.n)}`); A.sheet.close(); }, 'Apply');
   }
@@ -236,7 +236,7 @@ window.Admin = (() => {
     let mode = 'set'; const node = el('div', 'sheet-form'); const inp = el('input'); inp.type = 'text'; inp.inputMode = 'decimal'; inp.className = 'sheet-input'; inp.placeholder = '₱ amount';
     const hint = el('p', 'hint show', 'Every selected card gets exactly this value. It stays until you change it: the nightly market update leaves it alone.');
     const lab = el('label', 'sf-label'); lab.append(el('span', 'sf-l', 'Amount'), inp);
-    node.append(segment([['set', 'Set to'], ['up', 'Raise %'], ['down', 'Lower %'], ['market', 'Market today']], (v) => {
+    node.append(segment([['set', 'Set To'], ['up', 'Raise %'], ['down', 'Lower %'], ['market', 'Market Today']], (v) => {
       mode = v; lab.hidden = v === 'market'; inp.placeholder = v === 'set' ? '₱ amount' : '% change';
       hint.textContent = { set: 'Every selected card gets exactly this value. It stays until you change it: the nightly market update leaves it alone.',
         up: 'Raises every value by this percentage. The new values stay until you change them.', down: 'Lowers every value by this percentage. The new values stay until you change them.',
@@ -268,7 +268,7 @@ window.Admin = (() => {
     };
     if (n < 10) return go();
     const node = el('div', 'sheet-form'); node.append(el('p', 'confirm', `Delete ${plural(n)}? You’ll have a few seconds to undo.`));
-    A.sheet.open('Delete cards', node, async () => { A.sheet.close(); go(); }, `Delete ${plural(n)}`);
+    A.sheet.open('Delete Cards', node, async () => { A.sheet.close(); go(); }, `Delete ${plural(n)}`);
   }
 
   document.addEventListener('click', (e) => {

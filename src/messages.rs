@@ -158,7 +158,7 @@ fn person(c: &rusqlite::Connection, side: i64, hub: &DmHub, admins: &[i64]) -> r
     Ok(match members::get(c, side)? {
         // A seller talks as their store: its name, so its picture.
         Some(m) => json!({ "id": m.id, "name": m.store_title(), "avatar": if m.seller { m.store_pic() } else { m.avatar.as_str() }, "initial": m.initial(), "online": hub.is_online(m.id), "url": format!("/trainers/{}", m.id) }),
-        None => json!({ "id": side, "name": "A trainer who left", "avatar": "", "initial": "?", "online": false, "url": "" }),
+        None => json!({ "id": side, "name": "A Trainer Who Left", "avatar": "", "initial": "?", "online": false, "url": "" }),
     })
 }
 
@@ -230,7 +230,7 @@ const NOT_SHARED: &str = "That can't be shared: it isn't there any more, or not 
 pub(crate) fn share_copy(c: &rusqlite::Connection, r: &str) -> rusqlite::Result<Option<Value>> {
     let Some((kind, id)) = r.split_once(':') else { return Ok(None) };
     let brand = || -> rusqlite::Result<String> { Ok(marcuru_rs::blocks::setting(c, "brand")?.filter(|b| !b.trim().is_empty()).unwrap_or_else(|| VAULT_NAME.into())) };
-    let cards = |n: i64| format!("{} card{}", db::thousands(n), if n == 1 { "" } else { "s" });
+    let cards = |n: i64| format!("{} Card{}", db::thousands(n), if n == 1 { "" } else { "s" });
     let share = |kind: &str, icon: &str, title: String, sub: String, image: String, url: String, go: &str| json!({ "src": "share", "ref": r, "kind": kind, "icon": icon, "title": title, "set": sub, "image": image, "url": url, "go": go });
     Ok(match kind {
         "binder" => {
@@ -238,22 +238,22 @@ pub(crate) fn share_copy(c: &rusqlite::Connection, r: &str) -> rusqlite::Result<
             let Some(m) = members::get(c, b.member_id)?.filter(|m| m.store_open()) else { return Ok(None) };
             let n = marcuru_rs::sellers::storefront_listings(c, m.id)?.iter().filter(|k| k.binder_id == Some(b.id)).count() as i64;
             let image = if b.photo.is_empty() { b.cover_image.clone() } else { db::cdn(&b.photo, 360) };
-            Some(share("binder", "📒", b.title.clone(), format!("Binder · {} · {}", cards(n), m.store_title()), image, format!("{}/binders/{}", m.store_url(), b.slug), "Open binder ›"))
+            Some(share("binder", "📒", b.title.clone(), format!("Binder · {} · {}", cards(n), m.store_title()), image, format!("{}/binders/{}", m.store_url(), b.slug), "Open Binder ›"))
         }
         "vbinder" => {
             let Some(b) = db::collections(c)?.into_iter().find(|b| b.handle == id && b.visibility != "Private") else { return Ok(None) };
             let image = if b.has_image() { b.img(360) } else { String::new() };
-            Some(share("binder", "📒", b.title.clone(), format!("Binder · {} · {}", cards(b.count), brand()?), image, format!("/collections/{}", b.handle), "Open binder ›"))
+            Some(share("binder", "📒", b.title.clone(), format!("Binder · {} · {}", cards(b.count), brand()?), image, format!("/collections/{}", b.handle), "Open Binder ›"))
         }
         "store" => match id.parse::<i64>() {
             Ok(0) => {
                 let (for_sale, _, _) = admin::in_vault(c)?;
-                Some(share("store", "🏪", brand()?, format!("Store · {} for sale", cards(for_sale)), VAULT_AVATAR.into(), format!("/store/{}", marcuru_rs::sellers::VAULT_SLUG), "Visit store ›"))
+                Some(share("store", "🏪", brand()?, format!("Store · {} For Sale", cards(for_sale)), VAULT_AVATAR.into(), format!("/store/{}", marcuru_rs::sellers::VAULT_SLUG), "Visit Store ›"))
             }
             Ok(sid) => {
                 let Some(m) = members::get(c, sid)?.filter(|m| m.store_open()) else { return Ok(None) };
                 let n = marcuru_rs::sellers::store_stats(c, m.id)?.on_sale;
-                Some(share("store", "🏪", m.store_title(), format!("Store · {} for sale", cards(n)), m.store_pic().to_string(), m.store_url(), "Visit store ›"))
+                Some(share("store", "🏪", m.store_title(), format!("Store · {} For Sale", cards(n)), m.store_pic().to_string(), m.store_url(), "Visit Store ›"))
             }
             Err(_) => None,
         },
@@ -269,17 +269,17 @@ pub(crate) fn share_copy(c: &rusqlite::Connection, r: &str) -> rusqlite::Result<
                     return Ok(None);
                 }
             }
-            for (key, v) in [("src", "share"), ("ref", r), ("kind", "card"), ("icon", "🃏"), ("go", "View card ›")] {
+            for (key, v) in [("src", "share"), ("ref", r), ("kind", "card"), ("icon", "🃏"), ("go", "View Card ›")] {
                 copy[key] = json!(v);
             }
             Some(copy)
         }
         "post" => {
             let Some(p) = id.parse::<i64>().ok().map(|pid| marcuru_rs::social::post(c, 0, pid)).transpose()?.flatten().filter(|p| !p.hidden) else { return Ok(None) };
-            let who = if p.member_id == 0 { brand()? } else { members::get(c, p.member_id)?.map(|m| m.name).unwrap_or_else(|| "A trainer".into()) };
+            let who = if p.member_id == 0 { brand()? } else { members::get(c, p.member_id)?.map(|m| m.name).unwrap_or_else(|| "A Trainer".into()) };
             let image = marcuru_rs::social::photos(c, p.id)?.first().map(|(_, small)| small.clone()).unwrap_or_default();
-            let words = if p.text.trim().is_empty() { "A post".to_string() } else { crate::clip(&p.text, 80) };
-            Some(share("post", "📝", format!("{who}'s post"), words, image, format!("/posts/{}", p.id), "See post ›"))
+            let words = if p.text.trim().is_empty() { "A Post".to_string() } else { crate::clip(&p.text, 80) };
+            Some(share("post", "📝", format!("{who}'s Post"), words, image, format!("/posts/{}", p.id), "See Post ›"))
         }
         _ => None,
     })
@@ -314,7 +314,7 @@ pub async fn admin_page(State(app): State<App>, h: HeaderMap) -> Res {
         return Ok(fail(StatusCode::NOT_FOUND, "Not found"));
     }
     let mut nav = with_db(&app, |c| crate::chrome(c)).await?;
-    nav.seo.title = format!("All messages · {}", nav.brand);
+    nav.seo.title = format!("All Messages · {}", nav.brand);
     Ok(html(render(MessagesPage { nav, admin: true })?))
 }
 
@@ -734,7 +734,7 @@ pub async fn voice(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Q
         dm::messages(c, t2.id, Some(id - 1), None, 1)
     })
     .await?;
-    after_post(&app, t, side, m.id, "🎤 Voice message".into(), false, true).await;
+    after_post(&app, t, side, m.id, "🎤 Voice Message".into(), false, true).await;
     Ok(ok(json!({ "ok": true, "message": list.first().map(|x| msg_json(x, side)) })))
 }
 
@@ -895,7 +895,7 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
                         elsewhere(side);
                         app.dm.outcomes.insert(c.id.clone(), "declined");
                         *cur = None;
-                        log = Some((c.caller_side, c.caller, "Missed voice call".into()));
+                        log = Some((c.caller_side, c.caller, "Missed Voice Call".into()));
                     }
                     "end" => {
                         let mut to: Vec<i64> = if from_caller { c.callee.map(|x| vec![x]).unwrap_or_else(|| people(t.other(c.caller_side), &admins)) } else { vec![c.caller] };
@@ -906,9 +906,9 @@ pub async fn call(State(app): State<App>, h: HeaderMap, Path(tid): Path<i64>, Js
                         let text = match c.callee {
                             Some(_) => {
                                 let s = (now - c.answered).max(0);
-                                format!("Voice call · {}:{:02}", s / 60, s % 60)
+                                format!("Voice Call · {}:{:02}", s / 60, s % 60)
                             }
-                            None => "Missed voice call".into(),
+                            None => "Missed Voice Call".into(),
                         };
                         log = Some((c.caller_side, c.caller, text));
                     }

@@ -61,7 +61,7 @@
     const reply = v.classList.contains('v-rep');
     const words = v.querySelector(reply ? ':scope > .v-rep-t' : ':scope > blockquote');
     const box = make('form', 'v-edit');
-    const area = make('textarea'); area.rows = 3; area.maxLength = 1000; area.value = words ? words.textContent : ''; area.setAttribute('aria-label', 'Your words');
+    const area = make('textarea'); area.rows = 3; area.maxLength = 1000; area.value = words ? words.textContent : ''; area.setAttribute('aria-label', 'Your Words');
     const row = make('div', 'v-edit-acts');
     const save = make('button', 'btn sm', 'Save'); save.type = 'submit';
     const no = button('btn ghost sm', 'Cancel', () => { box.remove(); if (words) words.hidden = false; });
@@ -82,7 +82,7 @@
   }
   const gone = (id) => document.querySelectorAll(`[data-vouch="${CSS.escape(id)}"]`).forEach((n) => n.remove());
   async function act(id, action) {
-    if (action === 'delete' && !(await (window.bbvConfirm ? window.bbvConfirm('Delete this for good? Replies under it go too.', { yes: 'Delete', no: 'Keep it' }) : Promise.resolve(confirm('Delete this for good? Replies under it go too.'))))) return;
+    if (action === 'delete' && !(await (window.bbvConfirm ? window.bbvConfirm('Delete this for good? Replies under it go too.', { yes: 'Delete', no: 'Keep It' }) : Promise.resolve(confirm('Delete this for good? Replies under it go too.'))))) return;
     try {
       await send(`/vouches/${id}/act`, { action });
       gone(id);
@@ -98,7 +98,7 @@
       if (me.locked) { say(`Your trainer is locked for another ${me.lock_left}.`, true); return; }
       compose(null);
     });
-    b.setAttribute('aria-label', 'Write a vouch');
+    b.setAttribute('aria-label', 'Write A Vouch');
     b.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg><span>Vouch</span>';
     document.body.append(b);
   }
@@ -121,26 +121,26 @@
     const dialog = make('dialog', 'float vc');
     const form = make('form', 'float-panel'); form.tabIndex = -1; form.noValidate = true;
     const name = parent?.dataset.name;
-    const head = make('h2', 'vc-h', parent ? `Reply to ${name}` : to ? `Vouch for ${to.name}` : 'Write a vouch');
+    const head = make('h2', 'vc-h', parent ? `Reply To ${name}` : to ? `Vouch For ${to.name}` : 'Write A Vouch');
     form.append(head);
     if (parent) {
       const said = parent.querySelector(':scope > blockquote')?.textContent;
       if (said) form.append(make('p', 'vc-to', said));
     }
-    const text = make('textarea'); text.maxLength = 1000; text.rows = 4; text.placeholder = parent ? 'Write your reply' : to ? `Tell people how it went with ${to.name}, or show them with photos` : 'Tell people about the vault, or show them with photos';
-    text.setAttribute('aria-label', parent ? 'Your reply' : 'Your vouch');
+    const text = make('textarea'); text.maxLength = 1000; text.rows = 4; text.placeholder = parent ? 'Write Your Reply' : to ? `Tell people how it went with ${to.name}, or show them with photos` : 'Tell people about the vault, or show them with photos';
+    text.setAttribute('aria-label', parent ? 'Your Reply' : 'Your Vouch');
     const pics = make('div', 'vc-pics');
     const add = make('label', 'vc-add');
-    add.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg><span>Add photos</span>';
-    const file = make('input', 'sr'); file.type = 'file'; file.accept = 'image/*'; file.multiple = true; file.setAttribute('aria-label', 'Add photos');
+    add.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/></svg><span>Add Photos</span>';
+    const file = make('input', 'sr'); file.type = 'file'; file.accept = 'image/*'; file.multiple = true; file.setAttribute('aria-label', 'Add Photos');
     add.append(file); pics.append(add);
     const err = make('p', 'vc-err'); err.setAttribute('role', 'alert');
     const foot = make('div', 'vc-foot');
     const count = make('small', null, '0 of 1000');
-    const post = make('button', 'btn', parent ? 'Send reply' : 'Post vouch'); post.type = 'submit';
+    const post = make('button', 'btn', parent ? 'Send Reply' : 'Post Vouch'); post.type = 'submit';
     foot.append(count, post);
     form.append(text, pics, err, foot);
-    dialog.append(form, make('p', 'float-hint', 'Tap outside to close'));
+    dialog.append(form, make('p', 'float-hint', 'Tap Outside To Close'));
     document.body.append(dialog);
 
     const items = [];
@@ -157,7 +157,7 @@
           if (it.id) send(`/me/photos/${it.id}/drop`).catch(() => {});
           it.gone = true;
         }));
-        it.node.lastChild.setAttribute('aria-label', 'Take this photo out');
+        it.node.lastChild.setAttribute('aria-label', 'Take This Photo Out');
         pics.insertBefore(it.node, add);
         items.push(it);
         queue = queue.then(async () => {
@@ -182,7 +182,7 @@
     const close = () => { dialog.close(); dialog.remove(); };
     const discard = async () => {
       if (busy) return;
-      if (touched() && !(await (window.bbvConfirm ? window.bbvConfirm(parent ? 'Discard your reply?' : 'Discard your vouch?', { yes: 'Discard', no: 'Keep writing' }) : Promise.resolve(confirm(parent ? 'Discard your reply?' : 'Discard your vouch?'))))) return;
+      if (touched() && !(await (window.bbvConfirm ? window.bbvConfirm(parent ? 'Discard your reply?' : 'Discard your vouch?', { yes: 'Discard', no: 'Keep Writing' }) : Promise.resolve(confirm(parent ? 'Discard your reply?' : 'Discard your vouch?'))))) return;
       items.forEach((it) => { it.gone = true; if (it.id) send(`/me/photos/${it.id}/drop`).catch(() => {}); });
       close();
     };
@@ -203,10 +203,10 @@
         const html = await (await fetch(`/vouches/${j.id}`, { credentials: 'same-origin' })).text();
         close();
         place(html, parent, to);
-        say(parent ? 'Reply posted ✓' : 'Vouch posted ✓');
+        say(parent ? 'Reply Posted ✓' : 'Vouch Posted ✓');
       } catch (ex) {
         err.textContent = ex.message;
-        busy = false; post.disabled = false; post.textContent = parent ? 'Send reply' : 'Post vouch';
+        busy = false; post.disabled = false; post.textContent = parent ? 'Send Reply' : 'Post Vouch';
       }
     });
 

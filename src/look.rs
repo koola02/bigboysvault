@@ -34,7 +34,7 @@ pub async fn guide(State(app): State<App>, h: HeaderMap) -> Res {
         Ok((nav, items.into_iter().take(8).collect::<Vec<_>>(), autos))
     })
     .await?;
-    nav.seo.title = format!("The look · {}", nav.brand);
+    nav.seo.title = format!("The Look · {}", nav.brand);
     let t = Guide { nav, items, full: matches!(power, admin::Power::Admin(_)), autos };
     Ok(crate::community::html(crate::community::render(t)?))
 }

@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Add cards · {{ nav.brand }}{% endblock %}
+{% block title %}Add Cards · {{ nav.brand }}{% endblock %}
 {% block head %}{% include "mgr_head.html" %}{% endblock %}
 {% block layout %}wide{% endblock %}
 {% block content %}
@@ -13,26 +13,26 @@
 
   {% if let Some(b) = binder %}
   <div class="ad-into">
-    <span class="ad-into-t">Adding to the binder <b>{{ b.title }}</b></span>
+    <span class="ad-into-t">Adding To The Binder <b>{{ b.title }}</b></span>
     <a class="btn" href="{{ back }}">Done</a>
   </div>
   <section class="ad-mine" id="adMine" aria-labelledby="adMineH">
-    <h2 class="h2" id="adMineH">From your store</h2>
-    <input type="search" id="adMineQ" placeholder="Find one of your cards" aria-label="Find one of your cards" autocomplete="off" enterkeyhint="search">
+    <h2 class="h2" id="adMineH">From Your Store</h2>
+    <input type="search" id="adMineQ" placeholder="Find One Of Your Cards" aria-label="Find One Of Your Cards" autocomplete="off" enterkeyhint="search">
     <p class="me-state" id="adMineState" aria-live="polite"></p>
     <div class="me-results" id="adMineList"></div>
   </section>
-  <h2 class="h2 ad-new-h">New cards</h2>
+  <h2 class="h2 ad-new-h">New Cards</h2>
   {% endif %}
 
   <div class="ad-top">
-    <div class="ad-ways" role="tablist" aria-label="How to add a card">
+    <div class="ad-ways" role="tablist" aria-label="How To Add A Card">
       <button type="button" class="on" data-way="search" role="tab" aria-selected="true">Search</button>
-      {% if scan_on %}<button type="button" data-way="scan" role="tab" aria-selected="false">Scan a card</button>{% endif %}
-      <button type="button" data-way="set" role="tab" aria-selected="false">By set</button>
-      <button type="button" data-way="own" role="tab" aria-selected="false">Not in the list</button>
+      {% if scan_on %}<button type="button" data-way="scan" role="tab" aria-selected="false">Scan A Card</button>{% endif %}
+      <button type="button" data-way="set" role="tab" aria-selected="false">By Set</button>
+      <button type="button" data-way="own" role="tab" aria-selected="false">Not In The List</button>
     </div>
-    <div class="lang-sw me-lang" id="adLang" role="group" aria-label="Card language">
+    <div class="lang-sw me-lang" id="adLang" role="group" aria-label="Card Language">
       <button type="button" data-lang="en" aria-pressed="true">English</button>
       <button type="button" data-lang="ja" aria-pressed="false">日本語</button>
       <button type="button" data-lang="zh" aria-pressed="false">中文</button>
@@ -40,25 +40,25 @@
   </div>
 
   <section class="ad-pane" data-pane="search" role="tabpanel" aria-label="Search">
-    <div class="me-find"><input type="search" id="adQ" placeholder="Card name, like Pikachu 58" aria-label="Find a card" autocomplete="off" enterkeyhint="search"></div>
+    <div class="me-find"><input type="search" id="adQ" placeholder="Card name, like Pikachu 58" aria-label="Find A Card" autocomplete="off" enterkeyhint="search"></div>
     <p class="me-state" id="adState" aria-live="polite">Type a name and tap your card.</p>
     <div class="me-results" id="adResults"></div>
   </section>
 
   {% if scan_on %}
-  <section class="ad-pane st-scan" data-pane="scan" role="tabpanel" aria-label="Scan a card" hidden>
+  <section class="ad-pane st-scan" data-pane="scan" role="tabpanel" aria-label="Scan A Card" hidden>
     <div class="sc-go">
-      <label class="btn sc-shoot"><input type="file" accept="image/*" class="sr" id="scanFile" data-card-cam="scan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span id="scanWord">Take a photo of the card</span></label>
-      <p class="sc-left" id="scanLeft">{{ scan_left }} of {{ scan_per }} scans left today</p>
+      <label class="btn sc-shoot"><input type="file" accept="image/*" class="sr" id="scanFile" data-card-cam="scan"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span id="scanWord">Take A Photo Of The Card</span></label>
+      <p class="sc-left" id="scanLeft">{{ scan_left }} Of {{ scan_per }} Scans Left Today</p>
     </div>
     <div class="sc-out" id="scanOut" aria-live="polite"></div>
   </section>
   {% endif %}
 
-  <section class="ad-pane" data-pane="set" role="tabpanel" aria-label="By set" hidden>
+  <section class="ad-pane" data-pane="set" role="tabpanel" aria-label="By Set" hidden>
     <div class="me-find"><input type="search" id="adSetQ" placeholder="Set name, like 151 or Surging Sparks" aria-label="Find a set, or a card in the open set" autocomplete="off" enterkeyhint="search"></div>
     <div class="qa-sethead" id="adSetHead" hidden>
-      <button type="button" class="qa-back" id="adSetBack">← All sets</button>
+      <button type="button" class="qa-back" id="adSetBack">← All Sets</button>
       <div class="qa-setid"><img id="adSetLogo" alt="" hidden><div><b id="adSetName"></b><small id="adSetMeta"></small></div></div>
     </div>
     <p class="me-state" id="adSetState" aria-live="polite"></p>
@@ -66,35 +66,35 @@
     <div class="me-results" id="adSetCards"></div>
   </section>
 
-  <section class="ad-pane" data-pane="own" role="tabpanel" aria-label="Not in the list" hidden>
+  <section class="ad-pane" data-pane="own" role="tabpanel" aria-label="Not In The List" hidden>
     <form id="ownForm" class="me-up">
-      <label class="me-up-pic"><input type="file" name="photo" accept="image/*" required class="sr" id="ownPhoto" data-card-cam><img id="ownShot" alt="" hidden><span id="ownHint"><b>Add a photo</b><small>Take one or choose one</small></span></label>
+      <label class="me-up-pic"><input type="file" name="photo" accept="image/*" required class="sr" id="ownPhoto" data-card-cam><img id="ownShot" alt="" hidden><span id="ownHint"><b>Add A Photo</b><small>Take one or choose one</small></span></label>
       <div class="me-fields">
-        <label>Card name<input name="name" maxlength="120" required placeholder="Like Charizard ex" autocomplete="off"></label>
-        <label>Set <small>if you know it</small><input name="set" maxlength="80" autocomplete="off"></label>
+        <label>Card Name<input name="name" maxlength="120" required placeholder="Like Charizard ex" autocomplete="off"></label>
+        <label>Set <small>If You Know It</small><input name="set" maxlength="80" autocomplete="off"></label>
         <label>Condition<select name="cond">{% for o in conditions %}<option>{{ o }}</option>{% endfor %}</select></label>
         {% if p.m.seller %}
         <label>Price ₱<input name="value" type="number" min="0" step="1" inputmode="numeric"></label>
         <label class="chk"><input type="checkbox" class="sr" name="flag" value="1"><span class="chk-box"></span> Ask the vault to check this card</label>
-        <button class="btn" type="submit">Add to my store</button>
+        <button class="btn" type="submit">Add To My Store</button>
         {% else %}
-        <label>Value ₱ <small>if you like</small><input name="value" type="number" min="0" step="1" inputmode="numeric"></label>
-        <button class="btn" type="submit">Add to My cards</button>
+        <label>Value ₱ <small>If You Like</small><input name="value" type="number" min="0" step="1" inputmode="numeric"></label>
+        <button class="btn" type="submit">Add To My Cards</button>
         {% endif %}
       </div>
     </form>
   </section>
 
   <section class="ad-added" id="adAdded" aria-labelledby="adAddedH" hidden>
-    <h2 class="h2" id="adAddedH">Added just now <small id="adAddedN"></small></h2>
+    <h2 class="h2" id="adAddedH">Added Just Now <small id="adAddedN"></small></h2>
     <div class="ad-added-row" id="adAddedRow"></div>
-    {% if binder.is_none() %}<a class="btn ghost" href="{% if p.m.seller %}/me/listings{% else %}/me{% endif %}">{% if p.m.seller %}See them in Listings{% else %}See them in Account Settings{% endif %}</a>{% endif %}
+    {% if binder.is_none() %}<a class="btn ghost" href="{% if p.m.seller %}/me/listings{% else %}/me{% endif %}">{% if p.m.seller %}See Them In Listings{% else %}See Them In Account Settings{% endif %}</a>{% endif %}
   </section>
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-<script src="/static/admin-ui.js?v=10" defer></script>
+<script src="/static/admin-ui.js?v=12" defer></script>
 <script src="/static/pricing.js?v=2" defer></script>
-{% if p.m.seller %}<script src="/static/add-card.js?v=6" defer></script>{% endif %}
-{% if scan_on %}<script src="/static/scan.js?v=6" defer></script>{% endif %}
-<script src="/static/add-page.js?v=1" defer></script>
+{% if p.m.seller %}<script src="/static/add-card.js?v=8" defer></script>{% endif %}
+{% if scan_on %}<script src="/static/scan.js?v=8" defer></script>{% endif %}
+<script src="/static/add-page.js?v=3" defer></script>
 {% endblock %}

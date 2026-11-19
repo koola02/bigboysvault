@@ -1,13 +1,13 @@
 {% extends "base.html" %}
-{% block title %}Trainers &amp; collectors · {{ nav.brand }}{% endblock %}
+{% block title %}Trainers &amp; Collectors · {{ nav.brand }}{% endblock %}
 {% block content %}
 <section class="wrap trainers">
   <div class="tr-head">
-    <p class="eyebrow plate">The community</p>
+    <p class="eyebrow plate">The Community</p>
     <h1 class="h1">Trainers</h1>
     <p class="tr-sub">Collectors who share their favorite cards here.</p>
-    {% if let Some(m) = me %}<a class="btn" href="/trainers/{{ m.id }}">My page: {{ m.name }}</a>{% else %}<a class="btn" href="/join">Register</a><a class="linkbtn" href="/login">Log in</a>{% endif %}
-    <a class="linkbtn" href="/vouches">Read the vouches</a>
+    {% if let Some(m) = me %}<a class="btn" href="/trainers/{{ m.id }}">My Page: {{ m.name }}</a>{% else %}<a class="btn" href="/join">Register</a><a class="linkbtn" href="/login">Log In</a>{% endif %}
+    <a class="linkbtn" href="/vouches">Read The Vouches</a>
   </div>
   {% if trainers.is_empty() %}
   <p class="empty">No trainers yet. Be the first.</p>
@@ -19,7 +19,7 @@
       <b>{{ t.name }}</b>
       {% if !t.role_text().is_empty() %}<span class="role" data-role="{{ t.role }}">{{ t.role_text() }}</span>{% endif %}{% for g in t.tag_list() %}<span class="tag-hl mtag">{{ g }}</span>{% endfor %}
       
-      <small>{{ t.cards }} card{% if t.cards != 1 %}s{% endif %}</small>
+      <small>{{ t.cards }} Card{% if t.cards != 1 %}s{% endif %}</small>
       <span class="dm-mini tr-dm" role="button" tabindex="0" data-dm-to="{{ t.id }}" aria-label="Message {{ t.name }}" title="Message {{ t.name }}"></span>
     </a></li>
     {% endfor %}

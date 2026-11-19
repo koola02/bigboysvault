@@ -27,7 +27,7 @@
       if (items.length >= MAX) { err.textContent = `Up to ${MAX} photos.`; break; }
       const it = { blob: null, node: make('div', 'vc-pic busy') };
       const img = make('img'); img.alt = ''; it.node.append(img);
-      const x = make('button', 'vc-x'); x.type = 'button'; x.textContent = '✕'; x.setAttribute('aria-label', 'Take this photo out');
+      const x = make('button', 'vc-x'); x.type = 'button'; x.textContent = '✕'; x.setAttribute('aria-label', 'Take This Photo Out');
       x.addEventListener('click', () => { items.splice(items.indexOf(it), 1); it.node.remove(); add.hidden = false; });
       it.node.append(x);
       pics.insertBefore(it.node, add);
@@ -58,7 +58,7 @@
       location.href = `/me/messages?t=${j.thread}`;
     } catch (x) {
       err.textContent = x.message;
-      go.disabled = false; go.textContent = 'Send application';
+      go.disabled = false; go.textContent = 'Send Application';
     }
   });
 })();

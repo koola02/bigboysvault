@@ -47,14 +47,14 @@
   function open({ card, listing = null, binderId = null, onAdded = null, versions = false }) {
     const old = !!listing;
     if (old) card = { id: '', name: listing.title, set: listing.set, number: listing.number, image: listing.image };
-    const goWord = old ? (binderId ? 'Save and add to this binder' : 'Save') : 'Add to my store';
+    const goWord = old ? (binderId ? 'Save And Add To This Binder' : 'Save') : 'Add To My Store';
     const d = make('dialog', 'float ac');
     const form = make('form', 'float-panel'); form.noValidate = true;
     const head = make('header', 'sv-h');
     // The version chosen (a key from the card list's prices, "reverse-holofoil" say), shown under the card's name.
     let finish = (!old && versions && card.finish) || '';
-    const sub = make('p', null, finish && card.finishLabel ? `${card.name || 'This card'} · ${card.finishLabel}` : card.name || 'This card');
-    const titles = make('div', 'sv-t'); titles.append(make('h2', null, old ? (binderId ? 'Add to this binder' : 'Check this card') : 'Add to your store'), sub);
+    const sub = make('p', null, finish && card.finishLabel ? `${card.name || 'This Card'} · ${card.finishLabel}` : card.name || 'This Card');
+    const titles = make('div', 'sv-t'); titles.append(make('h2', null, old ? (binderId ? 'Add To This Binder' : 'Check This Card') : 'Add To Your Store'), sub);
     const x = make('button', 'sv-x'); x.type = 'button'; x.setAttribute('aria-label', 'Close');
     x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
     head.append(titles, x);
@@ -74,14 +74,14 @@
     const useList = make('button', 'ac-opt ac-src'); useList.type = 'button'; useList.setAttribute('aria-pressed', 'true');
     const thumb = make('span', 'ac-ico ac-thumb');
     if (card.image) { const t = make('img'); t.src = card.image; t.alt = ''; t.onerror = () => t.remove(); thumb.append(t); }
-    useList.append(thumb, make('span', null, old ? 'Keep this picture' : 'Online picture'));
+    useList.append(thumb, make('span', null, old ? 'Keep This Picture' : 'Online Picture'));
     const choice = (word, d, cam) => {
       const l = make('label', 'ac-opt ac-src'); l.append(icon(d), make('span', null, word));
       const f = make('input', 'sr'); f.type = 'file'; f.accept = 'image/*'; if (cam) f.dataset.cardCam = ''; l.append(f);
       return [l, f];
     };
-    const [takeL, takeIn] = choice('Take a photo', '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>', true);
-    const [upL, upIn] = choice('Upload a photo', '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>', false);
+    const [takeL, takeIn] = choice('Take A Photo', '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>', true);
+    const [upL, upIn] = choice('Upload A Photo', '<rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/>', false);
     const row = make('div', 'ac-opts ac-srcs'); row.append(useList, takeL, upL);
     picBox.append(row);
     let photo = null, from = null;
@@ -104,14 +104,14 @@
 
     // Condition: chosen by the seller (none picked for them).
     const condL = make('label', 'ac-f'); condL.append(make('b', null, 'Condition'));
-    const cond = make('select'); cond.append(new Option('Choose its condition', '', !old, !old));
+    const cond = make('select'); cond.append(new Option('Choose Its Condition', '', !old, !old));
     const conds = old && listing.cond && !CONDS.includes(listing.cond) ? [listing.cond, ...CONDS] : CONDS;
     conds.forEach((c) => cond.append(new Option(c, c, false, old && c === listing.cond)));
     condL.append(cond);
 
     // Price: typed by the seller. The market price shows as a hint only.
-    const priceL = make('label', 'ac-f'); priceL.append(make('b', null, 'Your price for one card ₱'));
-    const price = make('input'); price.type = 'number'; price.min = '1'; price.step = '1'; price.inputMode = 'numeric'; price.placeholder = 'Type your price';
+    const priceL = make('label', 'ac-f'); priceL.append(make('b', null, 'Your Price For One Card ₱'));
+    const price = make('input'); price.type = 'number'; price.min = '1'; price.step = '1'; price.inputMode = 'numeric'; price.placeholder = 'Type Your Price';
     const hint = make('small', 'ac-how');
     priceL.append(price, hint);
     let nm = 0;
@@ -121,7 +121,7 @@
       const sug = window.Price && cond.value ? window.Price.suggest(nm, cond.value) : null;
       if (cond.value && sug == null && cond.value !== 'Near Mint') { hint.textContent = `No market price for ${cond.value} here. Set the price you want.`; return; }
       const v = sug || nm;
-      hint.append(`${cond.value ? `Market price in ${cond.value}` : 'Market price in Near Mint'}: about ${peso(v)}. `);
+      hint.append(`${cond.value ? `Market Price In ${cond.value}` : 'Market Price In Near Mint'}: about ${peso(v)}. `);
       const use = make('button', 'linkbtn inline', `Use ${peso(v)}`); use.type = 'button';
       use.addEventListener('click', () => { price.value = String(Math.round(v)); price.focus(); });
       hint.append(use);
@@ -137,7 +137,7 @@
         const choose = (f, b) => {
           finish = f.key; nm = Number(f.php) || 0;
           verRow.querySelectorAll('.ac-opt').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
-          sub.textContent = `${card.name || 'This card'} · ${f.label || f.key}`;
+          sub.textContent = `${card.name || 'This Card'} · ${f.label || f.key}`;
           paintHint();
         };
         const start = list.find((f) => f.key === finish) || list[0];
@@ -152,23 +152,23 @@
     } else nearMint(card.id).then((v) => { nm = v; paintHint(); });
     cond.addEventListener('change', paintHint);
 
-    const qtyL = make('label', 'ac-f ac-half'); qtyL.append(make('b', null, 'How many'));
+    const qtyL = make('label', 'ac-f ac-half'); qtyL.append(make('b', null, 'How Many'));
     const qty = make('input'); qty.type = 'number'; qty.min = old ? '0' : '1'; qty.max = old ? '9999' : '99'; qty.value = old ? String(listing.qty ?? 1) : '1'; qty.inputMode = 'numeric';
     qtyL.append(qty);
     const binderL = make('label', 'ac-f ac-half'); binderL.append(make('b', null, 'Binder'));
-    const binder = make('select'); binder.append(new Option('Not in a binder', ''));
+    const binder = make('select'); binder.append(new Option('Not In A Binder', ''));
     binderL.append(binder);
     // The binder it is meant for is chosen at once (named "This binder" until the list comes), so Save is right even if
     // it is tapped before the list of binders has loaded, or if loading it failed.
     const pickBinder = binderId ?? (old ? listing.binder_id : null);
-    const picked = pickBinder != null && pickBinder !== '' ? new Option('This binder', String(pickBinder), true, true) : null;
+    const picked = pickBinder != null && pickBinder !== '' ? new Option('This Binder', String(pickBinder), true, true) : null;
     if (picked) binder.append(picked);
     loadBinders().then((list) => {
       list.forEach((b) => { if (picked && String(b.id) === picked.value) picked.text = b.title; else binder.append(new Option(b.title, String(b.id))); });
     });
     const pair = make('div', 'ac-pair'); pair.append(qtyL, binderL);
 
-    const notesL = make('label', 'ac-f'); notesL.append(make('b', null, 'A note for buyers '), make('small', null, '(optional)'));
+    const notesL = make('label', 'ac-f'); notesL.append(make('b', null, 'A Note For Buyers '), make('small', null, '(optional)'));
     const notes = make('textarea'); notes.rows = 2; notes.maxLength = old ? 500 : 300; notes.placeholder = 'Centering, a tiny whitening on the back, comes in a sleeve…';
     if (old) notes.value = listing.notes || '';
     notesL.append(notes);

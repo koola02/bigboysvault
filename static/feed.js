@@ -41,7 +41,7 @@
   // The photo window (further down). A post moves into it while its photo is open, so everything below listens on the
   // feed and on the window alike.
   const pv = el('div', 'pv'); pv.hidden = true; pv.setAttribute('role', 'dialog'); pv.setAttribute('aria-modal', 'true'); pv.setAttribute('aria-label', 'Photo');
-  pv.innerHTML = '<div class="pv-stage"><img class="pv-img" alt="Photo"><button type="button" class="pv-nav pv-prev" aria-label="The photo before"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><button type="button" class="pv-nav pv-next" aria-label="The next photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button><span class="pv-count" aria-live="polite"></span></div><div class="pv-side"></div><button type="button" class="pv-x" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
+  pv.innerHTML = '<div class="pv-stage"><img class="pv-img" alt="Photo"><button type="button" class="pv-nav pv-prev" aria-label="The Photo Before"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><button type="button" class="pv-nav pv-next" aria-label="The Next Photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button><span class="pv-count" aria-live="polite"></span></div><div class="pv-side"></div><button type="button" class="pv-x" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
   document.body.append(pv);
   const listen = (type, fn) => { feed.addEventListener(type, fn); pv.addEventListener(type, fn); };
 
@@ -131,9 +131,9 @@
       box.dataset.ready = '1'; box.hidden = false;
       const list = el('div', 'cm-list'); box.append(list);
       const form = el('form', 'cm-form');
-      form.innerHTML = `<span class="av sm" data-my-face></span><span class="cm-in"><span class="cm-to-row" hidden><span>Replying to <b></b></span><button type="button" class="cm-to-x" aria-label="Cancel the reply">✕</button></span><input type="text" maxlength="600" placeholder="Write a comment…" aria-label="Write a comment" autocomplete="off" enterkeyhint="send"><span class="cm-pic" hidden><img alt=""><button type="button" class="cm-pic-x" aria-label="Take the photo off">✕</button></span></span>`
-        + `<label class="ibtn cm-add" title="Add a photo" aria-label="Add a photo">${PHOTO}<input type="file" accept="image/*" hidden data-cm-file></label>`
-        + `<label class="ibtn cm-add" title="Take a photo" aria-label="Take a photo">${CAMERA}<input type="file" accept="image/*" capture="environment" data-card-cam="free" hidden data-cm-file></label>`
+      form.innerHTML = `<span class="av sm" data-my-face></span><span class="cm-in"><span class="cm-to-row" hidden><span>Replying To <b></b></span><button type="button" class="cm-to-x" aria-label="Cancel The Reply">✕</button></span><input type="text" maxlength="600" placeholder="Write a comment…" aria-label="Write A Comment" autocomplete="off" enterkeyhint="send"><span class="cm-pic" hidden><img alt=""><button type="button" class="cm-pic-x" aria-label="Take The Photo Off">✕</button></span></span>`
+        + `<label class="ibtn cm-add" title="Add A Photo" aria-label="Add A Photo">${PHOTO}<input type="file" accept="image/*" hidden data-cm-file></label>`
+        + `<label class="ibtn cm-add" title="Take A Photo" aria-label="Take A Photo">${CAMERA}<input type="file" accept="image/*" capture="environment" data-card-cam="free" hidden data-cm-file></label>`
         + `<button type="submit" class="ibtn" aria-label="Send">${SEND}</button>`;
       form.querySelectorAll('[data-cm-file]').forEach((inp) => inp.addEventListener('change', () => { const f = inp.files && inp.files[0]; inp.value = ''; if (f) setCmPhoto(form, f); }));
       form.querySelector('.cm-pic-x').addEventListener('click', () => setCmPhoto(form, null));
@@ -157,7 +157,7 @@
     if (id) { form.dataset.parent = id; row.querySelector('b').textContent = name; row.hidden = false; input.placeholder = `Reply to ${name}…`; }
     else { delete form.dataset.parent; row.hidden = true; input.placeholder = 'Write a comment…'; }
   }
-  const setCount = (post, n) => { const b = post.querySelector('.post-cn'); b.hidden = !n; b.textContent = `${n} comment${n === 1 ? '' : 's'}`; stats(post); };
+  const setCount = (post, n) => { const b = post.querySelector('.post-cn'); b.hidden = !n; b.textContent = `${n} Comment${n === 1 ? '' : 's'}`; stats(post); };
   // The photo waiting to go with a comment: shown small in the box, with ✕ to take it off.
   function setCmPhoto(form, file) {
     const box = form.querySelector('.cm-pic'), img = box.querySelector('img');
@@ -197,16 +197,16 @@
     const kind = post.dataset.kind, written = kind === 'post' || kind === 'share', by = Number(post.dataset.member);
     const mine = !!me && by === me.id, vaults = full && by === 0;
     // Yours to edit: what you wrote, the post about your own listings, and (full admins) anything the vault posted.
-    if ((mine && (written || kind === 'listing')) || vaults) item(written ? 'Edit post' : post.querySelector('.post-text') ? 'Edit the words on this post' : 'Add words to this post', () => { closeView(); compose('edit', post); }, mine ? '' : 'staff-only');
-    if (mine && kind === 'listing') item('Manage my listings', () => { location.href = '/me/listings'; });
-    if (full) item(post.hasAttribute('data-pinned') ? 'Unpin from the top' : 'Pin to the top of the feed', async () => { try { await api(`/posts/${id}/pin`, { on: !post.hasAttribute('data-pinned') }); location.reload(); } catch (e) { toast(e.message, true); } }, 'staff-only');
-    item('Copy link', () => share(post, true));
-    if (me && !mine && written && by !== 0) item('Report post', () => report('post', id));
-    if (post.hasAttribute('data-own')) item('Delete post', () => remove(post, 'Delete this post for good?'));
-    else if (staff) item(post.dataset.kind === 'post' || post.dataset.kind === 'share' ? 'Delete post (staff)' : 'Hide from the feed (staff)', () => remove(post, 'Take this post out of the feed?'), 'staff-only');
+    if ((mine && (written || kind === 'listing')) || vaults) item(written ? 'Edit Post' : post.querySelector('.post-text') ? 'Edit The Words On This Post' : 'Add Words To This Post', () => { closeView(); compose('edit', post); }, mine ? '' : 'staff-only');
+    if (mine && kind === 'listing') item('Manage My Listings', () => { location.href = '/me/listings'; });
+    if (full) item(post.hasAttribute('data-pinned') ? 'Unpin From The Top' : 'Pin to the top of the feed', async () => { try { await api(`/posts/${id}/pin`, { on: !post.hasAttribute('data-pinned') }); location.reload(); } catch (e) { toast(e.message, true); } }, 'staff-only');
+    item('Copy Link', () => share(post, true));
+    if (me && !mine && written && by !== 0) item('Report Post', () => report('post', id));
+    if (post.hasAttribute('data-own')) item('Delete Post', () => remove(post, 'Delete this post for good?'));
+    else if (staff) item(post.dataset.kind === 'post' || post.dataset.kind === 'share' ? 'Delete Post (Staff)' : 'Hide From The Feed (Staff)', () => remove(post, 'Take this post out of the feed?'), 'staff-only');
     // Full admins can stop a whole kind of automatic post from here (and switch it back on at /admin/look).
-    if (full && !['post', 'share'].includes(post.dataset.kind)) item('Turn off automatic posts like this', async () => {
-      if (!(await sure('Stop showing this kind of automatic post in the feed? You can switch it back on at Admin \u203a The look.', { yes: 'Stop showing them', no: 'Keep them' }))) return;
+    if (full && !['post', 'share'].includes(post.dataset.kind)) item('Turn Off Automatic Posts Like This', async () => {
+      if (!(await sure('Stop showing this kind of automatic post in the feed? You can switch it back on at Admin \u203a The look.', { yes: 'Stop Showing Them', no: 'Keep Them' }))) return;
       try { await api('/admin/feed/auto', { kind: post.dataset.kind, on: false }); location.reload(); } catch (e) { toast(e.message, true); }
     }, 'staff-only');
     btn.parentElement.append(menu);
@@ -218,7 +218,7 @@
     try { await api(`/${kind === 'post' ? 'posts' : 'comments'}/${id}/report`, {}); toast('Reported ✓ The vault’s team will look at it.'); } catch (e) { toast(e.message, true); }
   }
   async function remove(post, ask) {
-    if (!(await sure(ask, { yes: 'Delete', no: 'Keep it' }))) return;
+    if (!(await sure(ask, { yes: 'Delete', no: 'Keep It' }))) return;
     try { await api(`/posts/${post.dataset.post}/delete`, {}); closeView(); post.remove(); toast('Removed.'); } catch (e) { toast(e.message, true); }
   }
   async function share(post, copyOnly) {
@@ -228,7 +228,7 @@
     if (!copyOnly && window.bbvShare) { const who = post.querySelector('.post-who b')?.textContent.trim(); window.bbvShare.open({ ref: `post:${post.dataset.post}`, url, title: who ? `${who}’s ${what}` : `A ${what}` }); return; }
     // The phone's own share menu where there is one. Closing it is fine; if it can't open, the link is copied instead.
     if (!copyOnly && navigator.share) { try { await navigator.share({ url, title: document.title }); return; } catch (err) { if (err && err.name === 'AbortError') return; } }
-    try { await navigator.clipboard.writeText(url); toast('Link copied.'); } catch (_) { toast(`Copy this link: ${url}`); }
+    try { await navigator.clipboard.writeText(url); toast('Link copied.'); } catch (_) { toast(`Copy This Link: ${url}`); }
   }
   // A comment's photo, big: it fits the screen whatever its shape, and ✕ (or a tap beside it, or Esc) closes it.
   function lightbox(src) {
@@ -360,7 +360,7 @@
       if (bub.querySelector('.cm-edit')) return;
       const par = bub.querySelector('p');
       const box = el('form', 'cm-edit');
-      const input = el('input'); input.type = 'text'; input.maxLength = 600; input.value = par ? par.textContent : ''; input.setAttribute('aria-label', 'Edit your comment'); input.enterKeyHint = 'done'; input.autocomplete = 'off';
+      const input = el('input'); input.type = 'text'; input.maxLength = 600; input.value = par ? par.textContent : ''; input.setAttribute('aria-label', 'Edit Your Comment'); input.enterKeyHint = 'done'; input.autocomplete = 'off';
       const save = el('button', 'btn sm', 'Save'); save.type = 'submit';
       const no = el('button', 'btn ghost sm', 'Cancel'); no.type = 'button';
       box.append(input, save, no);
@@ -387,7 +387,7 @@
     if (del) {
       const post = postOf(del), id = del.dataset.cmDel, node = del.closest('.cm'), under = node.querySelectorAll('.cm-kids .cm').length;
       const ask = under ? `Delete this comment and the ${under === 1 ? 'reply' : `${under} replies`} under it?` : 'Delete this comment?';
-      sure(ask, { yes: 'Delete', no: 'Keep it' }).then((yes) => yes && api(`/comments/${id}/delete`, {}).then((j) => { node.remove(); setCount(post, j.n); toast('Comment deleted.'); }).catch((err) => toast(err.message, true)));
+      sure(ask, { yes: 'Delete', no: 'Keep It' }).then((yes) => yes && api(`/comments/${id}/delete`, {}).then((j) => { node.remove(); setCount(post, j.n); toast('Comment deleted.'); }).catch((err) => toast(err.message, true)));
       return;
     }
     // A post's photo opens the photo window; a comment's photo (and any photo while that window is open) opens big.
@@ -503,7 +503,7 @@
         <header class="sheet-h"><button type="button" class="ibtn" data-x aria-label="Close">✕</button><b data-title>Create Post</b><button type="submit" class="btn sheet-go-top" data-go>Post</button></header>
         <div class="row"><span class="av" data-face></span><span class="row-t"><b data-name></b><small data-sub>Everyone on the site can see this</small></span>
           <select data-as aria-label="Post As" hidden><option value="me">Post As Me</option><option value="vault">Post As Big Boys Vault</option></select></div>
-        <div class="rt is-empty" data-ed contenteditable="true" role="textbox" aria-multiline="true" aria-label="Your post" data-ph="What did you pull today?" spellcheck="true"></div>
+        <div class="rt is-empty" data-ed contenteditable="true" role="textbox" aria-multiline="true" aria-label="Your Post" data-ph="What did you pull today?" spellcheck="true"></div>
         <div class="sheet-pics" data-pics></div>
         <div class="sheet-tools">
         <div class="rt-bar" data-bar role="toolbar" aria-label="Text Style">
@@ -525,7 +525,7 @@
       document.body.append(sheet);
       const pics = sheet.querySelector('[data-pics]'), as = sheet.querySelector('[data-as]');
       words = wordsBox(sheet.querySelector('[data-ed]'), sheet.querySelector('[data-bar]'));
-      const pic = (src, off) => { const d = el('div', 'sheet-pic'); const img = el('img'); img.src = src; img.alt = ''; const x = el('button', 'ibtn', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Remove this photo'); x.addEventListener('click', off); d.append(img, x); return d; };
+      const pic = (src, off) => { const d = el('div', 'sheet-pic'); const img = el('img'); img.src = src; img.alt = ''; const x = el('button', 'ibtn', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Remove This Photo'); x.addEventListener('click', off); d.append(img, x); return d; };
       const paint = () => pics.replaceChildren(
         ...kept.map((k, i) => pic(k.src, () => { kept.splice(i, 1); paint(); })),
         ...files.map((f, i) => pic(URL.createObjectURL(f), () => { files.splice(i, 1); paint(); })));
@@ -586,7 +586,7 @@
       sheet.querySelector('[data-title]').textContent = written ? 'Edit Post' : 'Words On This Post';
       sheet.go('Save', false);
       sheet.querySelector('[data-sub]').textContent = written ? 'Everyone on the site can see this' : 'The cards on this post stay as they are; you are adding your own words';
-      ed.dataset.ph = written ? 'What did you pull today?' : 'Say something about these cards';
+      ed.dataset.ph = written ? 'What did you pull today?' : 'Say Something About These Cards';
       sheet.querySelectorAll('[data-pic-btn]').forEach((b) => { b.hidden = !written; });
       as.hidden = true;
     } else {

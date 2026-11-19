@@ -127,23 +127,23 @@
         <header class="dm-h">
           <button type="button" class="dm-ib dm-back" aria-label="Back">${icon(I.back)}</button>
           <a class="dm-who" data-who></a>
-          <button type="button" class="dm-ib dm-call" aria-label="Voice call" title="Voice call">${icon(I.phone)}</button>
+          <button type="button" class="dm-ib dm-call" aria-label="Voice Call" title="Voice Call">${icon(I.phone)}</button>
           <button type="button" class="dm-ib dm-min" aria-label="Minimise" title="Minimise">${icon(I.min)}</button>
           <button type="button" class="dm-ib dm-x" aria-label="Close" title="Close">${icon(I.close)}</button>
         </header>
         <div class="dm-log" role="log" aria-live="polite" tabindex="0"></div>
         <div class="dm-attach" hidden></div>
         <form class="dm-form">
-          <label class="dm-ib dm-cam" title="Take a photo" aria-label="Take a photo">${icon(I.cam)}<input type="file" accept="image/*" capture="environment" data-card-cam="free" hidden></label>
-          <label class="dm-ib dm-pic" title="Send a photo from your gallery" aria-label="Send a photo from your gallery">${icon(I.photo)}<input type="file" accept="image/*" hidden></label>
-          <button type="button" class="dm-ib dm-rec" title="Voice message" aria-label="Record a voice message">${icon(I.mic)}</button>
+          <label class="dm-ib dm-cam" title="Take A Photo" aria-label="Take A Photo">${icon(I.cam)}<input type="file" accept="image/*" capture="environment" data-card-cam="free" hidden></label>
+          <label class="dm-ib dm-pic" title="Send A Photo From Your Gallery" aria-label="Send A Photo From Your Gallery">${icon(I.photo)}<input type="file" accept="image/*" hidden></label>
+          <button type="button" class="dm-ib dm-rec" title="Voice Message" aria-label="Record A Voice Message">${icon(I.mic)}</button>
           <textarea rows="1" maxlength="1000" placeholder="Aa" aria-label="Message" enterkeyhint="send"></textarea>
           <button type="submit" class="dm-ib dm-send" aria-label="Send">${icon(I.send)}</button>
         </form>
         <div class="dm-recbar" hidden>
-          <button type="button" class="dm-ib dm-rec-x" aria-label="Cancel recording">${icon(I.trash)}</button>
+          <button type="button" class="dm-ib dm-rec-x" aria-label="Cancel Recording">${icon(I.trash)}</button>
           <span class="dm-rec-dot"></span><span class="dm-rec-t">0:00</span><span class="dm-rec-l">Recording…</span>
-          <button type="button" class="dm-ib dm-send dm-rec-go" aria-label="Send voice message">${icon(I.send)}</button>
+          <button type="button" class="dm-ib dm-send dm-rec-go" aria-label="Send Voice Message">${icon(I.send)}</button>
         </div>
         <p class="dm-ro" hidden>You're reading as an admin. The people in this chat can't see that you read it.</p>`;
       document.body.append(n);
@@ -219,7 +219,7 @@
     },
     status(online) {
       const s = $('.dm-status', this.node);
-      if (s && !this.watch) s.textContent = this.asVault ? 'You answer for the vault' : online ? 'Active now' : this.other && this.other.id === 0 ? 'The vault’s team' : 'Trainer';
+      if (s && !this.watch) s.textContent = this.asVault ? 'You Answer For The Vault' : online ? 'Active Now' : this.other && this.other.id === 0 ? 'The Vault’s Team' : 'Trainer';
       const a = $('[data-who] .dm-av', this.node); if (a) a.classList.toggle('on', !!online);
     },
     async refreshWatch() {
@@ -252,7 +252,7 @@
       const all = [...this.msgs.values()].sort((a, b) => a.id - b.id);
       this.first = all[0].id; this.last = all[all.length - 1].id;
       log.replaceChildren();
-      if (this.more) log.append(el('p', 'dm-more', 'Scroll up for older messages'));
+      if (this.more) log.append(el('p', 'dm-more', 'Scroll Up For Older Messages'));
       let prev = null;
       all.forEach((m, i) => {
         const next = all[i + 1];
@@ -271,7 +271,7 @@
         row.className = 'dm-row dm-callrow';
         const p = el('div', 'dm-callpill'); p.innerHTML = icon(I.phone);
         p.append(el('span', '', m.text));
-        if (!this.watch) { const b = el('button', 'dm-callback', 'Call back'); b.type = 'button'; b.addEventListener('click', () => call.start(this.thread, this.other)); p.append(b); }
+        if (!this.watch) { const b = el('button', 'dm-callback', 'Call Back'); b.type = 'button'; b.addEventListener('click', () => call.start(this.thread, this.other)); p.append(b); }
         row.append(p); return row;
       }
       if (!m.mine) row.append(groupEnd ? avatar(this.other, 28) : el('span', 'dm-av-gap'));
@@ -332,7 +332,7 @@
 
   function chatHead(other) {
     $('.dm-head-bubble')?.remove();
-    const b = el('button', 'dm-head-bubble'); b.type = 'button'; b.setAttribute('aria-label', `Open chat with ${other ? other.name : 'chat'}`);
+    const b = el('button', 'dm-head-bubble'); b.type = 'button'; b.setAttribute('aria-label', `Open Chat With ${other ? other.name : 'chat'}`);
     b.append(avatar(other, 52));
     b.addEventListener('click', () => { const t = win.thread; b.remove(); if (t) win.open(t); });
     if (live.unread) b.dataset.unread = String(live.unread);
@@ -351,14 +351,14 @@
     if (c.price) row.append(el('span', 'dm-card-p', c.price));
     if (c.sold) row.append(el('span', 'dm-card-c sold', 'Sold'));
     t.append(row);
-    if (!small) t.append(el('span', 'dm-card-go', c.go || 'View card ›'));
+    if (!small) t.append(el('span', 'dm-card-go', c.go || 'View Card ›'));
     a.append(t);
     return a;
   }
 
   function voiceView(m) {
     const w = el('div', 'dm-voice');
-    const b = el('button', 'dm-ib dm-play'); b.type = 'button'; b.innerHTML = icon(I.play); b.setAttribute('aria-label', 'Play voice message');
+    const b = el('button', 'dm-ib dm-play'); b.type = 'button'; b.innerHTML = icon(I.play); b.setAttribute('aria-label', 'Play Voice Message');
     const bar = el('span', 'dm-vbar'); const fill = el('i'); bar.append(fill);
     const t = el('span', 'dm-vt', clock(m.secs || 0));
     let audio = null;
@@ -555,7 +555,7 @@
       else if (s.type === 'elsewhere') { if (this.role === 'callee' && s.by !== PID) this.clean(); }
     },
     show(status, incoming) {
-      const o = el('div', 'dm-call-ui'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', 'Voice call');
+      const o = el('div', 'dm-call-ui'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', 'Voice Call');
       // Their face without the green dot: whether they are there is what the words under it say, as it happens.
       o.append(avatar({ ...(this.other || {}), online: false }, 96));
       o.append(el('b', 'dm-call-name', (this.other && this.other.name) || 'Call'));
@@ -573,14 +573,14 @@
         const m = btn('mute', 'Mute', I.mic, () => this.mute(!this.muted));
         m.setAttribute('aria-pressed', 'false');
         this.mute(this.muted);
-        btn('no', 'End call', I.phone, () => this.hang());
+        btn('no', 'End Call', I.phone, () => this.hang());
       }
     },
     setStatus(t) { const s = this.ui && $('.dm-call-st', this.ui); if (s) s.textContent = t; },
     // A browser that won't play the other side's voice until a tap (a call answered from an alert, say): one button.
     needTap(a) {
       if (!this.ui || $('.dm-tap', this.ui)) return;
-      const b = el('button', 'btn dm-tap', `Tap to hear ${(this.other && this.other.name) || 'them'}`); b.type = 'button';
+      const b = el('button', 'btn dm-tap', `Tap To Hear ${(this.other && this.other.name) || 'them'}`); b.type = 'button';
       b.addEventListener('click', () => { a.play().then(() => b.remove()).catch(() => {}); });
       $('.dm-call-btns', this.ui).before(b);
     },
@@ -657,12 +657,12 @@
   let picker = null;
   function people(share) {
     if (picker) picker.remove();
-    const title = share ? 'Send to' : 'New message';
+    const title = share ? 'Send To' : 'New Message';
     const o = el('div', 'dm-people'); o.setAttribute('role', 'dialog'); o.setAttribute('aria-modal', 'true'); o.setAttribute('aria-label', title);
     const box = el('div', 'dm-people-in');
     const head = el('header', 'dm-people-h'); head.append(el('b', '', title));
     const x = el('button', 'dm-ib', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Close'); head.append(x);
-    const q = el('input'); q.type = 'search'; q.placeholder = 'Search trainers by name'; q.setAttribute('aria-label', 'Search trainers by name'); q.autocomplete = 'off';
+    const q = el('input'); q.type = 'search'; q.placeholder = 'Search Trainers By Name'; q.setAttribute('aria-label', 'Search Trainers By Name'); q.autocomplete = 'off';
     const list = el('ul', 'dm-list dm-people-list');
     box.append(head, q, list); o.append(box); document.body.append(o); picker = o;
     const esc = (e) => { if (e.key === 'Escape') close(); };
@@ -685,7 +685,7 @@
         const t = el('span', 'dm-li-t'); const top = el('span', 'dm-li-top'); top.append(el('b', '', p.name));
         if (p.role) top.append(el('span', 'dm-tag', p.role));
         t.append(top);
-        const sub = [p.store, p.online ? 'Active now' : ''].filter(Boolean).join(' · ');
+        const sub = [p.store, p.online ? 'Active Now' : ''].filter(Boolean).join(' · ');
         if (sub) t.append(el('span', 'dm-li-last', sub));
         a.append(t);
         a.addEventListener('click', async () => {

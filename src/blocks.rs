@@ -27,7 +27,7 @@ pub fn default_data(kind: &str) -> Value {
         "hero" => json!({
             "eyebrow": "Collectibles & Cards", "title": "Big Boys Vault",
             "subtitle": "{count} cards and collectibles. Search by name, card number or binder.",
-            "button_label": "Browse all cards", "button_link": "/all", "sticker": "",
+            "button_label": "Browse All Cards", "button_link": "/all", "sticker": "",
             "img_a": "/static/img/slaking.png?v=5", "img_a_w": 431, "img_a_h": 303,
             "img_b": "/static/img/snorlax.png?v=5", "img_b_w": 375, "img_b_h": 299
         }),
@@ -35,16 +35,16 @@ pub fn default_data(kind: &str) -> Value {
         "binders" => json!({ "title": "Binders" }),
         "row" => json!({ "handle": "playables", "title": "", "eyebrow": "", "sort": "new", "spotlight": false }),
         "feature" => json!({
-            "eyebrow": "", "title": "Find a card",
-            "subtitle": "Search {count} cards by name, set or card number.", "button_label": "Browse all {count}", "button_link": "/all",
+            "eyebrow": "", "title": "Find A Card",
+            "subtitle": "Search {count} cards by name, set or card number.", "button_label": "Browse All {count}", "button_link": "/all",
             "img": "/static/img/logo.webp?v=4", "img_w": 900, "img_h": 900
         }),
-        "text" => json!({ "title": "A note", "body": "Write something here." }),
+        "text" => json!({ "title": "A Note", "body": "Write something here." }),
         // Hand-picked cards from anywhere in the collection; the fewer, the bigger the spotlight.
         "showcase" => json!({ "title": "Showcase", "eyebrow": "Hand-picked", "ids": [] }),
         // From trainers' accounts, once the owner has approved them.
-        "highlights" => json!({ "title": "Trainers' picks", "eyebrow": "From the community" }),
-        "vouches" => json!({ "title": "What trainers say", "eyebrow": "Vouches" }),
+        "highlights" => json!({ "title": "Trainers' Picks", "eyebrow": "From The Community" }),
+        "vouches" => json!({ "title": "What Trainers Say", "eyebrow": "Vouches" }),
         _ => json!({}),
     }
 }

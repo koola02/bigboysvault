@@ -37,7 +37,7 @@
       if (!data || (!data.items.length && !data.cards.length)) { close(); return; }
       const v = input.value.trim().toLowerCase();
       if (data.items.length) {
-        panel.append(el('div', 'sg-sec', data.items[0].typo ? 'Did you mean' : 'Suggestions'));
+        panel.append(el('div', 'sg-sec', data.items[0].typo ? 'Did You Mean' : 'Suggestions'));
         data.items.forEach((it, i) => {
           const b = el('button', 'sg-item'); b.type = 'button'; b.setAttribute('role', 'option'); b.dataset.i = i;
           b.style.setProperty('--pf', Math.max(0.02, Math.min(1, it.p)).toFixed(3));

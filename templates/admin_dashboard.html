@@ -7,15 +7,15 @@
   {% include "admin_tabs.html" %}
   <h1 class="h1 a-title">Overview</h1>
   <p class="mc-how">How the vault is doing, worked out from your cards, your visitors and your trainers. Everything here is live.</p>
-  {% if nav.applications > 0 %}<a class="ap-banner" href="/admin/sellers#applications"><b>{{ nav.applications }} trainer{% if nav.applications != 1 %}s{% endif %} applied to sell</b><span>See the applications →</span></a>{% endif %}
+  {% if nav.applications > 0 %}<a class="ap-banner" href="/admin/sellers#applications"><b>{{ nav.applications }} Trainer{% if nav.applications != 1 %}s{% endif %} Applied To Sell</b><span>See The Applications →</span></a>{% endif %}
 
   <div class="dash-kpis">
-    <div class="kpi kpi-hero"><span>Total value</span><b>{{ value }}</b>{% if !top10.is_empty() %}<small>{{ top10 }} of it is in your 10 most valuable cards</small>{% endif %}</div>
-    <div class="kpi"><span>Cards</span><b>{{ copies }}</b><small>{{ distinct }} different</small></div>
-    <div class="kpi"><span>Binders</span><b>{{ nav.links.len() }}</b><small>{{ binders.len() }} with cards in them</small></div>
-    <div class="kpi"><span>Average price</span><b>{{ average }}</b><small>Half are under {{ median }}</small></div>
-    <div class="kpi"><span>Added this week</span><b>{{ week_n }}</b><small>{{ week_value }} in value</small></div>
-    <div class="kpi"><span>Added this month</span><b>{{ month_n }}</b><small>{{ month_value }} in value</small></div>
+    <div class="kpi kpi-hero"><span>Total Value</span><b>{{ value }}</b>{% if !top10.is_empty() %}<small>{{ top10 }} of it is in your 10 most valuable cards</small>{% endif %}</div>
+    <div class="kpi"><span>Cards</span><b>{{ copies }}</b><small>{{ distinct }} Different</small></div>
+    <div class="kpi"><span>Binders</span><b>{{ nav.links.len() }}</b><small>{{ binders.len() }} With Cards In Them</small></div>
+    <div class="kpi"><span>Average Price</span><b>{{ average }}</b><small>Half Are Under {{ median }}</small></div>
+    <div class="kpi"><span>Added This Week</span><b>{{ week_n }}</b><small>{{ week_value }} In Value</small></div>
+    <div class="kpi"><span>Added This Month</span><b>{{ month_n }}</b><small>{{ month_value }} In Value</small></div>
   </div>
 
   <div class="dash-grid">
@@ -23,21 +23,21 @@
       <h2 class="dash-h">Visitors</h2>
       <p class="dash-sub">People who opened the site. Each person counts once a day. Search engines and staff aren't counted.{% if !visit_since.is_empty() %} Counting started on {{ visit_since }}.{% endif %}</p>
       <div class="dash-kpis dash-kpis-s kpis-4">
-        <div class="kpi"><span>Today</span><b>{{ visit_today }}</b><small>{{ visit_pages_today }} page{% if visit_pages_today != 1 %}s{% endif %} opened</small></div>
-        <div class="kpi"><span>Last 7 days</span><b>{{ visit_week }}</b><small>{{ visit_week_signed }} of them logged in</small></div>
-        <div class="kpi"><span>Last 30 days</span><b>{{ visit_month }}</b><small>different people</small></div>
-        <a class="kpi" href="/admin/orders"><span>Orders, last 30 days</span><b>{{ orders_month }}</b><small>the vault's and the stores'</small></a>
+        <div class="kpi"><span>Today</span><b>{{ visit_today }}</b><small>{{ visit_pages_today }} Page{% if visit_pages_today != 1 %}s{% endif %} Opened</small></div>
+        <div class="kpi"><span>Last 7 Days</span><b>{{ visit_week }}</b><small>{{ visit_week_signed }} Of Them Logged In</small></div>
+        <div class="kpi"><span>Last 30 Days</span><b>{{ visit_month }}</b><small>Different People</small></div>
+        <a class="kpi" href="/admin/orders"><span>Orders, Last 30 Days</span><b>{{ orders_month }}</b><small>The Vault's And The Stores'</small></a>
       </div>
-      <div class="dash-days" role="img" aria-label="Visitors each day for the last 30 days">{% for d in visit_days %}<span style="--h:{{ d.2 }}%" title="{{ d.0 }}: {{ d.1 }} visitor{% if d.1 != 1 %}s{% endif %}"><i></i></span>{% endfor %}</div>
+      <div class="dash-days" role="img" aria-label="Visitors each day for the last 30 days">{% for d in visit_days %}<span style="--h:{{ d.2 }}%" title="{{ d.0 }}: {{ d.1 }} Visitor{% if d.1 != 1 %}s{% endif %}"><i></i></span>{% endfor %}</div>
       <p class="dash-foot"><span>{{ visit_days_first }}</span><span>Today</span></p>
     </article>
 
     {% if let Some(i) = insights %}
     <article class="dash-panel dash-wide iv">
-      <h2 class="dash-h">How prices spread out</h2>
+      <h2 class="dash-h">How Prices Spread Out</h2>
       <p class="iv-read" data-iv-read>Half the vault is under <b>{{ i.median }}</b>. The most common price is around <b>{{ i.typical }}</b>. Tap the graph to see the cards at that price.</p>
       <div class="iv-chart">
-        <svg class="iv-plot" viewBox="0 0 600 170" role="img" aria-label="How card prices spread out" preserveAspectRatio="none">
+        <svg class="iv-plot" viewBox="0 0 600 170" role="img" aria-label="How Card Prices Spread Out" preserveAspectRatio="none">
           <defs><linearGradient id="ivFill" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#58e08a"/><stop offset=".3" stop-color="#efc873"/><stop offset=".6" stop-color="#ff8f6b"/><stop offset="1" stop-color="#bd54fa"/></linearGradient></defs>
           {% for t in i.ticks %}<line class="iv-grid l{{ t.level }}" x1="{{ t.x }}" x2="{{ t.x }}" y1="8" y2="138"/>{% endfor %}
           <line class="iv-base" x1="0" x2="600" y1="138" y2="138"/>
@@ -48,10 +48,10 @@
       </div>
     </article>
     <article class="dash-panel iv">
-      <h2 class="dash-h">By condition</h2>
+      <h2 class="dash-h">By Condition</h2>
       <div class="iv-donut">
-        <svg viewBox="0 0 42 42" role="img" aria-label="Cards by condition"><circle class="iv-track" cx="21" cy="21" r="15.9155"/>{% for s in i.slices %}<circle class="iv-arc" data-c="{{ s.key }}" cx="21" cy="21" r="15.9155" pathLength="100" stroke-dasharray="{{ s.len }} {{ 100.0 - s.len }}" stroke-dashoffset="{{ 25.0 - s.at }}"/>{% endfor %}</svg>
-        <p class="iv-mid"><b>{{ i.total_text }}</b><small>cards</small></p>
+        <svg viewBox="0 0 42 42" role="img" aria-label="Cards By Condition"><circle class="iv-track" cx="21" cy="21" r="15.9155"/>{% for s in i.slices %}<circle class="iv-arc" data-c="{{ s.key }}" cx="21" cy="21" r="15.9155" pathLength="100" stroke-dasharray="{{ s.len }} {{ 100.0 - s.len }}" stroke-dashoffset="{{ 25.0 - s.at }}"/>{% endfor %}</svg>
+        <p class="iv-mid"><b>{{ i.total_text }}</b><small>Cards</small></p>
       </div>
       <ul class="iv-legend">{% for s in i.slices %}<li><span class="iv-li" data-c="{{ s.key }}"><i></i><span>{{ s.label }}</span><b>{{ s.count }}</b></span></li>{% endfor %}</ul>
     </article>
@@ -59,33 +59,33 @@
     <article class="dash-panel dash-spots">
       <h2 class="dash-h">Standouts</h2>
       <div class="iv-spots">
-        {% if let Some(t) = i.top %}<a class="iv-spot" href="/products/{{ t.handle }}" target="_blank" rel="noopener" data-c="{{ t.cond }}"><img src="{{ t.img }}" alt="" width="84" height="118" loading="lazy" decoding="async"><span><small>Most valuable</small><b>{{ t.title }}</b><em>{{ t.price }}</em></span></a>{% endif %}
-        {% if let Some(t) = i.newest %}<a class="iv-spot" href="/products/{{ t.handle }}" target="_blank" rel="noopener" data-c="{{ t.cond }}"><img src="{{ t.img }}" alt="" width="84" height="118" loading="lazy" decoding="async"><span><small>Newest arrival</small><b>{{ t.title }}</b><em>{{ t.price }}</em></span></a>{% endif %}
+        {% if let Some(t) = i.top %}<a class="iv-spot" href="/products/{{ t.handle }}" target="_blank" rel="noopener" data-c="{{ t.cond }}"><img src="{{ t.img }}" alt="" width="84" height="118" loading="lazy" decoding="async"><span><small>Most Valuable</small><b>{{ t.title }}</b><em>{{ t.price }}</em></span></a>{% endif %}
+        {% if let Some(t) = i.newest %}<a class="iv-spot" href="/products/{{ t.handle }}" target="_blank" rel="noopener" data-c="{{ t.cond }}"><img src="{{ t.img }}" alt="" width="84" height="118" loading="lazy" decoding="async"><span><small>Newest Arrival</small><b>{{ t.title }}</b><em>{{ t.price }}</em></span></a>{% endif %}
       </div>
     </article>
     {% endif %}
     {% endif %}
 
     <article class="dash-panel">
-      <h2 class="dash-h">Cards added, last 30 days</h2>
-      <div class="dash-days" role="img" aria-label="Cards added each day for the last 30 days">{% for d in days %}<span style="--h:{{ d.2 }}%" title="{{ d.0 }}: {{ d.1 }} card{% if d.1 != 1 %}s{% endif %}"><i></i></span>{% endfor %}</div>
+      <h2 class="dash-h">Cards Added, Last 30 Days</h2>
+      <div class="dash-days" role="img" aria-label="Cards added each day for the last 30 days">{% for d in days %}<span style="--h:{{ d.2 }}%" title="{{ d.0 }}: {{ d.1 }} Card{% if d.1 != 1 %}s{% endif %}"><i></i></span>{% endfor %}</div>
       <p class="dash-foot"><span>{{ days_first }}</span><span>Today</span></p>
     </article>
 
     <article class="dash-panel">
-      <h2 class="dash-h">Value by binder</h2>
-      <ul class="dash-bars">{% for b in binders %}<li><a href="/admin?binder={{ b.1 }}"><span class="db-t">{{ b.0 }}</span><span class="db-n">{{ b.2 }} cards · {{ b.3 }}</span><i style="--w:{{ b.4 }}%"></i></a></li>{% endfor %}</ul>
+      <h2 class="dash-h">Value By Binder</h2>
+      <ul class="dash-bars">{% for b in binders %}<li><a href="/admin?binder={{ b.1 }}"><span class="db-t">{{ b.0 }}</span><span class="db-n">{{ b.2 }} Cards · {{ b.3 }}</span><i style="--w:{{ b.4 }}%"></i></a></li>{% endfor %}</ul>
     </article>
 
     <article class="dash-panel">
-      <h2 class="dash-h">Most looked at</h2>
+      <h2 class="dash-h">Most Looked At</h2>
       {% if viewed.is_empty() %}<p class="dash-none">Nobody has opened a card yet.</p>{% else %}
-      <ol class="dash-list">{% for v in viewed %}<li><a href="/admin/edit/{{ v.0.id }}">{% if v.0.has_image() %}<img src="{{ v.0.img(240) }}" alt="" width="40" height="56" loading="lazy">{% else %}<span class="dl-ph"></span>{% endif %}<span class="dl-t"><b>{{ v.0.short_title() }}</b><small>{{ v.0.price_text() }}</small></span><em>{{ v.1 }} view{% if v.1 != 1 %}s{% endif %}</em></a></li>{% endfor %}</ol>
+      <ol class="dash-list">{% for v in viewed %}<li><a href="/admin/edit/{{ v.0.id }}">{% if v.0.has_image() %}<img src="{{ v.0.img(240) }}" alt="" width="40" height="56" loading="lazy">{% else %}<span class="dl-ph"></span>{% endif %}<span class="dl-t"><b>{{ v.0.short_title() }}</b><small>{{ v.0.price_text() }}</small></span><em>{{ v.1 }} View{% if v.1 != 1 %}s{% endif %}</em></a></li>{% endfor %}</ol>
       {% endif %}
     </article>
 
     <article class="dash-panel">
-      <h2 class="dash-h">What people search for</h2>
+      <h2 class="dash-h">What People Search For</h2>
       {% if searches.is_empty() %}<p class="dash-none">No searches yet.</p>{% else %}
       <ul class="dash-bars dash-bars-s">{% for s in searches %}<li><a href="/search?q={{ s.0|urlencode }}" target="_blank" rel="noopener"><span class="db-t">{{ s.0 }}</span><span class="db-n">{{ s.1 }}×</span><i style="--w:{{ s.2 }}%"></i></a></li>{% endfor %}</ul>
       {% endif %}
@@ -100,28 +100,28 @@
     </article>
 
     <article class="dash-panel dash-wide dash-ops" id="vmJobs">
-      <h2 class="dash-h">VM jobs</h2>
+      <h2 class="dash-h">VM Jobs</h2>
       <p class="dash-sub">The jobs the backup computer runs each night. A warning means a job failed or hasn't reported in time.</p>
-      <ul class="dash-links">{% for j in ops %}<li><span>{% if j.1 == "never reported" && !j.4 %}–{% else if j.2 && !j.4 %}✓{% else %}⚠{% endif %} <b>{{ j.0 }}</b> · {{ j.1 }}{% if j.4 %} · late{% endif %}{% if !j.2 %} · failed{% endif %}</span>{% if !j.3.is_empty() %}<span>{{ j.3 }}</span>{% endif %}</li>{% endfor %}</ul>
+      <ul class="dash-links">{% for j in ops %}<li><span>{% if j.1 == "never reported" && !j.4 %}–{% else if j.2 && !j.4 %}✓{% else %}⚠{% endif %} <b>{{ j.0|capitalize }}</b> · {{ j.1|capitalize }}{% if j.4 %} · Late{% endif %}{% if !j.2 %} · Failed{% endif %}</span>{% if !j.3.is_empty() %}<span>{{ j.3 }}</span>{% endif %}</li>{% endfor %}</ul>
     </article>
 
     {% if !movers.is_empty() %}
     <article class="dash-panel dash-wide">
-      <h2 class="dash-h">Prices worth a look</h2>
+      <h2 class="dash-h">Prices Worth A Look</h2>
       <p class="dash-sub">Prices you set yourself, on cards whose market moved 15% or more lately.</p>
-      <ul class="dash-links">{% for m in movers %}<li><a href="/admin/edit/{{ m.id }}" data-float>{{ m.title }}</a><span>Yours {{ m.price_text() }} · market {{ m.market_text() }} · {{ m.trend.text() }}</span></li>{% endfor %}</ul>
+      <ul class="dash-links">{% for m in movers %}<li><a href="/admin/edit/{{ m.id }}" data-float>{{ m.title }}</a><span>Yours {{ m.price_text() }} · Market {{ m.market_text() }} · {{ m.trend.text() }}</span></li>{% endfor %}</ul>
     </article>
     {% endif %}
 
     <article class="dash-panel dash-wide">
-      <h2 class="dash-h">To do</h2>
+      <h2 class="dash-h">To Do</h2>
       <div class="dash-todo">
         <section>
-          <h3><b>{{ no_photo_n }}</b> without a photo</h3>
+          <h3><b>{{ no_photo_n }}</b> Without A Photo</h3>
           {% if no_photo.is_empty() %}<p class="dash-none">All done.</p>{% else %}<ul class="dash-links">{% for p in no_photo %}<li><a href="/admin/edit/{{ p.id }}">{{ p.short_title() }}</a></li>{% endfor %}</ul>{% endif %}
         </section>
         <section>
-          <h3><b>{{ no_price_n }}</b> without a price</h3>
+          <h3><b>{{ no_price_n }}</b> Without A Price</h3>
           {% if no_price.is_empty() %}<p class="dash-none">All done.</p>{% else %}<ul class="dash-links">{% for p in no_price %}<li><a href="/admin/edit/{{ p.id }}">{{ p.short_title() }}</a></li>{% endfor %}</ul>{% endif %}
         </section>
         <section class="dash-fix" id="condFix">
@@ -129,7 +129,7 @@
           {% if cond_notes.is_empty() %}<p class="dash-none">All done.</p>{% else %}
           <p class="dash-sub">Like a description that just says “LP-NM”. Move it into the card's condition, where it shows the right colour and can be filtered.</p>
           <ul class="dash-links">{% for n in cond_notes %}<li><a href="/admin/edit/{{ n.0 }}">{{ n.1 }}</a><span>“{{ n.2 }}” → {{ n.3 }}</span></li>{% endfor %}</ul>
-          <button type="button" class="btn" data-fix-conds>Move all {{ cond_notes_n }} into the condition</button>
+          <button type="button" class="btn" data-fix-conds>Move All {{ cond_notes_n }} Into The Condition</button>
           {% endif %}
         </section>
       </div>
@@ -138,10 +138,10 @@
     <article class="dash-panel dash-wide">
       <h2 class="dash-h">Community</h2>
       <div class="dash-kpis dash-kpis-s kpis-4">
-        <a class="kpi" href="/admin/trainers"><span>Trainers</span><b>{{ trainers }}</b><small>with a live page</small></a>
-        <a class="kpi" href="/admin/trainers"><span>Joined This Week</span><b>{{ joined_week }}</b><small>new trainer{% if joined_week != 1 %}s{% endif %}</small></a>
-        <a class="kpi" href="/admin/trainers?view=vouches"><span>Vouches this week</span><b>{{ vouches_week }}</b><small>and replies</small></a>
-        <a class="kpi" href="/chat" target="_blank" rel="noopener"><span>Chat this week</span><b>{{ chat_week }}</b><small>messages</small></a>
+        <a class="kpi" href="/admin/trainers"><span>Trainers</span><b>{{ trainers }}</b><small>With A Live Page</small></a>
+        <a class="kpi" href="/admin/trainers"><span>Joined This Week</span><b>{{ joined_week }}</b><small>New Trainer{% if joined_week != 1 %}s{% endif %}</small></a>
+        <a class="kpi" href="/admin/trainers?view=vouches"><span>Vouches This Week</span><b>{{ vouches_week }}</b><small>And Replies</small></a>
+        <a class="kpi" href="/chat" target="_blank" rel="noopener"><span>Chat This Week</span><b>{{ chat_week }}</b><small>Messages</small></a>
       </div>
       {% if !top_trainers.is_empty() %}
       <ul class="dash-bars">{% for t in top_trainers %}<li><a href="/trainers/{{ t.0 }}" target="_blank" rel="noopener"><span class="db-t">{{ t.1 }}</span><span class="db-n">{{ t.2 }} · ★ {{ t.3 }}</span><i style="--w:{{ t.4 }}%"></i></a></li>{% endfor %}</ul>
@@ -149,7 +149,7 @@
     </article>
 
     <article class="dash-panel dash-wide cp-panel" id="condPrices">
-      <h2 class="dash-h">Condition prices</h2>
+      <h2 class="dash-h">Condition Prices</h2>
       <p class="dash-sub">The share of the Near Mint market price suggested for cards in each condition. Used when adding and pricing cards.</p>
       <form id="condSharesForm" class="cp-form">
         <div class="cp-grid">
@@ -164,14 +164,14 @@
           {% endfor %}
         </div>
         <div class="cp-acts">
-          <button type="submit" class="btn">Save shares</button>
-          <button type="button" class="btn ghost" id="resetShares">Back to the usual shares</button>
+          <button type="submit" class="btn">Save Shares</button>
+          <button type="button" class="btn ghost" id="resetShares">Back To The Usual Shares</button>
         </div>
       </form>
     </article>
   </div>
 </section>
-<script src="/static/admin-ui.js?v=10" defer></script>
+<script src="/static/admin-ui.js?v=12" defer></script>
 <script>
 document.addEventListener('DOMContentLoaded', () => {
   const read = document.querySelector('[data-iv-read]');
@@ -197,7 +197,7 @@ document.addEventListener('DOMContentLoaded', () => {
       new FormData(cpForm).forEach((v, k) => { shares[k] = v; });
       try {
         await window.Admin.postJSON('/admin/settings/condition-shares', { shares });
-        window.Admin.toast('Condition prices saved ✓', { kind: 'ok' });
+        window.Admin.toast('Condition Prices Saved ✓', { kind: 'ok' });
       } catch (err) { window.Admin.toast(err.message, { kind: 'err' }); }
       btn.disabled = false;
     });
@@ -205,7 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!(await (window.bbvConfirm ? window.bbvConfirm('Go back to the standard numbers?', { yes: 'Yes', no: 'No' }) : Promise.resolve(confirm('Go back to the standard numbers?'))))) return;
       try {
         await window.Admin.postJSON('/admin/settings/condition-shares', { reset: true });
-        window.Admin.toast('Reset to standard numbers ✓', { kind: 'ok' });
+        window.Admin.toast('Reset To Standard Numbers ✓', { kind: 'ok' });
         setTimeout(() => location.reload(), 700);
       } catch (err) { window.Admin.toast(err.message, { kind: 'err' }); }
     });

@@ -25,9 +25,9 @@
     const c = cards.get(id) || { id, title: 'Card', image: '', price: '', off: '' };
     const li = el('li', 'shw-c'); li.dataset.id = id;
     const acts = el('span', 'shw-acts'); acts.dataset.nodrag = '';
-    const back = el('button', null, '‹'); back.type = 'button'; back.disabled = i === 0; back.setAttribute('aria-label', `Move ${c.title} earlier`); back.onclick = () => move(id, -1);
-    const on = el('button', null, '›'); on.type = 'button'; on.disabled = i === ids.length - 1; on.setAttribute('aria-label', `Move ${c.title} later`); on.onclick = () => move(id, 1);
-    const out = el('button', 'shw-x', '×'); out.type = 'button'; out.setAttribute('aria-label', `Take ${c.title} out of the showcase`); out.onclick = () => toggle(c);
+    const back = el('button', null, '‹'); back.type = 'button'; back.disabled = i === 0; back.setAttribute('aria-label', `Move ${c.title} Earlier`); back.onclick = () => move(id, -1);
+    const on = el('button', null, '›'); on.type = 'button'; on.disabled = i === ids.length - 1; on.setAttribute('aria-label', `Move ${c.title} Later`); on.onclick = () => move(id, 1);
+    const out = el('button', 'shw-x', '×'); out.type = 'button'; out.setAttribute('aria-label', `Take ${c.title} Out Of The Showcase`); out.onclick = () => toggle(c);
     acts.append(back, on, out);
     li.append(pic(c, 'shw-pic'), el('b', null, c.title), el('small', null, c.price));
     if (c.off) li.append(el('small', 'shw-off', c.off));
@@ -100,10 +100,10 @@
       (j.cards || []).forEach((c) => cards.set(c.id, c));
       if (order.join() === ids.join()) draw();
       state.textContent = 'Saved ✓';
-      A.toast(`Showcase saved ✓ ${plural(order.length)}`, { kind: 'ok' });
+      A.toast(`Showcase Saved ✓ ${plural(order.length)}`, { kind: 'ok' });
     } catch (err) {
       if (my !== sent) return;
-      state.textContent = 'Not saved';
+      state.textContent = 'Not Saved';
       A.toast(err.message || 'That didn’t save. Check your connection and try again.', { kind: 'err' });
     }
   }
@@ -146,7 +146,7 @@
         wState.textContent = 'Saved ✓';
       } catch (err) {
         if (my !== wSent) return;
-        wState.textContent = 'Not saved';
+        wState.textContent = 'Not Saved';
         A.toast(err.message || 'That didn’t save. Check your connection and try again.', { kind: 'err' });
       }
     }
@@ -167,7 +167,7 @@
       if (!r.ok) throw new Error(j.error || 'That didn’t save. Check your connection and try again.');
       bState.textContent = 'Saved ✓';
     } catch (err) {
-      bState.textContent = 'Not saved';
+      bState.textContent = 'Not Saved';
       A.toast(err.message, { kind: 'err' });
     }
   });

@@ -3,8 +3,8 @@
 {% block content %}
 <section class="wrap dm-page" data-dm-page{% if admin %} data-dm-admin{% endif %}>
   <header class="dm-page-h">
-    <h1 class="h1">{% if admin %}All messages{% else %}Messages{% endif %}</h1>
-    {% if !admin %}<button type="button" class="btn dm-new-btn" data-dm-new>New message</button>{% endif %}
+    <h1 class="h1">{% if admin %}All Messages{% else %}Messages{% endif %}</h1>
+    {% if !admin %}<button type="button" class="btn dm-new-btn" data-dm-new>New Message</button>{% endif %}
     {% if admin %}<p class="dm-page-sub">Every conversation on the site. Reading here never shows as “Seen”.</p>{% endif %}
   </header>
   {% if !admin %}<div class="alerts-card" data-alerts="page" hidden></div>{% endif %}

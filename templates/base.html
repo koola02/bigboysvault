@@ -38,7 +38,7 @@
 {% endif %}
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@50..150,100..900&display=swap">
-<link rel="stylesheet" href="/static/fb.css?v=44">
+<link rel="stylesheet" href="/static/fb.css?v=45">
 <link rel="stylesheet" href="/static/widgets.css?v=7">
 {% block head %}{% endblock %}
 {% for t in nav.trials %}<meta http-equiv="origin-trial" content="{{ t }}">
@@ -61,24 +61,24 @@
 <!-- Back after a filter or sort loads that page fresh, so the cart, the bell and the card window keep working. -->
 <meta name="htmx-config" content='{"historyCacheSize":0,"refreshOnHistoryMiss":true}'>
 <!-- The card finder's files: change this one number after build-wasm.sh. -->
-<meta name="finder-v" content="17">
+<meta name="finder-v" content="18">
 <script src="/static/htmx.min.js?v=4" defer></script>
-<script src="/static/suggest.js?v=4" defer></script>
+<script src="/static/suggest.js?v=6" defer></script>
 <script src="/static/tiles.js?v=2" defer></script>
-<script src="/static/vouches.js?v=8" defer></script>
-<script src="/static/fb-shell.js?v=20" defer></script><script src="/static/feed.js?v=12" defer></script><script src="/static/share.js?v=1" defer></script>
-<script src="/static/cart.js?v=8" defer></script>
-<script src="/static/bookmarks.js?v=1" defer></script>
-<script src="/static/offer.js?v=3" defer></script>
-<script src="/static/vault-talk.js?v=12" defer></script>
-<script src="/static/dm.js?v=12" defer></script>
-<script src="/static/people.js?v=1" defer></script>
-<script src="/static/alerts.js?v=2" defer></script>
-<script src="/static/card-cam.js?v=5" defer></script>
-<script src="/static/vault-staff.js?v=9" defer></script>
+<script src="/static/vouches.js?v=10" defer></script>
+<script src="/static/fb-shell.js?v=22" defer></script><script src="/static/feed.js?v=14" defer></script><script src="/static/share.js?v=3" defer></script>
+<script src="/static/cart.js?v=10" defer></script>
+<script src="/static/bookmarks.js?v=3" defer></script>
+<script src="/static/offer.js?v=5" defer></script>
+<script src="/static/vault-talk.js?v=14" defer></script>
+<script src="/static/dm.js?v=14" defer></script>
+<script src="/static/people.js?v=3" defer></script>
+<script src="/static/alerts.js?v=4" defer></script>
+<script src="/static/card-cam.js?v=7" defer></script>
+<script src="/static/vault-staff.js?v=11" defer></script>
 </head>
 <body data-layout="{% block layout %}page{% endblock %}">
-<a class="skip" href="#main">Skip to content</a>
+<a class="skip" href="#main">Skip To Content</a>
 <script>(function () { try { // Signed in last time? Say so before the top bar paints, so "Log in" never flashes. Saved by fb-shell.js as { me, admin }.
   var s = JSON.parse(localStorage.getItem('bbv:me') || 'null'); if (!s) return;
   var me = s.me || (s.name ? s : null), d = document.documentElement.dataset;
@@ -86,15 +86,15 @@
 } catch (_) {} })();</script>
 {% include "fb_top.html" %}<main id="main" tabindex="-1">{% block content %}{% endblock %}</main>
 <aside class="fb-right" id="fbRight" aria-label="More">{% block right %}{% endblock %}</aside>
-{% include "fb_bottom.html" %}<aside class="cart" id="cartDrawer" hidden aria-label="Your cart">
-  <div class="cart-head"><b>Your cart</b><button type="button" class="ibtn" data-cart-close aria-label="Close">✕</button></div>
+{% include "fb_bottom.html" %}<aside class="cart" id="cartDrawer" hidden aria-label="Your Cart">
+  <div class="cart-head"><b>Your Cart</b><button type="button" class="ibtn" data-cart-close aria-label="Close">✕</button></div>
   <p class="cart-empty" id="cartEmpty">Nothing in your cart yet. Tap <b>Add to cart</b> on any card for sale.</p>
   <ul class="cart-list" id="cartList"></ul>
   <div class="cart-foot">
-    <label class="cart-note-l" for="cartNote">A note for the seller <small>(optional)</small></label>
-    <textarea id="cartNote" rows="2" maxlength="300" placeholder="Meetup, shipping, questions"></textarea>
+    <label class="cart-note-l" for="cartNote">A Note For The Seller <small>(Optional)</small></label>
+    <textarea id="cartNote" rows="2" maxlength="300" placeholder="Meetup, Shipping, Questions"></textarea>
     <div class="cart-sumrow"><span>Total</span><b id="cartTotal">₱0</b></div>
-    <button type="button" class="btn cart-go" id="cartGo" disabled>Send order</button>
+    <button type="button" class="btn cart-go" id="cartGo" disabled>Send Order</button>
     <small>No payment here. The vault or the seller accepts your order and shows you how to pay them directly.</small>
   </div>
 </aside>

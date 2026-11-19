@@ -1,0 +1,24 @@
+# file	S (a sentence: only its first letter) | L (a label: every word) | K (leave exactly as written)	the line's words
+store.html	S	Shown once {} accepts your order
+store_vault.html	S	Shown once {} accepts your order
+store_dash.html	K	{}: expired, renew it{}
+store_orders.html	S	You said you paid, {}
+store_orders.html	K	store
+admin_store.html	S	wide, like a banner
+store_settings.html	S	wide, like a banner
+admin_trainers.html	S	type one, then Enter
+store_settings.html	K	Active — open for orders
+store_settings.html	S	(off: only signed-in trainers see it)
+admin.html	S	Take a picture or choose one
+store_add.html	S	Take one or choose one
+admin.html	K	fire, vstar, holo
+admin.html	S	Card name, like Pikachu 58
+store_add.html	S	Card name, like Pikachu 58
+admin_sellers.html	S	Why? (optional, they see it)
+fb-shell.js	K	Just now
+edit-card.js	K	starter, gift idea, vintage
+admin_store.html	S	Wide, like a banner
+store_settings.html	S	Wide, like a banner
+admin_trainers.html	S	Type one, then Enter
+store_settings.html	S	(Off: only signed-in trainers see it)
+mgr-table.js	K	Sorted by

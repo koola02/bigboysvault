@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Store settings · My store · {{ nav.brand }}{% endblock %}
+{% block title %}Store Settings · My Store · {{ nav.brand }}{% endblock %}
 {% block head %}{% include "mgr_head.html" %}{% endblock %}
 {% block layout %}wide{% endblock %}
 {% block content %}
@@ -7,40 +7,40 @@
   {% include "store_tabs.html" %}
 
   <div class="me-card st-form st-vis" id="visCard">
-    <h2 class="h2">Who can see your store</h2>
+    <h2 class="h2">Who Can See Your Store</h2>
     {% if p.m.store_hidden %}
     <p class="me-how"><b>Your store is hidden.</b> Only you can see it and its cards. Buyers can't find it, order or make offers. Orders already placed carry on.</p>
-    <form method="post" action="/me/store/visibility"><input type="hidden" name="hidden" value="0"><input type="hidden" name="back" value="/me/settings"><button class="btn" type="submit">Show my store</button></form>
+    <form method="post" action="/me/store/visibility"><input type="hidden" name="hidden" value="0"><input type="hidden" name="back" value="/me/settings"><button class="btn" type="submit">Show My Store</button></form>
     {% else %}
     <p class="me-how">Everyone can see your store. Hide it while you get it ready or take a break: only you will see it and its cards, buyers can't find it, order or make offers, and orders already placed carry on.</p>
-    <form method="post" action="/me/store/visibility"><input type="hidden" name="hidden" value="1"><input type="hidden" name="back" value="/me/settings"><button class="btn ghost" type="submit">Hide my store</button></form>
+    <form method="post" action="/me/store/visibility"><input type="hidden" name="hidden" value="1"><input type="hidden" name="back" value="/me/settings"><button class="btn ghost" type="submit">Hide My Store</button></form>
     {% endif %}
   </div>
 
   <form class="me-card st-form" id="slugForm">
-    <h2 class="h2">Store address</h2>
+    <h2 class="h2">Store Address</h2>
     <p class="me-how">Your store lives at <b>{{ site }}/store/<span id="slugNow">{{ p.m.slug }}</span></b>. Share that link anywhere.</p>
-    <div class="st-slug"><span>{{ site }}/store/</span><input name="slug" value="{{ p.m.slug }}" minlength="3" maxlength="30" pattern="[a-z0-9-]+" autocomplete="off" spellcheck="false" aria-label="Store address" required><button class="btn ghost" type="submit">Change</button></div>
+    <div class="st-slug"><span>{{ site }}/store/</span><input name="slug" value="{{ p.m.slug }}" minlength="3" maxlength="30" pattern="[a-z0-9-]+" autocomplete="off" spellcheck="false" aria-label="Store Address" required><button class="btn ghost" type="submit">Change</button></div>
     <small class="me-how">Letters, numbers and dashes. Changing it breaks links you've already shared.</small>
   </form>
 
   <form class="me-card st-form" id="storeForm" enctype="multipart/form-data">
-    <h2 class="h2">The store</h2>
+    <h2 class="h2">The Store</h2>
     <div class="me-fields">
-      <label>Store name <small>shown at the top; blank uses your trainer name</small><input name="store_name" value="{{ p.m.store_name }}" maxlength="40" autocomplete="off"></label>
+      <label>Store Name <small>Shown at the top; blank uses your trainer name</small><input name="store_name" value="{{ p.m.store_name }}" maxlength="40" autocomplete="off"></label>
       {#- The store's own picture (the owner, 19 Nov 2026): the trainer's own shows until one is picked. -#}
       <div class="st-pick st-logo">
-        <span class="st-pick-l">Store picture <small>shown with your store's name; your own shows until you pick one</small></span>
+        <span class="st-pick-l">Store Picture <small>Shown with your store's name; your own shows until you pick one</small></span>
         <span class="st-logo-prev" id="logoPrev">{% if p.m.has_store_pic() %}<img class="av" src="{{ p.m.store_pic() }}" alt="" id="logoImg">{% else %}<span class="av" id="logoImg">{{ p.m.initial() }}</span>{% endif %}</span>
-        <input type="file" accept="image/*" id="logoFile" aria-label="Store picture">
-        <label class="chk" id="logoDrop"{% if p.m.store_avatar.is_empty() %} hidden{% endif %}><input type="checkbox" class="sr" name="drop_logo" value="1"><span class="chk-box"></span> Use my own picture again</label>
+        <input type="file" accept="image/*" id="logoFile" aria-label="Store Picture">
+        <label class="chk" id="logoDrop"{% if p.m.store_avatar.is_empty() %} hidden{% endif %}><input type="checkbox" class="sr" name="drop_logo" value="1"><span class="chk-box"></span> Use My Own Picture Again</label>
       </div>
-      <label class="st-cover-pick">Cover photo <small>wide, like a banner</small>
+      <label class="st-cover-pick">Cover Photo <small>Wide, like a banner</small>
         <span class="st-cover-prev" id="coverPrev"{% if !p.m.has_cover() %} hidden{% endif %}><img src="{{ p.m.cover_photo }}" alt="" id="coverImg"></span>
         <input type="file" name="cover" accept="image/*" id="coverFile">
-        <label class="chk"><input type="checkbox" class="sr" name="drop_cover" value="1"><span class="chk-box"></span> Remove the cover photo</label>
+        <label class="chk"><input type="checkbox" class="sr" name="drop_cover" value="1"><span class="chk-box"></span> Remove The Cover Photo</label>
       </label>
-      <label>About the store <small><span id="storeBioCount">0</span> of 300</small><textarea name="store_bio" maxlength="300" rows="3" placeholder="What you sell, how you pack and ship, when you answer">{{ p.m.store_bio }}</textarea></label>
+      <label>About The Store <small><span id="storeBioCount">0</span> Of 300</small><textarea name="store_bio" maxlength="300" rows="3" placeholder="What you sell, how you pack and ship, when you answer">{{ p.m.store_bio }}</textarea></label>
       <label>Status
         <select name="status">
           <option value="Active"{% if p.m.status == "Active" %} selected{% endif %}>Active — open for orders</option>
@@ -48,47 +48,47 @@
           <option value="Vacation"{% if p.m.status == "Vacation" %} selected{% endif %}>Vacation — nobody can order or make offers</option>
         </select>
       </label>
-      <label>Location <small>city or area, for meetups</small><input name="location" value="{{ p.m.location }}" maxlength="80" autocomplete="off"></label>
-      <label>Contact <small>how to reach you, like a Messenger link or a number</small><textarea name="contact_info" rows="2" maxlength="300">{{ p.m.contact_info }}</textarea></label>
-      <label class="chk"><input type="checkbox" class="sr" name="contact_public" value="1"{% if p.m.contact_public %} checked{% endif %}><span class="chk-box"></span> Show my contact to everyone <small>(off: only signed-in trainers see it)</small></label>
+      <label>Location <small>City or area, for meetups</small><input name="location" value="{{ p.m.location }}" maxlength="80" autocomplete="off"></label>
+      <label>Contact <small>How to reach you, like a Messenger link or a number</small><textarea name="contact_info" rows="2" maxlength="300">{{ p.m.contact_info }}</textarea></label>
+      <label class="chk"><input type="checkbox" class="sr" name="contact_public" value="1"{% if p.m.contact_public %} checked{% endif %}><span class="chk-box"></span> Show My Contact To Everyone <small>(Off: only signed-in trainers see it)</small></label>
     </div>
 
     <h2 class="h2">Links</h2>
     <div class="me-fields st-links">
-      <label>Facebook page or profile<input type="url" name="fb_url" value="{{ p.m.fb_url }}" placeholder="https://facebook.com/…" maxlength="300"></label>
-      <label>Facebook group<input type="url" name="fb_group_url" value="{{ p.m.fb_group_url }}" placeholder="https://facebook.com/groups/…" maxlength="300"></label>
+      <label>Facebook Page Or Profile<input type="url" name="fb_url" value="{{ p.m.fb_url }}" placeholder="https://facebook.com/…" maxlength="300"></label>
+      <label>Facebook Group<input type="url" name="fb_group_url" value="{{ p.m.fb_group_url }}" placeholder="https://facebook.com/groups/…" maxlength="300"></label>
       <label>Instagram<input type="url" name="ig_url" value="{{ p.m.ig_url }}" placeholder="https://instagram.com/…" maxlength="300"></label>
       <label>TikTok<input type="url" name="tiktok_url" value="{{ p.m.tiktok_url }}" placeholder="https://tiktok.com/@…" maxlength="300"></label>
       <label>Shopee<input type="url" name="shopee_url" value="{{ p.m.shopee_url }}" placeholder="https://shopee.ph/…" maxlength="300"></label>
-      <label>Other links <small>one per line: <code>Carousell | https://…</code>, or just the address</small><textarea name="links" rows="3" placeholder="Carousell | https://carousell.ph/u/…">{{ p.m.links }}</textarea></label>
+      <label>Other Links <small>One per line: <code>Carousell | https://…</code>, or just the address</small><textarea name="links" rows="3" placeholder="Carousell | https://carousell.ph/u/…">{{ p.m.links }}</textarea></label>
     </div>
 
-    <h2 class="h2">Store colour</h2>
-    <div class="st-borders" role="radiogroup" aria-label="Store colour">
+    <h2 class="h2">Store Colour</h2>
+    <div class="st-borders" role="radiogroup" aria-label="Store Colour">
       {% for (name, col) in borders %}<label class="st-border"><input type="radio" class="sr" name="store_border" value="{{ col }}"{% if *col == p.m.store_border %} checked{% endif %}><span class="st-sw" style="--sw:{% if col.is_empty() %}#efc873{% else %}{{ col }}{% endif %}"></span><span>{{ name }}</span></label>{% endfor %}
-      <label class="st-border st-border-own"><input type="radio" class="sr" name="store_border" id="ownBorder" value="{% if !named_border %}{{ p.m.store_border }}{% endif %}"{% if !named_border %} checked{% endif %}><span class="st-sw" id="ownSw" style="--sw:{% if named_border %}#8a90a6{% else %}{{ p.m.store_border }}{% endif %}"></span><span>Other</span><input type="color" id="ownColor" value="{% if named_border %}#4c8dff{% else %}{{ p.m.store_border }}{% endif %}" aria-label="Pick another colour"></label>
+      <label class="st-border st-border-own"><input type="radio" class="sr" name="store_border" id="ownBorder" value="{% if !named_border %}{{ p.m.store_border }}{% endif %}"{% if !named_border %} checked{% endif %}><span class="st-sw" id="ownSw" style="--sw:{% if named_border %}#8a90a6{% else %}{{ p.m.store_border }}{% endif %}"></span><span>Other</span><input type="color" id="ownColor" value="{% if named_border %}#4c8dff{% else %}{{ p.m.store_border }}{% endif %}" aria-label="Pick Another Colour"></label>
     </div>
 
     {% include "store_look_fields.html" %}
 
-    <h2 class="h2">Getting paid</h2>
+    <h2 class="h2">Getting Paid</h2>
     <p class="me-how">{{ nav.brand }} never handles money. A buyer pays you directly, in their own app, once you accept their order. These details are shown only then.</p>
     <div class="me-fields">
       <input type="hidden" name="pay_methods_sent" value="1">
-      <div class="st-methods">{% for m in methods %}<label class="chk"><input type="checkbox" class="sr" name="pay_method" value="{{ m }}"{% if p.m.has_pay(m) %} checked{% endif %}><span class="chk-box"></span> {{ m }}</label>{% endfor %}</div>
-      <label>How to pay <small>account name and number, meetup spots, your rules</small><textarea name="pay_info" rows="4" maxlength="600" placeholder="GCash: Juan D. · 0917 123 4567&#10;BPI: 1234 5678 90&#10;Meetups: SM North, weekends">{{ p.m.pay_info }}</textarea></label>
-      <label class="chk"><input type="checkbox" class="sr" name="pay_public" value="1"{% if p.m.pay_public %} checked{% endif %}><span class="chk-box"></span> Show these pay details on my store page too <small>(off: a buyer sees them only after you accept their order)</small></label>
+      <div class="st-methods">{% for m in methods %}<label class="chk"><input type="checkbox" class="sr" name="pay_method" value="{{ m }}"{% if p.m.has_pay(m) %} checked{% endif %}><span class="chk-box"></span> {{ p.m.pay_label(m) }}</label>{% endfor %}</div>
+      <label>How To Pay <small>Account name and number, meetup spots, your rules</small><textarea name="pay_info" rows="4" maxlength="600" placeholder="GCash: Juan D. · 0917 123 4567&#10;BPI: 1234 5678 90&#10;Meetups: SM North, weekends">{{ p.m.pay_info }}</textarea></label>
+      <label class="chk"><input type="checkbox" class="sr" name="pay_public" value="1"{% if p.m.pay_public %} checked{% endif %}><span class="chk-box"></span> Show these pay details on my store page too <small>(Off: a buyer sees them only after you accept their order)</small></label>
     </div>
 
     <h2 class="h2">Email</h2>
     <div class="me-fields">
-      <label>Email <small>for notifications you switch on, and never shown to anyone</small><input type="email" name="email" value="{{ p.m.email }}" maxlength="120" autocomplete="email"></label>
+      <label>Email <small>For notifications you switch on, and never shown to anyone</small><input type="email" name="email" value="{{ p.m.email }}" maxlength="120" autocomplete="email"></label>
     </div>
 
-    <div class="me-save-row"><button class="btn" type="submit">Save</button><a class="linkbtn" href="{{ p.m.store_url() }}" target="_blank" rel="noopener">See my store ↗</a></div>
+    <div class="me-save-row"><button class="btn" type="submit">Save</button><a class="linkbtn" href="{{ p.m.store_url() }}" target="_blank" rel="noopener">See My Store ↗</a></div>
   </form>
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-<script src="/static/admin-ui.js?v=10" defer></script>
-<script src="/static/store.js?v=16" defer></script>
+<script src="/static/admin-ui.js?v=12" defer></script>
+<script src="/static/store.js?v=18" defer></script>
 {% endblock %}

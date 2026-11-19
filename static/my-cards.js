@@ -99,13 +99,13 @@
         if (srpLine) {
           const std = P.read(cond), share = P.share(cond);
           srpLine.textContent = P.graded(cond) ? `Graded: set your own price. Ungraded Near Mint is ${nm}` : P.sealed(cond) ? `Sealed: set your own price. Near Mint single is ${nm}`
-            : srp == null ? `SRP: condition not known. Near Mint is ${nm}` : `SRP ₱${srp.toLocaleString('en-US')} · ${std} · ${Math.round(share * 100)}% of Near Mint ${nm}`;
+            : srp == null ? `SRP: condition not known. Near Mint is ${nm}` : `SRP ₱${srp.toLocaleString('en-US')} · ${std} · ${Math.round(share * 100)}% Of Near Mint ${nm}`;
         }
         const pr = tile.querySelector('[data-price]');
         const now = Number((pr?.value || '').replace(/[^\d.]/g, ''));
         if (pr && srp != null && srp !== now) {
           const chip = document.createElement('button'); chip.className = 'use-chip mc-use-chip'; chip.type = 'button';
-          chip.textContent = `Price → ₱${srp.toLocaleString('en-US')}?`; chip.title = 'Use the SRP as the price';
+          chip.textContent = `Price → ₱${srp.toLocaleString('en-US')}?`; chip.title = 'Use The SRP As The Price';
           chip.onclick = async () => { chip.disabled = true; pr.value = String(srp); await quickSave(pr, { price: srp, price_src: 'suggested' }); tile.dataset.priceSrc = 'suggested'; chip.remove(); };
           srpLine?.append(chip);   // inside the SRP line: never an extra grid row, never above the name on a phone
         }
@@ -123,7 +123,7 @@
       for (const id of idsOf(tile)) { const fd = new FormData(); fd.set('photo', blob, 'card.jpg'); const j = await A.post('/admin/photo/' + id, fd); src = j.src; }
       const box = tile.querySelector('.ct-img'); let img = box.querySelector('img');
       if (!img) { img = document.createElement('img'); img.alt = ''; box.prepend(img); box.querySelector('.thumb-empty')?.remove(); }
-      img.src = src + '?t=' + Date.now(); A.toast('Photo updated ✓', { kind: 'ok' });
+      img.src = src + '?t=' + Date.now(); A.toast('Photo Updated ✓', { kind: 'ok' });
     } catch (err) { A.toast(err.message, { kind: 'err' }); }
     finally { tile.classList.remove('busy'); inp.value = ''; }
   });
@@ -137,7 +137,7 @@
     window.dragSort(list, {
       item: '.ctile', handle: '.ct-grip', key: (li) => li.dataset.ids || li.dataset.id,
       onDrop: async ([keys]) => {
-        try { await A.postJSON('/admin/order', { groups: keys.map((k) => k.split(',').filter(Boolean).map(Number)) }); A.toast('Order saved ✓', { kind: 'ok' }); }
+        try { await A.postJSON('/admin/order', { groups: keys.map((k) => k.split(',').filter(Boolean).map(Number)) }); A.toast('Order Saved ✓', { kind: 'ok' }); }
         catch (err) { A.toast(err.message, { kind: 'err' }); }
       },
     });
@@ -150,7 +150,7 @@
   document.addEventListener('tags:change', async (e) => {
     const box = e.target.closest?.('.ctile [data-tag-box]'); if (!box) return;
     const tile = box.closest('.ctile');
-    try { await A.postJSON('/admin/quick-edit', { ids: idsOf(tile), tags: e.detail.tags }); A.toast('Tags saved ✓', { kind: 'ok' }); }
+    try { await A.postJSON('/admin/quick-edit', { ids: idsOf(tile), tags: e.detail.tags }); A.toast('Tags Saved ✓', { kind: 'ok' }); }
     catch (err) { A.toast(err.message, { kind: 'err' }); }
   });
 })();

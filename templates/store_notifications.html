@@ -6,7 +6,7 @@
 <section class="wrap admin wide st" id="storeNotifs" data-push-key="{{ push_key }}">
   {% include "store_tabs.html" %}
   <div class="st-bar">
-    <button type="button" class="btn ghost" id="readAll">Mark all read</button>
+    <button type="button" class="btn ghost" id="readAll">Mark All Read</button>
   </div>
 
   {% if notes.is_empty() %}<div class="me-empty st-empty"><b>Nothing yet.</b><span>{% if p.m.seller %}Orders, offers, follows, likes and comments show up here.{% else %}News about what you're buying, likes and comments show up here.{% endif %}</span></div>{% endif %}
@@ -15,12 +15,12 @@
     <li class="st-note{% if !n.is_read %} unread{% endif %}" data-k="{{ n.kind }}"><a href="{% if n.link.is_empty() %}#{% else %}{{ n.link }}{% endif %}"><span class="av sm st-note-av">{% if !n.avatar.is_empty() %}<img src="{{ n.avatar }}" alt="" loading="lazy">{% else if !n.initial.is_empty() %}{{ n.initial }}{% else %}•{% endif %}</span><span class="st-note-b"><span class="st-note-k">{{ n.label }}</span><span class="st-note-m">{{ n.message }}</span><span class="st-note-t">{{ n.when() }}</span></span></a></li>
     {% endfor %}
   </ul>
-  {% if pages > 1 %}<p class="st-pager">{% if page > 0 %}<a class="linkbtn" href="/me/notifications?page={{ page - 1 }}">← Newer</a>{% endif %}<span>Page {{ page + 1 }} of {{ pages }}</span>{% if page + 1 < pages %}<a class="linkbtn" href="/me/notifications?page={{ page + 1 }}">Older →</a>{% endif %}</p>{% endif %}
+  {% if pages > 1 %}<p class="st-pager">{% if page > 0 %}<a class="linkbtn" href="/me/notifications?page={{ page - 1 }}">← Newer</a>{% endif %}<span>Page {{ page + 1 }} Of {{ pages }}</span>{% if page + 1 < pages %}<a class="linkbtn" href="/me/notifications?page={{ page + 1 }}">Older →</a>{% endif %}</p>{% endif %}
 
   {#- How each kind is heard: one choice per kind (the owner's plan, 18 Nov 2026: one switch, not three tick boxes).
       "Phone and bell" buzzes the phones and computers where alerts are on; email shows only once the site sends mail. -#}
   <section class="me-card st-form nt-prefs" aria-labelledby="ntPrefsH">
-    <h2 class="h2" id="ntPrefsH">How you hear about each thing</h2>
+    <h2 class="h2" id="ntPrefsH">How You Hear About Each Thing</h2>
     {% if !push_key.is_empty() %}<div class="alerts-card" data-alerts="settings" hidden></div>{% endif %}
     <ul class="nt-list">
       {% for pr in prefs %}
@@ -28,8 +28,8 @@
       <li class="nt-row" data-event="{{ pr.event }}">
         <span class="nt-l">{{ pr.label }}</span>
         <span class="nt-how" role="group" aria-label="{{ pr.label }}">
-          {% if !push_key.is_empty() %}<button type="button" data-how="phone" aria-pressed="{{ pr.site && pr.push }}">Phone and bell</button>{% endif %}
-          <button type="button" data-how="bell" aria-pressed="{% if push_key.is_empty() %}{{ pr.site }}{% else %}{{ pr.site && !pr.push }}{% endif %}">Bell only</button>
+          {% if !push_key.is_empty() %}<button type="button" data-how="phone" aria-pressed="{{ pr.site && pr.push }}">Phone And Bell</button>{% endif %}
+          <button type="button" data-how="bell" aria-pressed="{% if push_key.is_empty() %}{{ pr.site }}{% else %}{{ pr.site && !pr.push }}{% endif %}">Bell Only</button>
           <button type="button" data-how="off" aria-pressed="{{ !pr.site }}">Off</button>
         </span>
         {% if mail_on %}<label class="chk nt-mail"><input type="checkbox" class="sr" data-ch="email"{% if pr.email %} checked{% endif %}{% if !has_email %} disabled{% endif %} aria-label="Email: {{ pr.label }}"><span class="chk-box"></span> Email</label>{% endif %}
@@ -39,13 +39,13 @@
     </ul>
     {% if mail_on && !p.m.seller %}
     <form class="st-reply st-email" id="emailForm">
-      <input type="email" name="address" value="{{ p.m.email }}" maxlength="120" autocomplete="email" placeholder="Your email, for the Email boxes" aria-label="Email for notifications">
-      <button class="btn ghost" type="submit">Save email</button>
+      <input type="email" name="address" value="{{ p.m.email }}" maxlength="120" autocomplete="email" placeholder="Your email, for the Email boxes" aria-label="Email For Notifications">
+      <button class="btn ghost" type="submit">Save Email</button>
     </form>
     {% endif %}
   </section>
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-<script src="/static/admin-ui.js?v=10" defer></script>
-<script src="/static/store.js?v=16" defer></script>
+<script src="/static/admin-ui.js?v=12" defer></script>
+<script src="/static/store.js?v=18" defer></script>
 {% endblock %}

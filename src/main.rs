@@ -256,7 +256,7 @@ struct CollectionPage {
     items: Vec<Product>,
     next: Option<usize>,
     nav: Chrome,
-    /// A vault binder's own words, and who can open it ("Link only", "Private"; nothing when everyone can).
+    /// A vault binder's own words, and who can open it ("Link Only", "Private"; nothing when everyone can).
     description: String,
     who: &'static str,
 }
@@ -371,8 +371,8 @@ async fn browse(app: App, headers: HeaderMap, collection: Option<String>, p: Par
             let binder = q2.collection.as_ref().and_then(|h| nav.links.iter().find(|x| &x.handle == h).cloned());
             let title = match &q2.collection {
                 Some(_) => binder.as_ref().map(|x| x.title.clone()),
-                None if q2.q.is_empty() => Some("All cards".into()),
-                None => Some(format!("Results for “{}”", q2.q)),
+                None if q2.q.is_empty() => Some("All Cards".into()),
+                None => Some(format!("Results For “{}”", q2.q)),
             };
             let (items, tiles) = db::list(c, &q2)?;
             // A whole binder says how many cards it holds, the same number as everywhere else. A search says how many it found.
@@ -616,7 +616,7 @@ fn product_seo(nav: &Chrome, p: &Product, canonical: &str, total: i64) -> Seo {
         ld: ld(serde_json::json!({ "@context": "https://schema.org", "@graph": [ product,
             { "@type": "BreadcrumbList", "itemListElement": [
                 { "@type": "ListItem", "position": 1, "name": nav.brand, "item": format!("{site}/") },
-                { "@type": "ListItem", "position": 2, "name": "All cards", "item": format!("{site}/all") },
+                { "@type": "ListItem", "position": 2, "name": "All Cards", "item": format!("{site}/all") },
                 { "@type": "ListItem", "position": 3, "name": p.title, "item": url } ] } ] })),
     }
 }
@@ -867,19 +867,19 @@ mod tests {
         };
         let page = |base: &str, title: &str, total: i64| page_with(base, title, total, "", "");
         let binder = page("/collections/affordable-common-uncommon", "Affordable Common/Uncommon", 1117);
-        assert!(binder.contains("<a class=\"sf-bx\" href=\"/store/vault\" aria-label=\"Close\" title=\"Back to Big Boys Vault\" data-binder-close>"), "{binder}");
+        assert!(binder.contains("<a class=\"sf-bx\" href=\"/store/vault\" aria-label=\"Close\" title=\"Back To Big Boys Vault\" data-binder-close>"), "{binder}");
         assert!(binder.contains("<h1 class=\"sf-bh\">Affordable Common/Uncommon</h1>"));
-        assert!(binder.contains("<span>1,117 cards</span><span>by <a href=\"/store/vault\">Big Boys Vault</a></span>"), "the count its tile shows, beside whose it is (no dots)");
+        assert!(binder.contains("<span>1,117 Cards</span><span>By <a href=\"/store/vault\">Big Boys Vault</a></span>"), "the count its tile shows, beside whose it is (no dots)");
         assert!(binder.contains("class=\"wrap mk mk-bpage\"") && binder.contains("<form class=\"filters\"") && binder.contains("id=\"grid\""), "its search and cards stay");
         assert!(!binder.contains("<p class=\"sub\">"));
         // Full admins arrange its cards right there: the button is in every visitor's page (it is kept), hidden unless they are signed in.
-        assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=7"));
+        assert!(binder.contains("data-bt-binder=\"vault\" data-key=\"affordable-common-uncommon\"") && binder.contains("data-staff-only data-full-only><svg") && binder.contains("/static/binder-tools.js?v=9"));
         assert!(!binder.contains("sf-desc"), "no words: nothing under the bar");
         // Its own words under the bar, and who can open it beside its count when not everyone can.
-        let words = page_with("/collections/pikachu-set", "Pikachu Set", 3, "Every Pikachu we have, oldest first", "Link only");
-        assert!(words.contains("<span>by <a href=\"/store/vault\">Big Boys Vault</a></span><span>Link only</span></p>") && words.contains("<p class=\"sf-desc\">Every Pikachu we have, oldest first</p>"), "{words}");
+        let words = page_with("/collections/pikachu-set", "Pikachu Set", 3, "Every Pikachu we have, oldest first", "Link Only");
+        assert!(words.contains("<span>By <a href=\"/store/vault\">Big Boys Vault</a></span><span>Link Only</span></p>") && words.contains("<p class=\"sf-desc\">Every Pikachu we have, oldest first</p>"), "{words}");
         // The Vault (all cards) and a search: no bar.
-        for (base, title) in [("/search", "All cards"), ("/search", "Results for “pika”")] {
+        for (base, title) in [("/search", "All Cards"), ("/search", "Results for “pika”")] {
             let other = page(base, title, 3);
             assert!(!other.contains("data-binder-close") && other.contains("<h1 class=\"h1\">") && !other.contains("binder-tools.js"));
         }

@@ -196,13 +196,13 @@ fn answer_in(question: &str, prev_ctx: Option<&str>, cards: &[&Card], binders: &
 
     // How the site works.
     if has(&text, &["vouch", "vouches"]) && has(&text, &["how", "where", "write", "post", "leave"]) {
-        return Answer { say: "Sign in as a trainer, then tap the Vouch button on any page. Your words and photos go up straight away.".into(), link: Some(("Read the vouches".into(), "/vouches".into())), ..Default::default() };
+        return Answer { say: "Sign in as a trainer, then tap the Vouch button on any page. Your words and photos go up straight away.".into(), link: Some(("Read The Vouches".into(), "/vouches".into())), ..Default::default() };
     }
     if has(&text, &["join", "sign up", "signup", "account", "become", "register"]) {
         return Answer { say: "Pick a trainer name and a password. There's no email to give. You get a page and a binder for your favorite cards.".into(), link: Some(("Register".into(), "/join".into())), ..Default::default() };
     }
     if has(&text, &["chat", "talk", "message"]) {
-        return Answer { say: "The chat is open to everyone to read. Sign in as a trainer to join in.".into(), link: Some(("Open the chat".into(), "/chat".into())), ..Default::default() };
+        return Answer { say: "The chat is open to everyone to read. Sign in as a trainer to join in.".into(), link: Some(("Open The Chat".into(), "/chat".into())), ..Default::default() };
     }
     if text.contains("what does") || text.contains("what is") || text.contains("mean") || text.contains("difference") {
         let meaning = [
@@ -233,7 +233,7 @@ fn answer_in(question: &str, prev_ctx: Option<&str>, cards: &[&Card], binders: &
         by_worth.sort_by(|a, b| b.worth.total_cmp(&a.worth));
         let stars = by_stars.iter().take(3).map(|t| format!("{} (★ {})", t.name, t.stars)).collect::<Vec<_>>().join(", ");
         let richest = by_worth.first().filter(|t| t.worth > 0.0).map(|t| format!(" The most valuable binder is {}'s, at {}.", t.name, peso(t.worth))).unwrap_or_default();
-        return Answer { say: format!("There are {} trainers. Most stars: {stars}.{richest}", trainers.len()), link: Some(("See all trainers".into(), "/trainers".into())), ..Default::default() };
+        return Answer { say: format!("There are {} trainers. Most stars: {stars}.{richest}", trainers.len()), link: Some(("See All Trainers".into(), "/trainers".into())), ..Default::default() };
     }
     if has(&text, &["binder", "binders", "collections"]) {
         let names = binders.iter().map(|b| format!("{} ({})", b.title, b.count)).collect::<Vec<_>>().join(", ");

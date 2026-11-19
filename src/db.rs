@@ -174,7 +174,7 @@ impl Product {
         let now = self.variant.trim();
         let mut out = vec![];
         if now.is_empty() {
-            out.push((String::new(), "Pick a condition".to_string(), true));
+            out.push((String::new(), "Pick A Condition".to_string(), true));
         } else if !CONDITIONS.contains(&now) {
             out.push((now.to_string(), crate::translate::variant(now, "en"), true));
         }
@@ -299,10 +299,10 @@ impl Collection {
     pub fn is_public(&self) -> bool {
         self.visibility == "Public"
     }
-    /// Who can open it, in plain words for its page: "Link only", "Private", or nothing when everyone can.
+    /// Who can open it, in plain words for its page: "Link Only", "Private", or nothing when everyone can.
     pub fn who_text(&self) -> &'static str {
         match self.visibility.as_str() {
-            "Unlisted" => "Link only",
+            "Unlisted" => "Link Only",
             "Private" => "Private",
             _ => "",
         }

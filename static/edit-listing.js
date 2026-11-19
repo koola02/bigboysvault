@@ -45,15 +45,15 @@
     const d = src.dataset, id = d.id;
     const own = Number(d.own) || 0, market = (d.market || '').replace(/[^\d.]/g, ''), marketN = Number(market) || 0;
     const was = { price: own, cond: d.cond || '', qty: Number(d.qty) || 0, status: d.status || 'Active', notes: (d.notes || '').trim() };
-    sheet('Edit listing', (f, api) => {
+    sheet('Edit Listing', (f, api) => {
       const top = el('div', 'ls-card');
       if (d.image) { const i = el('img'); i.src = d.image; i.alt = ''; top.append(i); }
-      const tt = el('span'); tt.append(el('b', '', d.title || 'Your card'), el('small', '', [d.set, d.number].filter(Boolean).join(' · '))); top.append(tt);
+      const tt = el('span'); tt.append(el('b', '', d.title || 'Your Card'), el('small', '', [d.set, d.number].filter(Boolean).join(' · '))); top.append(tt);
       f.append(top);
 
       const price = el('label', 'f ls-f'); price.append('Price');
       const pw = el('span', 'ce-price'); const peso = el('i', '', '₱'); peso.setAttribute('aria-hidden', 'true');
-      const pin = el('input'); pin.type = 'number'; pin.name = 'price'; pin.min = '0'; pin.step = '1'; pin.inputMode = 'numeric'; pin.setAttribute('aria-label', 'Price in pesos');
+      const pin = el('input'); pin.type = 'number'; pin.name = 'price'; pin.min = '0'; pin.step = '1'; pin.inputMode = 'numeric'; pin.setAttribute('aria-label', 'Price In Pesos');
       pin.value = own ? String(own) : ''; if (marketN) pin.placeholder = String(Math.round(marketN));
       pw.append(peso, pin); price.append(pw);
       price.append(el('small', '', marketN ? `Leave it empty to follow today’s market price for this condition (₱${Math.round(marketN).toLocaleString('en-PH')}).` : 'Leave it empty and buyers see “Ask for a price”.'));
@@ -64,19 +64,19 @@
       const sel = el('select'); sel.name = 'cond';
       (CONDS.includes(was.cond) || !was.cond ? CONDS : [was.cond, ...CONDS]).forEach((c) => { const o = el('option', '', c); o.value = c; sel.append(o); });
       sel.value = was.cond; cl.append(sel);
-      const ql = el('div', 'f ls-f'); ql.append(el('span', '', 'How many'));
-      const st = el('span', 'ls-step'); const minus = el('button', 'ibtn', '−'); minus.type = 'button'; minus.setAttribute('aria-label', 'One fewer');
-      const qin = el('input'); qin.type = 'number'; qin.name = 'qty'; qin.min = '0'; qin.max = '9999'; qin.inputMode = 'numeric'; qin.value = String(was.qty); qin.setAttribute('aria-label', 'How many you have');
-      const plus = el('button', 'ibtn', '+'); plus.type = 'button'; plus.setAttribute('aria-label', 'One more');
+      const ql = el('div', 'f ls-f'); ql.append(el('span', '', 'How Many'));
+      const st = el('span', 'ls-step'); const minus = el('button', 'ibtn', '−'); minus.type = 'button'; minus.setAttribute('aria-label', 'One Fewer');
+      const qin = el('input'); qin.type = 'number'; qin.name = 'qty'; qin.min = '0'; qin.max = '9999'; qin.inputMode = 'numeric'; qin.value = String(was.qty); qin.setAttribute('aria-label', 'How Many You Have');
+      const plus = el('button', 'ibtn', '+'); plus.type = 'button'; plus.setAttribute('aria-label', 'One More');
       minus.addEventListener('click', () => { qin.value = String(Math.max(0, (Number(qin.value) || 0) - 1)); paint(); });
       plus.addEventListener('click', () => { qin.value = String(Math.min(9999, (Number(qin.value) || 0) + 1)); paint(); });
       st.append(minus, qin, plus); ql.append(st);
       row.append(cl, ql); f.append(row);
 
-      const sl = el('div', 'f ls-f'); sl.append(el('span', '', 'In your store'));
+      const sl = el('div', 'f ls-f'); sl.append(el('span', '', 'In Your Store'));
       const seg = el('div', 'ls-seg'); seg.setAttribute('role', 'group');
       let status = ['Active', 'Out of stock', 'Hidden'].includes(was.status) ? was.status : '';
-      const segs = [['Active', 'On sale'], ['Out of stock', 'Out of stock'], ['Hidden', 'Hidden']].map(([v, t]) => {
+      const segs = [['Active', 'On Sale'], ['Out of stock', 'Out Of Stock'], ['Hidden', 'Hidden']].map(([v, t]) => {
         const b = el('button', 'chip', t); b.type = 'button'; b.dataset.v = v;
         b.addEventListener('click', () => { status = v; paint(); });
         seg.append(b); return b;
@@ -86,13 +86,13 @@
       if (held) sl.append(el('small', '', held));
       f.append(sl);
 
-      const nl = el('label', 'f ls-f'); nl.append('Note for buyers');
+      const nl = el('label', 'f ls-f'); nl.append('Note For Buyers');
       const ta = el('textarea'); ta.name = 'notes'; ta.maxLength = 300; ta.rows = 2; ta.placeholder = 'Small whitening on the back, ships in a toploader…'; ta.value = was.notes;
       nl.append(ta); f.append(nl);
 
       const err = el('p', 'ce-err'); err.hidden = true; err.setAttribute('role', 'alert'); f.append(err);
       const acts = el('div', 'sheet-acts ls-acts');
-      const stop = el('button', 'linkbtn ls-stop', 'Stop selling'); stop.type = 'button';
+      const stop = el('button', 'linkbtn ls-stop', 'Stop Selling'); stop.type = 'button';
       const cancel = el('button', 'btn ghost', 'Cancel'); cancel.type = 'button';
       const save = el('button', 'btn', 'Save'); save.type = 'submit';
       acts.append(stop, cancel, save); f.append(acts);
@@ -134,8 +134,8 @@
       });
       // Taking a card off sale asks once, on the button itself.
       stop.addEventListener('click', () => {
-        if (!stop.classList.contains('sure')) { stop.textContent = 'Take it off sale? Tap again'; stop.classList.add('sure'); setTimeout(() => { if (stop.isConnected) { stop.textContent = 'Stop selling'; stop.classList.remove('sure'); } }, 4000); return; }
-        done({ kind: 'own' }, 'Taken off sale. It is still in My cards.');
+        if (!stop.classList.contains('sure')) { stop.textContent = 'Take it off sale? Tap again'; stop.classList.add('sure'); setTimeout(() => { if (stop.isConnected) { stop.textContent = 'Stop Selling'; stop.classList.remove('sure'); } }, 4000); return; }
+        done({ kind: 'own' }, 'Taken off sale. It is still in My Cards.');
       });
       paint();
       setTimeout(() => { pin.focus(); pin.select(); }, 30);
@@ -184,7 +184,7 @@
       const j = await send('/me/settings', fd);
       const box = document.getElementById('sfCover');
       if (box && j.cover) { let img = box.querySelector(':scope > img'); if (!img) { img = el('img'); img.alt = ''; box.prepend(img); } img.src = j.cover; }
-      if (text) text.textContent = 'Change cover';
+      if (text) text.textContent = 'Change Cover';
       toast('Cover photo updated.');
     } catch (err) { if (text) text.textContent = was; toast(err.message, true); }
     inp.value = '';

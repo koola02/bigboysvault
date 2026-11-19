@@ -8,18 +8,18 @@
               <a class="svh-name" href="{{ s.url }}">{{ s.name }}</a>
               {% if !s.badge.is_empty() %}<span class="seller-badge">{{ s.badge }}</span>{% endif %}
             </div>
-            <ul class="svh-facts"><li><b>{{ s.on_sale_text() }}</b> on sale</li><li><b>{{ s.sold }}</b> sold</li><li><b>{{ s.followers }}</b> follower{% if s.followers != 1 %}s{% endif %}</li></ul>
+            <ul class="svh-facts"><li><b>{{ s.on_sale_text() }}</b> On Sale</li><li><b>{{ s.sold }}</b> Sold</li><li><b>{{ s.followers }}</b> Follower{% if s.followers != 1 %}s{% endif %}</li></ul>
             {% if !s.location.is_empty() %}<p class="svh-place">📍 {{ s.location }}</p>{% endif %}
             {% if !s.bio.is_empty() %}<p class="svh-bio">{{ s.bio }}</p>{% endif %}
             {% if !s.pay.is_empty() %}<div class="svh-tags">{% for pm in s.pay %}<span class="sf-pay">{{ pm }}</span>{% endfor %}</div>{% endif %}
           </div>
         </div>
-        <div class="svh-act"><a class="btn" href="{{ s.url }}">Visit store →</a>{% if s.owner == 0 %}<button type="button" class="btn ghost sm st-feat-edit" data-feature="vault" data-staff-only data-full-only aria-label="Choose what {{ s.name }} shows here">{% else %}<button type="button" class="btn ghost sm st-feat-edit" data-feature="seller" data-owner-only="{{ s.owner }}" hidden aria-label="Choose what your store shows here">{% endif %}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg><span>Choose what shows</span></button></div>
+        <div class="svh-act"><a class="btn" href="{{ s.url }}">Visit Store →</a>{% if s.owner == 0 %}<button type="button" class="btn ghost sm st-feat-edit" data-feature="vault" data-staff-only data-full-only aria-label="Choose What {{ s.name }} Shows Here">{% else %}<button type="button" class="btn ghost sm st-feat-edit" data-feature="seller" data-owner-only="{{ s.owner }}" hidden aria-label="Choose What Your Store Shows Here">{% endif %}<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg><span>Choose What Shows</span></button></div>
       </div>
       {#- What its owner chose to show: its binders (each opens its own page), then the cards it highlighted. -#}
       {% if !s.binders.is_empty() %}
       <h3 class="st-feat-h">Binders</h3>
-      <ul class="st-brow" aria-label="{{ s.name }}'s binders">{% for t in s.binders %}{% include "binder_tile.html" %}{% endfor %}</ul>
+      <ul class="st-brow" aria-label="{{ s.name }}'s Binders">{% for t in s.binders %}{% include "binder_tile.html" %}{% endfor %}</ul>
       {% endif %}
       {% if !s.cards.is_empty() %}
       <h3 class="st-feat-h">Highlights</h3>
