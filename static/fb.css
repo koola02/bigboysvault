@@ -85,6 +85,13 @@ small { font-size: max(.75rem, .85em); }
 .hd-tabs a[aria-current="page"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -4px; height: 3px; border-radius: 3px 3px 0 0; background: var(--gold); }
 .hd-tabs a[aria-current="page"]:hover { background: none; }
 /* Stores is the highlighted place on every screen: the vault's logo in a gold ring stands where its icon would. */
+/* Pokémon-style icons (static/img/pk.svg; the owner, 20 Nov 2026): each carries its own colours and outline, so the
+   line-icon rules (stroke, fill) don't apply; they are a little bigger than the line icons they replaced. */
+.hd-tabs svg.pk, .bt svg.pk { width: 28px; height: 28px; fill: none; stroke: none; }
+.mn-i > svg.pk, .me-pop .row svg.pk, .row > svg.pk { padding: 3px; fill: none; stroke: none; }
+svg.pk-ring { border-radius: 50%; box-shadow: 0 0 0 1.5px var(--gold-edge); background: var(--surface-3); padding: 2px; }
+[aria-current="page"] svg.pk-ring { box-shadow: 0 0 0 2px var(--gold); }
+@media (max-width: 699px) { .bt svg.pk { width: 30px; height: 30px; } .bt svg.pk-ring { width: 32px; height: 32px; } }
 .tab-logo { flex: none; width: 26px; height: 26px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--gold-edge); }
 [aria-current="page"] .tab-logo { box-shadow: 0 0 0 2px var(--gold); }
 .hd-r { display: flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; }
