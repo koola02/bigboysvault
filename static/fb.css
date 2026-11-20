@@ -921,6 +921,9 @@ html.pv-open { overflow: hidden; }
 .check { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; color: var(--muted); font-weight: 600; }
 .check input { width: 18px; height: 18px; accent-color: var(--gold); }
 .grid > .more { grid-column: 1 / -1; min-height: 40px; }
+.grid > .more:has(.more-btn) { display: flex; justify-content: center; padding: 8px 0; }
+.grid > .more .more-btn { min-height: 44px; padding: 0 28px; }
+.grid > .more.htmx-request .more-btn { opacity: .6; pointer-events: none; }
 .grid > .empty { grid-column: 1 / -1; }
 @media (min-width: 900px) {
   /* Like Facebook Marketplace: what you filter by down the left, the cards on the right. */

@@ -80,7 +80,6 @@
     {% for t in tiles %}{% include "binder_tile.html" %}{% endfor %}
   </ul>
   {% endif %}
-  {% include "page_posts.html" %}
   {% if !tiles.is_empty() || posts.is_some() %}<h2 class="h2">Everything On Sale</h2>{% endif %}
   {% endif %}
 
@@ -111,6 +110,8 @@
   </ul>
   {% endif %}
 
+  {#- The store's posts come last, below everything on sale (the owner, 20 Nov 2026). -#}
+  {% if binder.is_none() %}{% include "page_posts.html" %}{% endif %}
 </section>
 
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>

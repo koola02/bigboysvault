@@ -47,8 +47,6 @@
     {% for t in tiles %}{% include "binder_tile.html" %}{% endfor %}
   </ul>
 
-  {% include "page_posts.html" %}
-
   <h2 class="h2" id="everything">Everything On Sale</h2>
   <form class="filters vs-filters" action="{{ base }}#everything" hx-get="{{ base }}" hx-target="#grid" hx-select="#grid" hx-swap="outerHTML" hx-trigger="change, input from:.q delay:250ms" hx-push-url="true">
     <input class="q" type="search" name="q" value="{{ q }}" placeholder="Find A Card In This Store" aria-label="Find A Card In This Store" autocomplete="off" autocapitalize="off" spellcheck="false">
@@ -64,6 +62,9 @@
     {% include "grid.html" %}
     {% if items.is_empty() %}<p class="empty">{% if q.is_empty() && cond.is_empty() %}Nothing on sale right now.{% else if q.is_empty() %}No card for sale in {{ cond }}.{% else %}No card for sale matches “{{ q }}”.{% endif %}</p>{% endif %}
   </div>
+
+  {#- The store's posts come last, below everything on sale (the owner, 20 Nov 2026). -#}
+  {% include "page_posts.html" %}
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/store-head.js?v=5" defer></script>
