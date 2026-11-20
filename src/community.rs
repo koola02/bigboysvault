@@ -887,6 +887,22 @@ pub async fn member_card(State(app): State<App>, h: HeaderMap, Path((id, cid)): 
     Ok(html(if q.part.is_some() { render(MemberCardPart { t, c, left, related, trend, viewer: viewer.unwrap_or(0) })? } else { render(MemberCardPage { nav, t, c, left, related, trend, viewer: viewer.unwrap_or(0) })? }))
 }
 
+// ---------- FAQ ----------
+#[derive(Template)]
+#[template(path = "faq.html")]
+struct FaqPage {
+    nav: Chrome,
+    /// Someone with a store sees the Stores questions first.
+    stores_first: bool,
+}
+
+/// GET /faq, from the menu: questions and answers, for everyone and for stores. Open to visitors too.
+pub async fn faq(State(app): State<App>, h: HeaderMap) -> Res {
+    let stores_first = current(&app, &h).await?.is_some_and(|m| m.seller);
+    let nav = with_db(&app, |c| chrome(c)).await?;
+    Ok(html(render(FaqPage { nav, stores_first })?))
+}
+
 // ---------- my trainer ----------
 pub async fn me(State(app): State<App>, h: HeaderMap) -> Res {
     // Signed out (or the sign-in ran out): log in again, not Register.
