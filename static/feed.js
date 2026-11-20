@@ -41,7 +41,7 @@
   // The photo window (further down). A post moves into it while its photo is open, so everything below listens on the
   // feed and on the window alike.
   const pv = el('div', 'pv'); pv.hidden = true; pv.setAttribute('role', 'dialog'); pv.setAttribute('aria-modal', 'true'); pv.setAttribute('aria-label', 'Photo');
-  pv.innerHTML = '<div class="pv-stage"><img class="pv-img" alt="Photo"><button type="button" class="pv-nav pv-prev" aria-label="The Photo Before"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><button type="button" class="pv-nav pv-next" aria-label="The Next Photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button><span class="pv-count" aria-live="polite"></span></div><div class="pv-side"></div><button type="button" class="pv-x" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
+  pv.innerHTML = '<div class="pv-stage"><img class="pv-img" alt="Photo"><button type="button" class="pv-nav pv-prev" aria-label="The Photo Before"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button><button type="button" class="pv-nav pv-next" aria-label="The Next Photo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></button><span class="pv-count" aria-live="polite"></span><div class="pv-cap" hidden><p class="pv-cap-t"></p><button type="button" class="linkbtn pv-cap-edit">Add Caption</button></div></div><div class="pv-side"></div><button type="button" class="pv-x" aria-label="Close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button>';
   document.body.append(pv);
   const listen = (type, fn) => { feed.addEventListener(type, fn); pv.addEventListener(type, fn); };
 
@@ -255,7 +255,7 @@
   // doesn't apply to card listings etc. just organic posts"). Then the post stays where it is and what sits beside
   // the photo is that photo's own small post, fetched from the server and swapped as the arrows go through them. A
   // post's only photo is the post itself, as on Facebook.
-  const view = { post: null, hold: null, pics: [], ids: [], at: 0, back: null, pushed: false, own: false };
+  const view = { post: null, hold: null, pics: [], ids: [], caps: [], at: 0, back: null, pushed: false, own: false };
   let panelSeq = 0;
   async function loadPanel() {
     const side = pv.querySelector('.pv-side'), seq = ++panelSeq, id = view.post.dataset.post, img = view.ids[view.at];
@@ -270,11 +270,47 @@
       openComments(fresh, false);
     } catch (e) { if (seq === panelSeq && view.post) side.replaceChildren(el('p', 'pv-gone', e.message)); }
   }
+  // Each photo's caption (the owner, 20 Nov 2026: "add ability to edit or add a caption in every photos attached in a
+  // post"): under the photo, with Add Caption or Edit Caption for whoever wrote the post.
+  const canCaption = (post) => !!me && (post.dataset.kind === 'post' || post.dataset.kind === 'share')
+    && ((post.dataset.member !== '0' && Number(post.dataset.member) === me.id) || (full && post.dataset.member === '0'));
+  function paintCap() {
+    const box = pv.querySelector('.pv-cap'), t = box.querySelector('.pv-cap-t'), b = box.querySelector('.pv-cap-edit');
+    box.querySelector('form')?.remove();
+    const cap = view.caps[view.at] || '', mine = !!view.post && canCaption(view.post);
+    t.textContent = cap; t.hidden = !cap;
+    b.hidden = !mine; b.textContent = cap ? 'Edit Caption' : 'Add Caption';
+    box.hidden = !cap && !mine;
+  }
+  pv.querySelector('.pv-cap-edit').addEventListener('click', () => {
+    const box = pv.querySelector('.pv-cap'); if (box.querySelector('form') || !view.post) return;
+    const at = view.at, post = view.post, img = view.ids[at];
+    const f = el('form', 'pv-cap-f'), inp = el('input'); inp.type = 'text'; inp.maxLength = 300; inp.value = view.caps[at] || '';
+    inp.placeholder = 'Say something about this photo'; inp.setAttribute('aria-label', 'Caption');
+    const save = el('button', 'btn sm', 'Save'); save.type = 'submit';
+    const no = el('button', 'btn ghost sm', 'Cancel'); no.type = 'button'; no.addEventListener('click', paintCap);
+    f.append(inp, save, no);
+    box.querySelector('.pv-cap-t').hidden = true; box.querySelector('.pv-cap-edit').hidden = true; box.hidden = false; box.append(f);
+    inp.focus();
+    f.addEventListener('submit', async (e) => {
+      e.preventDefault(); save.disabled = true;
+      try {
+        const j = await api(`/posts/${post.dataset.post}/photos/${img}/caption`, { caption: inp.value });
+        view.caps[at] = j.caption;
+        const link = post.querySelectorAll('.post-media [data-photo]')[at];
+        if (link) { link.dataset.cap = j.caption; const i = link.querySelector('img'); if (i) i.alt = j.caption || 'Photo'; }
+        toast(j.caption ? 'Caption saved.' : 'Caption taken off.');
+      } catch (err) { toast(err.message, true); }
+      if (view.post === post) { if (view.at === at) paintCap(); }
+    });
+  });
   function showPic() {
     const n = view.pics.length;
     pv.querySelector('.pv-img').src = view.pics[view.at];
     pv.querySelectorAll('.pv-nav').forEach((b) => { b.hidden = n < 2; });
     const count = pv.querySelector('.pv-count'); count.hidden = n < 2; count.textContent = `${view.at + 1} Of ${n}`;
+    pv.querySelector('.pv-img').alt = view.caps[view.at] || 'Photo';
+    paintCap();
     if (view.own) loadPanel();
   }
   const step = (by) => { const n = view.pics.length; if (n < 2) return; view.at = (view.at + by + n) % n; showPic(); };
@@ -283,6 +319,7 @@
     const links = [...post.querySelectorAll('.post-media [data-photo]')];
     view.pics = links.map((a) => a.getAttribute('href'));
     view.ids = links.map((a) => a.dataset.img);
+    view.caps = links.map((a) => a.dataset.cap || '');
     view.at = Math.max(0, view.pics.indexOf(link.getAttribute('href')));
     view.back = link;
     view.own = !!link.closest('[data-photo-threads]');
@@ -323,7 +360,7 @@
   // A finger swiping across the photo goes to the next or the one before.
   let swipe = null;
   const stage = pv.querySelector('.pv-stage');
-  stage.addEventListener('pointerdown', (e) => { swipe = e.pointerType === 'mouse' ? null : { x: e.clientX, y: e.clientY }; });
+  stage.addEventListener('pointerdown', (e) => { swipe = e.pointerType === 'mouse' || e.target.closest('.pv-cap') ? null : { x: e.clientX, y: e.clientY }; });
   stage.addEventListener('pointerup', (e) => {
     if (!swipe) return;
     const dx = e.clientX - swipe.x, dy = e.clientY - swipe.y; swipe = null;
@@ -525,10 +562,17 @@
       document.body.append(sheet);
       const pics = sheet.querySelector('[data-pics]'), as = sheet.querySelector('[data-as]');
       words = wordsBox(sheet.querySelector('[data-ed]'), sheet.querySelector('[data-bar]'));
-      const pic = (src, off) => { const d = el('div', 'sheet-pic'); const img = el('img'); img.src = src; img.alt = ''; const x = el('button', 'ibtn', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Remove This Photo'); x.addEventListener('click', off); d.append(img, x); return d; };
+      // Each photo with its own caption (`item.cap`), typed beside it.
+      const pic = (src, off, item) => {
+        const d = el('div', 'sheet-pic'); const img = el('img'); img.src = src; img.alt = '';
+        const cap = el('input', 'sheet-cap'); cap.type = 'text'; cap.maxLength = 300; cap.placeholder = 'Add A Caption'; cap.setAttribute('aria-label', 'Caption For This Photo');
+        cap.value = item.cap || ''; cap.addEventListener('input', () => { item.cap = cap.value; });
+        const x = el('button', 'ibtn', '✕'); x.type = 'button'; x.setAttribute('aria-label', 'Remove This Photo'); x.addEventListener('click', off);
+        d.append(img, cap, x); return d;
+      };
       const paint = () => pics.replaceChildren(
-        ...kept.map((k, i) => pic(k.src, () => { kept.splice(i, 1); paint(); })),
-        ...files.map((f, i) => pic(URL.createObjectURL(f), () => { files.splice(i, 1); paint(); })));
+        ...kept.map((k, i) => pic(k.src, () => { kept.splice(i, 1); paint(); }, k)),
+        ...files.map((f, i) => pic(f.url || (f.url = URL.createObjectURL(f)), () => { files.splice(i, 1); paint(); }, f)));
       sheet.paint = paint;
       // Who the post is from: you, or (full admins) the vault itself, with its logo.
       sheet.who = () => {
@@ -562,6 +606,8 @@
         const fd = new FormData(); fd.append('text', text); files.forEach((f) => fd.append('photo', f, f.name || 'photo.jpg'));
         // Styles ride along only when there are some; plain words go as they always did.
         if (runs.some((r) => r.b || r.i || r.u || r.s)) fd.append('rich', JSON.stringify(runs));
+        fd.append('captions', JSON.stringify(files.map((f) => f.cap || '')));
+        if (editing) fd.append('kept_captions', JSON.stringify(Object.fromEntries(kept.map((k) => [k.id, k.cap || '']))));
         if (editing) fd.append('keep', kept.map((k) => k.id).join(',')); else if (!as.hidden && as.value === 'vault') fd.append('as', 'vault');
         sheet.go(editing ? 'Saving…' : 'Posting…', true);
         try {
@@ -569,7 +615,7 @@
           const holder = el('div'); holder.innerHTML = j.html;
           const fresh = holder.querySelector('[data-post]');
           if (editing) { const old = feed.querySelector(`[data-post="${editing.id}"]`); if (old && fresh) old.replaceWith(fresh); toast('Saved.'); }
-          else { const anchor = feed.querySelector('.composer'); if (fresh) anchor.after(fresh); toast('Posted.'); }
+          else { const anchor = feed.querySelector('.composer'); if (fresh) anchor.after(fresh); feed.querySelector('.page-empty')?.remove(); toast('Posted.'); }
           words.set(''); files = []; kept = []; paint(); sheet.close();
         } catch (err) { toast(err.message, true); }
         sheet.go(was, false);
@@ -582,7 +628,7 @@
       editing = { id: post.dataset.post, by: Number(post.dataset.member), written };
       // The words as the page shows them: the server drew them, styles and all, so they go in as they are.
       words.set(post.querySelector('.post-text')?.innerHTML || '');
-      if (written) kept = [...post.querySelectorAll('[data-img]')].filter((a) => a.dataset.img !== '0').map((a) => ({ id: a.dataset.img, src: a.dataset.thumb || a.getAttribute('href') }));
+      if (written) kept = [...post.querySelectorAll('[data-img]')].filter((a) => a.dataset.img !== '0').map((a) => ({ id: a.dataset.img, src: a.dataset.thumb || a.getAttribute('href'), cap: a.dataset.cap || '' }));
       sheet.querySelector('[data-title]').textContent = written ? 'Edit Post' : 'Words On This Post';
       sheet.go('Save', false);
       sheet.querySelector('[data-sub]').textContent = written ? 'Everyone on the site can see this' : 'The cards on this post stay as they are; you are adding your own words';
@@ -596,7 +642,8 @@
       sheet.querySelector('[data-sub]').textContent = 'Everyone on the site can see this';
       ed.dataset.ph = 'What did you pull today?';
       sheet.querySelectorAll('[data-pic-btn]').forEach((b) => { b.hidden = false; });
-      as.hidden = !(full && me.role === 'admin'); as.value = 'me';
+      // On the vault's store the box writes as the vault.
+      as.hidden = !(full && me.role === 'admin'); as.value = !as.hidden && feed.hasAttribute('data-as-vault') ? 'vault' : 'me';
     }
     sheet.querySelector('.sheet-add').hidden = [...sheet.querySelectorAll('[data-pic-btn]')].every((b) => b.hidden);
     // A trainer whose page the vault's team hid can't post: say so before they write anything, not after.

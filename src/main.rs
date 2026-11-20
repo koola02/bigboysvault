@@ -1202,6 +1202,8 @@ async fn main() {
         .route("/comments/{id}/react", post(feed::comment_react))
         .route("/posts/{id}/reactions", get(feed::reactions))
         .route("/posts/{id}/photos/{image}", get(feed::photo))
+        .route("/posts/{id}/photos/{image}/caption", post(feed::caption))
+        .route("/posts/by/{author}", get(feed::by))
         .route("/posts/{id}/report", post(feed::report_post))
         .route("/comments/{id}/report", post(feed::report_comment))
         .route("/posts/{id}/delete", post(feed::remove))

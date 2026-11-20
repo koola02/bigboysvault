@@ -61,6 +61,8 @@ pub struct PostView {
     pub link_text: String,
     /// (photo id, full size, small). The id is 0 for a vouch's photos, which are edited on the vouch itself.
     pub photos: Vec<(i64, String, String)>,
+    /// Each photo's caption, in the same order ("" for none).
+    pub caps: Vec<String>,
     pub member: i64,
     pub edited: bool,
     pub attach: Option<Tile>,
@@ -93,6 +95,10 @@ impl PostView {
     }
     pub fn grid(&self) -> usize {
         self.tiles.len().min(4)
+    }
+    /// The caption of photo `i` ("" when it has none).
+    pub fn cap(&self, i: &usize) -> &str {
+        self.caps.get(*i).map(String::as_str).unwrap_or("")
     }
     pub fn comments_text(&self) -> String {
         format!("{} Comment{}", self.comment_n, if self.comment_n == 1 { "" } else { "s" })
@@ -224,6 +230,7 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
         link: String::new(),
         link_text: String::new(),
         photos: vec![],
+        caps: vec![],
         member: p.member_id,
         edited: p.edited_at > 0,
         attach: None,
@@ -307,6 +314,7 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
         }
         _ => {
             v.photos = social::photos_ids(c, p.id)?;
+            v.caps = social::photo_captions(c, p.id)?;
             v.photo_threads = social::photos_have_their_own(c, p, v.photos.len())?;
             let card = &p.payload["card"];
             if let Some(title) = card["title"].as_str() {
@@ -741,11 +749,14 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of posts for one hour. Please take a short break."));
     }
     let (mut text, mut styled, mut files, mut card, mut as_vault) = (String::new(), String::new(), Vec::<Vec<u8>>::new(), messages::CardRef::default(), false);
+    // Each new photo's caption, in the order the photos come (a JSON list of words).
+    let mut captions: Vec<String> = vec![];
     let bad = |_| (StatusCode::BAD_REQUEST, "That didn't upload. Please try again.".to_string());
     while let Some(f) = mp.next_field().await.map_err(bad)? {
         match f.name().unwrap_or("") {
             "text" => text = f.text().await.map_err(bad)?,
             "rich" => styled = f.text().await.map_err(bad)?,
+            "captions" => captions = serde_json::from_str(&f.text().await.map_err(bad)?).unwrap_or_default(),
             "photo" => {
                 let b = f.bytes().await.map_err(bad)?;
                 if !b.is_empty() && files.len() < social::PHOTOS_MAX {
@@ -794,6 +805,7 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
             }
         }
         let pid = social::post_add(c, author, kind, &text, &photos, &payload, now)?;
+        social::caption_new_photos(c, pid, &[], &captions)?;
         if !styled.is_empty() {
             social::post_rich(c, pid, &styled)?;
         }
@@ -841,12 +853,16 @@ pub async fn edit(State(app): State<App>, h: HeaderMap, Path(pid): Path<i64>, mu
         return Ok(fail(StatusCode::FORBIDDEN, "That post isn't yours to edit."));
     };
     let (mut text, mut styled, mut keep, mut files) = (String::new(), String::new(), Vec::<i64>::new(), Vec::<Vec<u8>>::new());
+    // Captions: the photos that stay ({ "id": "words" }) and the new ones, in their order.
+    let (mut kept_caps, mut captions): (std::collections::HashMap<String, String>, Vec<String>) = (Default::default(), vec![]);
     let bad = |_| (StatusCode::BAD_REQUEST, "That didn't upload. Please try again.".to_string());
     while let Some(f) = mp.next_field().await.map_err(bad)? {
         match f.name().unwrap_or("") {
             "text" => text = f.text().await.map_err(bad)?,
             "rich" => styled = f.text().await.map_err(bad)?,
             "keep" => keep = f.text().await.map_err(bad)?.split(',').filter_map(|x| x.trim().parse().ok()).collect(),
+            "kept_captions" => kept_caps = serde_json::from_str(&f.text().await.map_err(bad)?).unwrap_or_default(),
+            "captions" => captions = serde_json::from_str(&f.text().await.map_err(bad)?).unwrap_or_default(),
             "photo" => {
                 let b = f.bytes().await.map_err(bad)?;
                 if !b.is_empty() && files.len() < social::PHOTOS_MAX {
@@ -877,7 +893,16 @@ pub async fn edit(State(app): State<App>, h: HeaderMap, Path(pid): Path<i64>, mu
     }
     let (gone, view) = with_db(&app, move |c| {
         let gone = if written {
-            social::post_edit(c, pid, &text, &keep, &photos, now)?
+            let gone = social::post_edit(c, pid, &text, &keep, &photos, now)?;
+            for (id, cap) in &kept_caps {
+                if let Ok(id) = id.parse::<i64>() {
+                    if keep.contains(&id) {
+                        social::set_photo_caption(c, pid, id, cap)?;
+                    }
+                }
+            }
+            social::caption_new_photos(c, pid, &keep, &captions)?;
+            gone
         } else {
             social::post_note(c, pid, &text, now)?;
             vec![]
@@ -1021,6 +1046,95 @@ pub async fn comments(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>,
     Ok(ok(json!({ "comments": list })))
 }
 
+#[derive(Deserialize)]
+pub struct CaptionReq {
+    #[serde(default)]
+    caption: String,
+}
+
+/// POST /posts/{id}/photos/{image}/caption {caption}: the post's writer adds, changes or (with "") takes off one
+/// photo's caption, from the photo window.
+pub async fn caption(State(app): State<App>, h: HeaderMap, Path((id, image)): Path<(i64, i64)>, Json(req): Json<CaptionReq>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let (me, full) = (m.id, m.role == "admin");
+    let out = with_db(&app, move |c| {
+        let Some(p) = social::post(c, me, id)?.filter(|p| p.written() && may_edit(p, me, full)) else { return Ok(None) };
+        if !social::set_photo_caption(c, p.id, image, &req.caption)? {
+            return Ok(None);
+        }
+        let caps = social::photo_captions(c, p.id)?;
+        let at = social::photos_ids(c, p.id)?.iter().position(|x| x.0 == image).unwrap_or(0);
+        Ok(caps.get(at).cloned())
+    })
+    .await?;
+    stale(&app);
+    Ok(match out {
+        Some(caption) => ok(json!({ "ok": true, "caption": caption })),
+        None => fail(StatusCode::FORBIDDEN, "That photo isn't yours to caption."),
+    })
+}
+
+/// How many posts a person's page shows at a time.
+const PAGE_POSTS: i64 = 8;
+
+/// One author's posts (0: the vault's) for their own page: the next few, and where the ones after them are (a full
+/// address for the page's "more" loader, or "" at the end).
+pub(crate) fn page_items(c: &rusqlite::Connection, viewer: i64, author: i64, before: Option<(i64, i64)>) -> rusqlite::Result<(Vec<Item>, String)> {
+    let brand = blocks::setting(c, "brand")?.filter(|b| !b.trim().is_empty()).unwrap_or_else(|| "Big Boys Vault".into());
+    let posts = social::posts_by(c, viewer, author, before, PAGE_POSTS + 1)?;
+    let more = posts.len() as i64 > PAGE_POSTS;
+    let (mut items, mut last) = (vec![], None);
+    for p in posts.iter().take(PAGE_POSTS as usize) {
+        last = Some((p.created_at, p.id));
+        if let Some(v) = post_view(c, p, &brand, viewer)? {
+            items.push(Item { post: Some(v), stores: vec![], binder: None });
+        }
+    }
+    let next = match (more, last) {
+        (true, Some((t, id))) => format!("/posts/by/{author}?c={t}:{id}"),
+        _ => String::new(),
+    };
+    Ok((items, next))
+}
+
+/// The posts of a page, drawn.
+pub(crate) fn page_html(items: Vec<Item>, next: String) -> Result<String, (StatusCode, String)> {
+    render(FeedPart { items, next, end: false })
+}
+
+/// May everyone see this author's posts on their page? The vault's always; a trainer's while their page shows.
+fn page_open(c: &rusqlite::Connection, author: i64) -> rusqlite::Result<bool> {
+    Ok(author == 0 || members::get(c, author)?.is_some_and(|m| m.profile_ok && !m.blocked))
+}
+
+#[derive(Deserialize, Default)]
+pub struct ByQs {
+    #[serde(default)]
+    c: String,
+}
+
+/// GET /posts/by/{author}?c=time:id: the next posts of a person's page (0: the vault's), as HTML.
+pub async fn by(State(app): State<App>, h: HeaderMap, Path(author): Path<i64>, Query(q): Query<ByQs>) -> Res {
+    let me = current(&app, &h).await?;
+    let viewer = me.as_ref().map(|m| m.id).unwrap_or(0);
+    let staff = admin::can_moderate(&app, &h);
+    let before = q.c.split_once(':').and_then(|(t, i)| Some((t.parse().ok()?, i.parse().ok()?)));
+    let (items, next) = with_db(&app, move |c| {
+        if !(viewer == author || staff || page_open(c, author)?) {
+            return Ok((vec![], String::new()));
+        }
+        page_items(c, viewer, author, before)
+    })
+    .await?;
+    if items.is_empty() && before.is_none() {
+        return Ok(html("<p class=\"box empty page-empty\">No Posts Yet.</p>".to_string()));
+    }
+    Ok(html(page_html(items, next)?))
+}
+
 /// GET /posts/{id}/photos/{image}: one photo of a written post as a small post of its own (who posted it, which photo
 /// it is, its own likes and comments), for the photo window. Not found when the photo's likes and comments are its
 /// post's (a post's only photo, and the photos of automatic posts).
@@ -1055,6 +1169,7 @@ fn photo_view(c: &rusqlite::Connection, p: &social::Post, own: &social::PhotoOwn
         link: String::new(),
         link_text: String::new(),
         photos: vec![],
+        caps: vec![],
         member: p.member_id,
         edited: false,
         attach: None,
@@ -1642,6 +1757,42 @@ mod tests {
         social::photo_react(&c, p, a, brock, "like", 21).unwrap();
         social::post_remove(&c, p).unwrap();
         assert_eq!(c.query_row("SELECT (SELECT COUNT(*) FROM photo_reactions) + (SELECT COUNT(*) FROM comments WHERE post_id=?1)", [p], |r| r.get::<_, i64>(0)).unwrap(), 0);
+    }
+
+    /// A person's posts on their own page (newest first, a few at a time, then "See More Posts"), and a caption on each
+    /// photo, set when posting, when editing, and one at a time.
+    #[test]
+    fn a_persons_page_lists_their_posts_and_photos_take_captions() {
+        let c = db();
+        let (ash, _, brock) = town(&c);
+        for n in 0..(PAGE_POSTS + 2) {
+            social::post_add(&c, ash, "post", &format!("Pull {n}"), &[], &json!({}), 100 + n).unwrap();
+        }
+        social::post_add(&c, brock, "post", "Not Ash's", &[], &json!({}), 500).unwrap();
+        let (items, next) = page_items(&c, 0, ash, None).unwrap();
+        let texts: Vec<String> = items.iter().map(|i| i.post.as_ref().unwrap().text.clone()).collect();
+        assert_eq!((texts.len() as i64, texts[0].as_str()), (PAGE_POSTS, "Pull 9"));
+        assert!(next.starts_with(&format!("/posts/by/{ash}?c=")), "{next}");
+        let html = page_html(items, next.clone()).unwrap();
+        assert!(html.contains("See More Posts") && !html.contains("hx-trigger=\"revealed\""), "a page loads more by a button");
+        let c2 = next.split("c=").nth(1).unwrap();
+        let (t, id) = c2.split_once(':').unwrap();
+        let (rest, end) = page_items(&c, 0, ash, Some((t.parse().unwrap(), id.parse().unwrap()))).unwrap();
+        assert_eq!((rest.len(), end.as_str()), (2, ""));
+        // Captions: given with the photos, changed on their own, kept or replaced on an edit.
+        let pic = |n: i64| (format!("/uploads/p{n}_l.jpg"), format!("/uploads/p{n}_s.jpg"), 800, 600, 1000);
+        let p = social::post_add(&c, ash, "post", "Two pulls", &[pic(1), pic(2)], &json!({}), 900).unwrap();
+        social::caption_new_photos(&c, p, &[], &["The best one".into(), "  ".into()]).unwrap();
+        assert_eq!(social::photo_captions(&c, p).unwrap(), vec!["The best one".to_string(), String::new()]);
+        let ids: Vec<i64> = social::photos_ids(&c, p).unwrap().into_iter().map(|x| x.0).collect();
+        assert!(social::set_photo_caption(&c, p, ids[1], "Second <b>one</b>").unwrap());
+        assert!(!social::set_photo_caption(&c, p + 1000, ids[1], "Not here").unwrap(), "only on its own post");
+        let post = social::post(&c, 0, p).unwrap().unwrap();
+        let html = part(vec![Item { post: post_view(&c, &post, "Big Boys Vault", 0).unwrap(), stores: vec![], binder: None }]).unwrap();
+        assert!(html.contains("data-cap=\"The best one\"") && html.contains("data-cap=\"Second &#60;b&#62;one&#60;/b&#62;\"") || html.contains("data-cap=\"Second &lt;b&gt;one&lt;/b&gt;\""), "{html}");
+        social::post_edit(&c, p, "Two pulls", &[ids[0]], &[pic(3)], 901).unwrap();
+        social::caption_new_photos(&c, p, &[ids[0]], &["The new one".into()]).unwrap();
+        assert_eq!(social::photo_captions(&c, p).unwrap(), vec!["The best one".to_string(), "The new one".to_string()]);
     }
 
     #[test]

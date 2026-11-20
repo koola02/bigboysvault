@@ -7,7 +7,6 @@
   <div class="me-top">
     {% if !p.m.profile_ok %}<p class="me-status">The vault's team has hidden your page. Only you can see it for now.</p>{% endif %}
     <div class="me-top-acts">
-      <a class="btn ghost sm" href="/trainers/{{ p.m.id }}">See My Page</a>
       <form method="post" action="/signout"><button class="btn ghost sm" type="submit">Log Out</button></form>
     </div>
   </div>
@@ -15,7 +14,7 @@
   {% if p.m.locked() %}<p class="mgr-note">Your trainer is locked for another {{ p.m.lock_left() }}. You can't post or change anything until then.</p>{% endif %}
   <p class="tp-stars me-worth"><span class="worth worth-lg" id="meWorth"{% if p.m.worth <= 0.0 %} hidden{% endif %}>{{ p.m.worth_text() }}</span></p>
 
-  {% if p.m.seller %}
+  {% if false %}
   <section class="me-card me-store">
     <div>
       <h2 class="h2">My Store</h2>
@@ -23,14 +22,6 @@
       <p class="me-store-n"><span><b>{{ stats.active_listings }}</b> On Sale</span><span><b>{{ stats.items_sold }}</b> Sold</span><span><b>{{ stats.binder_count }}</b> Binder{% if stats.binder_count != 1 %}s{% endif %}</span>{% if stats.pending_offers + stats.pending_inquiries > 0 %}<span><b>{{ stats.pending_offers + stats.pending_inquiries }}</b> Waiting</span>{% endif %}</p>
     </div>
     <div class="me-top-acts"><a class="btn" href="/me/store">Open My Store</a><a class="btn ghost" href="{{ p.m.store_url() }}">See It</a></div>
-  </section>
-  {% else %}
-  <section class="me-card me-store">
-    <div>
-      <h2 class="h2">Buying</h2>
-      <p class="me-how">Order cards from the <a href="/stores">Stores</a>. Your orders and offers are under My Orders. Want to sell too? Ask the vault owner to switch your store on.</p>
-    </div>
-    <div class="me-top-acts"><a class="btn ghost" href="/me/orders?tab=buying">My Orders</a></div>
   </section>
   {% endif %}
 

@@ -1446,6 +1446,11 @@ struct StorePage {
     is_me: bool,
     links: Vec<(String, String, String)>,
     conditions: [&'static str; 10],
+    /// Posts (page_posts.html): None leaves them out.
+    posts: Option<String>,
+    can_post: bool,
+    as_vault: bool,
+    posts_lazy: String,
 }
 
 async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<String>) -> Res {
@@ -1540,7 +1545,15 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
     }
     let links = m.social_links();
     let binders_n = tiles.iter().filter(|t| !t.off).count();
-    Ok(html(render(StorePage { nav, m, stats, cards, tiles, binders_n, binder, vouches, me, following, is_me, links, conditions: members::CONDITIONS })?))
+    // The store's main page shows its owner's posts under the binders, with the box to write one for the owner.
+    let posts = if binder.is_none() {
+        let (mid, viewer) = (m.id, me.as_ref().map(|u| u.id).unwrap_or(0));
+        let (items, next) = with_db(&app, move |c| crate::feed::page_items(c, viewer, mid, None)).await?;
+        Some(crate::feed::page_html(items, next)?)
+    } else {
+        None
+    };
+    Ok(html(render(StorePage { nav, m, stats, cards, tiles, binders_n, binder, vouches, me, following, is_me, links, conditions: members::CONDITIONS, posts, can_post: is_me, as_vault: false, posts_lazy: String::new() })?))
 }
 
 /// One binder on a store page: two or three to a row, each with its pictures, its name and how many
@@ -1742,6 +1755,11 @@ struct VaultStorePage {
     in_stock: bool,
     items: Vec<Product>,
     next: Option<usize>,
+    /// The vault's posts. The page is kept for everyone alike, so they load after it (each viewer sees their own likes).
+    posts: Option<String>,
+    can_post: bool,
+    as_vault: bool,
+    posts_lazy: String,
 }
 
 /// GET /store/vault: Big Boys Vault's own store, one of the stores on /stores. Its header, its binders as tiles
@@ -1815,7 +1833,7 @@ fn vault_page(c: &rusqlite::Connection, q: db::Query) -> rusqlite::Result<VaultS
         ..Default::default()
     };
     let look = sellers::vault_look(c)?;
-    Ok(VaultStorePage { nav, tiles, n, since, bio, cover: vs.cover, links, pay, border, look, base: VAULT_STORE.into(), q: q.q, sort: q.sort, cond: q.cond, conds, in_stock: true, items, next })
+    Ok(VaultStorePage { nav, tiles, n, since, bio, cover: vs.cover, links, pay, border, look, base: VAULT_STORE.into(), q: q.q, sort: q.sort, cond: q.cond, conds, in_stock: true, items, next, posts: Some(String::new()), can_post: true, as_vault: true, posts_lazy: "/posts/by/0".into() })
 }
 
 /// GET /store/vault/binders/{handle}: a vault binder's address, should anyone write it like a seller's. Its page is /collections/{handle}.
@@ -3065,7 +3083,7 @@ pub async fn apply_page(State(app): State<App>, h: HeaderMap) -> Res {
     }
     let id = me.id;
     let (mut nav, sent) = with_db(&app, move |c| Ok((chrome(c)?, sellers::application_of(c, id)?))).await?;
-    nav.seo.title = format!("Apply As A Seller · {}", nav.brand);
+    nav.seo.title = format!("Create A Store · {}", nav.brand);
     let waiting = sent.as_ref().is_some_and(|a| a.waiting());
     Ok(html(render(ApplyPage { nav, me, sent, waiting })?))
 }
@@ -3181,11 +3199,11 @@ pub async fn apply_decide(State(app): State<App>, h: HeaderMap, Path(aid): Path<
     let done = with_db(&app, move |c| {
         let Some(a) = sellers::decide_application(c, aid, approve, &reason, by, now)? else { return Ok(None) };
         let text = if approve {
-            "✅ Your seller application is approved! Your store is open: open the menu and tap My Store to put up your first cards.".to_string()
+            "✅ Your seller application is approved! Your store is open: tap Store Manager on your page to put up your first cards.".to_string()
         } else if reason.is_empty() {
-            "Your seller application wasn't approved this time. You can apply again later from your menu.".to_string()
+            "Your seller application wasn't approved this time. You can try again later with Create A Store on your page.".to_string()
         } else {
-            format!("Your seller application wasn't approved this time: {reason} You can apply again later from your menu.")
+            format!("Your seller application wasn't approved this time: {reason} You can try again later with Create A Store on your page.")
         };
         let t = match dm::thread(c, a.thread_id)? {
             Some(t) => t,
@@ -3523,6 +3541,10 @@ mod tests {
             is_me: owner,
             links: vec![],
             conditions: members::CONDITIONS,
+            posts: None,
+            can_post: false,
+            as_vault: false,
+            posts_lazy: String::new(),
             m,
         });
         html.unwrap()
@@ -3894,8 +3916,9 @@ mod tests {
         let slug = members::get(&c, m).unwrap().unwrap().slug;
         let own = page_as(&c, &slug, None, true);
         assert!(own.contains("<img class=\"av av-xl\" src=\"/uploads/s-shop.jpg\"") && own.contains("<p class=\"sf-bio\">About the store</p>") && !own.contains("About me"), "{own}");
-        assert!(own.contains("<a class=\"btn\" href=\"/me/settings\">") && own.contains("Store Settings</a>") && !own.contains("data-own-store"));
-        assert!(!page(&c, &slug, None).contains("href=\"/me/settings\""), "only its owner gets the button");
+        // Its owner gets Store Manager (Store Settings is inside it) and a small Share button.
+        assert!(own.contains("<a class=\"btn\" href=\"/me/store\">") && own.contains("Store Manager</a>") && !own.contains("href=\"/me/settings\"") && own.contains("sh-btn sh-ico") && !own.contains("data-own-store"), "{own}");
+        assert!(!page(&c, &slug, None).contains("href=\"/me/store\""), "only its owner gets the button");
         // Its card on Stores, and the store named beside a card for sale, carry the same picture.
         let card = store_cards(&c, "Big Boys Vault").unwrap().into_iter().find(|s| s.name == "Shop").expect("the store is on Stores");
         assert_eq!(card.avatar, "/uploads/s-shop.jpg");

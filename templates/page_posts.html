@@ -1,0 +1,23 @@
+{#- A person's posts on their own page, and the vault's on its store (the owner, 20 Nov 2026: "Posts created in the main
+    page should also reflect on its owner's page just like in many social media. Vice versa - add ability to create a
+    post inside everyone's page"). The page's owner writes here as on the home page, and the post shows in the home
+    feed too. Needs `posts` (Option: None leaves the section out; Some(html), the posts drawn, or "" with
+    `posts_lazy` set to load them), `can_post` (the owner, or for the vault a full admin) and `as_vault`.
+    static/feed.js does the rest: it works on any element with id "feed". -#}
+{% if let Some(drawn) = posts %}
+<section class="page-posts" aria-labelledby="postsH">
+  <h2 class="h2" id="postsH">Posts</h2>
+  <div class="stack feed page-feed" id="feed"{% if as_vault %} data-as-vault{% endif %}>
+    {% if can_post %}<section class="box composer"{% if as_vault %} data-staff-only data-full-only{% endif %}>
+      <div class="composer-top"><span class="av" data-my-face></span><button type="button" class="composer-ask" data-compose>{% if as_vault %}Write A Post As The Vault{% else %}What did you pull today?{% endif %}</button></div>
+      <div class="composer-acts">
+        <button type="button" data-compose="photo"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>Photo</button>
+        <button type="button" data-compose="camera"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>Camera</button>
+      </div>
+    </section>{% endif %}
+    {% if !posts_lazy.is_empty() %}<div class="feed-more" hx-get="{{ posts_lazy }}" hx-trigger="load" hx-swap="outerHTML"><div class="box post skel"><div class="post-h"><span class="av"></span><div class="post-who"><i></i><i></i></div></div><div class="skel-body"></div></div></div>
+    {% else if drawn.trim().is_empty() %}<p class="box empty page-empty">No Posts Yet.</p>
+    {% else %}{{ drawn|safe }}{% endif %}
+  </div>
+</section>
+{% endif %}

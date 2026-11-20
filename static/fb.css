@@ -636,6 +636,34 @@ html.sheet-open { overflow: hidden; }
 .cm-edit input { flex: 1 1 180px; min-width: 0; min-height: 40px; padding: 4px 12px; border-radius: var(--pill); }
 .cm-edit .btn { min-height: 36px; }
 
+/* ---------- 15g. Posts on a person's page; captions on photos; the Share button as an icon (the owner, 20 Nov 2026) ---------- */
+.page-posts { margin: 28px 0 8px; }
+.page-posts > .h2 { margin-bottom: 12px; }
+.page-feed { max-width: 680px; }
+.page-more { display: flex; justify-content: center; }
+.page-more .btn { min-height: 40px; }
+/* Share as a small square button: it took a whole row on a phone. */
+.sf-acts .sh-ico, .pf-acts .sh-ico { flex: 0 0 auto !important; width: 40px; min-width: 40px; padding: 0 !important; justify-content: center; }
+.sh-ico svg { width: 18px !important; height: 18px !important; }
+/* The post box: each photo in a row with its caption. */
+.sheet-pics { grid-template-columns: 1fr; gap: 8px; }
+.sheet-pics:empty { display: none; }
+.sheet-pic { display: grid; grid-template-columns: 64px minmax(0, 1fr) 36px; align-items: center; gap: 10px; aspect-ratio: auto; padding: 6px; background: var(--surface-2); }
+.sheet-pic img { width: 64px; height: 64px; border-radius: var(--r-sm); }
+.sheet-pic .ibtn { position: static; width: 36px; height: 36px; }
+.sheet-cap { min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font-size: 1rem; }
+.sheet-cap:focus { outline: none; border-color: var(--gold); }
+/* A photo's caption in the photo window. */
+.pv-cap { position: absolute; left: 16px; right: 16px; bottom: 52px; display: flex; flex-direction: column; align-items: center; gap: 4px; pointer-events: none; }
+.pv-cap[hidden] { display: none; }
+.pv-cap > * { pointer-events: auto; }
+.pv-cap-t { max-width: min(640px, 100%); margin: 0; padding: 8px 14px; border-radius: var(--r); background: rgba(11,13,20,.86); color: #fff; font-size: .9375rem; line-height: 1.4; text-align: center; overflow-wrap: anywhere; }
+.pv-cap-t[hidden] { display: none; }
+.pv-cap-edit { min-height: 32px; padding: 0 12px; border-radius: var(--pill); background: rgba(11,13,20,.86); color: var(--gold-hi); }
+.pv-cap-f { display: flex; gap: 6px; width: min(560px, 100%); padding: 6px; border-radius: var(--r); background: rgba(11,13,20,.92); }
+.pv-cap-f input { flex: 1; min-width: 0; min-height: 40px; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: var(--r-sm); background: var(--surface); color: var(--text); font-size: 1rem; }
+@media (max-width: 999px) { .pv-cap { position: static; margin-top: 8px; padding: 0 12px; } }
+
 /* ---------- 15f. The post box, and the styles a post's words can have (feed.js, rich.rs) ---------- */
 /* The owner, 19 Nov 2026: "When creating a post, the space for typing is too small and the font is too big, fix that,
    take inspo from how Facebook does it. Also give the option to bold, change font size in 3 levels of any text within
@@ -1105,7 +1133,7 @@ img.av { object-fit: cover; }
 .sf-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 4px 0 0; color: var(--muted); }
 .sf-sub a { color: var(--text); font-weight: 600; }
 .sf-acts { display: flex; flex-wrap: wrap; gap: 8px; }
-.sf-acts .btn svg, .pf-acts .btn svg { width: 16px; height: 16px; }
+.sf-acts .btn svg, .pf-acts .btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .sf-banner { margin: 0; padding: 10px 12px; border-radius: var(--r-sm); background: var(--gold-tint); color: var(--gold-hi); font-weight: 600; }
 .sf-stats { display: flex; flex-wrap: wrap; gap: 8px; margin: 0; padding: 12px 0 0; border-top: 1px solid var(--line); list-style: none; }
 .sf-stats li { flex: 1 1 96px; display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border-radius: var(--r); background: var(--surface-2); }

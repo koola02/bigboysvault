@@ -7,7 +7,7 @@
   </header>
   {% if !p.text.is_empty() %}<p class="post-text">{% if p.rich.is_empty() %}{{ p.text }}{% else %}{{ p.rich|safe }}{% endif %}</p>{% endif %}
   {% if let Some(a) = p.attach %}<a class="attach" href="{{ a.url }}">{% if !a.img.is_empty() %}<img src="{{ a.img }}" loading="lazy" decoding="async" alt="">{% endif %}<span><b>{{ a.title }}</b><small>{{ a.sub }}{% if !a.cond.is_empty() %} · {{ a.cond }}{% endif %}</small></span></a>{% endif %}
-  {% if !p.photos.is_empty() %}<div class="post-media n{{ p.photos.len() }}"{% if p.photo_threads %} data-photo-threads{% endif %}>{% for (pid, full, small) in p.photos %}<a href="{{ full }}" data-photo data-img="{{ pid }}" data-thumb="{{ small }}"><img src="{% if p.photos.len() == 1 %}{{ full }}{% else %}{{ small }}{% endif %}" loading="lazy" decoding="async" alt="Photo"></a>{% endfor %}</div>{% endif %}
+  {% if !p.photos.is_empty() %}<div class="post-media n{{ p.photos.len() }}"{% if p.photo_threads %} data-photo-threads{% endif %}>{% for (pid, full, small) in p.photos %}<a href="{{ full }}" data-photo data-img="{{ pid }}" data-thumb="{{ small }}" data-cap="{{ p.cap(loop.index0) }}"><img src="{% if p.photos.len() == 1 %}{{ full }}{% else %}{{ small }}{% endif %}" loading="lazy" decoding="async" alt="{% if p.cap(loop.index0).is_empty() %}Photo{% else %}{{ p.cap(loop.index0) }}{% endif %}"></a>{% endfor %}</div>{% endif %}
   {% if p.tiles.len() == 1 %}{% for t in p.tiles %}<a class="attach" href="{{ t.url }}">{% if !t.img.is_empty() %}<img src="{{ t.img }}" loading="lazy" decoding="async" alt="">{% endif %}<span><b>{{ t.title }}</b><small>{{ t.sub }}{% if !t.cond.is_empty() %} · {{ t.cond }}{% endif %}</small></span></a>{% endfor %}
   {% else if !p.tiles.is_empty() %}<div class="post-cards g{{ p.grid() }}">{% for t in p.tiles %}<a href="{{ t.url }}" title="{{ t.title }}"><img src="{{ t.img }}" loading="lazy" decoding="async" alt="{{ t.title }}">{% if loop.last && p.more > 0 %}<span class="more">+{{ p.more }}</span>{% endif %}</a>{% endfor %}</div>{% endif %}
   {% if !p.people.is_empty() %}<div class="post-people">{% for w in p.people %}<a class="chip" href="{{ w.url }}"><span class="av sm">{% if w.avatar.is_empty() %}{{ w.initial }}{% else %}<img src="{{ w.avatar }}" alt="" loading="lazy" decoding="async">{% endif %}</span>{{ w.name }}</a>{% endfor %}</div>{% endif %}
@@ -34,7 +34,9 @@
 </section>
 {% endif %}{% endfor %}{% if end %}
 <p class="box empty feed-end">You're all caught up.</p>
-{% endif %}{% if !next.is_empty() %}
+{% endif %}{% if next.starts_with("/") %}
+<div class="feed-more page-more"><button type="button" class="btn ghost" hx-get="{{ next }}" hx-target="closest .feed-more" hx-swap="outerHTML">See More Posts</button></div>
+{% else if !next.is_empty() %}
 <div class="feed-more" hx-get="/feed?c={{ next }}" hx-trigger="revealed" hx-swap="outerHTML" aria-label="Loading More">
   <div class="box post skel"><div class="post-h"><span class="av"></span><div class="post-who"><i></i><i></i></div></div><div class="skel-body"></div></div>
 </div>

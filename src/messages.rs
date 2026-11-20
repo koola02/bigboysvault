@@ -281,6 +281,10 @@ pub(crate) fn share_copy(c: &rusqlite::Connection, r: &str) -> rusqlite::Result<
             let words = if p.text.trim().is_empty() { "A Post".to_string() } else { crate::clip(&p.text, 80) };
             Some(share("post", "📝", format!("{who}'s Post"), words, image, format!("/posts/{}", p.id), "See Post ›"))
         }
+        "trainer" => {
+            let Some(m) = id.parse::<i64>().ok().map(|mid| members::get(c, mid)).transpose()?.flatten().filter(|m| m.profile_ok && !m.blocked) else { return Ok(None) };
+            Some(share("trainer", "👤", m.name.clone(), format!("Trainer · {}", cards(m.cards)), m.avatar.clone(), format!("/trainers/{}", m.id), "See Page ›"))
+        }
         _ => None,
     })
 }

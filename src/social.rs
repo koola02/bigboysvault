@@ -122,6 +122,8 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         ("post_images", "like_n", "INTEGER NOT NULL DEFAULT 0"),
         ("post_images", "comment_n", "INTEGER NOT NULL DEFAULT 0"),
         ("comments", "image_id", "INTEGER NOT NULL DEFAULT 0"),
+        // Each photo's own caption (the owner, 20 Nov 2026: "add ability to edit or add a caption in every photos").
+        ("post_images", "caption", "TEXT NOT NULL DEFAULT ''"),
     ] {
         let there: i64 = c.query_row(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name=?1"), [col], |r| r.get(0))?;
         if there == 0 {
@@ -557,6 +559,41 @@ pub fn post_edit(c: &Connection, id: i64, text: &str, keep: &[i64], add: &[Photo
     // New words are plain until `post_rich` says how they are formatted: old styles never sit on new words.
     c.execute("UPDATE posts SET text=?2, rich='', edited_at=?3 WHERE id=?1", params![id, text, now])?;
     Ok(files)
+}
+
+/// The longest caption a photo takes.
+pub const CAPTION_MAX: usize = 300;
+
+/// Each photo's caption, in the post's order ("" for none).
+pub fn photo_captions(c: &Connection, post: i64) -> rusqlite::Result<Vec<String>> {
+    c.prepare_cached("SELECT caption FROM post_images WHERE post_id=?1 ORDER BY id")?.query_map([post], |r| r.get(0))?.collect()
+}
+
+/// Sets one photo's caption (tidied; "" takes it off). False when the photo isn't on that post.
+pub fn set_photo_caption(c: &Connection, post: i64, image: i64, caption: &str) -> rusqlite::Result<bool> {
+    let caption = crate::members::clean_line(caption, CAPTION_MAX);
+    Ok(c.execute("UPDATE post_images SET caption=?3 WHERE id=?2 AND post_id=?1", params![post, image, caption])? == 1)
+}
+
+/// Captions for the photos just added to a post: the ones not in `before`, in the order they went up.
+pub fn caption_new_photos(c: &Connection, post: i64, before: &[i64], captions: &[String]) -> rusqlite::Result<()> {
+    let fresh: Vec<i64> = photos_ids(c, post)?.into_iter().map(|x| x.0).filter(|id| !before.contains(id)).collect();
+    for (id, cap) in fresh.iter().zip(captions) {
+        set_photo_caption(c, post, *id, cap)?;
+    }
+    Ok(())
+}
+
+/// One author's written posts (0: the vault's), newest first, older than `before` (time, id): what their own page shows.
+pub fn posts_by(c: &Connection, viewer: i64, author: i64, before: Option<(i64, i64)>, limit: i64) -> rusqlite::Result<Vec<Post>> {
+    let (t, id) = before.unwrap_or((i64::MAX, i64::MAX));
+    c.prepare_cached(&format!(
+        "SELECT {POST_COLS}, COALESCE((SELECT kind FROM reactions r WHERE r.post_id=p.id AND r.member_id=?1), '')
+         FROM posts p WHERE p.member_id=?2 AND p.kind IN ('post','share') AND p.hidden=0 AND (p.created_at<?3 OR (p.created_at=?3 AND p.id<?4))
+         ORDER BY p.created_at DESC, p.id DESC LIMIT ?5"
+    ))?
+    .query_map(params![viewer, author, t, id, limit], map_post)?
+    .collect()
 }
 
 /// How a post's words are formatted: the runs `rich::clean` made for those same words, or "" for plain.

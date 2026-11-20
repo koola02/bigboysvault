@@ -201,6 +201,11 @@ struct TrainerPage {
     full: bool,
     vouches: Vec<Vouch>,
     awards: Vec<Award>,
+    /// Their posts, drawn (page_posts.html): None on a page that leaves them out.
+    posts: Option<String>,
+    can_post: bool,
+    as_vault: bool,
+    posts_lazy: String,
 }
 
 #[derive(Template)]
@@ -217,6 +222,11 @@ struct TrainerPart {
     full: bool,
     vouches: Vec<Vouch>,
     awards: Vec<Award>,
+    /// Posts (page_posts.html): None leaves them out.
+    posts: Option<String>,
+    can_post: bool,
+    as_vault: bool,
+    posts_lazy: String,
 }
 
 #[derive(Template)]
@@ -606,9 +616,9 @@ pub async fn seller_binder(State(app): State<App>, h: HeaderMap, Path((slug, b_s
     let highlight = m.highlight.and_then(|h| cards.iter().find(|c| c.id == h).cloned());
     let (cards, wishes, selling) = split_kinds(cards);
     Ok(html(if q.part.is_some() {
-        render(TrainerPart { t: m, cards, wishes, selling, highlight, is_me, full, vouches, awards })?
+        render(TrainerPart { t: m, cards, wishes, selling, highlight, is_me, full, vouches, awards, posts: None, can_post: false, as_vault: false, posts_lazy: String::new() })?
     } else {
-        render(TrainerPage { nav, t: m, cards, wishes, selling, highlight, is_me, full, vouches, awards })?
+        render(TrainerPage { nav, t: m, cards, wishes, selling, highlight, is_me, full, vouches, awards, posts: None, can_post: false, as_vault: false, posts_lazy: String::new() })?
     }))
 }
 
@@ -684,9 +694,13 @@ pub async fn trainer(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, 
         };
     }
     Ok(html(if q.part.is_some() {
-        render(TrainerPart { t, cards, wishes, selling, highlight, is_me, full, vouches, awards })?
+        render(TrainerPart { t, cards, wishes, selling, highlight, is_me, full, vouches, awards, posts: None, can_post: false, as_vault: false, posts_lazy: String::new() })?
     } else {
-        render(TrainerPage { nav, t, cards, wishes, selling, highlight, is_me, full, vouches, awards })?
+        // Their posts, as on the home page, with the box to write one when it is their own page.
+        let (mid, viewer) = (t.id, me.as_ref().map(|m| m.id).unwrap_or(0));
+        let (items, next) = with_db(&app, move |c| crate::feed::page_items(c, viewer, mid, None)).await?;
+        let posts = if full { Some(crate::feed::page_html(items, next)?) } else { None };
+        render(TrainerPage { nav, t, cards, wishes, selling, highlight, is_me, full, vouches, awards, posts, can_post: is_me, as_vault: false, posts_lazy: String::new() })?
     }))
 }
 
@@ -2464,6 +2478,31 @@ mod tests {
     /// A trainer's own page and their store have their own settings (the owner, 19 Nov 2026: "when i add a link in
     /// store, it shows up in my personal page too"): the page shows only what Account Settings holds, the store only
     /// what Store settings holds, and the store can have a picture of its own.
+    /// The owner, 20 Nov 2026: your own page holds Account Settings, Messages, and Create A Store until you sell (then
+    /// Store Manager); Share is a small button; your posts are on your page, with the box to write one.
+    #[test]
+    fn your_page_has_messages_create_a_store_and_your_posts() {
+        let c = db();
+        marcuru_rs::social::migrate(&c).unwrap();
+        let s = members::create(&c, "Ash", "h").unwrap().unwrap();
+        marcuru_rs::social::post_add(&c, s, "post", "My first pull", &[], &json!({}), 10).unwrap();
+        let page = |c: &rusqlite::Connection, is_me: bool, viewer: i64| {
+            let t = members::get(c, s).unwrap().unwrap();
+            let (items, next) = crate::feed::page_items(c, viewer, s, None).unwrap();
+            let posts = Some(crate::feed::page_html(items, next).unwrap());
+            render(TrainerPage { nav: chrome(c).unwrap(), t, cards: vec![], wishes: vec![], selling: vec![], highlight: None, is_me, full: true, vouches: vec![], awards: vec![], posts, can_post: is_me, as_vault: false, posts_lazy: String::new() }).unwrap()
+        };
+        let own = page(&c, true, s);
+        assert!(own.contains("href=\"/me\"") && own.contains("href=\"/me/messages\"") && own.contains("Create A Store</a>") && !own.contains("Store Manager</a>"), "{own}");
+        assert!(own.contains("data-share-ref=\"trainer:") && own.contains("sh-ico"));
+        assert!(own.contains("id=\"feed\"") && own.contains("class=\"box composer\"") && own.contains("My first pull"), "{own}");
+        members::set_seller(&c, s, true).unwrap();
+        let own = page(&c, true, s);
+        assert!(own.contains("href=\"/me/store\"") && own.contains("Store Manager</a>") && !own.contains("Create A Store"), "a seller manages their store from here");
+        let theirs = page(&c, false, 0);
+        assert!(theirs.contains("My first pull") && !theirs.contains("class=\"box composer\"") && !theirs.contains("<a class=\"btn ghost\" href=\"/me/messages\">"), "visitors read the posts but don't write here");
+    }
+
     #[test]
     fn a_trainers_page_and_their_store_keep_their_own_settings() {
         let c = db();
@@ -2479,7 +2518,7 @@ mod tests {
         assert_eq!(m.store_pic(), "/uploads/t-ash.jpg", "the store shows its owner's picture until it has its own");
         let page = |c: &rusqlite::Connection, is_me: bool| {
             let t = members::get(c, s).unwrap().unwrap();
-            render(TrainerPage { nav: chrome(c).unwrap(), t, cards: vec![], wishes: vec![], selling: vec![], highlight: None, is_me, full: true, vouches: vec![], awards: vec![] }).unwrap()
+            render(TrainerPage { nav: chrome(c).unwrap(), t, cards: vec![], wishes: vec![], selling: vec![], highlight: None, is_me, full: true, vouches: vec![], awards: vec![], posts: None, can_post: false, as_vault: false, posts_lazy: String::new() }).unwrap()
         };
         let html = page(&c, false);
         assert!(!html.contains("palletcards") && !html.contains("carousell") && !html.contains("cover-store") && !html.contains("Find Me On"), "nothing of the store's on the trainer's own page: {html}");

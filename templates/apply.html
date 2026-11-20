@@ -1,11 +1,11 @@
 {% extends "base.html" %}
-{% block title %}Apply As A Seller · {{ nav.brand }}{% endblock %}
+{% block title %}Create A Store · {{ nav.brand }}{% endblock %}
 {% block content %}
 {#- "Apply as a seller" from the account menu. The note and the photos are both optional; sending opens the trainer's chat
     with the vault's team, where the whole application goes on (static/apply.js). -#}
 <section class="wrap apply-page">
   <div class="tr-head">
-    <h1 class="h1">Apply As A Seller</h1>
+    <h1 class="h1">Create A Store</h1>
     <p class="tr-sub">Open your own store on {{ nav.brand }}: your binders, your prices, buyers who pay you directly. An admin looks at every application.</p>
   </div>
   {% if waiting %}{% if let Some(a) = sent %}

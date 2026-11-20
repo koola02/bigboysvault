@@ -145,6 +145,8 @@ scored by `similar.rs`. A store's tile says whose it is and has its own Message 
 | `GET /store/{slug}/followers`, `GET /trainers/{id}/followers` | Who follows a store or a trainer, newest first: `{ people: [{ id, name, avatar, initial, url }] }` (trainers whose page is up) |
 | `GET /trainers/{id}/follow`, `POST /trainers/{id}/follow` | Follow a trainer, or stop: the same `store_follows` row as their store's Follow. Followers hear when they post (one line per author, `posts:{id}`) or put up cards |
 | `GET /posts/{id}/reactions` | Who reacted to a post: `{ people: [{ …, emoji }] }`. With `?image={photo}`: who reacted to that photo |
+| `GET /posts/by/{author}?c=time:id` | A person's posts for their page (0: the vault's), eight at a time, as HTML with a See More Posts button while there are more |
+| `POST /posts/{id}/photos/{image}/caption` | `{ caption }`: the post's writer sets one photo's caption ("" takes it off). Posting and editing also take `captions` (a JSON list, one per new photo) and, on an edit, `kept_captions` (`{ "id": "words" }`) |
 | `GET /posts/{id}/photos/{image}` | One photo of a written post that has two or more, as a small post of its own (HTML): who posted it, which photo it is, its own likes and comments. 404 for a post's only photo and for automatic posts: their photos have no likes of their own |
 | `POST /posts/{id}/react` | `{ kind, image? }`: `kind` is one of the six reactions, or `""` to take it back; `image` (a photo's id) makes it a reaction to that photo. Answers `{ n, mine, emoji, tops }` |
 | `POST /posts/{id}/report`, `POST /comments/{id}/report` | `{ reason? }`. Once per person per post or comment (table `reports`), 20 an hour; the admins and moderators hear (kind `staff`) |
