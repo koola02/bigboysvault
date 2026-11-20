@@ -407,6 +407,9 @@ pub struct JoinForm {
     /// A field people never see. Only bots fill it in.
     #[serde(default)]
     website: String,
+    /// The Terms And Conditions box, ticked ("1").
+    #[serde(default)]
+    agree: String,
     /// "Remember me": stay signed in for a year instead of until the browser closes.
     #[serde(default)]
     remember: String,
@@ -447,6 +450,10 @@ pub async fn join(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm>)
     if let Err(e) = members::valid_password(&f.password) {
         return join_again(&app, StatusCode::BAD_REQUEST, "join", typed, e, &f.next).await;
     }
+    // Nobody joins without agreeing to the Terms And Conditions (the owner, 20 Nov 2026).
+    if f.agree.is_empty() {
+        return join_again(&app, StatusCode::BAD_REQUEST, "join", typed, "Please tick the box to agree to the Terms And Conditions.", &f.next).await;
+    }
     // Nobody waits for approval, so what stops a bot filling the disk is a limit on new trainers in a day, on top of
     // the limit for each address above.
     if with_db(&app, |c| members::joined_since(c, members::now() - 86_400)).await? >= members::MAX_JOINS_PER_DAY {
@@ -467,6 +474,7 @@ pub async fn join(State(app): State<App>, h: HeaderMap, Form(f): Form<JoinForm>)
     let Some(id) = with_db(&app, move |c| members::create(c, &n2, &hash)).await? else {
         return join_again(&app, StatusCode::CONFLICT, "join", typed, TAKEN, &f.next).await;
     };
+    with_db(&app, move |c| members::agreed_to_terms(c, id)).await?;
     over_limit(&app, format!("joined|{ip}"), u32::MAX);
     let n3 = name.clone();
     with_db(&app, move |c| tell_staff_joined(c, id, &n3)).await?;
@@ -901,6 +909,12 @@ pub async fn faq(State(app): State<App>, h: HeaderMap) -> Res {
     let stores_first = current(&app, &h).await?.is_some_and(|m| m.seller);
     let nav = with_db(&app, |c| chrome(c)).await?;
     Ok(html(render(FaqPage { nav, stores_first })?))
+}
+
+// ---------- Terms And Conditions ----------
+/// GET /terms: the Terms And Conditions live in the FAQ's Terms tab (the owner, 20 Nov 2026).
+pub async fn terms() -> Response {
+    Redirect::to("/faq#terms").into_response()
 }
 
 // ---------- my trainer ----------

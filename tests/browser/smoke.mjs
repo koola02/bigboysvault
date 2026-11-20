@@ -244,7 +244,9 @@ for (const [size, viewport] of Object.entries(SIZES)) {
       await page.goto(BASE + '/join', { waitUntil: 'networkidle2' });
       await page.type('input[name="name"]', name);
       await page.type('input[name="password"]', 'smoke-test-' + name);
-      await Promise.all([page.waitForNavigation({ timeout: 30000 }).catch(() => null), page.click('main form button[type="submit"], main form .btn')]);
+      // The Terms And Conditions box must be ticked before Create My Trainer works.
+      await page.$eval('#joinAgree', (b) => { b.scrollIntoView({ block: 'center' }); b.click(); });
+      await Promise.all([page.waitForNavigation({ timeout: 30000 }).catch(() => null), page.$eval('#joinGo', (b) => { b.scrollIntoView({ block: 'center' }); b.click(); })]);
       await page.goto(BASE + bought, { waitUntil: 'networkidle2' });
       if (!(await shown('#cartDrawer'))) await openCart().catch(() => {});
       const again = await until(() => shown('#cartDrawer'), 10000);

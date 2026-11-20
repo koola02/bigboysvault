@@ -1,14 +1,16 @@
 {% extends "base.html" %}
 {% block title %}FAQ · {{ nav.brand }}{% endblock %}
 {% block content %}
-{#- FAQ, from the menu (the owner, 20 Nov 2026; the questions as the owner approved them). Two tabs: Everyone, and
-    Stores (it opens on Stores for someone with a store). Each question opens when tapped; nothing opens by itself.
+{#- FAQ, from the menu (the owner, 20 Nov 2026; the questions as the owner approved them). Three tabs: Everyone,
+    Stores (it opens on Stores for someone with a store), and Terms (the Terms And Conditions, terms_body.html; /terms
+    and the footer open it). Each question opens when tapped; nothing opens by itself.
     The words are written here, not in the database: change them in this file. -#}
 <section class="wrap faq" id="faq">
   <div class="tr-head"><h1 class="h1">FAQ</h1></div>
   <div class="faq-tabs" role="tablist" aria-label="Questions For">
     <button type="button" role="tab" id="faqTabAll" aria-controls="faqAll" data-faq="all"{% if !stores_first %} class="on" aria-selected="true"{% else %} aria-selected="false"{% endif %}>Everyone</button>
     <button type="button" role="tab" id="faqTabStores" aria-controls="faqStores" data-faq="stores"{% if stores_first %} class="on" aria-selected="true"{% else %} aria-selected="false"{% endif %}>Stores</button>
+    <button type="button" role="tab" id="faqTabTerms" aria-controls="faqTerms" data-faq="terms" aria-selected="false">Terms</button>
   </div>
   <div class="faq-pane" id="faqAll" role="tabpanel" aria-labelledby="faqTabAll"{% if stores_first %} hidden{% endif %}>
     <p class="faq-note"><b>Please note:</b> Big Boys Vault has no liability for any transaction, whether it takes place on the website or outside it.</p>
@@ -64,6 +66,10 @@
     <details class="faq-q"><summary>I'm Busy Or Away. Can I Pause My Store?</summary><div class="faq-a"><p>Yes, in Store Settings. Away keeps your store open but tells buyers replies may be slow. Vacation stops new orders and offers until you're back. You can also hide your store completely.</p></div></details>
     <details class="faq-q"><summary>How Do Views Work?</summary><div class="faq-a"><p>A view counts when someone else opens your card, once a day per person. Your own looks don't count, and neither do search engines or link previews.</p></div></details>
   </div>
+  <div class="faq-pane terms" id="faqTerms" role="tabpanel" aria-labelledby="faqTabTerms" hidden>
+    <h2 class="h2 faq-h">Terms And Conditions</h2>
+{% include "terms_body.html" %}
+  </div>
   <p class="faq-more">Still stuck? <button type="button" class="linkbtn" data-dm-to="0">Message An Admin</button></p>
 </section>
 <script>
@@ -75,7 +81,7 @@
     document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
   });
   tabs.forEach((t) => t.addEventListener('click', () => { show(t.dataset.faq); history.replaceState(null, '', '#' + t.dataset.faq); }));
-  if (location.hash === '#stores' || location.hash === '#all') show(location.hash.slice(1));
+  if (['#stores', '#all', '#terms'].includes(location.hash)) show(location.hash.slice(1));
 })();
 </script>
 {% endblock %}

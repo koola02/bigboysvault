@@ -14,7 +14,10 @@
       <label>Trainer Name<input type="text" name="name" value="{{ name }}" maxlength="24" autocomplete="username" autocapitalize="off" spellcheck="false" required></label>
       <label>Password <small>At Least 8 Characters</small><input name="password" type="password" minlength="8" autocomplete="new-password" required></label>
       <label class="join-trap" aria-hidden="true">Website<input name="website" tabindex="-1" autocomplete="off"></label>
-      <button class="btn" type="submit">Create My Trainer</button>
+      {#- The Terms And Conditions, folded; Create My Trainer works only once the box is ticked (the server checks too). -#}
+      <details class="join-terms"><summary>Terms And Conditions</summary><div class="join-terms-b terms">{% include "terms_body.html" %}</div></details>
+      <label class="join-agree"><input type="checkbox" name="agree" value="1" id="joinAgree" required><span>I have read and agree to the Terms And Conditions</span></label>
+      <button class="btn" type="submit" id="joinGo" disabled>Create My Trainer</button>
     </form>
     <p class="join-switch">Already a trainer? <a href="/login{% if !next.is_empty() %}?next={{ next|urlencode }}{% endif %}">Log In</a></p>
     <p class="join-note">Write down your password. There's no email, so only the vault owner can reset it.</p>
@@ -22,6 +25,9 @@
 </section>
 <script>
 (() => {
+  // Create My Trainer waits for the Terms And Conditions box.
+  const agree = document.getElementById('joinAgree'), go = document.getElementById('joinGo');
+  if (agree && go) { const paint = () => { go.disabled = !agree.checked; }; agree.addEventListener('change', paint); paint(); }
   // Came here from the log-in page that said why (sending an order, a message…): keep saying it.
   const WHY = { order: 'Register to send your order. Your cart is saved and opens again right after.', message: 'Register to send your message. You come straight back after.', react: 'Register to react and comment. You come straight back after.', post: 'Register to post. You come straight back after.', offer: 'Register to order a card or make an offer. You come straight back after.', bookmark: 'Register to bookmark stores and cards. You come straight back after.', follow: 'Register to follow this store. You come straight back after.', vouch: 'Register to write a vouch. You come straight back after.' };
   try { const w = sessionStorage.getItem('bbv:join-why'); if (w && WHY[w]) { const b = document.getElementById('joinWhy'); b.textContent = WHY[w]; b.hidden = false; } } catch (_) {}

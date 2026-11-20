@@ -414,6 +414,8 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         ("locked_until", "INTEGER NOT NULL DEFAULT 0"),
         // Scans a day the vault's team set for this trainer (Admin › Trainers); -1 is the usual: 3, or 8 with a store.
         ("scan_limit", "INTEGER NOT NULL DEFAULT -1"),
+        // When they ticked the Terms And Conditions on Register (0: joined before there was a box, 20 Nov 2026).
+        ("terms_at", "INTEGER NOT NULL DEFAULT 0"),
         ("blocked", "INTEGER NOT NULL DEFAULT 0"),
         ("stars", "INTEGER NOT NULL DEFAULT 0"),
         ("role", "TEXT NOT NULL DEFAULT ''"),
@@ -1084,6 +1086,12 @@ pub fn from_session(c: &Connection, raw: &str) -> rusqlite::Result<Option<Member
 }
 
 // ---------- accounts ----------
+/// A new trainer ticked the Terms And Conditions on Register: when.
+pub fn agreed_to_terms(c: &Connection, id: i64) -> rusqlite::Result<()> {
+    c.execute("UPDATE members SET terms_at=?2 WHERE id=?1", rusqlite::params![id, now()])?;
+    Ok(())
+}
+
 pub fn create(c: &Connection, name: &str, pass_hash: &str) -> rusqlite::Result<Option<i64>> {
     let t = now();
     let r = c.execute(
