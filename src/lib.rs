@@ -1,3 +1,4 @@
+pub mod arcade;
 pub mod ask;
 pub mod binder_sort;
 pub mod blocks;

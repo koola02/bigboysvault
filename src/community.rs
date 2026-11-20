@@ -895,6 +895,110 @@ pub async fn member_card(State(app): State<App>, h: HeaderMap, Path((id, cid)): 
     Ok(html(if q.part.is_some() { render(MemberCardPart { t, c, left, related, trend, viewer: viewer.unwrap_or(0) })? } else { render(MemberCardPage { nav, t, c, left, related, trend, viewer: viewer.unwrap_or(0) })? }))
 }
 
+// ---------- Vault Arcade ----------
+#[derive(Template)]
+#[template(path = "arcade.html")]
+struct ArcadePage {
+    nav: Chrome,
+    /// Logged in: scores are saved.
+    signed: bool,
+    /// Today's leaderboards, { game: [rows] }, as JSON for static/arcade.js.
+    boards: String,
+}
+
+fn board_json(rows: &[marcuru_rs::arcade::Row], me: i64) -> Value {
+    json!(rows.iter().map(|r| json!({ "name": r.name, "avatar": r.avatar, "score": r.score, "level": r.level, "moves": r.moves, "ms": r.ms, "me": r.member_id == me })).collect::<Vec<_>>())
+}
+
+/// GET /arcade, from the menu: the games, and today's leaderboards. Anyone can play; saving a score needs an account.
+pub async fn arcade(State(app): State<App>, h: HeaderMap) -> Res {
+    let me = current(&app, &h).await?.map(|m| m.id);
+    let (mut nav, boards) = with_db(&app, move |c| {
+        let day = marcuru_rs::arcade::day_of(c, crate::unix_now())?;
+        let mut b = json!({});
+        for g in marcuru_rs::arcade::GAMES {
+            b[g] = board_json(&marcuru_rs::arcade::board(c, g, &day, 10)?, me.unwrap_or(-1));
+        }
+        Ok((chrome(c)?, b.to_string()))
+    })
+    .await?;
+    nav.seo = crate::Seo { title: format!("Vault Arcade · {}", nav.brand), desc: "Quick Pokémon games to play on your phone: name the silhouette, match the pairs, know your types and guess the pricier card. Daily leaderboards.".into(), path: "/arcade".into(), kind: "website", ..Default::default() };
+    Ok(html(render(ArcadePage { nav, signed: me.is_some(), boards: boards.replace("</", "<\\/") })?))
+}
+
+#[derive(Deserialize)]
+pub struct ArcadeScore {
+    score: i64,
+    #[serde(default)]
+    level: i64,
+    #[serde(default)]
+    moves: i64,
+    #[serde(default)]
+    ms: i64,
+}
+
+/// POST /arcade/{game}/score {score, level, moves, ms}: a logged-in trainer's score. Answers with what was kept, where
+/// it stands and the day's board.
+pub async fn arcade_score(State(app): State<App>, h: HeaderMap, Path(game): Path<String>, Json(req): Json<ArcadeScore>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    if !marcuru_rs::arcade::GAMES.contains(&game.as_str()) {
+        return Ok(fail(StatusCode::NOT_FOUND, "There's no game by that name."));
+    }
+    if req.score < 0 || req.score > marcuru_rs::arcade::max_score(&game) {
+        return Ok(fail(StatusCode::BAD_REQUEST, "That score can't be right."));
+    }
+    if over_limit(&app, format!("arcade|{}", m.id), 120) {
+        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of games! Take a short break, then try again."));
+    }
+    let (id, now) = (m.id, crate::unix_now());
+    let (level, moves, ms) = (req.level.clamp(0, 99), req.moves.clamp(0, 100_000), req.ms.clamp(0, 6 * 3_600_000));
+    let g = game.clone();
+    let (saved, board) = with_db(&app, move |c| {
+        let saved = marcuru_rs::arcade::save(c, id, &g, req.score, level, moves, ms, now)?;
+        let day = marcuru_rs::arcade::day_of(c, now)?;
+        Ok((saved, board_json(&marcuru_rs::arcade::board(c, &g, &day, 10)?, id)))
+    })
+    .await?;
+    use marcuru_rs::arcade::Saved;
+    let (kept, rank) = match saved {
+        Saved::Best(r) => ("best", r),
+        Saved::Kept(r) => ("kept", r),
+        Saved::Already(r) => ("already", r),
+    };
+    Ok(ok(json!({ "ok": true, "kept": kept, "rank": rank, "board": board })))
+}
+
+/// GET /arcade/cards: real cards for sale for Price Check (the vault's and the stores'), with their prices, mixed up.
+pub async fn arcade_cards(State(app): State<App>) -> Res {
+    let cards = with_db(&app, |c| {
+        let mut out: Vec<Value> = c
+            .prepare("SELECT title, image, price, handle FROM products WHERE available=1 AND price>=10 AND image<>'' ORDER BY random() LIMIT 60")?
+            .query_map([], |r| {
+                let (t, img, p, h): (String, String, f64, String) = (r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?);
+                Ok(json!({ "title": t, "img": marcuru_rs::db::cdn(&img, 360), "price": p.round() as i64, "url": format!("/products/{h}"), "seller": "Big Boys Vault" }))
+            })?
+            .collect::<Result<_, _>>()?;
+        let stores: Vec<Value> = c
+            .prepare(
+                "SELECT k.id, k.member_id, k.title, k.image, k.value_own, COALESCE(NULLIF(TRIM(m.store_name), ''), m.name) FROM member_cards k JOIN members m ON m.id=k.member_id
+                 WHERE k.kind='sale' AND k.status='Active' AND k.value_own>=10 AND k.image<>'' AND m.blocked=0 AND m.store_hidden=0 AND m.seller=1
+                 ORDER BY random() LIMIT 40",
+            )?
+            .query_map([], |r| {
+                let (id, mid, t, img, p, s): (i64, i64, String, String, f64, String) = (r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?);
+                Ok(json!({ "title": t, "img": img, "price": p.round() as i64, "url": format!("/trainers/{mid}/cards/{id}"), "seller": s }))
+            })?
+            .collect::<Result<_, _>>()?;
+        out.extend(stores);
+        Ok(out)
+    })
+    .await?;
+    Ok(ok(json!({ "cards": cards })))
+}
+
 // ---------- FAQ ----------
 #[derive(Template)]
 #[template(path = "faq.html")]

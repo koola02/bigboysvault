@@ -121,6 +121,14 @@ S["login"] = ("Log In Or Register",
   f'<rect x="4" y="10" width="40" height="28" rx="4" fill="{BLUE}"/>'
   f'<circle cx="15" cy="22" r="5" fill="#f8d2b0"/><path d="M8 33c1-4 4-6 7-6s6 2 7 6z" fill="{GOLD}"/>'
   f'<path d="M26 19h12M26 25h12M26 31h8" fill="none" stroke="{WHITE}" stroke-width="2.6"/>')
+# Vault Arcade: a red handheld game with a ball on its screen, a pad and two buttons.
+S["arcade"] = ("Vault Arcade",
+  f'<rect x="10" y="3" width="28" height="42" rx="5" fill="{RED}"/>'
+  f'<rect x="14" y="7" width="20" height="16" rx="2" fill="#bff0c4"/>'
+  + ball(24, 15, 4.6) +
+  f'<path d="M15 31h8M19 27v8" fill="none" stroke="{LIGHT}" stroke-width="3.2"/>'
+  f'<circle cx="29" cy="33" r="2.6" fill="{GOLD}"/><circle cx="34" cy="28.5" r="2.6" fill="#5ab0f2"/>'
+  f'<path d="M20 40h3M25 40h3" fill="none" stroke="{LIGHT}" stroke-width="1.8"/>')
 # Notifications in the header stay as they are; My Store uses the stores shop.
 
 out = ['<svg xmlns="http://www.w3.org/2000/svg" style="display:none">',

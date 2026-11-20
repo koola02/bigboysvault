@@ -1,0 +1,142 @@
+/* Vault Arcade (templates/arcade.html, static/arcade.js): bright and playful in Pokémon colours (red, yellow, blue),
+   a phone first. Small moves only: a fade, a pop, a shake; nothing 3D. */
+.arc { --red: #ee1515; --red-d: #b80f0f; --yel: #ffcb05; --yel-d: #c79a00; --blu: #3b6fd8; --blu-d: #23439a; --grn: #43b05c; --ink: #10131f; --paper: #fff8e1;
+  max-width: 860px; margin-inline: auto; color: var(--text); }
+.arc-home, .arc-stage { display: flex; flex-direction: column; gap: 14px; }
+.arc-stage[hidden], .arc-home[hidden] { display: none; }
+
+/* The title: a red and white ball's colours, chunky. */
+.arc-hero { position: relative; overflow: hidden; padding: 22px 18px 18px; border-radius: 22px; text-align: center;
+  background: linear-gradient(180deg, var(--red) 0 58%, var(--ink) 58% 61%, var(--paper) 61%);
+  box-shadow: 0 6px 0 var(--red-d), 0 10px 24px rgba(0,0,0,.35); }
+.arc-title { margin: 0; font: 900 clamp(2rem, 9vw, 3.2rem)/1 var(--display, var(--font)); letter-spacing: .02em; }
+.arc-t1 { color: #fff; text-shadow: 0 3px 0 var(--red-d); }
+.arc-t2 { color: var(--yel); -webkit-text-stroke: 2px var(--blu-d); paint-order: stroke fill; text-shadow: 0 4px 0 var(--blu-d); }
+.arc-reset { display: inline-block; margin: 16px 0 0; padding: 6px 14px; border-radius: 999px; background: var(--ink); color: var(--yel); font: 700 .8125rem/1.3 var(--font); }
+.arc-login { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0; padding: 12px 14px; border-radius: 16px; background: var(--surface-2); box-shadow: inset 0 0 0 2px var(--yel); }
+.arc-login span { flex: 1 1 220px; }
+
+/* The four games. */
+.arc-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; }
+.arc-tile { display: grid; grid-template-columns: 92px 1fr; grid-template-rows: auto auto; column-gap: 14px; align-items: center; padding: 16px; border-radius: 22px;
+  color: #fff; text-decoration: none; box-shadow: 0 6px 0 var(--shade), 0 10px 20px rgba(0,0,0,.3); transition: transform .12s; }
+.arc-tile:hover { text-decoration: none; transform: translateY(-2px); }
+.arc-tile:active { transform: translateY(3px); box-shadow: 0 3px 0 var(--shade), 0 6px 12px rgba(0,0,0,.3); }
+.arc-tile.t-who { background: linear-gradient(135deg, #3b6fd8, #2a4fae); --shade: #1b347a; }
+.arc-tile.t-memory { background: linear-gradient(135deg, #ee1515, #c70f2e); --shade: #8a0a0a; }
+.arc-tile.t-types { background: linear-gradient(135deg, #43b05c, #2a8c48); --shade: #1c6232; }
+.arc-tile.t-price { background: linear-gradient(135deg, #ffcb05, #f29e0c); --shade: #a36a00; color: var(--ink); }
+.arc-pic { grid-row: span 2; position: relative; display: grid; place-items: center; width: 92px; height: 92px; border-radius: 50%; background: rgba(255,255,255,.18); }
+.arc-pic .arc-shadow { width: 80px; height: 80px; }
+.arc-q { position: absolute; top: -4px; right: -2px; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; background: var(--yel); color: var(--blu-d); font: 900 1.4rem/1 var(--font); box-shadow: 0 3px 0 var(--yel-d); }
+.arc-cards { grid-template-columns: 1fr 1fr; gap: 4px; padding: 12px; border-radius: 18px; }
+.arc-cards i { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 6px; background: radial-gradient(circle, #fff 0 22%, var(--ink) 23% 30%, transparent 31%), linear-gradient(var(--red) 0 46%, var(--ink) 46% 54%, #fff 54%); }
+.arc-cards i.up { background: #fff; }
+.arc-cards img { width: 28px; height: 28px; image-rendering: pixelated; }
+.arc-typepic { gap: 4px; align-content: center; }
+.arc-typepic em, .arc-type { display: inline-flex; align-items: center; justify-content: center; padding: 3px 10px; border-radius: 999px; background: var(--c); color: var(--fg, #10131f); font: 800 .75rem/1.3 var(--font); font-style: normal; }
+.arc-pricepic { grid-template-columns: 1fr 1fr; gap: 6px; padding: 10px; border-radius: 18px; }
+.arc-pricepic i { display: grid; place-items: center; width: 32px; height: 44px; border-radius: 5px; background: var(--paper); color: var(--ink); font: 900 .8rem/1 var(--font); font-style: normal; box-shadow: 0 2px 0 rgba(0,0,0,.25); }
+.arc-tt { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.arc-tt b { font: 900 1.25rem/1.15 var(--font); }
+.arc-tt small { font: 700 .9375rem/1.3 var(--font); opacity: .95; }
+.arc-top { margin-top: 8px; padding: 5px 10px; border-radius: 10px; background: rgba(0,0,0,.25); font: 700 .8125rem/1.3 var(--font); justify-self: start; }
+.t-price .arc-top { background: rgba(255,255,255,.55); }
+
+/* A game: its bar, Play and Today's Top 10. */
+.arc-bar { display: flex; align-items: center; gap: 12px; }
+.arc-out { flex: none; }
+.arc-gt { margin: 0; font: 900 1.4rem/1.15 var(--font); color: var(--yel); }
+.arc-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; border-radius: 16px; background: var(--surface-2); }
+.arc-tabs button { min-height: 44px; border: 0; border-radius: 12px; background: none; color: var(--muted); font: 800 .9375rem/1 var(--font); cursor: pointer; }
+.arc-tabs button.on { background: #c41010; color: #fff; box-shadow: 0 3px 0 #7d0909; }
+.arc-body { display: flex; flex-direction: column; gap: 14px; padding: 16px; border-radius: 22px; background: var(--surface); box-shadow: inset 0 0 0 2px var(--line-2); }
+.arc-body[hidden] { display: none; }
+.arc-intro { display: flex; flex-direction: column; align-items: center; gap: 16px; padding: 10px 4px; text-align: center; }
+.arc-intro p { margin: 0; font-size: 1.0625rem; line-height: 1.5; }
+.btn.arc-go { min-height: 52px; padding: 0 30px; border-radius: 999px; background: var(--yel); color: var(--ink); font: 900 1.125rem/1 var(--font); box-shadow: 0 4px 0 var(--yel-d); }
+.btn.arc-go:active { transform: translateY(2px); box-shadow: 0 2px 0 var(--yel-d); }
+.arc-hud { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 6px 12px; padding: 8px 12px; border-radius: 12px; background: var(--ink); color: var(--yel); font: 800 .9375rem/1.3 var(--font); }
+.arc-lives { color: var(--red); letter-spacing: 2px; font-size: 1.125rem; }
+
+/* Answers to pick. */
+.arc-opts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.arc-opt { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px; min-height: 54px; padding: 8px 10px; border: 0; border-radius: 14px; background: var(--paper); color: var(--ink);
+  font: 800 1rem/1.2 var(--font); box-shadow: 0 4px 0 #c9b98a; cursor: pointer; }
+.arc-opt:active { transform: translateY(2px); box-shadow: 0 2px 0 #c9b98a; }
+.arc-opt.right { background: var(--grn); color: #fff; box-shadow: 0 4px 0 #1c6232; }
+.arc-opt.wrong { background: var(--red); color: #fff; box-shadow: 0 4px 0 var(--red-d); animation: arc-shake .35s; }
+.arc-opt:disabled { cursor: default; }
+@keyframes arc-shake { 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+
+/* Who's That Pokémon? */
+.arc-who-pic { display: grid; place-items: center; padding: 10px; border-radius: 18px; background: radial-gradient(circle, #8fd3ff 0 30%, #3b6fd8 70%); }
+.arc-who-pic img { width: min(240px, 60vw); height: auto; aspect-ratio: 1; }
+.arc-shadow { filter: brightness(0); }
+.arc-reveal { animation: arc-pop .35s; }
+@keyframes arc-pop { from { transform: scale(.85); opacity: .4; } to { transform: none; opacity: 1; } }
+.arc-who-say { margin: 0; text-align: center; font: 900 1.35rem/1.2 var(--font); color: var(--yel); }
+.arc-who-say.good { color: #7ee2a8; } .arc-who-say.bad { color: #ff8a7a; }
+.arc-time { height: 10px; border-radius: 999px; background: var(--surface-3); overflow: hidden; }
+.arc-time i { display: block; height: 100%; width: 100%; background: linear-gradient(90deg, var(--red), var(--yel)); transition: width .1s linear; }
+
+/* Memory Match. */
+.arc-mem { display: grid; grid-template-columns: repeat(var(--cols), 1fr); gap: 5px; width: 100%; margin-inline: auto; }
+.arc-cell { position: relative; aspect-ratio: 1; min-height: 34px; padding: 0; border: 0; border-radius: 9px; background: #fff; cursor: pointer; overflow: hidden; box-shadow: 0 2px 0 rgba(0,0,0,.35); }
+.arc-cell img { width: 100%; height: 100%; object-fit: contain; image-rendering: pixelated; opacity: 0; transition: opacity .15s; }
+.arc-back { position: absolute; inset: 0; background: radial-gradient(circle, #fff 0 13%, var(--ink) 14% 20%, transparent 21%), linear-gradient(var(--red) 0 45%, var(--ink) 45% 55%, #fff 55%); transition: opacity .15s; }
+.arc-cell.on img, .arc-cell.done img { opacity: 1; }
+.arc-cell.on .arc-back, .arc-cell.done .arc-back { opacity: 0; }
+.arc-cell.done { background: #d9f7e1; box-shadow: inset 0 0 0 3px var(--grn); }
+
+/* Type Challenge. */
+.arc-tq { display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
+.arc-tq img { width: min(200px, 50vw); height: auto; aspect-ratio: 1; }
+.arc-tq-q { margin: 0; font: 900 1.25rem/1.3 var(--font); }
+.arc-bigtype { padding: 18px 0 6px; }
+.arc-bigtype .arc-type { padding: 10px 28px; font-size: 1.5rem; }
+.arc-topts .arc-type { font-size: .9375rem; padding: 5px 12px; }
+
+/* Price Check. */
+.arc-duo { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; }
+.arc-vs { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: #c41010; color: #fff; font: 900 .9rem/1 var(--font); box-shadow: 0 3px 0 var(--red-d); }
+.arc-pc { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 8px; border: 0; border-radius: 16px; background: var(--paper); color: var(--ink); cursor: pointer; box-shadow: 0 5px 0 #c9b98a; text-align: left; }
+.arc-pc img { width: 100%; aspect-ratio: 245 / 342; object-fit: cover; border-radius: 8px; background: #eee; }
+.arc-pc-i { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.arc-pc-i b { font: 800 .875rem/1.25 var(--font); overflow-wrap: anywhere; }
+.arc-pc-i small { color: #4a4f63; font: 600 .75rem/1.3 var(--font); }
+.arc-pc-p { align-self: center; padding: 4px 12px; border-radius: 999px; background: var(--ink); color: var(--yel); font: 900 1.05rem/1.2 var(--font); }
+.arc-pc.right { box-shadow: 0 0 0 4px var(--grn), 0 5px 0 #1c6232; }
+.arc-pc.wrong { box-shadow: 0 0 0 4px var(--red), 0 5px 0 var(--red-d); animation: arc-shake .35s; }
+
+/* The end of a game. */
+.arc-end { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 8px 4px; text-align: center; }
+.arc-end-t { margin: 0; font: 900 1.8rem/1.15 var(--font); color: var(--yel); }
+.arc-end-l { margin: 0; font-size: 1.0625rem; }
+.arc-acts { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 6px; }
+.arc-acts .btn { min-height: 48px; }
+.arc-saved { margin: 4px 0 0; padding: 8px 14px; border-radius: 12px; background: var(--surface-2); font-weight: 600; }
+.arc-saved.ok { color: #7ee2a8; } .arc-saved.bad { color: #ff8a7a; }
+
+/* Today's Top 10. */
+.arc-board { padding: 6px 0; }
+.arc-rows { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.arc-rows li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 14px; background: var(--surface); box-shadow: inset 0 0 0 1px var(--line-2); }
+.arc-rows li.me { box-shadow: inset 0 0 0 2px var(--yel); }
+.arc-rows li:nth-child(1) .arc-rank { background: var(--yel); color: var(--ink); }
+.arc-rows li:nth-child(2) .arc-rank { background: #cfd6e4; color: var(--ink); }
+.arc-rows li:nth-child(3) .arc-rank { background: #d9925b; color: var(--ink); }
+.arc-rank { display: grid; place-items: center; flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--surface-3); font-weight: 900; }
+.arc-who { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.arc-who b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.arc-who small { color: var(--muted); }
+.arc-score { flex: none; color: var(--yel); font: 900 1.25rem/1 var(--font); }
+.arc-empty { margin: 0; padding: 16px; text-align: center; color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) { .arc-tile, .arc-opt, .arc-pc, .arc-reveal, .arc-cell img, .arc-back { animation: none; transition: none; } }
+@media (max-width: 420px) {
+  .arc-body { padding: 12px; }
+  .arc-mem { gap: 3px; }
+  .arc-tile { grid-template-columns: 76px 1fr; }
+  .arc-pic { width: 76px; height: 76px; }
+}

@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Vault Arcade · {{ nav.brand }}{% endblock %}
+{% block head %}<link rel="stylesheet" href="/static/arcade.css?v=1">{% endblock %}
+{% block content %}
+{#- Vault Arcade (the owner, 20 Nov 2026): four light games, made for a phone, with today's leaderboards. Anyone can
+    play; a logged-in trainer's scores are saved (src/arcade.rs). The games run in static/arcade.js, the Pokémon in
+    static/arcade-dex.js. Each game opens on this page (#who, #memory, #types, #price) and Back returns here. -#}
+<section class="arc" id="arcade" data-signed="{{ signed }}">
+  <div class="arc-home" id="arcHome">
+    <header class="arc-hero">
+      <h1 class="arc-title"><span class="arc-t1">Vault</span> <span class="arc-t2">Arcade</span></h1>
+      <p class="arc-reset">Leaderboards Start Fresh Every Midnight</p>
+    </header>
+    {% if !signed %}<p class="arc-login"><span>Playing as a guest. Log in to save your scores and join the leaderboards.</span> <a class="btn sm" href="/login?next=/arcade">Log In</a></p>{% endif %}
+    <div class="arc-tiles">
+      <a class="arc-tile t-who" href="#who"><span class="arc-pic" aria-hidden="true"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/other/official-artwork/25.png" alt="" class="arc-shadow" width="120" height="120" loading="lazy"><b class="arc-q">?</b></span><span class="arc-tt"><b>Who's That Pokémon?</b><small>Name The Silhouette</small></span><span class="arc-top" data-top="who"></span></a>
+      <a class="arc-tile t-memory" href="#memory"><span class="arc-pic arc-cards" aria-hidden="true"><i></i><i></i><i class="up"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/1.png" alt="" width="48" height="48" loading="lazy"></i><i class="up"><img src="https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/1.png" alt="" width="48" height="48" loading="lazy"></i></span><span class="arc-tt"><b>Memory Match</b><small>Find The Pairs</small></span><span class="arc-top" data-top="memory"></span></a>
+      <a class="arc-tile t-types" href="#types"><span class="arc-pic arc-typepic" aria-hidden="true"><em style="--c:#ee8130">Fire</em><em style="--c:#6390f0">Water</em><em style="--c:#7ac74c">Grass</em></span><span class="arc-tt"><b>Type Challenge</b><small>10 Questions A Day</small></span><span class="arc-top" data-top="types"></span></a>
+      <a class="arc-tile t-price" href="#price"><span class="arc-pic arc-pricepic" aria-hidden="true"><i>₱?</i><i>₱?</i></span><span class="arc-tt"><b>Price Check</b><small>Which Card Costs More?</small></span><span class="arc-top" data-top="price"></span></a>
+    </div>
+  </div>
+  <div class="arc-stage" id="arcStage" hidden></div>
+  <script type="application/json" id="arcBoards">{{ boards|safe }}</script>
+</section>
+<script src="/static/arcade-dex.js?v=1" defer></script>
+<script src="/static/arcade.js?v=1" defer></script>
+{% endblock %}
