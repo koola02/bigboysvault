@@ -124,6 +124,9 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
         ("comments", "image_id", "INTEGER NOT NULL DEFAULT 0"),
         // Each photo's own caption (the owner, 20 Nov 2026: "add ability to edit or add a caption in every photos").
         ("post_images", "caption", "TEXT NOT NULL DEFAULT ''"),
+        // Written as the author's store, not as them (the owner, 20 Nov 2026: "Seller and Store should have their own
+        // post"): it shows on the store's page, with the store's name and picture, and not on the person's.
+        ("posts", "as_store", "INTEGER NOT NULL DEFAULT 0"),
     ] {
         let there: i64 = c.query_row(&format!("SELECT COUNT(*) FROM pragma_table_info('{table}') WHERE name=?1"), [col], |r| r.get(0))?;
         if there == 0 {
@@ -162,6 +165,8 @@ pub struct Post {
     pub edited_at: i64,
     /// The words (`text`, or `note` on an automatic post) cut into styled pieces, as JSON (`rich.rs`). "" when plain.
     pub rich: String,
+    /// Written as the author's store.
+    pub as_store: bool,
     /// The viewer's own reaction ("" when none).
     pub mine: String,
 }
@@ -173,7 +178,7 @@ impl Post {
     }
 }
 
-const POST_COLS: &str = "p.id, p.member_id, p.kind, p.text, p.payload, p.like_n, p.comment_n, p.share_n, p.pinned, p.hidden, p.created_at, p.note, p.edited_at, p.rich";
+const POST_COLS: &str = "p.id, p.member_id, p.kind, p.text, p.payload, p.like_n, p.comment_n, p.share_n, p.pinned, p.hidden, p.created_at, p.note, p.edited_at, p.rich, p.as_store";
 
 fn map_post(r: &Row) -> rusqlite::Result<Post> {
     let payload: String = r.get(4)?;
@@ -192,7 +197,8 @@ fn map_post(r: &Row) -> rusqlite::Result<Post> {
         note: r.get(11)?,
         edited_at: r.get(12)?,
         rich: r.get(13)?,
-        mine: r.get(14)?,
+        as_store: r.get::<_, i64>(14)? != 0,
+        mine: r.get(15)?,
     })
 }
 
@@ -584,15 +590,21 @@ pub fn caption_new_photos(c: &Connection, post: i64, before: &[i64], captions: &
     Ok(())
 }
 
-/// One author's written posts (0: the vault's), newest first, older than `before` (time, id): what their own page shows.
-pub fn posts_by(c: &Connection, viewer: i64, author: i64, before: Option<(i64, i64)>, limit: i64) -> rusqlite::Result<Vec<Post>> {
+/// Marks a post as written by its author's store.
+pub fn set_as_store(c: &Connection, id: i64) -> rusqlite::Result<()> {
+    c.execute("UPDATE posts SET as_store=1 WHERE id=?1", [id]).map(|_| ())
+}
+
+/// One author's written posts (0: the vault's), newest first, older than `before` (time, id): what their own page shows
+/// (`store`: the ones written as their store, for the store's page).
+pub fn posts_by(c: &Connection, viewer: i64, author: i64, store: bool, before: Option<(i64, i64)>, limit: i64) -> rusqlite::Result<Vec<Post>> {
     let (t, id) = before.unwrap_or((i64::MAX, i64::MAX));
     c.prepare_cached(&format!(
         "SELECT {POST_COLS}, COALESCE((SELECT kind FROM reactions r WHERE r.post_id=p.id AND r.member_id=?1), '')
-         FROM posts p WHERE p.member_id=?2 AND p.kind IN ('post','share') AND p.hidden=0 AND (p.created_at<?3 OR (p.created_at=?3 AND p.id<?4))
+         FROM posts p WHERE p.member_id=?2 AND p.kind IN ('post','share') AND p.hidden=0 AND p.as_store=?6 AND (p.created_at<?3 OR (p.created_at=?3 AND p.id<?4))
          ORDER BY p.created_at DESC, p.id DESC LIMIT ?5"
     ))?
-    .query_map(params![viewer, author, t, id, limit], map_post)?
+    .query_map(params![viewer, author, t, id, limit, store as i64], map_post)?
     .collect()
 }
 

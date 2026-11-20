@@ -12,7 +12,9 @@
   const root = document.getElementById('addPage');
   if (!root) return;
   const $ = (id) => document.getElementById(id);
-  const seller = root.dataset.seller === 'true';
+  // Into one of their own binders (Personal Collection, ?collection=id): a plain add, no price or condition, even for a seller.
+  const collection = root.dataset.collection ? Number(root.dataset.collection) : null;
+  const seller = root.dataset.seller === 'true' && !collection;
   const binderId = root.dataset.binder ? Number(root.dataset.binder) : null;
   const make = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   const toast = (msg, bad) => { if (window.Admin && window.Admin.toast) window.Admin.toast(msg, { kind: bad ? 'err' : 'ok' }); };
@@ -75,7 +77,7 @@
     }
     b.classList.add('busy');
     try {
-      const j = await send('/me/cards', { id: c.id, image: c.image, image_large: c.image_large, en: c.en });
+      const j = await send('/me/cards', { id: c.id, image: c.image, image_large: c.image_large, en: c.en, ...(collection ? { collection } : {}) });
       b.classList.add('in');
       added(j.card);
       toast(`${c.name || 'Card'} is in your binder ✓`);

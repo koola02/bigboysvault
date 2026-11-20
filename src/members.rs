@@ -510,6 +510,33 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
     // The store: listings' stock and prices, orders, reviews, followers, views and notifications.
     crate::sellers::migrate(c)?;
 
+    // A person's own binders, for their page's Personal Collection (the owner, 20 Nov 2026): apart from a store's
+    // binders, holding the cards they own or are after (never for sale), with no price or condition to set.
+    c.execute_batch("
+    CREATE TABLE IF NOT EXISTS personal_binders(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, member_id INTEGER NOT NULL, title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '', position INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_pb_member ON personal_binders(member_id, position);
+    ")?;
+    let there: i64 = c.query_row("SELECT COUNT(*) FROM pragma_table_info('member_cards') WHERE name='pbinder_id'", [], |r| r.get(0))?;
+    if there == 0 {
+        c.execute_batch("ALTER TABLE member_cards ADD COLUMN pbinder_id INTEGER")?;
+    }
+    // Once: the highlights and wishlist cards a person already had go into binders of their own, so their page keeps them.
+    if crate::blocks::setting(c, "personal_v")?.as_deref() != Some("1") {
+        let rows: Vec<(i64, String)> = c
+            .prepare("SELECT DISTINCT member_id, kind FROM member_cards WHERE kind IN ('own','wish') AND pbinder_id IS NULL")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<_, _>>()?;
+        for (mid, kind) in rows {
+            let title = if kind == "wish" { "Wishlist" } else { "My Collection" };
+            if let Some(b) = create_personal_binder(c, mid, title)? {
+                c.execute("UPDATE member_cards SET pbinder_id=?3 WHERE member_id=?1 AND kind=?2 AND pbinder_id IS NULL", rusqlite::params![mid, kind, b.id])?;
+            }
+        }
+        crate::blocks::set_setting(c, "personal_v", "1")?;
+    }
+
     // Once (19 Nov 2026): approval is gone, so every page that was waiting for it goes live. From here on `profile_ok`
     // is 0 only for a page the vault's team hid on purpose.
     if crate::blocks::setting(c, "open_pages_v")?.as_deref() != Some("1") {
@@ -1442,6 +1469,129 @@ pub fn cards_of_binder(c: &Connection, member_id: i64, binder_id: Option<i64>) -
     let mut st = c.prepare(&sql)?;
     let v = st.query_map(rusqlite::params![member_id, binder_id], |r| map_card(r, 0))?.collect::<Result<Vec<_>, _>>()?;
     Ok(v)
+}
+
+// ---------- a person's own binders (their page's Personal Collection) ----------
+
+/// One of a person's own binders: its cards are theirs (or on their wishlist), never for sale.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PersonalBinder {
+    pub id: i64,
+    pub member_id: i64,
+    pub title: String,
+    pub description: String,
+    pub count: i64,
+    /// Its first card's picture, for the tile ("" when it is empty).
+    pub cover: String,
+}
+
+impl PersonalBinder {
+    pub fn count_text(&self) -> String {
+        format!("{} Card{}", self.count, if self.count == 1 { "" } else { "s" })
+    }
+}
+
+const PB_COLS: &str = "b.id, b.member_id, b.title, b.description,
+    (SELECT COUNT(*) FROM member_cards x WHERE x.pbinder_id=b.id AND x.member_id=b.member_id),
+    COALESCE((SELECT x.image FROM member_cards x WHERE x.pbinder_id=b.id AND x.member_id=b.member_id AND x.image<>'' ORDER BY x.position, x.id LIMIT 1), '')";
+
+fn map_pb(r: &Row) -> rusqlite::Result<PersonalBinder> {
+    Ok(PersonalBinder { id: r.get(0)?, member_id: r.get(1)?, title: r.get(2)?, description: r.get(3)?, count: r.get(4)?, cover: r.get(5)? })
+}
+
+/// A person's own binders, in their order.
+pub fn personal_binders(c: &Connection, member_id: i64) -> rusqlite::Result<Vec<PersonalBinder>> {
+    c.prepare(&format!("SELECT {PB_COLS} FROM personal_binders b WHERE b.member_id=?1 ORDER BY b.position, b.id"))?.query_map([member_id], map_pb)?.collect()
+}
+
+pub fn personal_binder(c: &Connection, member_id: i64, id: i64) -> rusqlite::Result<Option<PersonalBinder>> {
+    c.query_row(&format!("SELECT {PB_COLS} FROM personal_binders b WHERE b.member_id=?1 AND b.id=?2"), [member_id, id], map_pb).optional()
+}
+
+/// A new binder of their own, last in their order. None when they have the most a person may have.
+pub fn create_personal_binder(c: &Connection, member_id: i64, title: &str) -> rusqlite::Result<Option<PersonalBinder>> {
+    let n: i64 = c.query_row("SELECT COUNT(*) FROM personal_binders WHERE member_id=?1", [member_id], |r| r.get(0))?;
+    if n >= MAX_BINDERS {
+        return Ok(None);
+    }
+    let t = binder_name(title);
+    let title = if t.is_empty() { "New Binder".to_string() } else { t };
+    c.execute(
+        "INSERT INTO personal_binders(member_id, title, position, created_at) VALUES(?1, ?2, (SELECT COALESCE(MAX(position), -1) + 1 FROM personal_binders WHERE member_id=?1), ?3)",
+        rusqlite::params![member_id, title, now()],
+    )?;
+    personal_binder(c, member_id, c.last_insert_rowid())
+}
+
+/// Its name and words. False when it isn't theirs.
+pub fn edit_personal_binder(c: &Connection, member_id: i64, id: i64, title: &str, description: &str) -> rusqlite::Result<bool> {
+    let t = binder_name(title);
+    if t.is_empty() {
+        return Ok(false);
+    }
+    Ok(c.execute("UPDATE personal_binders SET title=?3, description=?4 WHERE id=?2 AND member_id=?1", rusqlite::params![member_id, id, t, clean_text(description, 300)])? == 1)
+}
+
+/// One place up (-1) or down (1) in their order.
+pub fn move_personal_binder(c: &Connection, member_id: i64, id: i64, by: i64) -> rusqlite::Result<bool> {
+    let mut ids: Vec<i64> = personal_binders(c, member_id)?.into_iter().map(|b| b.id).collect();
+    let Some(at) = ids.iter().position(|x| *x == id) else { return Ok(false) };
+    let to = at as i64 + by.signum();
+    if to < 0 || to >= ids.len() as i64 {
+        return Ok(false);
+    }
+    ids.swap(at, to as usize);
+    for (pos, bid) in ids.iter().enumerate() {
+        c.execute("UPDATE personal_binders SET position=?2 WHERE id=?1", rusqlite::params![bid, pos as i64])?;
+    }
+    Ok(true)
+}
+
+/// Deletes one of their binders. Returns the cards that were in it, for the caller to remove (their photos too);
+/// None when it isn't theirs.
+pub fn delete_personal_binder(c: &Connection, member_id: i64, id: i64) -> rusqlite::Result<Option<Vec<MemberCard>>> {
+    if personal_binder(c, member_id, id)?.is_none() {
+        return Ok(None);
+    }
+    let cards = personal_cards(c, member_id, id)?;
+    c.execute("UPDATE member_cards SET pbinder_id=NULL WHERE member_id=?1 AND pbinder_id=?2", [member_id, id])?;
+    c.execute("DELETE FROM personal_binders WHERE member_id=?1 AND id=?2", [member_id, id])?;
+    Ok(Some(cards))
+}
+
+/// The cards in one of their binders, in its order.
+pub fn personal_cards(c: &Connection, member_id: i64, id: i64) -> rusqlite::Result<Vec<MemberCard>> {
+    c.prepare(&format!("SELECT {CARD_COLS} FROM member_cards c WHERE c.member_id=?1 AND c.pbinder_id=?2 ORDER BY c.position, c.id"))?
+        .query_map([member_id, id], |r| map_card(r, 0))?
+        .collect()
+}
+
+/// Their cards that aren't for sale and are in none of their binders (a card a seller took off sale, say).
+pub fn loose_personal_cards(c: &Connection, member_id: i64) -> rusqlite::Result<Vec<MemberCard>> {
+    c.prepare(&format!("SELECT {CARD_COLS} FROM member_cards c WHERE c.member_id=?1 AND c.kind IN ('own','wish') AND c.pbinder_id IS NULL ORDER BY c.position, c.id"))?
+        .query_map([member_id], |r| map_card(r, 0))?
+        .collect()
+}
+
+/// Puts one of their cards in one of their binders (last in it), as theirs: never one that is for sale.
+pub fn put_in_personal(c: &Connection, member_id: i64, card_id: i64, binder_id: i64) -> rusqlite::Result<bool> {
+    if personal_binder(c, member_id, binder_id)?.is_none() {
+        return Ok(false);
+    }
+    let pos: i64 = c.query_row("SELECT COALESCE(MAX(position), -1) + 1 FROM member_cards WHERE member_id=?1 AND pbinder_id=?2", [member_id, binder_id], |r| r.get(0))?;
+    Ok(c.execute(
+        "UPDATE member_cards SET pbinder_id=?3, position=?4, kind=CASE WHEN kind='wish' THEN 'wish' ELSE 'own' END WHERE id=?2 AND member_id=?1 AND kind IN ('own','wish')",
+        rusqlite::params![member_id, card_id, binder_id, pos],
+    )? == 1)
+}
+
+/// A new name for one of their cards that isn't for sale.
+pub fn rename_personal_card(c: &Connection, member_id: i64, card_id: i64, title: &str) -> rusqlite::Result<bool> {
+    let t = clean_line(title, 120);
+    if t.is_empty() {
+        return Ok(false);
+    }
+    Ok(c.execute("UPDATE member_cards SET title=?3 WHERE id=?2 AND member_id=?1 AND kind IN ('own','wish')", rusqlite::params![member_id, card_id, t])? == 1)
 }
 
 pub fn set_profile_ok(c: &Connection, id: i64, ok: bool) -> rusqlite::Result<()> {

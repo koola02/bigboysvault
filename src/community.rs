@@ -204,8 +204,10 @@ struct TrainerPage {
     /// Their posts, drawn (page_posts.html): None on a page that leaves them out.
     posts: Option<String>,
     can_post: bool,
-    as_vault: bool,
+    post_as: &'static str,
     posts_lazy: String,
+    /// Their Personal Collection: their own binders.
+    collection: Vec<members::PersonalBinder>,
 }
 
 #[derive(Template)]
@@ -225,8 +227,10 @@ struct TrainerPart {
     /// Posts (page_posts.html): None leaves them out.
     posts: Option<String>,
     can_post: bool,
-    as_vault: bool,
+    post_as: &'static str,
     posts_lazy: String,
+    /// Their Personal Collection: their own binders.
+    collection: Vec<members::PersonalBinder>,
 }
 
 #[derive(Template)]
@@ -616,9 +620,9 @@ pub async fn seller_binder(State(app): State<App>, h: HeaderMap, Path((slug, b_s
     let highlight = m.highlight.and_then(|h| cards.iter().find(|c| c.id == h).cloned());
     let (cards, wishes, selling) = split_kinds(cards);
     Ok(html(if q.part.is_some() {
-        render(TrainerPart { t: m, cards, wishes, selling, highlight, is_me, full, vouches, awards, posts: None, can_post: false, as_vault: false, posts_lazy: String::new() })?
+        render(TrainerPart { t: m, cards, wishes, selling, highlight, is_me, full, vouches, awards, posts: None, can_post: false, post_as: "", posts_lazy: String::new(), collection: vec![] })?
     } else {
-        render(TrainerPage { nav, t: m, cards, wishes, selling, highlight, is_me, full, vouches, awards, posts: None, can_post: false, as_vault: false, posts_lazy: String::new() })?
+        render(TrainerPage { nav, t: m, cards, wishes, selling, highlight, is_me, full, vouches, awards, posts: None, can_post: false, post_as: "", posts_lazy: String::new(), collection: vec![] })?
     }))
 }
 
@@ -694,14 +698,152 @@ pub async fn trainer(State(app): State<App>, h: HeaderMap, Path(id): Path<i64>, 
         };
     }
     Ok(html(if q.part.is_some() {
-        render(TrainerPart { t, cards, wishes, selling, highlight, is_me, full, vouches, awards, posts: None, can_post: false, as_vault: false, posts_lazy: String::new() })?
+        render(TrainerPart { t, cards, wishes, selling, highlight, is_me, full, vouches, awards, posts: None, can_post: false, post_as: "", posts_lazy: String::new(), collection: vec![] })?
     } else {
         // Their posts, as on the home page, with the box to write one when it is their own page.
         let (mid, viewer) = (t.id, me.as_ref().map(|m| m.id).unwrap_or(0));
-        let (items, next) = with_db(&app, move |c| crate::feed::page_items(c, viewer, mid, None)).await?;
+        let (items, next, collection) = with_db(&app, move |c| {
+            let (items, next) = crate::feed::page_items(c, viewer, mid, false, None)?;
+            Ok((items, next, members::personal_binders(c, mid)?))
+        })
+        .await?;
         let posts = if full { Some(crate::feed::page_html(items, next)?) } else { None };
-        render(TrainerPage { nav, t, cards, wishes, selling, highlight, is_me, full, vouches, awards, posts, can_post: is_me, as_vault: false, posts_lazy: String::new() })?
+        // Visitors see the binders with cards in them; the owner sees them all.
+        let collection: Vec<members::PersonalBinder> = collection.into_iter().filter(|b| is_me || b.count > 0).collect();
+        render(TrainerPage { nav, t, cards, wishes, selling, highlight, is_me, full, vouches, awards, posts, can_post: is_me, post_as: "", posts_lazy: String::new(), collection })?
     }))
+}
+
+// ---------- a person's own binders: their page's Personal Collection ----------
+
+#[derive(Template)]
+#[template(path = "trainer_collection.html")]
+struct CollectionPage {
+    nav: Chrome,
+    t: Member,
+    b: members::PersonalBinder,
+    cards: Vec<MemberCard>,
+    is_me: bool,
+}
+
+/// GET /trainers/{id}/collection/{binder}: one binder of a person's Personal Collection.
+pub async fn collection_view(State(app): State<App>, h: HeaderMap, Path((id, bid)): Path<(i64, i64)>) -> Res {
+    let me = current(&app, &h).await?;
+    let is_me = me.as_ref().is_some_and(|m| m.id == id);
+    let staff = admin::can_moderate(&app, &h);
+    let (nav, t, b, cards) = with_db(&app, move |c| Ok((chrome(c)?, members::get(c, id)?, members::personal_binder(c, id, bid)?, members::personal_cards(c, id, bid)?))).await?;
+    let (Some(t), Some(b)) = (t, b) else { return not_found(&app).await };
+    if (t.blocked || !t.profile_ok) && !is_me && !staff {
+        return not_found(&app).await;
+    }
+    let mut nav = titled(nav, &format!("{} · {}", b.title, t.name));
+    if !t.profile_ok || t.blocked {
+        nav.seo.path.clear();
+    }
+    Ok(html(render(CollectionPage { nav, t, b, cards, is_me })?))
+}
+
+#[derive(Template)]
+#[template(path = "me_collection.html")]
+struct MeCollectionPage {
+    nav: Chrome,
+    p: crate::store::Panel,
+    binders: Vec<(members::PersonalBinder, Vec<MemberCard>)>,
+    /// Every binder, for a card's "Binder" choice.
+    all: Vec<members::PersonalBinder>,
+    loose: Vec<MemberCard>,
+}
+
+/// GET /me/collection: Account Settings › Manage Binders.
+pub async fn collection_page(State(app): State<App>, h: HeaderMap) -> Res {
+    let Some(m) = current(&app, &h).await? else { return Ok(Redirect::to("/login?next=/me/collection").into_response()) };
+    let id = m.id;
+    let (mut nav, p, binders, all, loose) = with_db(&app, move |c| {
+        let all = members::personal_binders(c, id)?;
+        let mut binders = vec![];
+        for b in &all {
+            binders.push((b.clone(), members::personal_cards(c, id, b.id)?));
+        }
+        Ok((chrome(c)?, crate::store::panel(c, m, "binders")?, binders, all, members::loose_personal_cards(c, id)?))
+    })
+    .await?;
+    nav.seo.title = format!("Manage Binders · {}", nav.brand);
+    Ok(html(render(MeCollectionPage { nav, p, binders, all, loose })?))
+}
+
+#[derive(Deserialize, Default)]
+pub struct CollectionReq {
+    #[serde(default)]
+    action: String,
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    description: String,
+    #[serde(default)]
+    by: i64,
+    #[serde(default)]
+    binder: i64,
+}
+
+/// POST /me/collection {title}: a new binder for their page.
+pub async fn collection_new(State(app): State<App>, h: HeaderMap, Json(req): Json<CollectionReq>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let id = m.id;
+    let made = with_db(&app, move |c| members::create_personal_binder(c, id, &req.title)).await?;
+    app.forget();
+    Ok(match made {
+        Some(b) => ok(json!({ "ok": true, "id": b.id, "title": b.title })),
+        None => fail(StatusCode::CONFLICT, "That's the most binders you can have. Delete one first."),
+    })
+}
+
+/// POST /me/collection/{binder} {action: "edit" (title, description) | "move" (by: -1 or 1) | "delete"}. Deleting a binder
+/// deletes the cards in it.
+pub async fn collection_binder(State(app): State<App>, h: HeaderMap, Path(bid): Path<i64>, Json(req): Json<CollectionReq>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let id = m.id;
+    let done = match req.action.as_str() {
+        "edit" => with_db(&app, move |c| members::edit_personal_binder(c, id, bid, &req.title, &req.description)).await?,
+        "move" => with_db(&app, move |c| members::move_personal_binder(c, id, bid, req.by)).await?,
+        "delete" => {
+            let Some(cards) = with_db(&app, move |c| members::delete_personal_binder(c, id, bid)).await? else { return Ok(fail(StatusCode::NOT_FOUND, "That binder isn't yours.")) };
+            for k in cards {
+                let cid = k.id;
+                with_db(&app, move |c| members::remove_card(c, id, cid)).await?;
+                if k.uploaded_photo() {
+                    admin::remove_upload(&app.uploads, &k.image);
+                    admin::remove_upload(&app.uploads, &k.image_large);
+                }
+            }
+            true
+        }
+        _ => return Ok(fail(StatusCode::BAD_REQUEST, "What should change?")),
+    };
+    app.forget();
+    Ok(if done { ok(json!({ "ok": true })) } else { fail(StatusCode::BAD_REQUEST, "That didn't change. Give the binder a name.") })
+}
+
+/// POST /me/collection/cards/{card} {title, binder}: one of their own cards renamed and put in one of their binders.
+pub async fn collection_card(State(app): State<App>, h: HeaderMap, Path(cid): Path<i64>, Json(req): Json<CollectionReq>) -> Res {
+    let m = match acting(&app, &h).await? {
+        Ok(m) => m,
+        Err(r) => return Ok(r),
+    };
+    let id = m.id;
+    let done = with_db(&app, move |c| {
+        let named = req.title.trim().is_empty() || members::rename_personal_card(c, id, cid, &req.title)?;
+        let placed = req.binder == 0 || members::personal_cards(c, id, req.binder)?.iter().any(|k| k.id == cid) || members::put_in_personal(c, id, cid, req.binder)?;
+        Ok(named && placed)
+    })
+    .await?;
+    app.forget();
+    Ok(if done { ok(json!({ "ok": true })) } else { fail(StatusCode::BAD_REQUEST, "That card couldn't be changed.") })
 }
 
 #[derive(Deserialize, Default)]
@@ -1090,7 +1232,7 @@ pub async fn who(State(app): State<App>, h: HeaderMap) -> Res {
         "admin": p != admin::Power::Nothing,
         "full": matches!(p, admin::Power::Admin(_)),
         // "store": a seller's own store, where the menu's "My store" goes.
-        "member": m.map(|m| json!({ "id": m.id, "name": m.name, "locked": m.locked(), "lock_left": m.lock_left(), "avatar": m.avatar, "initial": m.initial(), "seller": m.seller, "role": m.role, "page_hidden": !m.profile_ok, "store": if m.seller { m.store_url() } else { String::new() } })),
+        "member": m.map(|m| json!({ "id": m.id, "name": m.name, "locked": m.locked(), "lock_left": m.lock_left(), "avatar": m.avatar, "initial": m.initial(), "seller": m.seller, "role": m.role, "page_hidden": !m.profile_ok, "store_name": m.store_title(), "store_avatar": m.store_pic(), "store": if m.seller { m.store_url() } else { String::new() } })),
         // The key a browser turns alerts on with (static/alerts.js).
         "push_key": crate::push::public_key(),
         "bookmarks": bookmarks,
@@ -1414,6 +1556,8 @@ pub struct AddReq {
     en: Option<String>,
     /// "own", "sale" or "wish". A seller's card is for sale unless told otherwise; a collector's is a highlight.
     kind: Option<String>,
+    /// One of their own binders (Personal Collection) the card goes into.
+    collection: Option<i64>,
 }
 
 pub async fn add_card(State(app): State<App>, h: HeaderMap, Json(req): Json<AddReq>) -> Res {
@@ -1456,6 +1600,9 @@ pub async fn add_card(State(app): State<App>, h: HeaderMap, Json(req): Json<AddR
             // Here a card goes in as theirs (or a wish), never for sale at an automatic price.
             let k = req.kind.filter(|k| k == "own" || k == "wish").unwrap_or_else(|| "own".into());
             with_db(&app, move |c| marcuru_rs::sellers::set_kind(c, id, cid, &k)).await?.ok();
+            if let Some(pb) = req.collection {
+                with_db(&app, move |c| members::put_in_personal(c, id, cid, pb)).await?;
+            }
             // Only the new listing gets a value (its finish is still empty, so the card's default finish). Other sellers'
             // listings of this card keep their own finish's price from the nightly job.
             let market = market::member_finish_price(&info, "").unwrap_or(0.0);
@@ -2153,6 +2300,7 @@ pub async fn upload_card(State(app): State<App>, h: HeaderMap, mut mp: Multipart
     if !m.profile_ok && own >= HIDDEN_PAGE_PHOTOS {
         return Ok(fail(StatusCode::FORBIDDEN, "The vault's team has hidden your page, so you can't add more of your own photos for now."));
     }
+    let mut collection: Option<i64> = None;
     let (mut bytes, mut name, mut set, mut cond, mut value) = (None, String::new(), String::new(), String::new(), 0.0f64);
     while let Some(f) = mp.next_field().await.map_err(|_| (StatusCode::BAD_REQUEST, "That photo didn't upload.".to_string()))? {
         let key = f.name().unwrap_or("").to_string();
@@ -2166,6 +2314,7 @@ pub async fn upload_card(State(app): State<App>, h: HeaderMap, mut mp: Multipart
             "set" => set = members::clean_line(&text, 80),
             "cond" => cond = text.trim().to_string(),
             "value" => value = text.trim().parse::<f64>().ok().filter(|v| v.is_finite() && (0.0..=100_000_000.0).contains(v)).unwrap_or(0.0),
+            "collection" => collection = text.trim().parse::<i64>().ok(),
             _ => {}
         }
     }
@@ -2189,6 +2338,9 @@ pub async fn upload_card(State(app): State<App>, h: HeaderMap, mut mp: Multipart
         if let Added::Yes(cid) = a {
             members::set_card_photo_bytes(c, cid, size.max(1))?;
             members::set_condition(c, id, cid, &c2)?;
+            if let Some(pb) = collection {
+                members::put_in_personal(c, id, cid, pb)?;
+            }
             if value > 0.0 {
                 members::set_own_value(c, id, cid, value.round())?;
             }
@@ -2488,9 +2640,9 @@ mod tests {
         marcuru_rs::social::post_add(&c, s, "post", "My first pull", &[], &json!({}), 10).unwrap();
         let page = |c: &rusqlite::Connection, is_me: bool, viewer: i64| {
             let t = members::get(c, s).unwrap().unwrap();
-            let (items, next) = crate::feed::page_items(c, viewer, s, None).unwrap();
+            let (items, next) = crate::feed::page_items(c, viewer, s, false, None).unwrap();
             let posts = Some(crate::feed::page_html(items, next).unwrap());
-            render(TrainerPage { nav: chrome(c).unwrap(), t, cards: vec![], wishes: vec![], selling: vec![], highlight: None, is_me, full: true, vouches: vec![], awards: vec![], posts, can_post: is_me, as_vault: false, posts_lazy: String::new() }).unwrap()
+            render(TrainerPage { nav: chrome(c).unwrap(), t, cards: vec![], wishes: vec![], selling: vec![], highlight: None, is_me, full: true, vouches: vec![], awards: vec![], posts, can_post: is_me, post_as: "", posts_lazy: String::new(), collection: vec![] }).unwrap()
         };
         let own = page(&c, true, s);
         assert!(own.contains("href=\"/me\"") && own.contains("href=\"/me/messages\"") && own.contains("Create A Store</a>") && !own.contains("Store Manager</a>"), "{own}");
@@ -2518,7 +2670,7 @@ mod tests {
         assert_eq!(m.store_pic(), "/uploads/t-ash.jpg", "the store shows its owner's picture until it has its own");
         let page = |c: &rusqlite::Connection, is_me: bool| {
             let t = members::get(c, s).unwrap().unwrap();
-            render(TrainerPage { nav: chrome(c).unwrap(), t, cards: vec![], wishes: vec![], selling: vec![], highlight: None, is_me, full: true, vouches: vec![], awards: vec![], posts: None, can_post: false, as_vault: false, posts_lazy: String::new() }).unwrap()
+            render(TrainerPage { nav: chrome(c).unwrap(), t, cards: vec![], wishes: vec![], selling: vec![], highlight: None, is_me, full: true, vouches: vec![], awards: vec![], posts: None, can_post: false, post_as: "", posts_lazy: String::new(), collection: vec![] }).unwrap()
         };
         let html = page(&c, false);
         assert!(!html.contains("palletcards") && !html.contains("carousell") && !html.contains("cover-store") && !html.contains("Find Me On"), "nothing of the store's on the trainer's own page: {html}");
@@ -2548,28 +2700,46 @@ mod tests {
     }
 
     #[test]
-    fn a_seller_changes_cards_in_listings_and_a_collector_here() {
+    /// The owner, 20 Nov 2026: Account Settings is the person's own (its own icon bar, Manage Binders, View My Page,
+    /// Change Password beside Log Out, no price, no My Cards); their page shows a Personal Collection of their own
+    /// binders, each with a page of its own; the cards they had become binders of their own once.
+    fn account_settings_and_the_personal_collection() {
         let c = db();
         let s = members::create(&c, "Ash", "h").unwrap().unwrap();
-        members::set_profile_ok(&c, s, true).unwrap();
         let members::Added::Yes(id) = marcuru_rs::sellers::add_listing(&c, s, "tcgdex:base1-58", "Pikachu", "58/102", "Base Set", "/p/pika.webp", "").unwrap() else { panic!() };
         c.execute("UPDATE member_cards SET kind='own' WHERE id=?1", [id]).unwrap();
         let page = |c: &rusqlite::Connection| {
             let m = members::get(c, s).unwrap().unwrap();
-            let cards = members::cards_of(c, s).unwrap();
-            let kinds = (cards.iter().filter(|k| k.is_sale()).count(), cards.iter().filter(|k| k.is_own()).count(), cards.iter().filter(|k| k.is_wish()).count());
-            render(MePage { nav: chrome(c).unwrap(), p: crate::store::panel(c, m, "me").unwrap(), cards, binders: vec![], stats: members::seller_stats(c, s).unwrap(), max: 100, conditions: members::CONDITIONS, kinds }).unwrap()
+            render(MePage { nav: chrome(c).unwrap(), p: crate::store::panel(c, m, "me").unwrap(), cards: vec![], binders: vec![], stats: members::seller_stats(c, s).unwrap(), max: 100, conditions: members::CONDITIONS, kinds: (0, 0, 0) }).unwrap()
         };
-        // A trainer without a store changes their cards right here, as before.
-        let html = page(&c);
-        assert!(html.contains("data-kind") && html.contains("data-cond") && !html.contains("Manage them in Listings"));
-        // A seller: the pictures, ★ and their order here; everything else in Listings.
-        members::set_seller(&c, s, true).unwrap();
-        let html = page(&c);
-        assert!(html.contains("<a class=\"btn\" href=\"/me/listings\">Manage Them In Listings</a>") && html.contains("data-star") && !html.contains("data-kind") && !html.contains("data-cond"), "{html}");
-        assert!(html.contains("<span><b>0</b> For Sale</span><span><b>1</b> Highlight</span>"));
-        // One menu from a tablet up: the account menu has the cart, the header has no ☰.
-        assert!(html.contains("data-cart-open") && html.contains("class=\"hd-ib hd-cart\"") && !html.contains("hd-menu-btn"));
+        for seller in [false, true] {
+            members::set_seller(&c, s, seller).unwrap();
+            let html = page(&c);
+            assert!(html.contains("aria-label=\"Account Settings\"") && html.contains("href=\"/me/collection\"") && html.contains("View My Page</a>"), "{html}");
+            assert!(!html.contains("Store Manager") && !html.contains("data-kind") && !html.contains("me-worth") && html.contains("id=\"mePassOpen\""), "{html}");
+            assert!(html.contains("id=\"pageCoverFile\"") && html.contains("Upload Cover Photo"));
+        }
+        // Once: the card they had is in a binder of their own.
+        c.execute("DELETE FROM settings WHERE key='personal_v'", []).unwrap();
+        members::migrate(&c).unwrap();
+        let mine = members::personal_binders(&c, s).unwrap();
+        assert_eq!((mine.len(), mine[0].title.as_str(), mine[0].count), (1, "My Collection", 1));
+        let grails = members::create_personal_binder(&c, s, "Grails").unwrap().unwrap();
+        assert!(members::put_in_personal(&c, s, id, grails.id).unwrap());
+        assert_eq!(members::personal_cards(&c, s, grails.id).unwrap().len(), 1);
+        assert!(members::rename_personal_card(&c, s, id, "Pikachu (my first)").unwrap());
+        assert!(!members::put_in_personal(&c, s + 99, id, grails.id).unwrap(), "only their own");
+        // Their page: the binders (an empty one only for them), and its own page per binder.
+        let t = members::get(&c, s).unwrap().unwrap();
+        let collection = members::personal_binders(&c, s).unwrap();
+        let html = render(TrainerPage { nav: chrome(&c).unwrap(), t: t.clone(), cards: vec![], wishes: vec![], selling: vec![], highlight: None, is_me: true, full: true, vouches: vec![], awards: vec![], posts: None, can_post: false, post_as: "", posts_lazy: String::new(), collection }).unwrap();
+        assert!(html.contains("Personal Collection") && html.contains(&format!("href=\"/trainers/{s}/collection/{}\"", grails.id)) && html.contains("href=\"/me/collection#new\""), "{html}");
+        assert!(!html.contains("Highlighted Card") && html.contains("class=\"btn ghost sh-ico\" href=\"/me\" aria-label=\"Account Settings\""), "the gear on its own");
+        let b = members::personal_binder(&c, s, grails.id).unwrap().unwrap();
+        let view = render(CollectionPage { nav: chrome(&c).unwrap(), t, b, cards: members::personal_cards(&c, s, grails.id).unwrap(), is_me: false }).unwrap();
+        assert!(view.contains("Pikachu (my first)") && !view.contains("card-cond") && !view.contains("Manage This Binder"), "no condition, and only its owner manages it");
+        // Deleting a binder hands back its cards, for the handler to remove.
+        assert_eq!(members::delete_personal_binder(&c, s, grails.id).unwrap().map(|v| v.len()), Some(1));
     }
 
     #[test]

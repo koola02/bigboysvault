@@ -171,6 +171,8 @@ struct AddPage {
     /// Adding into one of the seller's binders (its "Add cards" button): the binder, and the way back to it.
     binder: Option<MemberBinder>,
     back: String,
+    /// Adding into one of their own binders (Account Settings › Manage Binders).
+    collection: Option<members::PersonalBinder>,
     conditions: [&'static str; 10],
     /// Scan a card (sellers): shown when the site has a key, with this seller's scans left today and the daily number.
     scan_on: bool,
@@ -182,6 +184,9 @@ struct AddPage {
 pub struct AddQs {
     #[serde(default, deserialize_with = "empty_or_number")]
     binder: Option<i64>,
+    /// One of their own binders (Personal Collection) to add into.
+    #[serde(default)]
+    collection: Option<i64>,
 }
 
 /// GET /me/add: Add cards, the one place a card is added (the owner, 18 Nov 2026: "keep the add a card tool in a
@@ -192,13 +197,27 @@ pub struct AddQs {
 pub async fn add_page(State(app): State<App>, h: HeaderMap, Query(q): Query<AddQs>) -> Res {
     let Some(m) = crate::community::current(&app, &h).await? else { return Ok(Redirect::to("/login?next=/me/add").into_response()) };
     let (id, seller, store) = (m.id, m.seller, m.store_url());
-    let (mut nav, p, binders, (scan_left, scan_per)) = with_db(&app, move |c| Ok((chrome(c)?, panel(c, m, "add")?, members::binders_of(c, id)?, crate::scan::left_today(c, id)?))).await?;
+    let pb = q.collection;
+    let collection = match pb {
+        Some(b) => with_db(&app, move |c| members::personal_binder(c, id, b)).await?,
+        None => None,
+    };
+    // Someone who doesn't sell adds cards only into their own binders.
+    if collection.is_none() && !seller {
+        return Ok(Redirect::to("/me/collection").into_response());
+    }
+    let tab = if collection.is_some() { "binders" } else { "add" };
+    let (mut nav, p, binders, (scan_left, scan_per)) = with_db(&app, move |c| Ok((chrome(c)?, panel(c, m, tab)?, members::binders_of(c, id)?, crate::scan::left_today(c, id)?))).await?;
     nav.seo.title = format!("Add Cards · {}", nav.brand);
-    let binder = if seller { q.binder.and_then(|b| binders.into_iter().find(|x| x.id == b)) } else { None };
+    let binder = if seller && collection.is_none() { q.binder.and_then(|b| binders.into_iter().find(|x| x.id == b)) } else { None };
     // Back to the binder's page with its editor open, where the new cards now are.
-    let back = binder.as_ref().map(|b| format!("{store}/binders/{}#edit", b.slug)).unwrap_or_default();
-    let scan_on = seller && crate::scan::enabled();
-    Ok(html(render(AddPage { nav, p, binder, back, conditions: members::CONDITIONS, scan_on, scan_left, scan_per })?))
+    let back = match (&binder, &collection) {
+        (Some(b), _) => format!("{store}/binders/{}#edit", b.slug),
+        (_, Some(pb)) => format!("/me/collection#b{}", pb.id),
+        _ => String::new(),
+    };
+    let scan_on = seller && collection.is_none() && crate::scan::enabled();
+    Ok(html(render(AddPage { nav, p, binder, back, collection, conditions: members::CONDITIONS, scan_on, scan_left, scan_per })?))
 }
 
 /// GET /me/listings/{id}: one of the seller's cards, for the "Add to your store" window to open filled in with it.
@@ -1449,7 +1468,7 @@ struct StorePage {
     /// Posts (page_posts.html): None leaves them out.
     posts: Option<String>,
     can_post: bool,
-    as_vault: bool,
+    post_as: &'static str,
     posts_lazy: String,
 }
 
@@ -1548,12 +1567,12 @@ async fn store_for(app: &App, h: &HeaderMap, slug: String, binder_slug: Option<S
     // The store's main page shows its owner's posts under the binders, with the box to write one for the owner.
     let posts = if binder.is_none() {
         let (mid, viewer) = (m.id, me.as_ref().map(|u| u.id).unwrap_or(0));
-        let (items, next) = with_db(&app, move |c| crate::feed::page_items(c, viewer, mid, None)).await?;
+        let (items, next) = with_db(&app, move |c| crate::feed::page_items(c, viewer, mid, true, None)).await?;
         Some(crate::feed::page_html(items, next)?)
     } else {
         None
     };
-    Ok(html(render(StorePage { nav, m, stats, cards, tiles, binders_n, binder, vouches, me, following, is_me, links, conditions: members::CONDITIONS, posts, can_post: is_me, as_vault: false, posts_lazy: String::new() })?))
+    Ok(html(render(StorePage { nav, m, stats, cards, tiles, binders_n, binder, vouches, me, following, is_me, links, conditions: members::CONDITIONS, posts, can_post: is_me, post_as: "store", posts_lazy: String::new() })?))
 }
 
 /// One binder on a store page: two or three to a row, each with its pictures, its name and how many
@@ -1758,7 +1777,7 @@ struct VaultStorePage {
     /// The vault's posts. The page is kept for everyone alike, so they load after it (each viewer sees their own likes).
     posts: Option<String>,
     can_post: bool,
-    as_vault: bool,
+    post_as: &'static str,
     posts_lazy: String,
 }
 
@@ -1833,7 +1852,7 @@ fn vault_page(c: &rusqlite::Connection, q: db::Query) -> rusqlite::Result<VaultS
         ..Default::default()
     };
     let look = sellers::vault_look(c)?;
-    Ok(VaultStorePage { nav, tiles, n, since, bio, cover: vs.cover, links, pay, border, look, base: VAULT_STORE.into(), q: q.q, sort: q.sort, cond: q.cond, conds, in_stock: true, items, next, posts: Some(String::new()), can_post: true, as_vault: true, posts_lazy: "/posts/by/0".into() })
+    Ok(VaultStorePage { nav, tiles, n, since, bio, cover: vs.cover, links, pay, border, look, base: VAULT_STORE.into(), q: q.q, sort: q.sort, cond: q.cond, conds, in_stock: true, items, next, posts: Some(String::new()), can_post: true, post_as: "vault", posts_lazy: "/posts/by/0".into() })
 }
 
 /// GET /store/vault/binders/{handle}: a vault binder's address, should anyone write it like a seller's. Its page is /collections/{handle}.
@@ -3458,7 +3477,7 @@ mod tests {
         let m = members::get(c, who).unwrap().unwrap();
         let binder = binder.map(|b| members::binder_by_slug(c, who, b).unwrap().unwrap());
         let back = binder.as_ref().map(|b| format!("{}/binders/{}#edit", m.store_url(), b.slug)).unwrap_or_default();
-        render(AddPage { nav: chrome(c).unwrap(), p: panel(c, m, "add").unwrap(), binder, back, conditions: members::CONDITIONS, scan_on, scan_left: 40, scan_per: 40 }).unwrap()
+        render(AddPage { nav: chrome(c).unwrap(), p: panel(c, m, "add").unwrap(), binder, back, collection: None, conditions: members::CONDITIONS, scan_on, scan_left: 40, scan_per: 40 }).unwrap()
     }
 
     #[test]
@@ -3543,7 +3562,7 @@ mod tests {
             conditions: members::CONDITIONS,
             posts: None,
             can_post: false,
-            as_vault: false,
+            post_as: "",
             posts_lazy: String::new(),
             m,
         });

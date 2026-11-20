@@ -636,6 +636,33 @@ html.sheet-open { overflow: hidden; }
 .cm-edit input { flex: 1 1 180px; min-width: 0; min-height: 40px; padding: 4px 12px; border-radius: var(--pill); }
 .cm-edit .btn { min-height: 36px; }
 
+/* ---------- 15h. A person's Personal Collection: their own binders, two at a time, sliding sideways (the owner, 20 Nov 2026) ---------- */
+.pc { margin: 20px 0 8px; max-width: 760px; }
+.pc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.pc-head .h2 { margin: 0; }
+.pc-wrap { position: relative; }
+.pc-row { display: grid; grid-auto-flow: column; grid-auto-columns: calc((100% - 12px) / 2); gap: 12px; margin: 0; padding: 0 0 6px; list-style: none; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
+.pc-row::-webkit-scrollbar { display: none; }
+.pc-row > li { scroll-snap-align: start; min-width: 0; }
+.pc-tile { display: flex; flex-direction: column; gap: 4px; height: 100%; padding: 10px; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: var(--text); }
+.pc-tile:hover { text-decoration: none; box-shadow: 0 0 0 1px var(--gold-edge); }
+.pc-cover { display: grid; place-items: center; aspect-ratio: 4 / 3; overflow: hidden; border-radius: var(--r-sm); background: var(--surface-2); }
+.pc-cover img { height: 100%; width: auto; max-width: 100%; object-fit: contain; }
+.pc-none { color: var(--muted); font-size: .875rem; }
+.pc-plus { color: var(--gold); font: 300 3rem/1 var(--font); }
+.pc-tile b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-tile small { color: var(--muted); }
+.pc-add { box-shadow: 0 0 0 1px var(--gold-edge); }
+.pc-nav { position: absolute; z-index: 2; top: 38%; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; background: rgba(11,13,20,.86); color: #fff; box-shadow: 0 0 0 1px var(--line-2); cursor: pointer; }
+.pc-nav[hidden] { display: none; }
+.pc-nav svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.pc-prev { left: -8px; } .pc-next { right: -8px; }
+.pcb-back { margin: 0 0 12px; }
+.pcb-head { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 18px; }
+.pcb-head .h1 { margin: 2px 0; }
+.pcb-sub { margin: 0; color: var(--muted); }
+.pcb-desc { margin: 8px 0 0; max-width: 70ch; color: var(--text); }
+
 /* ---------- 15g. Posts on a person's page; captions on photos; the Share button as an icon (the owner, 20 Nov 2026) ---------- */
 .page-posts { margin: 28px 0 8px; }
 .page-posts > .h2 { margin-bottom: 12px; }

@@ -2,8 +2,6 @@
 (() => {
   const root = document.getElementById('me'); if (!root) return;
   const $ = (id) => document.getElementById(id);
-  const MAX = Number(root.dataset.max);
-  let highlight = root.dataset.highlight;
 
   const say = (msg, bad) => {
     let t = document.querySelector('.me-toast');
@@ -54,7 +52,8 @@
   counter(form.elements.bio, $('bioCount'));
   // The page's cover photo: shown here as soon as it is picked, saved with the rest.
   const coverFile = $('pageCoverFile');
-  coverFile.addEventListener('change', () => { const f = coverFile.files[0]; if (!f) return; $('pageCoverImg').src = URL.createObjectURL(f); $('pageCoverPrev').hidden = false; form.elements.drop_cover.checked = false; });
+  coverFile.addEventListener('change', () => { const f = coverFile.files[0]; if (!f) return; $('pageCoverImg').src = URL.createObjectURL(f); $('pageCoverImg').hidden = false; $('pageCoverNone').hidden = true; form.elements.drop_cover.checked = false; saveProfile(); });
+  form.elements.drop_cover.addEventListener('change', () => { if (form.elements.drop_cover.checked) saveProfile(); });
   async function saveProfile() {
     const fd = new FormData(form);
     if (picked) fd.set('avatar', picked, 'avatar.jpg');
@@ -64,121 +63,16 @@
       const j = await send('/me/profile', fd);
       picked = null; coverFile.value = ''; form.elements.drop_cover.checked = false;
       if (j.cover) $('pageCoverImg').src = j.cover;
-      $('pageCoverPrev').hidden = !j.cover; $('pageCoverDrop').hidden = !j.cover;
+      $('pageCoverImg').hidden = !j.cover; $('pageCoverNone').hidden = !!j.cover; $('pageCoverDrop').hidden = !j.cover;
+      $('pageCoverWord').textContent = j.cover ? 'Change Cover Photo' : 'Upload Cover Photo';
       say('Saved ✓');
     } catch (err) { say(err.message, true); }
   }
   form.addEventListener('submit', (e) => { e.preventDefault(); saveProfile(); });
 
-  /* ---------- binder ---------- */
-  const binder = $('meBinder');
-  const count = () => binder.querySelectorAll('.me-c').length;
-  const conds = ['Near Mint', 'LP-NM', 'Lightly Played', 'MP-LP', 'Moderately Played', 'HP-MP', 'Heavily Played', 'Damaged-HP', 'Damaged', 'Sealed'];
-  function paint() {
-    const n = count();
-    $('meCount').textContent = n;
-    $('meEmpty').hidden = n > 0;
-    binder.querySelectorAll('.me-c').forEach((c) => {
-      const on = c.dataset.id === String(highlight);
-      c.classList.toggle('star', on);
-      c.querySelector('[data-star]').setAttribute('aria-pressed', String(on));
-    });
-    document.querySelectorAll('.me-res').forEach((b) => { b.disabled = n >= MAX && !b.classList.contains('in'); });
-  }
-  // The line under each card's value: "Suggested ₱8 · Lightly Played · 80% of Near Mint ₱10", from the shared rule in /static/pricing.js.
-  // A value the trainer typed always wins; "Use ₱8" clears it, so the value follows the market again.
-  function paintSug(li, c) {
-    const host = li.querySelector('.me-c-sug'); if (!host) return;
-    const own = Number(c.value_own) || 0, market = Number(c.market) || 0;
-    const cond = c.cond || li.querySelector('[data-cond]')?.value || '';
-    Object.assign(host.dataset, { market, own, cond }); host.toggleAttribute('data-own-photo', !!c.own_photo);
-    if (!window.Price) return;
-    window.Price.line(host, {
-      nm: market, cond, own, ownPhoto: !!c.own_photo, price: own,
-      onUse: own > 0 ? async () => {
-        try {
-          const j = await send(`/me/cards/${li.dataset.id}`, { action: 'value', value: 0 });
-          const inp = li.querySelector('[data-value]');
-          if (inp) { inp.value = ''; if (j.card_market && j.card_market !== '₱0') inp.placeholder = j.card_market; }
-          worth(j); paintSug(li, j); say('Back To The Suggested Value ✓');
-        } catch (err) { say(err.message, true); }
-      } : null,
-    });
-  }
-  const fromData = (li) => { const h = li.querySelector('.me-c-sug')?.dataset || {}; return { market: h.market, value_own: h.own, cond: h.cond, own_photo: li.querySelector('.me-c-sug')?.hasAttribute('data-own-photo') }; };
-  const paintAll = () => binder.querySelectorAll('.me-c').forEach((li) => paintSug(li, fromData(li)));
-  document.addEventListener('bbv:shares', paintAll);
-  function tile(c) {
-    const li = document.createElement('li'); li.className = 'me-c'; li.dataset.id = c.id; li.dataset.card = c.source || '';
-    const pic = document.createElement('span'); pic.className = 'me-c-pic';
-    if (c.image) { const i = document.createElement('img'); i.src = c.image; i.width = 245; i.height = 342; i.alt = ''; i.draggable = false; pic.append(i); }
-    const star = document.createElement('button'); star.type = 'button'; star.className = 'me-star'; star.dataset.nodrag = ''; star.dataset.star = ''; star.textContent = '★'; star.setAttribute('aria-label', `Highlight ${c.title || ''}`);
-    const x = document.createElement('button'); x.type = 'button'; x.className = 'me-x'; x.dataset.nodrag = ''; x.dataset.remove = ''; x.textContent = '✕'; x.setAttribute('aria-label', `Take ${c.title || ''} Out`);
-    pic.append(star, x);
-    const t = document.createElement('b'); t.className = 'me-c-t'; t.textContent = c.title || '';
-    const s = document.createElement('small'); s.className = 'me-c-s'; s.textContent = [c.set, c.number].filter(Boolean).join(' · ');
-    const kind = document.createElement('select'); kind.dataset.nodrag = ''; kind.dataset.kind = ''; kind.setAttribute('aria-label', `What ${c.title || ''} Is`);
-    const kinds = [['own', 'Highlight'], ...(root.dataset.seller === 'true' ? [['sale', 'For Sale']] : []), ['wish', 'Wishlist']];
-    kinds.forEach(([v, t]) => kind.append(new Option(t, v, v === (c.kind || 'own'), v === (c.kind || 'own'))));
-    const sel = document.createElement('select'); sel.dataset.nodrag = ''; sel.dataset.cond = ''; sel.setAttribute('aria-label', `Condition Of ${c.title || ''}`);
-    conds.forEach((o) => sel.append(new Option(o, o, o === c.cond, o === c.cond)));
-    const val = document.createElement('label'); val.className = 'me-val'; val.dataset.nodrag = '';
-    const vl = document.createElement('span'); vl.textContent = 'Value ₱';
-    const vi = document.createElement('input'); vi.type = 'number'; vi.min = '0'; vi.step = '1'; vi.inputMode = 'numeric'; vi.dataset.value = ''; vi.placeholder = c.value && c.value !== '₱0' ? c.value : 'Not Known Yet'; vi.setAttribute('aria-label', `Value Of ${c.title || ''} In Pesos`);
-    if (c.value_own > 0) vi.value = Math.round(c.value_own);
-    val.append(vl, vi);
-    const sugP = document.createElement('p'); sugP.className = 'me-c-sug';
-    li.append(pic, t, s, kind, sel, val, sugP);
-    paintSug(li, c);
-    return li;
-  }
-  binder.addEventListener('click', async (e) => {
-    const li = e.target.closest('.me-c'); if (!li) return;
-    if (e.target.closest('[data-star]')) {
-      try { const j = await send(`/me/cards/${li.dataset.id}`, { action: 'highlight' }); highlight = j.highlight; paint(); say('Highlighted ★'); } catch (err) { say(err.message, true); }
-    } else if (e.target.closest('[data-remove]')) {
-      try {
-        const j = await send(`/me/cards/${li.dataset.id}`, { action: 'remove' }); worth(j);
-        const source = li.dataset.card; li.remove(); highlight = j.highlight; paint();
-        if (source) document.querySelector(`.me-res[data-id="${CSS.escape(source)}"]`)?.classList.remove('in');
-      } catch (err) { say(err.message, true); }
-    }
-  });
-  const worth = (j) => { const w = document.getElementById('meWorth'); if (w && j.worth) { w.textContent = j.worth; w.hidden = j.worth === '₱0'; } };
-  binder.addEventListener('change', async (e) => {
-    const box = e.target.closest('[data-value]');
-    if (box) {
-      try {
-        const j = await send(`/me/cards/${box.closest('.me-c').dataset.id}`, { action: 'value', value: Number(box.value) || 0 });
-        worth(j); if (j.card_market && j.card_market !== '₱0') box.placeholder = j.card_market;
-        paintSug(box.closest('.me-c'), j); say('Saved ✓');
-      } catch (err) { say(err.message, true); }
-      return;
-    }
-    const kindSel = e.target.closest('[data-kind]');
-    if (kindSel) {
-      const li = kindSel.closest('.me-c');
-      try { const j = await send(`/me/cards/${li.dataset.id}`, { action: 'kind', kind: kindSel.value }); worth(j); say(kindSel.value === 'sale' ? 'For sale ✓ Set its stock and price in My Store › Listings.' : 'Saved ✓'); }
-      catch (err) { say(err.message, true); }
-      return;
-    }
-    const sel = e.target.closest('[data-cond]'); if (!sel) return;
-    try {
-      const li = sel.closest('.me-c');
-      const j = await send(`/me/cards/${li.dataset.id}`, { action: 'condition', cond: sel.value });
-      worth(j); const vb = li.querySelector('[data-value]'); if (vb && j.card_market && j.card_market !== '₱0') vb.placeholder = j.card_market;
-      paintSug(li, j);
-      say('Saved ✓');
-    } catch (err) { say(err.message, true); }
-  });
-  if (window.dragSort) dragSort(binder, {
-    item: '.me-c', key: (n) => n.dataset.id,
-    onDrop: async ([ids]) => { try { await send('/me/cards/order', { ids: ids.map(Number) }); say('Order Saved ✓'); } catch (err) { say(err.message, true); } },
-  });
-
-  /* (Adding cards is the Add cards page's: /me/add, static/add-page.js.) */
 
   /* ---------- account ---------- */
+  $('mePassOpen').addEventListener('click', () => { const d = $('meAccount'); d.open = true; d.scrollIntoView({ behavior: 'smooth', block: 'start' }); setTimeout(() => d.querySelector('input[name=current]').focus({ preventScroll: true }), 350); });
   const pass = $('mePass');
   pass.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -189,5 +83,4 @@
     try { await send('/me/delete'); location.href = '/trainers'; } catch (err) { say(err.message, true); }
   });
 
-  paint(); paintAll();
 })();

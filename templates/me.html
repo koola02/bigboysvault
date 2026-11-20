@@ -7,23 +7,13 @@
   <div class="me-top">
     {% if !p.m.profile_ok %}<p class="me-status">The vault's team has hidden your page. Only you can see it for now.</p>{% endif %}
     <div class="me-top-acts">
+      <button type="button" class="btn ghost sm" id="mePassOpen">Change Password</button>
       <form method="post" action="/signout"><button class="btn ghost sm" type="submit">Log Out</button></form>
     </div>
   </div>
   {% if p.m.is_staff() %}<p class="me-staff"><span class="role" data-role="{{ p.m.role }}">{{ p.m.role_text() }}</span><span>{% if p.m.role == "admin" %}You can do everything the vault owner can, including editing the site.{% else %}You can hide or delete vouches, and block or remove trainers.{% endif %}</span><a class="btn ghost sm" href="{% if p.m.role == "admin" %}/admin{% else %}/admin/trainers{% endif %}">Open Admin</a></p>{% endif %}
   {% if p.m.locked() %}<p class="mgr-note">Your trainer is locked for another {{ p.m.lock_left() }}. You can't post or change anything until then.</p>{% endif %}
-  <p class="tp-stars me-worth"><span class="worth worth-lg" id="meWorth"{% if p.m.worth <= 0.0 %} hidden{% endif %}>{{ p.m.worth_text() }}</span></p>
 
-  {% if false %}
-  <section class="me-card me-store">
-    <div>
-      <h2 class="h2">My Store</h2>
-      <p class="me-how">Sell your cards: stock, prices, binders, orders and reviews, all in one place.</p>
-      <p class="me-store-n"><span><b>{{ stats.active_listings }}</b> On Sale</span><span><b>{{ stats.items_sold }}</b> Sold</span><span><b>{{ stats.binder_count }}</b> Binder{% if stats.binder_count != 1 %}s{% endif %}</span>{% if stats.pending_offers + stats.pending_inquiries > 0 %}<span><b>{{ stats.pending_offers + stats.pending_inquiries }}</b> Waiting</span>{% endif %}</p>
-    </div>
-    <div class="me-top-acts"><a class="btn" href="/me/store">Open My Store</a><a class="btn ghost" href="{{ p.m.store_url() }}">See It</a></div>
-  </section>
-  {% endif %}
 
   <form class="me-card me-profile" id="meProfile">
     <label class="me-av" title="Change Your Picture">
@@ -35,11 +25,13 @@
       <label>Trainer Name<input name="name" value="{{ p.m.name }}" maxlength="24" autocomplete="off" required></label>
       <label>About You <small><span id="bioCount">0</span> Of 300</small><textarea name="bio" maxlength="300" rows="3" placeholder="What do you collect? Who's your favorite Pokémon?">{{ p.m.bio }}</textarea></label>
       {#- The page's own cover photo and links (the owner, 19 Nov 2026: a store's are its own, in Store settings). -#}
-      <div class="st-pick">
+      <div class="me-cover-pick">
         <span class="st-pick-l">Cover Photo <small>Wide, like a banner, at the top of your page</small></span>
-        <span class="st-cover-prev" id="pageCoverPrev"{% if !p.m.has_page_cover() %} hidden{% endif %}><img src="{{ p.m.page_cover }}" alt="" id="pageCoverImg"></span>
-        <input type="file" accept="image/*" id="pageCoverFile" aria-label="Cover Photo">
-        <label class="chk" id="pageCoverDrop"{% if !p.m.has_page_cover() %} hidden{% endif %}><input type="checkbox" class="sr" name="drop_cover" value="1"><span class="chk-box"></span> Remove The Cover Photo</label>
+        <span class="me-cover" id="pageCoverPrev"><img src="{{ p.m.page_cover }}" alt="" id="pageCoverImg"{% if !p.m.has_page_cover() %} hidden{% endif %}><span class="me-cover-none" id="pageCoverNone"{% if p.m.has_page_cover() %} hidden{% endif %}>No Cover Photo Yet</span></span>
+        <span class="me-cover-acts">
+          <label class="btn ghost sm"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span id="pageCoverWord">{% if p.m.has_page_cover() %}Change Cover Photo{% else %}Upload Cover Photo{% endif %}</span><input type="file" accept="image/*" id="pageCoverFile" class="sr" aria-label="Upload Cover Photo"></label>
+          <label class="chk" id="pageCoverDrop"{% if !p.m.has_page_cover() %} hidden{% endif %}><input type="checkbox" class="sr" name="drop_cover" value="1"><span class="chk-box"></span> Remove The Cover Photo</label>
+        </span>
       </div>
       <label>Facebook<input type="url" name="fb_url" value="{{ p.m.page_fb_url }}" placeholder="https://facebook.com/…" maxlength="300"></label>
       <label>Instagram<input type="url" name="ig_url" value="{{ p.m.page_ig_url }}" placeholder="https://instagram.com/…" maxlength="300"></label>
@@ -52,53 +44,11 @@
     </div>
   </form>
 
-  {% if p.m.seller %}
-  {#- A seller changes prices, condition and copies in Listings, the one place (the owner, 19 Nov 2026). Here: the
-      cards as pictures, ★ for the card at the top of their page, and drag for the order there. -#}
-  <section class="me-card me-mine">
-    <h2 class="h2">My Cards <small><span id="meCount">{{ p.m.cards }}</span> Of {{ max }}</small></h2>
-    <p class="me-kinds"><span><b>{{ kinds.0 }}</b> For Sale</span><span><b>{{ kinds.1 }}</b> Highlight{% if kinds.1 != 1 %}s{% endif %}</span><span><b>{{ kinds.2 }}</b> On The Wishlist</span></p>
-    <ul class="me-binder me-pics" id="meBinder">
-      {% for c in cards %}
-      <li class="me-c" data-id="{{ c.id }}">
-        <span class="me-c-pic">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" alt="" draggable="false">{% endif %}
-          <button type="button" class="me-star" data-nodrag data-star aria-label="Show {{ c.title }} at the top of your page">★</button>
-        </span>
-        <b class="me-c-t">{{ c.title }}</b>
-      </li>
-      {% endfor %}
-    </ul>
-    <p class="me-none" id="meEmpty"{% if !cards.is_empty() %} hidden{% endif %}>No cards yet. Tap Add Cards to put in your first card.</p>
-    <p class="me-hint">★ puts a card at the top of your page. Drag the cards to order them there.</p>
-    <div class="me-acts"><a class="btn" href="/me/listings">Manage Them In Listings</a><a class="btn ghost" href="/me/add"><span aria-hidden="true">+</span> Add Cards</a></div>
+  <section class="me-card me-binders-link">
+    <h2 class="h2">Personal Collection</h2>
+    <p class="me-how">The binders and cards on your page.</p>
+    <div class="me-acts"><a class="btn" href="/me/collection">Manage Binders</a></div>
   </section>
-  {% else %}
-  <section class="me-card">
-    <h2 class="h2">My Cards <small><span id="meCount">{{ p.m.cards }}</span> Of {{ max }}</small></h2>
-    <p class="me-how">Each card is a <b>Highlight</b> (one you have and show off){% if p.m.seller %}, <b>For sale</b> (in your store){% endif %} or on your <b>Wishlist</b> (one you're after). ★ picks the card shown at the top of your page. Drag to change the order. Values come from today's market prices; type your own if you know better.</p>
-    <ul class="me-binder" id="meBinder">
-      {% for c in cards %}
-      <li class="me-c" data-id="{{ c.id }}">
-        <span class="me-c-pic">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" alt="" draggable="false">{% endif %}
-          <button type="button" class="me-star" data-nodrag data-star aria-label="Highlight {{ c.title }}">★</button>
-          <button type="button" class="me-x" data-nodrag data-remove aria-label="Take {{ c.title }} Out">✕</button>
-        </span>
-        <b class="me-c-t">{{ c.title }}</b>
-        <small class="me-c-s">{{ c.card_set }}{% if !c.number.is_empty() %} · {{ c.number }}{% endif %}</small>
-        <select data-nodrag data-kind aria-label="What {{ c.title }} Is"><option value="own"{% if c.is_own() %} selected{% endif %}>Highlight</option>{% if p.m.seller %}<option value="sale"{% if c.is_sale() %} selected{% endif %}>For Sale</option>{% endif %}<option value="wish"{% if c.is_wish() %} selected{% endif %}>Wishlist</option></select>
-        <select data-nodrag data-cond aria-label="Condition Of {{ c.title }}">{% for o in conditions %}<option{% if *o == c.cond %} selected{% endif %}>{{ o }}</option>{% endfor %}</select>
-        <label class="me-val" data-nodrag><span>Value ₱</span><input data-value type="number" min="0" step="1" inputmode="numeric" value="{{ c.own_text() }}" placeholder="{% if c.value > 0.0 %}{{ c.market_text() }}{% else %}Not Known Yet{% endif %}" aria-label="Value Of {{ c.title }} In Pesos"></label>
-        <p class="me-c-sug" data-market="{{ c.value }}" data-own="{{ c.value_own }}" data-cond="{{ c.cond }}"{% if c.own_photo() %} data-own-photo{% endif %}></p>
-        {% if c.photo_clean == 1 %}<form method="post" action="/me/cards/{{ c.id }}/original-photo" class="photo-orig" data-nodrag><button type="submit" class="linkbtn inline">Use My Own Photo</button></form>{% endif %}
-      </li>
-      {% endfor %}
-    </ul>
-    <p class="me-none" id="meEmpty"{% if !cards.is_empty() %} hidden{% endif %}>Your binder is empty. Tap Add Cards to put in your first card.</p>
-
-    {#- Adding a card has one page: Add cards (/me/add), with Search, By set and Not in the list (and Scan a card for sellers). -#}
-    <p class="me-add"><a class="btn" href="/me/add"><span aria-hidden="true">+</span> Add Cards</a></p>
-  </section>
-  {% endif %}
 
   <section class="me-card">
     <h2 class="h2">My Vouches</h2>
@@ -106,7 +56,7 @@
     <div class="me-acts"><a class="btn" href="/vouches">Write A Vouch</a><a class="btn ghost" href="/trainers/{{ p.m.id }}">See My Vouches</a></div>
   </section>
 
-  <details class="me-card me-account">
+  <details class="me-card me-account" id="meAccount">
     <summary>Password And Account</summary>
     <form id="mePass" class="me-fields">
       <label>Current Password<input name="current" type="password" autocomplete="current-password" required></label>
@@ -116,7 +66,5 @@
     <button type="button" class="me-danger" id="meDelete">Delete My Trainer</button>
   </details>
 </section>
-<script src="/static/dragsort.js?v=5" defer></script>
-<script src="/static/pricing.js?v=2" defer></script>
-<script src="/static/me.js?v=19" defer></script>
+<script src="/static/me.js?v=21" defer></script>
 {% endblock %}

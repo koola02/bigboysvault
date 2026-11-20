@@ -1,5 +1,5 @@
 {% for it in items %}{% if let Some(p) = it.post %}
-<article class="box post{% if p.small %} post-sm{% endif %}" id="post-{{ p.id }}{% if p.image != 0 %}-photo-{{ p.image }}{% endif %}" data-post="{{ p.id }}"{% if p.image != 0 %} data-image="{{ p.image }}"{% endif %}{% if p.own %} data-own{% endif %} data-kind="{{ p.kind }}" data-member="{{ p.member }}"{% if p.pinned %} data-pinned{% endif %}>
+<article class="box post{% if p.small %} post-sm{% endif %}" id="post-{{ p.id }}{% if p.image != 0 %}-photo-{{ p.image }}{% endif %}" data-post="{{ p.id }}"{% if p.image != 0 %} data-image="{{ p.image }}"{% endif %}{% if p.own %} data-own{% endif %} data-kind="{{ p.kind }}" data-member="{{ p.member }}"{% if p.as_store %} data-store{% endif %}{% if p.pinned %} data-pinned{% endif %}>
   <header class="post-h">
     <a class="av" href="{{ p.who.url }}" aria-hidden="true" tabindex="-1">{% if p.who.avatar.is_empty() %}{{ p.who.initial }}{% else %}<img src="{{ p.who.avatar }}" alt="" loading="lazy" decoding="async">{% endif %}</a>
     <div class="post-who"><b><a href="{{ p.who.url }}">{{ p.who.name }}</a></b>{% if !p.headline.is_empty() %} {{ p.headline }}{% endif %}<small>{% if p.image != 0 %}{{ p.image_at }} · {% endif %}<a href="/posts/{{ p.id }}">{{ p.when }}</a>{% if p.edited %} · Edited{% endif %}{% if p.pinned %} · Pinned{% endif %}</small></div>

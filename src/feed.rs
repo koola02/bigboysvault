@@ -63,6 +63,8 @@ pub struct PostView {
     pub photos: Vec<(i64, String, String)>,
     /// Each photo's caption, in the same order ("" for none).
     pub caps: Vec<String>,
+    /// Written as its author's store.
+    pub as_store: bool,
     pub member: i64,
     pub edited: bool,
     pub attach: Option<Tile>,
@@ -214,7 +216,7 @@ fn who(c: &rusqlite::Connection, id: i64, brand: &str, store: bool) -> rusqlite:
 
 /// One post, drawn from what the site holds right now. None: nothing left to show (cards sold, trainer gone).
 fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i64) -> rusqlite::Result<Option<PostView>> {
-    let Some(author) = who(c, p.member_id, brand, matches!(p.kind.as_str(), "listing" | "arrivals"))? else { return Ok(None) };
+    let Some(author) = who(c, p.member_id, brand, p.as_store || matches!(p.kind.as_str(), "listing" | "arrivals"))? else { return Ok(None) };
     // An automatic post shows the words its seller or an admin added, if any.
     let text = if p.written() || p.kind == "vouch" { p.text.clone() } else { p.note.clone() };
     let mut v = PostView {
@@ -231,6 +233,7 @@ fn post_view(c: &rusqlite::Connection, p: &social::Post, brand: &str, viewer: i6
         link_text: String::new(),
         photos: vec![],
         caps: vec![],
+        as_store: p.as_store,
         member: p.member_id,
         edited: p.edited_at > 0,
         attach: None,
@@ -748,7 +751,7 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
     if recent >= social::POSTS_PER_HOUR {
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of posts for one hour. Please take a short break."));
     }
-    let (mut text, mut styled, mut files, mut card, mut as_vault) = (String::new(), String::new(), Vec::<Vec<u8>>::new(), messages::CardRef::default(), false);
+    let (mut text, mut styled, mut files, mut card, mut as_who) = (String::new(), String::new(), Vec::<Vec<u8>>::new(), messages::CardRef::default(), String::new());
     // Each new photo's caption, in the order the photos come (a JSON list of words).
     let mut captions: Vec<String> = vec![];
     let bad = |_| (StatusCode::BAD_REQUEST, "That didn't upload. Please try again.".to_string());
@@ -763,7 +766,7 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
                     files.push(b.to_vec());
                 }
             }
-            "as" => as_vault = f.text().await.map_err(bad)?.trim() == "vault",
+            "as" => as_who = f.text().await.map_err(bad)?.trim().to_string(),
             "vault" => card.vault = f.text().await.map_err(bad)?.trim().parse().ok(),
             "card" => card.card = f.text().await.map_err(bad)?.trim().parse().ok(),
             _ => {}
@@ -787,6 +790,11 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
         }
     }
     // A full admin may post as the vault itself (the logo and the shop's name), like a Page on Facebook.
+    // A seller may post as their store (the owner, 20 Nov 2026: a seller and their store each have their own posts).
+    let (as_vault, as_store) = (as_who == "vault", as_who == "store");
+    if as_store && !m.seller {
+        return Ok(fail(StatusCode::FORBIDDEN, "Only a seller can post as their store."));
+    }
     if as_vault && m.role != "admin" {
         return Ok(fail(StatusCode::FORBIDDEN, "Only a full admin can post as the vault."));
     }
@@ -806,6 +814,9 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
         }
         let pid = social::post_add(c, author, kind, &text, &photos, &payload, now)?;
         social::caption_new_photos(c, pid, &[], &captions)?;
+        if as_store {
+            social::set_as_store(c, pid)?;
+        }
         if !styled.is_empty() {
             social::post_rich(c, pid, &styled)?;
         }
@@ -1082,9 +1093,9 @@ const PAGE_POSTS: i64 = 8;
 
 /// One author's posts (0: the vault's) for their own page: the next few, and where the ones after them are (a full
 /// address for the page's "more" loader, or "" at the end).
-pub(crate) fn page_items(c: &rusqlite::Connection, viewer: i64, author: i64, before: Option<(i64, i64)>) -> rusqlite::Result<(Vec<Item>, String)> {
+pub(crate) fn page_items(c: &rusqlite::Connection, viewer: i64, author: i64, store: bool, before: Option<(i64, i64)>) -> rusqlite::Result<(Vec<Item>, String)> {
     let brand = blocks::setting(c, "brand")?.filter(|b| !b.trim().is_empty()).unwrap_or_else(|| "Big Boys Vault".into());
-    let posts = social::posts_by(c, viewer, author, before, PAGE_POSTS + 1)?;
+    let posts = social::posts_by(c, viewer, author, store, before, PAGE_POSTS + 1)?;
     let more = posts.len() as i64 > PAGE_POSTS;
     let (mut items, mut last) = (vec![], None);
     for p in posts.iter().take(PAGE_POSTS as usize) {
@@ -1094,7 +1105,7 @@ pub(crate) fn page_items(c: &rusqlite::Connection, viewer: i64, author: i64, bef
         }
     }
     let next = match (more, last) {
-        (true, Some((t, id))) => format!("/posts/by/{author}?c={t}:{id}"),
+        (true, Some((t, id))) => format!("/posts/by/{author}?c={t}:{id}{}", if store { "&store=1" } else { "" }),
         _ => String::new(),
     };
     Ok((items, next))
@@ -1114,6 +1125,9 @@ fn page_open(c: &rusqlite::Connection, author: i64) -> rusqlite::Result<bool> {
 pub struct ByQs {
     #[serde(default)]
     c: String,
+    /// The posts written as the author's store.
+    #[serde(default)]
+    store: Option<String>,
 }
 
 /// GET /posts/by/{author}?c=time:id: the next posts of a person's page (0: the vault's), as HTML.
@@ -1122,11 +1136,12 @@ pub async fn by(State(app): State<App>, h: HeaderMap, Path(author): Path<i64>, Q
     let viewer = me.as_ref().map(|m| m.id).unwrap_or(0);
     let staff = admin::can_moderate(&app, &h);
     let before = q.c.split_once(':').and_then(|(t, i)| Some((t.parse().ok()?, i.parse().ok()?)));
+    let store = q.store.is_some_and(|s| s == "1");
     let (items, next) = with_db(&app, move |c| {
         if !(viewer == author || staff || page_open(c, author)?) {
             return Ok((vec![], String::new()));
         }
-        page_items(c, viewer, author, before)
+        page_items(c, viewer, author, store, before)
     })
     .await?;
     if items.is_empty() && before.is_none() {
@@ -1155,7 +1170,7 @@ pub async fn photo(State(app): State<App>, h: HeaderMap, Path((id, image)): Path
 
 /// One photo with its own likes and comments, drawn with the post's own layout (so every button works as on a post).
 fn photo_view(c: &rusqlite::Connection, p: &social::Post, own: &social::PhotoOwn, brand: &str) -> rusqlite::Result<Option<PostView>> {
-    let Some(author) = who(c, p.member_id, brand, false)? else { return Ok(None) };
+    let Some(author) = who(c, p.member_id, brand, p.as_store)? else { return Ok(None) };
     Ok(Some(PostView {
         id: p.id,
         kind: "photo".into(),
@@ -1170,6 +1185,7 @@ fn photo_view(c: &rusqlite::Connection, p: &social::Post, own: &social::PhotoOwn
         link_text: String::new(),
         photos: vec![],
         caps: vec![],
+        as_store: p.as_store,
         member: p.member_id,
         edited: false,
         attach: None,
@@ -1769,7 +1785,7 @@ mod tests {
             social::post_add(&c, ash, "post", &format!("Pull {n}"), &[], &json!({}), 100 + n).unwrap();
         }
         social::post_add(&c, brock, "post", "Not Ash's", &[], &json!({}), 500).unwrap();
-        let (items, next) = page_items(&c, 0, ash, None).unwrap();
+        let (items, next) = page_items(&c, 0, ash, false, None).unwrap();
         let texts: Vec<String> = items.iter().map(|i| i.post.as_ref().unwrap().text.clone()).collect();
         assert_eq!((texts.len() as i64, texts[0].as_str()), (PAGE_POSTS, "Pull 9"));
         assert!(next.starts_with(&format!("/posts/by/{ash}?c=")), "{next}");
@@ -1777,8 +1793,16 @@ mod tests {
         assert!(html.contains("See More Posts") && !html.contains("hx-trigger=\"revealed\""), "a page loads more by a button");
         let c2 = next.split("c=").nth(1).unwrap();
         let (t, id) = c2.split_once(':').unwrap();
-        let (rest, end) = page_items(&c, 0, ash, Some((t.parse().unwrap(), id.parse().unwrap()))).unwrap();
+        let (rest, end) = page_items(&c, 0, ash, false, Some((t.parse().unwrap(), id.parse().unwrap()))).unwrap();
         assert_eq!((rest.len(), end.as_str()), (2, ""));
+        // A post written as the store is the store's: on its page, not on the person's (the owner, 20 Nov 2026).
+        let sp = social::post_add(&c, ash, "post", "Store news", &[], &json!({}), 950).unwrap();
+        social::set_as_store(&c, sp).unwrap();
+        let (store_items, _) = page_items(&c, 0, ash, true, None).unwrap();
+        assert_eq!(store_items.iter().map(|i| i.post.as_ref().unwrap().text.clone()).collect::<Vec<_>>(), vec!["Store news".to_string()]);
+        let (own, _) = page_items(&c, 0, ash, false, None).unwrap();
+        assert!(own.iter().all(|i| i.post.as_ref().unwrap().text != "Store news"), "not on the person's page");
+        assert!(store_items[0].post.as_ref().unwrap().as_store);
         // Captions: given with the photos, changed on their own, kept or replaced on an edit.
         let pic = |n: i64| (format!("/uploads/p{n}_l.jpg"), format!("/uploads/p{n}_s.jpg"), 800, 600, 1000);
         let p = social::post_add(&c, ash, "post", "Two pulls", &[pic(1), pic(2)], &json!({}), 900).unwrap();

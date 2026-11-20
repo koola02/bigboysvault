@@ -8,8 +8,15 @@
     seller's card goes through "Add to your store" (add-card.js); a collector's joins their binder. From a seller's binder
     (?binder=id) the store's own cards come first, new cards go into that binder, and Done goes back to it.
     The page is static/add-page.js; Scan a card is static/scan.js. -#}
-<section class="wrap admin wide st ad" id="addPage" data-seller="{{ p.m.seller }}"{% if let Some(b) = binder %} data-binder="{{ b.id }}"{% endif %}>
+<section class="wrap admin wide st ad" id="addPage" data-seller="{{ p.m.seller }}"{% if let Some(b) = binder %} data-binder="{{ b.id }}"{% endif %}{% if let Some(pb) = collection %} data-collection="{{ pb.id }}"{% endif %}>
   {% include "store_tabs.html" %}
+  {% if let Some(pb) = collection %}
+  {#- Into one of their own binders (Account Settings › Manage Binders): no price, no condition. -#}
+  <div class="ad-into">
+    <span class="ad-into-t">Adding To The Binder <b>{{ pb.title }}</b></span>
+    <a class="btn" href="{{ back }}">Done</a>
+  </div>
+  {% endif %}
 
   {% if let Some(b) = binder %}
   <div class="ad-into">
@@ -72,6 +79,10 @@
       <div class="me-fields">
         <label>Card Name<input name="name" maxlength="120" required placeholder="Like Charizard ex" autocomplete="off"></label>
         <label>Set <small>If You Know It</small><input name="set" maxlength="80" autocomplete="off"></label>
+        {% if let Some(pb) = collection %}
+        <input type="hidden" name="collection" value="{{ pb.id }}">
+        <button class="btn" type="submit">Add To This Binder</button>
+        {% else %}
         <label>Condition<select name="cond">{% for o in conditions %}<option>{{ o }}</option>{% endfor %}</select></label>
         {% if p.m.seller %}
         <label>Price ₱<input name="value" type="number" min="0" step="1" inputmode="numeric"></label>
@@ -81,6 +92,7 @@
         <label>Value ₱ <small>If You Like</small><input name="value" type="number" min="0" step="1" inputmode="numeric"></label>
         <button class="btn" type="submit">Add To My Cards</button>
         {% endif %}
+        {% endif %}
       </div>
     </form>
   </section>
@@ -88,13 +100,13 @@
   <section class="ad-added" id="adAdded" aria-labelledby="adAddedH" hidden>
     <h2 class="h2" id="adAddedH">Added Just Now <small id="adAddedN"></small></h2>
     <div class="ad-added-row" id="adAddedRow"></div>
-    {% if binder.is_none() %}<a class="btn ghost" href="{% if p.m.seller %}/me/listings{% else %}/me{% endif %}">{% if p.m.seller %}See Them In Listings{% else %}See Them In Account Settings{% endif %}</a>{% endif %}
+    {% if binder.is_none() && collection.is_none() %}<a class="btn ghost" href="{% if p.m.seller %}/me/listings{% else %}/me{% endif %}">{% if p.m.seller %}See Them In Listings{% else %}See Them In Account Settings{% endif %}</a>{% endif %}
   </section>
 </section>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <script src="/static/admin-ui.js?v=13" defer></script>
 <script src="/static/pricing.js?v=2" defer></script>
-{% if p.m.seller %}<script src="/static/add-card.js?v=8" defer></script>{% endif %}
+{% if p.m.seller && collection.is_none() %}<script src="/static/add-card.js?v=8" defer></script>{% endif %}
 {% if scan_on %}<script src="/static/scan.js?v=9" defer></script>{% endif %}
-<script src="/static/add-page.js?v=4" defer></script>
+<script src="/static/add-page.js?v=6" defer></script>
 {% endblock %}

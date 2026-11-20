@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Manage Binders · {{ nav.brand }}{% endblock %}
+{% block head %}{% include "mgr_head.html" %}{% endblock %}
+{% block layout %}wide{% endblock %}
+{% block content %}
+{#- Account Settings › Manage Binders (the owner, 20 Nov 2026): the binders of a person's own page and their cards. Add,
+    rename, describe, move and delete a binder; add a card (the Add Cards page, in this binder), rename it, move it to
+    another binder or take it out. No price and no condition: these cards are theirs, not for sale. static/collection.js. -#}
+<section class="wrap admin st me mcol" id="meCol">
+  {% include "store_tabs.html" %}
+
+  <form class="me-card mcol-new" id="new" data-new>
+    <h2 class="h2">New Binder</h2>
+    <div class="mcol-row">
+      <input name="title" maxlength="60" required placeholder="Binder Name, Like Eeveelutions" aria-label="Binder Name" autocomplete="off">
+      <button class="btn" type="submit"><span aria-hidden="true">+</span> Add Binder</button>
+    </div>
+  </form>
+
+  {% if binders.is_empty() %}<p class="me-none">No binders yet. Name one above to start your Personal Collection.</p>{% endif %}
+
+  {% for (b, cards) in binders %}
+  <section class="me-card mcol-b" id="b{{ b.id }}" data-b="{{ b.id }}">
+    <div class="mcol-head">
+      <div class="mcol-name">
+        <h2 class="h2">{{ b.title }} <small>{{ b.count_text() }}</small></h2>
+        {% if !b.description.is_empty() %}<p class="mcol-desc">{{ b.description }}</p>{% endif %}
+      </div>
+      <div class="mcol-acts">
+        <a class="btn" href="/me/add?collection={{ b.id }}"><span aria-hidden="true">+</span> Add Cards</a>
+        <button type="button" class="btn ghost" data-b-edit>Edit Binder</button>
+        <a class="btn ghost" href="/trainers/{{ p.m.id }}/collection/{{ b.id }}">View</a>
+        <button type="button" class="btn ghost mcol-ib" data-b-move="-1" aria-label="Move {{ b.title }} Up"{% if loop.first %} disabled{% endif %}>↑</button>
+        <button type="button" class="btn ghost mcol-ib" data-b-move="1" aria-label="Move {{ b.title }} Down"{% if loop.last %} disabled{% endif %}>↓</button>
+        <button type="button" class="btn ghost mcol-del" data-b-del data-n="{{ b.count }}">Delete</button>
+      </div>
+    </div>
+    <form class="mcol-edit me-fields" data-b-form hidden>
+      <label>Binder Name<input name="title" maxlength="60" required value="{{ b.title }}" autocomplete="off"></label>
+      <label>What's In It <small>Optional</small><textarea name="description" rows="2" maxlength="300">{{ b.description }}</textarea></label>
+      <div class="mcol-row"><button class="btn" type="submit">Save</button><button class="btn ghost" type="button" data-cancel>Cancel</button></div>
+    </form>
+    {% if cards.is_empty() %}<p class="me-none">No cards yet. Tap Add Cards to put in your first one.</p>
+    {% else %}
+    <ul class="mcol-cards">
+      {% for c in cards %}{% include "me_collection_card.html" %}{% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  {% if !loose.is_empty() %}
+  <section class="me-card mcol-b mcol-loose">
+    <h2 class="h2">Not In A Binder <small>{{ loose.len() }}</small></h2>
+    <p class="me-how">Cards of yours that aren't in any binder, so they don't show on your page. Edit one to put it in a binder.</p>
+    <ul class="mcol-cards">
+      {% for c in loose %}{% include "me_collection_card.html" %}{% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+</section>
+<script src="/static/collection.js?v=1" defer></script>
+{% endblock %}

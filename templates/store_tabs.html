@@ -1,5 +1,6 @@
 
-{% if p.m.seller && p.tab != "me" %}
+{#- Two frames (the owner, 20 Nov 2026): the Store Manager for a seller's store, and Account Settings for the person (their own page, binders, orders and notifications). Each has its icon bar, and beside every page title the way to the thing itself: View My Store, View My Page. -#}
+{% if p.m.seller && p.tab != "me" && p.tab != "binders" %}
 <nav class="mgr-rail" aria-label="Store Manager">
   <a class="mgr-rail-h" href="/me/store">{% if p.m.has_store_pic() %}<img src="{{ p.m.store_pic() }}" width="36" height="36" alt="">{% else %}<span class="av">{{ p.m.initial() }}</span>{% endif %}<span><b>Store Manager</b><small>{{ p.m.store_title() }}</small></span></a>
   <a href="/me/store"{% if p.tab == "dash" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="8" height="10" rx="1.5"/><rect x="13" y="3" width="8" height="6" rx="1.5"/><rect x="13" y="11" width="8" height="10" rx="1.5"/><rect x="3" y="15" width="8" height="6" rx="1.5"/></svg><span>Overview</span></a>
@@ -10,20 +11,26 @@
   <a href="/me/settings"{% if p.tab == "settings" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.8v2.4M12 18.800v2.400M2.800 12h2.400M18.800 12h2.400M5.500 5.500l1.700 1.700M16.800 16.800l1.700 1.700M5.500 18.500l1.700-1.700M16.800 7.200l1.700-1.700"/></svg><span>Store Settings</span></a>
   <i class="mgr-rail-gap" aria-hidden="true"></i>
   <a href="/me/notifications"{% if p.tab == "notifications" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg><span>Notifications</span>{% if p.unread > 0 %}<i class="mgr-n">{{ p.unread }}</i>{% endif %}</a>
-  <a href="{{ p.m.store_url() }}" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg><span>See My Store</span></a>
 </nav>
 <script>{ const r = document.querySelector('.mgr-rail'), a = r && r.querySelector('[aria-current="page"]'); if (a && r.scrollWidth > r.clientWidth) r.scrollLeft = a.offsetLeft - (r.clientWidth - a.offsetWidth) / 2; }</script>
 <header class="mgr-bar">
-  <div class="mgr-bar-l"><h1 class="mgr-title">{% if p.tab == "dash" %}Overview{% else if p.tab == "listings" %}Listings{% else if p.tab == "orders" %}Orders{% else if p.tab == "notifications" %}Notifications{% else if p.tab == "settings" %}Store Settings{% else if p.tab == "me" %}Account Settings{% else if p.tab == "add" %}Add Cards{% else %}Store Manager{% endif %}</h1><span class="mgr-acct">{% if p.m.has_store_pic() %}<img src="{{ p.m.store_pic() }}" width="24" height="24" alt="">{% endif %}<b>{{ p.m.store_title() }}</b></span></div>
+  <div class="mgr-bar-l"><h1 class="mgr-title">{% if p.tab == "dash" %}Overview{% else if p.tab == "listings" %}Listings{% else if p.tab == "orders" %}Orders{% else if p.tab == "notifications" %}Notifications{% else if p.tab == "settings" %}Store Settings{% else if p.tab == "me" %}Account Settings{% else if p.tab == "add" %}Add Cards{% else %}Store Manager{% endif %}</h1><a class="mgr-view" href="{{ p.m.store_url() }}">View My Store</a></div>
   <div class="mgr-bar-r">{% if p.tab != "listings" && p.tab != "add" %}<a class="btn mgr-create" href="/me/add"><span aria-hidden="true">+</span> Add Cards</a>{% endif %}</div>
 </header>
 {% if !p.m.profile_ok && p.tab != "me" %}<p class="mgr-note">The vault's team has hidden your page. Only you can see your store for now.</p>{% endif %}
 {% if p.m.on_vacation() %}<p class="mgr-note">Your store is on vacation: nobody can order or make offers. Change it in <a href="/me/settings">Store Settings</a>.</p>{% endif %}
 {% if p.m.store_hidden %}<div class="mgr-note mgr-hidden">Your store is hidden: only you can see it and its cards. <form method="post" action="/me/store/visibility"><input type="hidden" name="hidden" value="0"><input type="hidden" name="back" value="/me/store"><button class="linkbtn" type="submit">Show My Store</button></form></div>{% endif %}
 {% else %}
-<header class="mgr-bar mgr-bar-solo">
-  <div class="mgr-bar-l"><h1 class="mgr-title">{% if p.tab == "notifications" %}Notifications{% else if p.tab == "me" %}Account Settings{% else if p.tab == "add" %}Add Cards{% else %}My Orders{% endif %}</h1></div>
-  <div class="mgr-bar-r"><a class="btn ghost sm" href="/trainers/{{ p.m.id }}">My Page</a><a class="btn ghost sm" href="/me/orders?tab=buying"{% if p.tab == "orders" %} aria-current="page"{% endif %}>My Orders</a><a class="btn ghost sm" href="/me/notifications"{% if p.tab == "notifications" %} aria-current="page"{% endif %}>Notifications</a><a class="btn ghost sm" href="/me"{% if p.tab == "me" %} aria-current="page"{% endif %}>Account Settings</a></div>
+<nav class="mgr-rail" aria-label="Account Settings">
+  <a class="mgr-rail-h" href="/trainers/{{ p.m.id }}">{% if p.m.has_avatar() %}<img src="{{ p.m.avatar }}" width="36" height="36" alt="">{% else %}<span class="av">{{ p.m.initial() }}</span>{% endif %}<span><b>Account Settings</b><small>{{ p.m.name }}</small></span></a>
+  <a href="/me"{% if p.tab == "me" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg><span>Account Settings</span></a>
+  <a href="/me/collection"{% if p.tab == "binders" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h12a2 2 0 0 1 2 2v14H7a2 2 0 0 1-2-2z"/><path d="M5 18a2 2 0 0 1 2-2h12M9 8h6"/></svg><span>Manage Binders</span></a>
+  <a href="/me/orders?tab=buying"{% if p.tab == "orders" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z"/><path d="M9 8h6M9 12h6"/></svg><span>My Orders</span></a>
+  <a href="/me/notifications"{% if p.tab == "notifications" %} aria-current="page"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0"/></svg><span>Notifications</span>{% if p.unread > 0 %}<i class="mgr-n">{{ p.unread }}</i>{% endif %}</a>
+</nav>
+<script>{ const r = document.querySelector('.mgr-rail'), a = r && r.querySelector('[aria-current="page"]'); if (a && r.scrollWidth > r.clientWidth) r.scrollLeft = a.offsetLeft - (r.clientWidth - a.offsetWidth) / 2; }</script>
+<header class="mgr-bar">
+  <div class="mgr-bar-l"><h1 class="mgr-title">{% if p.tab == "notifications" %}Notifications{% else if p.tab == "me" %}Account Settings{% else if p.tab == "binders" %}Manage Binders{% else if p.tab == "add" %}Add Cards{% else %}My Orders{% endif %}</h1><a class="mgr-view" href="/trainers/{{ p.m.id }}">View My Page</a></div>
 </header>
 {% endif %}
 

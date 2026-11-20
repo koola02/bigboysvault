@@ -1,0 +1,11 @@
+<li class="mcol-c" data-c="{{ c.id }}">
+  <span class="mcol-pic">{% if !c.image.is_empty() %}<img src="{{ c.image }}" width="245" height="342" loading="lazy" decoding="async" alt="">{% endif %}{% if c.is_wish() %}<span class="grade wish">Wanted</span>{% endif %}</span>
+  <b class="mcol-t">{{ c.title }}</b>
+  <small class="mcol-s">{{ c.card_set }}{% if !c.number.is_empty() %} · {{ c.number }}{% endif %}</small>
+  <div class="mcol-cacts"><button type="button" class="btn ghost sm" data-c-edit>Edit</button><button type="button" class="btn ghost sm mcol-del" data-c-del>Remove</button></div>
+  <form class="mcol-cedit me-fields" data-c-form hidden>
+    <label>Card Name<input name="title" maxlength="120" required value="{{ c.title }}" autocomplete="off"></label>
+    <label>Binder<select name="binder">{% for o in all %}<option value="{{ o.id }}">{{ o.title }}</option>{% endfor %}</select></label>
+    <div class="mcol-row"><button class="btn sm" type="submit">Save</button><button class="btn ghost sm" type="button" data-cancel>Cancel</button></div>
+  </form>
+</li>

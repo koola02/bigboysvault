@@ -539,7 +539,7 @@
       sheet.innerHTML = `<form class="sheet-in sheet-post">
         <header class="sheet-h"><button type="button" class="ibtn" data-x aria-label="Close">✕</button><b data-title>Create Post</b><button type="submit" class="btn sheet-go-top" data-go>Post</button></header>
         <div class="row"><span class="av" data-face></span><span class="row-t"><b data-name></b><small data-sub>Everyone on the site can see this</small></span>
-          <select data-as aria-label="Post As" hidden><option value="me">Post As Me</option><option value="vault">Post As Big Boys Vault</option></select></div>
+          <select data-as aria-label="Post As" hidden><option value="me">Post As Me</option><option value="store" data-as-store>Post As My Store</option><option value="vault" data-as-vault>Post As Big Boys Vault</option></select></div>
         <div class="rt is-empty" data-ed contenteditable="true" role="textbox" aria-multiline="true" aria-label="Your Post" data-ph="What did you pull today?" spellcheck="true"></div>
         <div class="sheet-pics" data-pics></div>
         <div class="sheet-tools">
@@ -575,11 +575,16 @@
         ...files.map((f, i) => pic(f.url || (f.url = URL.createObjectURL(f)), () => { files.splice(i, 1); paint(); }, f)));
       sheet.paint = paint;
       // Who the post is from: you, or (full admins) the vault itself, with its logo.
+      // A seller and their store each have their own posts (the owner, 20 Nov 2026): one written as the store shows
+      // on the store's page with its name and picture; one written as the person, on their own page.
       sheet.who = () => {
         const vault = as.value === 'vault' && !as.hidden || (editing && editing.by === 0);
+        const store = !vault && ((as.value === 'store' && !as.hidden) || (editing && editing.store));
         const f = sheet.querySelector('[data-face]');
-        if (vault) { const i = el('img'); i.src = '/static/img/logo-sm-144.png?v=1'; i.alt = ''; f.replaceChildren(i); } else face(f, me);
-        sheet.querySelector('[data-name]').textContent = vault ? 'Big Boys Vault' : me.name;
+        if (vault) { const i = el('img'); i.src = '/static/img/logo-sm-144.png?v=1'; i.alt = ''; f.replaceChildren(i); }
+        else if (store && me.store_avatar) { const i = el('img'); i.src = me.store_avatar; i.alt = ''; f.replaceChildren(i); }
+        else face(f, me);
+        sheet.querySelector('[data-name]').textContent = vault ? 'Big Boys Vault' : store ? (me.store_name || me.name) : me.name;
       };
       as.addEventListener('change', sheet.who);
       sheet.querySelectorAll('[data-add]').forEach((inp) => inp.addEventListener('change', () => { for (const f of inp.files) { if (kept.length + files.length < 4) files.push(f); else toast('Four photos at most.'); } inp.value = ''; paint(); }));
@@ -608,7 +613,7 @@
         if (runs.some((r) => r.b || r.i || r.u || r.s)) fd.append('rich', JSON.stringify(runs));
         fd.append('captions', JSON.stringify(files.map((f) => f.cap || '')));
         if (editing) fd.append('kept_captions', JSON.stringify(Object.fromEntries(kept.map((k) => [k.id, k.cap || '']))));
-        if (editing) fd.append('keep', kept.map((k) => k.id).join(',')); else if (!as.hidden && as.value === 'vault') fd.append('as', 'vault');
+        if (editing) fd.append('keep', kept.map((k) => k.id).join(',')); else if (!as.hidden && as.value !== 'me') fd.append('as', as.value);
         sheet.go(editing ? 'Saving…' : 'Posting…', true);
         try {
           const j = await api(editing ? `/posts/${editing.id}/edit` : '/posts', fd);
@@ -625,7 +630,7 @@
     files = []; kept = [];
     if (start === 'edit' && post) {
       const kind = post.dataset.kind, written = kind === 'post' || kind === 'share';
-      editing = { id: post.dataset.post, by: Number(post.dataset.member), written };
+      editing = { id: post.dataset.post, by: Number(post.dataset.member), written, store: post.hasAttribute('data-store') };
       // The words as the page shows them: the server drew them, styles and all, so they go in as they are.
       words.set(post.querySelector('.post-text')?.innerHTML || '');
       if (written) kept = [...post.querySelectorAll('[data-img]')].filter((a) => a.dataset.img !== '0').map((a) => ({ id: a.dataset.img, src: a.dataset.thumb || a.getAttribute('href'), cap: a.dataset.cap || '' }));
@@ -643,7 +648,12 @@
       ed.dataset.ph = 'What did you pull today?';
       sheet.querySelectorAll('[data-pic-btn]').forEach((b) => { b.hidden = false; });
       // On the vault's store the box writes as the vault.
-      as.hidden = !(full && me.role === 'admin'); as.value = !as.hidden && feed.hasAttribute('data-as-vault') ? 'vault' : 'me';
+      // Who to post as: the person; their store (a seller); the vault (a full admin). A page's box starts as the page.
+      const canVault = full && me.role === 'admin', canStore = !!me.seller;
+      as.querySelector('[data-as-vault]').hidden = !canVault; as.querySelector('[data-as-store]').hidden = !canStore;
+      as.hidden = !(canVault || canStore);
+      const want = feed.dataset.as || 'me';
+      as.value = (want === 'vault' && canVault) || (want === 'store' && canStore) ? want : 'me';
     }
     sheet.querySelector('.sheet-add').hidden = [...sheet.querySelectorAll('[data-pic-btn]')].every((b) => b.hidden);
     // A trainer whose page the vault's team hid can't post: say so before they write anything, not after.
