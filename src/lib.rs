@@ -3,6 +3,7 @@ pub mod binder_sort;
 pub mod blocks;
 pub mod bulk;
 pub mod db;
+pub mod faq;
 pub mod dm;
 pub mod history;
 pub mod market;

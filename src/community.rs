@@ -900,6 +900,9 @@ pub async fn member_card(State(app): State<App>, h: HeaderMap, Path((id, cid)): 
 #[template(path = "faq.html")]
 struct FaqPage {
     nav: Chrome,
+    /// The questions and answers (src/faq.rs, which Ask The Vault answers from too).
+    everyone: &'static [marcuru_rs::faq::Section],
+    stores: &'static [marcuru_rs::faq::Section],
     /// Someone with a store sees the Stores questions first.
     stores_first: bool,
 }
@@ -908,7 +911,7 @@ struct FaqPage {
 pub async fn faq(State(app): State<App>, h: HeaderMap) -> Res {
     let stores_first = current(&app, &h).await?.is_some_and(|m| m.seller);
     let nav = with_db(&app, |c| chrome(c)).await?;
-    Ok(html(render(FaqPage { nav, stores_first })?))
+    Ok(html(render(FaqPage { nav, stores_first, everyone: marcuru_rs::faq::EVERYONE, stores: marcuru_rs::faq::STORES })?))
 }
 
 // ---------- Terms And Conditions ----------

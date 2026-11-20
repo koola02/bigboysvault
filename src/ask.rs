@@ -194,7 +194,12 @@ fn answer_in(question: &str, prev_ctx: Option<&str>, cards: &[&Card], binders: &
         return Answer { say: "I know every card for sale here, the vault's and every store's. Ask me for a card, a condition, a price or a budget, or ask how something here works.".into(), chips: start_chips(), ..Default::default() };
     }
 
-    // How the site works.
+    // How the site works: a question from the FAQs gets the FAQs' own answer (src/faq.rs; the owner, 20 Nov 2026).
+    // Not when it names a card the site has ("can I buy Pikachu?" wants Pikachu, not how buying works).
+    let names_card = cards.iter().any(|c| c.title.split_whitespace().next().is_some_and(|w| w.chars().count() >= 4 && has(&text, &[w.to_lowercase().as_str()])));
+    if let Some((q, tab)) = crate::faq::find(question).filter(|_| !names_card) {
+        return Answer { say: crate::faq::plain(q.a).replace('\n', " "), link: Some(("Read The FAQs".into(), format!("/faq#{tab}"))), ..Default::default() };
+    }
     if has(&text, &["vouch", "vouches"]) && has(&text, &["how", "where", "write", "post", "leave"]) {
         return Answer { say: "Sign in as a trainer, then tap the Vouch button on any page. Your words and photos go up straight away.".into(), link: Some(("Read The Vouches".into(), "/vouches".into())), ..Default::default() };
     }
@@ -455,6 +460,16 @@ fn answer_in(question: &str, prev_ctx: Option<&str>, cards: &[&Card], binders: &
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_question_from_the_faqs_gets_its_answer_but_a_card_search_does_not() {
+        let cards = vec![card("Pikachu ex", 500.0, "Near Mint")];
+        let a = answer("How many scans do I get?", None, &cards, &[], &[]);
+        assert!(a.say.starts_with("3 a day without a store"), "{}", a.say);
+        assert_eq!(a.link.map(|l| l.1), Some("/faq#all".to_string()));
+        let b = answer("Can I buy Pikachu?", None, &cards, &[], &[]);
+        assert!(b.link.map_or(true, |l| !l.1.starts_with("/faq")), "names a card: not the FAQs");
+    }
 
     fn card(title: &str, price: f64, cond: &str) -> Card {
         let text = vault_search::norm(&format!("{title} {cond}"));

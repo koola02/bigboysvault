@@ -127,8 +127,11 @@ Rules:\n\
 - Only talk about Pokémon cards and this shop. Don't give investment advice: you may say how a card's market price moved, nothing more.\n\
 - You can't see orders, accounts or messages, and you can't change anything. For shipping, meetups, returns, orders or anything else you can't look up, tell them to message the vault in Chat.\n\
 How buying works: add cards to the cart, the vault's and any store's, and send the order; nothing is paid on the site. The vault accepts the order for its cards and shows how to pay: {pay}.{} A store's cards work the same way: that seller accepts and is paid directly. \
-Sending an order needs an account. To get one, tap Register: beside Log in at the top on a tablet or computer; on a phone, tap Menu at the bottom, then Log in or register. It takes a trainer name and a password, no email.",
-        if info.is_empty() { String::new() } else { format!(" The vault's note on paying: {info}") }
+Sending an order needs an account. To get one, tap Register: beside Log in at the top on a tablet or computer; on a phone, tap Menu at the bottom, then Log in or register. It takes a trainer name and a password, no email.\n\
+How the site works: the FAQs below are the site's own answers (the owner wrote them). When a question is about how the site works, answer from them, in your own short words, and say the full answers are on the FAQs page (Menu, then FAQs). Don't promise anything they don't say.\n\
+{}",
+        if info.is_empty() { String::new() } else { format!(" The vault's note on paying: {info}") },
+        marcuru_rs::faq::as_text()
     )
 }
 
