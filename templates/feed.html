@@ -5,7 +5,7 @@
   {% if !single %}
   <section class="box welcome" data-guest-only>
     <img src="/static/img/logo-sm-144.png?v=1" width="72" height="72" alt="">
-    <div><h1 class="h1">{{ nav.brand }}</h1><p class="welcome-what">Pokémon cards for sale in the Philippines, priced in pesos. Real photos; pay by GCash, Maya or bank.</p><p>{% if tagline.is_empty() %}Pokémon cards and collectibles in one vault. Browse, ask, message a seller, and trade with trainers you can trust.{% else %}{{ tagline }}{% endif %}</p>
+    <div><h1 class="h1">{{ nav.brand }}</h1><p class="welcome-what">Your local Pokémon community, all in one vault.</p><p class="welcome-more">Show off your collection in binders, post your pulls and chat with fellow trainers. Find the cards you're hunting for, trade with other collectors, and buy or sell with trusted local stores.</p>{% if !tagline.is_empty() %}<p class="welcome-count">{{ tagline }}</p>{% endif %}
     <div class="lg-row"><a class="btn" href="/stores">Browse Stores</a><a class="btn ghost" href="/join">Register</a></div></div>
   </section>
   {# The showcase: the admin's hand-picked cards. With no cards the row is there for admins only, to pick some. #}
@@ -22,7 +22,21 @@
     </div>
   </section>
   {% else %}<p><a class="btn ghost sm" href="/">‹ Back To The Feed</a></p>{% if items.is_empty() %}<p class="box empty">That post isn't here any more.</p>{% endif %}{% endif %}
+  {% if guest %}
+  {#- A visitor without an account: the stores, each with the binders and cards it chose to show (stores_card.html, as on
+      Stores), instead of the feed (the owner, 20 Nov 2026). Registering opens the feed. -#}
+  <section class="guest-stores" aria-labelledby="guestStoresH">
+    <h2 class="h2" id="guestStoresH">Stores</h2>
+    {% if shops_list.is_empty() %}<p class="box empty">No store has cards on sale yet.</p>{% else %}
+    <div class="sellers-list">
+      {% for s in shops_list %}{% include "stores_card.html" %}{% endfor %}
+    </div>
+    {% endif %}
+    <div class="box guest-join"><b>Join The Community</b><span>Register to post your pulls, build your binders, follow stores and chat with trainers.</span><a class="btn" href="/join">Register</a></div>
+  </section>
+  {% else %}
   {% include "feed_items.html" %}
+  {% endif %}
 </div>
 {% endblock %}
 {% block right %}

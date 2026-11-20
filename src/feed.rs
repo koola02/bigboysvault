@@ -179,6 +179,9 @@ struct FeedPage {
     /// Only one post is shown (its own page), with its comments open.
     single: bool,
     end: bool,
+    /// A visitor without an account sees the stores, their binders and cards, not the feed (the owner, 20 Nov 2026).
+    guest: bool,
+    shops_list: Vec<crate::store::StoreCard>,
 }
 
 #[derive(Template)]
@@ -643,7 +646,7 @@ fn seo(nav: &Chrome) -> Seo {
     let site = nav.site.clone();
     Seo {
         title: format!("{} · Pokémon cards, graded slabs & collectibles in the Philippines", nav.brand),
-        desc: crate::clip(&format!("{}: Pokémon cards and collectibles in one vault, priced in pesos. New arrivals, trainers' stores and vouches, every day.", nav.brand), 158),
+        desc: crate::clip(&format!("{}: your local Pokémon community. Binders, posts and trades, and local stores to buy and sell cards in pesos.", nav.brand), 158),
         path: "/".into(),
         kind: "website",
         ld: crate::ld(json!({ "@context": "https://schema.org", "@graph": [
@@ -659,6 +662,7 @@ async fn feed_html(app: &App, viewer: i64, only: Option<i64>) -> Result<String, 
     let t = with_db(app, move |c| {
         let mut nav = crate::chrome(c)?;
         let mut shops = Shops::new(c, &nav);
+        let guest = viewer == 0 && only.is_none();
         let (items, next, single) = match only {
             Some(id) => {
                 let item = match social::post(c, viewer, id)?.filter(|p| !p.hidden) {
@@ -667,6 +671,7 @@ async fn feed_html(app: &App, viewer: i64, only: Option<i64>) -> Result<String, 
                 };
                 (item.into_iter().map(|p| Item { post: Some(p), stores: vec![], binder: None }).collect::<Vec<_>>(), String::new(), true)
             }
+            None if guest => (vec![], String::new(), false),
             None => {
                 let (items, next) = build(c, &nav, viewer, Cursor::Top, &mut shops)?;
                 (items, next, false)
@@ -677,8 +682,9 @@ async fn feed_html(app: &App, viewer: i64, only: Option<i64>) -> Result<String, 
         let tagline = blocks::welcome(c)?.replace("{count}", &db::thousands(cards_for_sale(c)?));
         let stores = store_views(shops.all()?, 0).into_iter().take(6).collect();
         nav.seo = if single { Seo { title: format!("A Post · {}", nav.brand), ..Default::default() } } else { seo(&nav) };
-        let end = !single && next.is_empty();
-        Ok(FeedPage { nav, stories, items, next, tagline, stores, single, end })
+        let end = !single && !guest && next.is_empty();
+        let shops_list = if guest { crate::store::store_cards(c, &nav.brand)? } else { vec![] };
+        Ok(FeedPage { nav, stories, items, next, tagline, stores, single, end, guest, shops_list })
     })
     .await?;
     render(t)
