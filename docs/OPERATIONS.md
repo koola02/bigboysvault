@@ -228,13 +228,14 @@ photo isn't kept. The Scan tab used Chrome's on-device model until 18 Nov 2026, 
   workspace: `ANTHROPIC_WORKSPACE_ID` (a Fly secret too, though it isn't secret: the "Default" workspace's ID from
   Settings → Workspaces). Without it Anthropic answers "This API key is not scoped to a workspace".
 - `SCAN_MODEL` (default `claude-sonnet-5-5`), `SCAN_EFFORT` (default `high`; `low`, `medium`, `xhigh`, `max`),
-  `SCAN_PER_SELLER` (scans per Philippine day for each seller, default 40, the owner's choice of 18 Nov 2026 for a month
-  of 10 sellers; at most 20 in any 15 minutes), `SCAN_DAILY_MAX` (a fixed total a day for the whole site). Unset, the
-  site's total follows the number of sellers (`site_max`): each seller's 40 for every seller who isn't blocked, plus 40
-  for the vault's own scans, so every seller can always use their whole day and it grows as sellers join (the owner, 18
-  Nov 2026: "adjust limits accordingly, right now we just 10 sellers"; 5 sellers were approved that day, so 240; 10
-  sellers make 440). A scan counts once Claude answers. At about one US cent a scan, 10 sellers using all 40 every day
-  for a month would cost about $120: more than the $99.85 credit the account had that day, so it may need topping up. At high effort a real scan used about
+  `SCAN_PER_SELLER` (scans per Philippine day for a trainer with a store, default 8) and `SCAN_PER_TRAINER` (without
+  one, on the Scanner, default 3): the owner's limits of 20 Nov 2026 (sellers had 40 before). `SCAN_PER_VAULT` (the
+  vault's own Add Cards and the owner's tries, default 40). The vault's team can set any trainer's own number (0 to 500)
+  on Admin › Trainers › Scans A Day (`members.scan_limit`, -1 the usual); at most 20 in any 15 minutes. Signed out, no
+  scans. With none left, the page shows a box with Message An Admin (the chat with the vault's team). `SCAN_DAILY_MAX`
+  fixes a total a day for the whole site; unset, the total is everyone's own day added up (`site_max`: each trainer
+  who isn't blocked at their number, plus the vault's), so nobody's day is cut short and the most a day can cost
+  follows the members: 11 members on 20 Nov 2026 make about 90 scans a day at most, under a dollar. At high effort a real scan used about
   1,900 to 3,600 tokens in and usually under 100 out (Claude thinks only when a card needs it; then a few hundred more):
   about half a US cent to one cent a scan, in 2 to 7 seconds. The account's own speed limits (4,000 requests and 2
   million input tokens a minute for Sonnet 5.5 on 18 Nov 2026) are far above what the site uses.

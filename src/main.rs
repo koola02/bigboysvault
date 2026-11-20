@@ -1243,6 +1243,7 @@ async fn main() {
         .route("/me/cards/new", post(community::add_card_full).layer(axum::extract::DefaultBodyLimit::max(12 * 1024 * 1024)))
         .route("/me/cards/price", get(community::seller_price))
         .route("/me/cards/upload", post(community::upload_card).layer(axum::extract::DefaultBodyLimit::max(12 * 1024 * 1024)))
+        .route("/scanner", get(scan::scanner))
         .route("/me/scan", get(scan::page).post(scan::read).layer(axum::extract::DefaultBodyLimit::max(8 * 1024 * 1024)))
         .route("/admin/member-cards/{id}/delete", post(community::staff_remove_card))
         .route("/me/cards/order", post(community::order_cards))

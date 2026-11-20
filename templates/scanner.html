@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Scanner · {{ nav.brand }}{% endblock %}
+{% block content %}
+{#- The Scanner, from the menu (the owner, 20 Nov 2026): any trainer photographs a card and sees what it is: its set and
+    number, its versions with what each sells for, its other printings and its evolutions. Tapping one shows it big, with
+    Add To My Binder (one of their own binders, Personal Collection; no price or condition). src/scan.rs scanner();
+    static/scan.js in its "look" mode. -#}
+<section class="wrap scanner" id="scanner">
+  <div class="tr-head"><h1 class="h1">Scanner</h1></div>
+  {% if on %}
+  <div class="sc-go">
+    <label class="btn sc-shoot"><input type="file" accept="image/*" class="sr" id="scanFile" data-card-cam="scan" data-mode="look"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg><span id="scanWord">Scan A Card</span></label>
+    <p class="sc-left" id="scanLeft">{{ left }} Of {{ per }} Scans Left Today</p>
+  </div>
+  <div class="sc-out" id="scanOut" aria-live="polite"></div>
+  <script type="application/json" id="scanBinders">{{ binders|safe }}</script>
+  {% else %}
+  <p class="me-empty"><b>The Scanner is resting right now.</b><span>Please try again later.</span></p>
+  {% endif %}
+</section>
+{% if on %}<script src="/static/scan.js?v=11" defer></script>{% endif %}
+{% endblock %}

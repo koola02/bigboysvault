@@ -25,8 +25,9 @@
 //! whole site; unset, the total follows the number of sellers: `site_max`), ANTHROPIC_WORKSPACE_ID (the workspace to bill, needed when the key is an all-workspaces key; not secret),
 //! ANTHROPIC_BASE_URL (a stand-in server, only for trying this out). The owner sees how it is going at
 //! /admin/scan/status, and can try a photo at POST /admin/scan/try.
-use crate::community::{acting, check_size, current, fail, ok, over_limit};
-use crate::{with_db, App, Res};
+use crate::community::{acting, check_size, current, fail, ok, over_limit, render};
+use crate::{chrome, with_db, App, Chrome, Res};
+use askama::Template;
 use axum::{
     extract::{Multipart, State},
     http::{HeaderMap, StatusCode},
@@ -89,26 +90,60 @@ fn env_num(name: &str, default: i64) -> i64 {
     std::env::var(name).ok().and_then(|v| v.trim().parse().ok()).filter(|n: &i64| *n >= 0).unwrap_or(default)
 }
 
-/// The site's scans a day: SCAN_DAILY_MAX when it is set; otherwise each seller's share for every seller (not blocked),
-/// plus one share for the vault's own scans (the owner's tries at /admin/scan/try). It grows by itself as sellers join, so
-/// every seller can always use their whole day's share (the owner, 18 Nov 2026: "adjust limits accordingly, right now we
-/// just 10 sellers"), and the most a day can cost stays in step with the number of sellers.
-fn site_max(c: &rusqlite::Connection, per: i64) -> rusqlite::Result<i64> {
+/// The site's scans a day: SCAN_DAILY_MAX when it is set; otherwise everyone's own day added up (each trainer who isn't
+/// blocked, at their allowance) plus the vault's own. It follows the members and the allowances the team sets, so
+/// everyone can always use their whole day, and the most a day can cost stays in step with them.
+fn site_max(c: &rusqlite::Connection) -> rusqlite::Result<i64> {
     let fixed = std::env::var("SCAN_DAILY_MAX").ok().and_then(|v| v.trim().parse::<i64>().ok()).filter(|n| *n >= 0);
-    site_max_with(c, per, fixed)
+    site_max_with(c, fixed)
 }
 
-fn site_max_with(c: &rusqlite::Connection, per: i64, fixed: Option<i64>) -> rusqlite::Result<i64> {
+fn site_max_with(c: &rusqlite::Connection, fixed: Option<i64>) -> rusqlite::Result<i64> {
     if let Some(n) = fixed {
         return Ok(n);
     }
-    let sellers: i64 = c.query_row("SELECT COUNT(*) FROM members WHERE seller=1 AND blocked=0", [], |r| r.get(0))?;
-    Ok(per * (sellers + 1))
+    let all: i64 = c.query_row(
+        "SELECT COALESCE(SUM(CASE WHEN scan_limit >= 0 THEN scan_limit WHEN seller=1 THEN ?1 ELSE ?2 END), 0) FROM members WHERE blocked=0",
+        [per_seller(), per_trainer()],
+        |r| r.get(0),
+    )?;
+    Ok(all + per_vault())
 }
 
-/// Scans a day for each seller: 40, the owner's choice for a month of 10 sellers (18 Nov 2026: "lets do 40").
+/// Scans a day for a trainer with a store: 8 (the owner, 20 Nov 2026; it was 40).
 fn per_seller() -> i64 {
-    env_num("SCAN_PER_SELLER", 40)
+    env_num("SCAN_PER_SELLER", 8)
+}
+
+/// Scans a day for a trainer without a store, on the Scanner: 3 (the owner, 20 Nov 2026).
+fn per_trainer() -> i64 {
+    env_num("SCAN_PER_TRAINER", 3)
+}
+
+/// The vault's own scans a day (its Add Cards, the owner's tries).
+fn per_vault() -> i64 {
+    env_num("SCAN_PER_VAULT", 40)
+}
+
+/// One trainer's scans a day: what the vault's team set for them (Admin › Trainers), or the usual for what they are.
+/// (allowance, set by the team). 0 is the vault.
+pub fn allowance(c: &rusqlite::Connection, id: i64, seller: bool) -> rusqlite::Result<(i64, bool)> {
+    if id == 0 {
+        return Ok((per_vault(), false));
+    }
+    use rusqlite::OptionalExtension;
+    let set: Option<i64> = c.query_row("SELECT scan_limit FROM members WHERE id=?1", [id], |r| r.get(0)).optional()?;
+    Ok(match set {
+        Some(n) if n >= 0 => (n, true),
+        _ => (if seller { per_seller() } else { per_trainer() }, false),
+    })
+}
+
+
+/// The vault's team sets a trainer's scans a day (0 to 500), or None for the usual.
+pub fn set_allowance(c: &rusqlite::Connection, id: i64, n: Option<i64>) -> rusqlite::Result<()> {
+    c.execute("UPDATE members SET scan_limit=?2 WHERE id=?1", rusqlite::params![id, n.map_or(-1, |n| n.clamp(0, 500))])?;
+    Ok(())
 }
 
 // ---------- how many scans are left today ----------
@@ -128,7 +163,14 @@ fn left(c: &rusqlite::Connection, id: i64, day: &str, per: i64, max: i64) -> rus
     Ok(((per - used(c, &seller_key(id), day)?).max(0), (max - used(c, "scan_day", day)?).max(0)))
 }
 
-/// One more scan today, for the seller and for the site.
+/// Scans left today for someone: (theirs, the site's, their day's allowance).
+fn left_for(c: &rusqlite::Connection, id: i64, seller: bool, day: &str) -> rusqlite::Result<(i64, i64, i64)> {
+    let (per, _) = allowance(c, id, seller)?;
+    let (mine, site) = left(c, id, day, per, site_max(c)?)?;
+    Ok((mine, site, per))
+}
+
+/// One more scan today, for the person and for the site.
 fn count(c: &rusqlite::Connection, id: i64, day: &str) -> rusqlite::Result<()> {
     for k in ["scan_day".to_string(), seller_key(id)] {
         let n = used(c, &k, day)? + 1;
@@ -382,6 +424,13 @@ fn fit(c: &Value, r: &Reading) -> Option<i32> {
             s += 3;
         } else if want_set.contains(&set) || set.contains(&want_set) {
             s += 1;
+        } else {
+            // The card's own words for its set and the card list's can differ ("Scarlet & Violet Black Star Promos"
+            // read, "SVP Black Star Promos" listed): two words or more in common still point at it.
+            let words: HashSet<&str> = want_set.split(' ').filter(|w| w.len() > 2).collect();
+            if set.split(' ').filter(|w| words.contains(w)).count() >= 2 {
+                s += 2;
+            }
         }
     }
     if same_name(c, r) {
@@ -508,10 +557,34 @@ async fn look_up(app: &App, r: &Reading) -> Value {
 /// Scans this seller has left today (the smaller of their own and the site's), and how many a day each seller gets.
 /// For Scan a card on the Add cards page.
 pub fn left_today(c: &rusqlite::Connection, id: i64) -> rusqlite::Result<(i64, i64)> {
-    let per = per_seller();
     let day = crate::vault_ai::today(crate::unix_now());
-    let (mine, site) = left(c, id, &day, per, site_max(c, per)?)?;
+    let (mine, site, per) = left_for(c, id, true, &day)?;
     Ok((mine.min(site), per))
+}
+
+#[derive(Template)]
+#[template(path = "scanner.html")]
+struct ScannerPage {
+    nav: Chrome,
+    on: bool,
+    left: i64,
+    per: i64,
+    /// Their own binders (Personal Collection), for "Add To My Binder": [{id, title}] as JSON.
+    binders: String,
+}
+
+/// GET /scanner, from the menu: scan a card to see what it is (its set, number, versions, what it sells for) and put it
+/// in one of your own binders. Any trainer; signed out, the log-in page, which comes back here.
+pub async fn scanner(State(app): State<App>, h: HeaderMap) -> Res {
+    let Some(m) = current(&app, &h).await? else { return Ok(Redirect::to("/login?next=/scanner").into_response()) };
+    let (id, seller) = (m.id, m.seller);
+    let (nav, (mine, pool, per), binders) = with_db(&app, move |c| {
+        let day = crate::vault_ai::today(crate::unix_now());
+        Ok((chrome(c)?, left_for(c, id, seller, &day)?, marcuru_rs::members::personal_binders(c, id)?))
+    })
+    .await?;
+    let binders = json!(binders.iter().map(|b| json!({ "id": b.id, "title": b.title })).collect::<Vec<_>>()).to_string();
+    Ok(crate::community::html(render(ScannerPage { nav, on: enabled(), left: mine.min(pool), per, binders })?))
 }
 
 /// Where the old Scan a card address sends someone: a seller to Add cards, opened on Scan a card; a trainer who
@@ -533,10 +606,8 @@ pub async fn read(State(app): State<App>, h: HeaderMap, mp: Multipart) -> Res {
         Ok(m) => m,
         Err(r) => return Ok(r),
     };
-    if !m.seller {
-        return Ok(fail(StatusCode::FORBIDDEN, "Scanning is for sellers. Apply as a seller from the menu."));
-    }
-    scan(&app, m.id, mp).await
+    // Every trainer may scan (the Scanner); what they may do with the card is up to the page that asked.
+    scan(&app, m.id, m.seller, mp).await
 }
 
 /// POST /admin/scan/try (a form with the photo): the owner tries the scanner, counted as the vault's own scans (0).
@@ -544,10 +615,10 @@ pub async fn try_it(State(app): State<App>, h: HeaderMap, mp: Multipart) -> Res 
     if !crate::admin::authed(&app, &h) || !crate::community::same_site(&h) {
         return Ok((StatusCode::NOT_FOUND, "Not found").into_response());
     }
-    scan(&app, 0, mp).await
+    scan(&app, 0, true, mp).await
 }
 
-async fn scan(app: &App, who: i64, mut mp: Multipart) -> Res {
+async fn scan(app: &App, who: i64, seller: bool, mut mp: Multipart) -> Res {
     let Some(key) = key() else {
         return Ok(fail(StatusCode::SERVICE_UNAVAILABLE, "Scanning isn't switched on yet. Use Search for now."));
     };
@@ -573,14 +644,15 @@ async fn scan(app: &App, who: i64, mut mp: Multipart) -> Res {
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of scans in a short time. Please take a short break and try again."));
     }
     let day = crate::vault_ai::today(now);
-    let per = per_seller();
     let d2 = day.clone();
-    let (mine, site) = with_db(app, move |c| left(c, who, &d2, per, site_max(c, per)?)).await?;
+    let (mine, site, per) = with_db(app, move |c| left_for(c, who, seller, &d2)).await?;
     if site <= 0 {
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "The site has used today's scans. They start again at midnight. Use Search for now."));
     }
     if mine <= 0 {
-        return Ok(fail(StatusCode::TOO_MANY_REQUESTS, &format!("You've used today's {per} scans. They start again at midnight. Use Search for now.")));
+        // The page shows a box (the owner, 20 Nov 2026): the day's scans are used up, and an admin can give more.
+        let body = json!({ "error": format!("You've used today's {per} scans. They start again at midnight."), "limit": true, "per": per });
+        return Ok((StatusCode::TOO_MANY_REQUESTS, [(axum::http::header::CONTENT_TYPE, "application/json")], body.to_string()).into_response());
     }
     let b64 = base64::engine::general_purpose::STANDARD.encode(&photo);
     drop(photo); // read, not kept
@@ -635,13 +707,13 @@ pub async fn status(State(app): State<App>, h: HeaderMap) -> Res {
     let day = crate::vault_ai::today(crate::unix_now());
     let per = per_seller();
     let (today, last_ok, last_error, usage, daily_max) = with_db(&app, move |c| {
-        Ok((used(c, "scan_day", &day)?, blocks::setting(c, "scan_last_ok")?, blocks::setting(c, "scan_last_error")?, blocks::setting(c, "scan_last_usage")?, site_max(c, per)?))
+        Ok((used(c, "scan_day", &day)?, blocks::setting(c, "scan_last_ok")?, blocks::setting(c, "scan_last_error")?, blocks::setting(c, "scan_last_usage")?, site_max(c)?))
     })
     .await?;
     // "1234|56": the last scan's tokens in and out.
     let (tokens_in, tokens_out) = usage.as_deref().and_then(|u| u.split_once('|')).map_or((0, 0), |(i, o)| (i.parse().unwrap_or(0), o.parse().unwrap_or(0)));
     Ok(ok(json!({
-        "on": enabled(), "model": model(), "effort": effort(), "workspace": workspace(), "today": today, "daily_max": daily_max, "per_seller": per,
+        "on": enabled(), "model": model(), "effort": effort(), "workspace": workspace(), "today": today, "daily_max": daily_max, "per_seller": per, "per_trainer": per_trainer(), "per_vault": per_vault(),
         "last_ok": last_ok, "last_error": last_error, "last_tokens_in": tokens_in, "last_tokens_out": tokens_out,
         "paused_until": PAUSED_UNTIL.load(Ordering::Relaxed)
     })))
@@ -830,14 +902,45 @@ mod tests {
             )
             .unwrap();
         };
-        assert_eq!(site_max_with(&c, 30, None).unwrap(), 30, "no sellers yet: the vault's own share");
+        assert_eq!(site_max_with(&c, None).unwrap(), per_vault(), "nobody yet: the vault's own");
         for i in 0..10 {
             add(&format!("seller{i}"), 1, 0);
         }
         add("trainer", 0, 0);
         add("blocked", 1, 1);
-        assert_eq!(site_max_with(&c, 30, None).unwrap(), 330, "ten sellers: 30 each, and 30 for the vault; trainers and blocked sellers don't count");
-        assert_eq!(site_max_with(&c, 30, Some(500)).unwrap(), 500, "SCAN_DAILY_MAX fixes it");
+        assert_eq!(site_max_with(&c, None).unwrap(), 10 * per_seller() + per_trainer() + per_vault(), "everyone's day; a blocked trainer's doesn't count");
+        let id: i64 = c.query_row("SELECT id FROM members WHERE name='trainer'", [], |r| r.get(0)).unwrap();
+        set_allowance(&c, id, Some(20)).unwrap();
+        assert_eq!(allowance(&c, id, false).unwrap(), (20, true), "the team gave them 20");
+        assert_eq!(site_max_with(&c, None).unwrap(), 10 * per_seller() + 20 + per_vault(), "and the site's day grows with it");
+        set_allowance(&c, id, None).unwrap();
+        assert_eq!(allowance(&c, id, false).unwrap(), (per_trainer(), false), "back to the usual");
+        assert_eq!(site_max_with(&c, Some(500)).unwrap(), 500, "SCAN_DAILY_MAX fixes it");
+    }
+
+    #[test]
+    fn a_set_named_in_other_words_still_puts_its_card_first() {
+        let r = Reading { name: "Pikachu".into(), name_en: "Pikachu".into(), number: "027".into(), set_name: "Scarlet & Violet Black Star Promos".into(), language: "en".into(), ..Default::default() };
+        let card = |id: &str, set: &str| json!({ "id": id, "name": "Pikachu", "number": "027", "set": set });
+        let (exact, rest) = split(vec![card("30th-027", "30th Celebration"), card("svp-027", "SVP Black Star Promos")], vec![], &r);
+        assert_eq!(exact.len(), 1);
+        assert_eq!(exact[0]["id"], "svp-027");
+        assert_eq!(rest[0]["id"], "30th-027", "the other printing with that number comes next");
+    }
+
+    #[test]
+    fn a_trainer_without_a_store_scans_three_a_day_and_with_one_eight() {
+        let c = rusqlite::Connection::open_in_memory().unwrap();
+        c.execute_batch(marcuru_rs::members::SCHEMA).unwrap();
+        marcuru_rs::members::migrate(&c).unwrap();
+        c.execute_batch(blocks::SCHEMA).unwrap();
+        let day = "2026-11-20";
+        assert_eq!(per_trainer(), 3);
+        assert_eq!(per_seller(), 8);
+        assert_eq!(left_for(&c, 9, false, day).unwrap().0, 3);
+        count(&c, 9, day).unwrap();
+        assert_eq!(left_for(&c, 9, false, day).unwrap().0, 2);
+        assert_eq!(left_for(&c, 5, true, day).unwrap().2, 8, "a trainer with a store: 8 a day");
     }
 
     #[test]

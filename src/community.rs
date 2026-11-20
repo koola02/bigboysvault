@@ -328,6 +328,9 @@ struct AdminRow {
     /// This viewer can act on this trainer. Nobody acts on themselves, and moderators don't act on other staff.
     can_act: bool,
     is_self: bool,
+    /// Scans a day, and whether the team set it (else the usual for what they are).
+    scans: i64,
+    scans_set: bool,
 }
 
 // ---------- sign up, sign in, sign out ----------
@@ -1999,7 +2002,8 @@ pub async fn admin_page(State(app): State<App>, h: HeaderMap, Query(q): Query<Ad
                 };
                 let awards = members::awards_of(c, m.id, 20)?;
                 let is_self = me == Some(m.id);
-                rows.push(AdminRow { page_hidden: !m.profile_ok, highlight, awards, can_act: full || !m.is_staff(), is_self, m });
+                let (scans, scans_set) = crate::scan::allowance(&c, m.id, m.seller)?;
+                rows.push(AdminRow { page_hidden: !m.profile_ok, highlight, awards, can_act: full || !m.is_staff(), is_self, scans, scans_set, m });
             }
         }
         Ok((nav, rows, members::admin_feed(c, 200)?, members::photo_bytes(c)?))
@@ -2021,6 +2025,8 @@ pub struct AdminAction {
     seller: Option<bool>,
     /// For "tags": the admin's tags for this trainer, shown to everyone.
     tags: Option<Vec<String>>,
+    /// For "scans": scans a day (0 to 500); left out, back to the usual.
+    scans: Option<i64>,
 }
 
 /// What a moderator can do to a trainer. Vouches and their photos are handled by their own routes.
@@ -2093,6 +2099,13 @@ pub async fn admin_action(State(app): State<App>, h: HeaderMap, Path(id): Path<i
                 Ok(())
             })
             .await?
+        }
+        "scans" => {
+            let n = req.scans;
+            if n.is_some_and(|n| !(0..=500).contains(&n)) {
+                return Ok(fail(StatusCode::BAD_REQUEST, "Pick 0 to 500 scans a day."));
+            }
+            with_db(&app, move |c| crate::scan::set_allowance(c, id, n)).await?
         }
         "block" => with_db(&app, move |c| members::set_blocked(c, id, true)).await?,
         "unblock" => with_db(&app, move |c| members::set_blocked(c, id, false)).await?,

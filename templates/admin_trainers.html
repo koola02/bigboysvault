@@ -80,6 +80,12 @@
       </div>
       {% endif %}
       {% if full %}
+      <form class="at-tool at-scans" data-form="scans">
+        <b>📷 Scans A Day</b>
+        <input name="n" type="number" min="0" max="500" inputmode="numeric" value="{{ r.scans }}" aria-label="Scans A Day For {{ r.m.name }}">
+        <button class="btn" type="submit">Save</button>
+        {% if r.scans_set %}<button type="button" class="pbtn" data-scans-usual>Back To Usual</button><small>Set By The Team</small>{% else %}<small>The Usual For {% if r.m.seller %}A Store{% else %}No Store{% endif %}</small>{% endif %}
+      </form>
       <form class="at-tool at-stars" data-form="stars">
         <b>★ Give Star Points</b>
         <span class="at-quick"><button type="button" data-amt="1">+1</button><button type="button" data-amt="5">+5</button><button type="button" data-amt="10">+10</button></span>
@@ -143,6 +149,7 @@ document.addEventListener('DOMContentLoaded', () => {
         await send(row, { action: 'role', role });
         return;
       }
+      if (e.target.closest('[data-scans-usual]')) { await send(e.target.closest('.at-row'), { action: 'scans' }); return; }
       const setSeller = e.target.closest('[data-seller-set]');
       if (setSeller) {
         const row = setSeller.closest('.at-row'), on = setSeller.dataset.sellerSet === '1', name = row.dataset.name;
@@ -178,7 +185,8 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault();
     const row = f.closest('.at-row');
     try {
-      if (f.dataset.form === 'stars') await send(row, { action: 'stars', points: Number(f.elements.points.value), reason: f.elements.reason.value });
+      if (f.dataset.form === 'scans') await send(row, { action: 'scans', scans: Number(f.elements.n.value) });
+      else if (f.dataset.form === 'stars') await send(row, { action: 'stars', points: Number(f.elements.points.value), reason: f.elements.reason.value });
       else await send(row, { action: 'lock', hours: Number(f.elements.n.value) * Number(f.elements.unit.value) });
     } catch (err) { A.toast(err.message, { kind: 'err' }); }
   });

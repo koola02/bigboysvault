@@ -412,6 +412,8 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
     crate::pricing::install(c)?;
     for (col, def) in [
         ("locked_until", "INTEGER NOT NULL DEFAULT 0"),
+        // Scans a day the vault's team set for this trainer (Admin › Trainers); -1 is the usual: 3, or 8 with a store.
+        ("scan_limit", "INTEGER NOT NULL DEFAULT -1"),
         ("blocked", "INTEGER NOT NULL DEFAULT 0"),
         ("stars", "INTEGER NOT NULL DEFAULT 0"),
         ("role", "TEXT NOT NULL DEFAULT ''"),

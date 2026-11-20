@@ -2148,6 +2148,32 @@ dialog.of .sheet-acts { display: flex; justify-content: flex-end; gap: 8px; }
 .sc-fam { gap: 12px; }
 .sc-n { padding: 0 8px; border-radius: var(--pill); background: var(--surface-3); color: var(--muted); font: 600 .8125rem/1.6 var(--font); }
 .sc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
+/* The Scanner (/scanner): one card big, what it is, and Add To My Binder. */
+.scanner .tr-head { margin-bottom: 12px; }
+dialog.sc-dlg .float-panel { padding: 0; gap: 0; width: min(560px, 100%); }
+.sc-dlg-b { display: grid; grid-template-columns: minmax(0, 200px) minmax(0, 1fr); gap: 16px; padding: 16px; align-items: start; }
+.sc-dlg-pic img { display: block; width: 100%; height: auto; border-radius: 10px; }
+.sc-dlg-pic .sc-nopic { display: grid; place-items: center; aspect-ratio: 245 / 342; border-radius: 10px; background: var(--surface-2); color: var(--muted); }
+.sc-facts { display: flex; flex-direction: column; gap: 10px; margin: 0; min-width: 0; }
+.sc-facts > div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.sc-facts dt { color: var(--muted); font-size: .8125rem; font-weight: 600; }
+.sc-facts dd { margin: 0; color: var(--text); font-weight: 600; overflow-wrap: anywhere; }
+.sc-prices { display: flex; flex-direction: column; gap: 4px; }
+.sc-price { display: flex; justify-content: space-between; gap: 10px; }
+.sc-price span { color: var(--muted); font-weight: 500; }
+.sc-price b { color: var(--gold); }
+.sc-dlg-add { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 10px; padding-top: 14px; border-top: 1px solid var(--line); }
+.sc-dlg-add p { margin: 0; }
+.sc-dlg-l { display: flex; flex-direction: column; gap: 6px; font-weight: 600; }
+.sc-dlg-l select { min-height: 44px; }
+.sc-dlg-add .btn { min-height: 44px; }
+.sc-dlg-said:empty { display: none; }
+.sc-dlg-said.bad { color: var(--bad, #ff8a8a); }
+dialog.sc-max .float-panel { width: min(420px, 100%); gap: 12px; padding: 20px; }
+dialog.sc-max p { margin: 0; }
+.sc-max-acts { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px; }
+.sc-max-acts .btn { flex: 1 1 140px; min-height: 44px; }
+@media (max-width: 480px) { .sc-dlg-b { grid-template-columns: minmax(0, 130px) minmax(0, 1fr); gap: 12px; } }
 .sc-tile { position: relative; display: flex; flex-direction: column; gap: 3px; min-width: 0; padding: 8px; border: 0; border-radius: var(--r); background: var(--surface); box-shadow: 0 0 0 1px var(--line); color: var(--text); font: 600 .875rem/1.25 var(--font); text-align: left; cursor: pointer; }
 .sc-tile:hover { background: var(--surface-2); }
 .sc-tile:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }

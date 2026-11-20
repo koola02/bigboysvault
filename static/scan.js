@@ -6,6 +6,8 @@
 // the seller still picks the condition, the price and how many, and from a binder the card goes into it. Everything
 // comes from the full online card list, not only the vault's cards. Nothing is added by itself. When a scan can't help,
 // the way out is Search.
+// On the Scanner (/scanner, data-mode="look") it is for looking: a tile opens the card big, with its set, number and what
+// it sells for, and Add To My Binder puts it in one of the person's own binders (no price or condition).
 (() => {
   const file = document.getElementById('scanFile');
   if (!file) return;
@@ -14,6 +16,9 @@
   const binderId = Number(document.getElementById('addPage')?.dataset.binder || 0) || null;
   const out = document.getElementById('scanOut'), word = document.getElementById('scanWord'), leftLine = document.getElementById('scanLeft');
   const shoot = file.closest('label');
+  const look = file.dataset.mode === 'look';
+  let binders = [];
+  try { binders = JSON.parse(document.getElementById('scanBinders')?.textContent || '[]'); } catch (_) {}
   const make = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   const peso = (n) => '₱' + Math.round(Number(n) || 0).toLocaleString('en-US');
   const LANG = { en: 'English', ja: 'Japanese', 'zh-tw': 'Chinese', 'zh-cn': 'Chinese', ko: 'Korean' };
@@ -24,6 +29,35 @@
     several_cards: 'There’s more than one card in the photo. Scan one card at a time.',
   };
   let photo = null, busy = false, added = 0;
+  // Scans left today, from the line under the button ("3 Of 3 Scans Left Today"); none left, a tap shows the box.
+  const leftNow = () => { const m = /^(\d+)\s+Of\s+(\d+)/.exec(leftLine?.textContent || ''); return m ? { left: Number(m[1]), per: Number(m[2]) } : null; };
+
+  // The day's scans are used up (the owner, 20 Nov 2026): a box that says so, with a way to ask an admin for more.
+  function usedUp(per) {
+    const d = make('dialog', 'float sc-max');
+    const panel = make('div', 'float-panel'); panel.tabIndex = -1; panel.setAttribute('role', 'alertdialog');
+    panel.append(make('h2', 'h2', 'Daily Scans Used Up'));
+    panel.append(make('p', null, per > 0 ? `You've used all ${per} of your scans for today. They start again at midnight.` : 'You have no scans for now.'));
+    panel.append(make('p', null, 'Need more each day? Send an admin a message to raise your daily limit.'));
+    const acts = make('div', 'sc-max-acts');
+    const dm = make('button', 'btn', 'Message An Admin'); dm.type = 'button'; dm.dataset.dmTo = '0';
+    const okb = make('button', 'btn ghost', 'OK'); okb.type = 'button';
+    acts.append(dm, okb); panel.append(acts); d.append(panel); document.body.append(d);
+    // Message An Admin: the box steps aside first (before the chat's own tap handler, dm.js), so the chat opens on top.
+    const first = (e) => { if (dm.contains(e.target)) close(); };
+    const close = () => { window.removeEventListener('click', first, true); if (d.open) d.close(); d.remove(); };
+    window.addEventListener('click', first, true);
+    okb.addEventListener('click', close);
+    d.addEventListener('click', (e) => { if (e.target === d) close(); });
+    d.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
+    d.showModal(); panel.focus({ preventScroll: true });
+  }
+  // Before the camera opens: with none left, the box instead.
+  window.addEventListener('click', (e) => {
+    if (!shoot.contains(e.target)) return;
+    const n = leftNow();
+    if (n && n.left <= 0) { e.preventDefault(); e.stopPropagation(); usedUp(n.per); }
+  }, true);
 
   file.addEventListener('change', async () => {
     const f = file.files && file.files[0];
@@ -37,6 +71,12 @@
     try {
       const r = await fetch(url, { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json' }, body: fd });
       const j = await r.json().catch(() => ({}));
+      if (j.limit) {
+        if (leftLine) leftLine.textContent = leftLine.textContent.replace(/^\d+/, '0');
+        out.replaceChildren(card(null, j.error || 'You’ve used today’s scans.'));
+        usedUp(j.per || leftNow()?.per || 0);
+        return;
+      }
       if (!r.ok) throw new Error(j.error || 'That didn’t work. Please try again.');
       show(j);
     } catch (e) {
@@ -47,6 +87,72 @@
       word.textContent = 'Scan Another Card';
     }
   });
+
+  // The Scanner: one card big, what it is, and Add To My Binder.
+  function info(c, fin, b) {
+    const d = make('dialog', 'float sc-dlg');
+    const panel = make('div', 'float-panel'); panel.tabIndex = -1;
+    const head = make('header', 'sv-h');
+    const titles = make('div', 'sv-t'); titles.append(make('h2', null, c.name || 'Card'));
+    if (c.en && c.en !== c.name) titles.append(make('p', null, c.en));
+    const x = make('button', 'sv-x'); x.type = 'button'; x.setAttribute('aria-label', 'Close');
+    x.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+    head.append(titles, x);
+    const body = make('div', 'sc-dlg-b');
+    const pic = make('span', 'sc-dlg-pic');
+    if (c.image_large || c.image) { const i = make('img'); i.src = c.image_large || c.image; i.alt = c.name || ''; i.onerror = () => { if (c.image && i.src !== c.image) i.src = c.image; }; pic.append(i); }
+    else pic.append(make('span', 'sc-nopic', 'No Picture Yet'));
+    const facts = make('dl', 'sc-facts');
+    const fact = (label, value) => { if (!value) return; const r = make('div'); r.append(make('dt', null, label), make('dd', null, value)); facts.append(r); };
+    fact('Set', c.set);
+    fact('Number', numberOf(c));
+    fact('Version', fin ? fin.label : '');
+    fact('Language', LANG[c.lang] || '');
+    // What it sells for: each version the card list prices (the tile's own first).
+    const fins = (c.finishes || []).filter((f) => f.key && f.key !== 'market' && f.php > 0);
+    if (fins.length) {
+      const list = make('div', 'sc-prices');
+      (fin ? [fin, ...fins.filter((f) => f.key !== fin.key)] : fins).filter((f) => f.php > 0).forEach((f) => {
+        const r = make('div', 'sc-price'); r.append(make('span', null, f.label), make('b', null, `About ${peso(f.php)}`)); list.append(r);
+      });
+      const r = make('div'); r.append(make('dt', null, 'Market Price'), make('dd', null)); r.lastChild.append(list); facts.append(r);
+    } else fact('Market Price', 'Not Known Yet');
+    const add = make('div', 'sc-dlg-add');
+    if (binders.length) {
+      const lab = make('label', 'sc-dlg-l'); lab.append(make('span', null, 'Add To My Binder'));
+      const sel = make('select'); binders.forEach((bd) => { const o = make('option', null, bd.title); o.value = bd.id; sel.append(o); });
+      lab.append(sel);
+      const go = make('button', 'btn', 'Add To My Binder'); go.type = 'button';
+      const said = make('p', 'sc-dlg-said'); said.setAttribute('role', 'status');
+      go.addEventListener('click', async () => {
+        go.disabled = true; said.textContent = 'Adding…'; said.classList.remove('bad');
+        try {
+          const r = await fetch('/me/cards', { method: 'POST', credentials: 'same-origin', headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify({ id: c.id, image: c.image, image_large: c.image_large, en: c.en, collection: Number(sel.value) }) });
+          const j = await r.json().catch(() => ({}));
+          if (!r.ok) throw new Error(j.error || 'That didn’t work. Please try again.');
+          const name = sel.options[sel.selectedIndex].textContent;
+          said.replaceChildren(`Added To ${name} ✓ `);
+          const v = make('a', null, 'See My Binders'); v.href = `/me/collection#b${sel.value}`; said.append(v);
+          b.classList.add('in');
+          go.textContent = 'Add Another Copy';
+        } catch (e) { said.textContent = e.message; said.classList.add('bad'); }
+        go.disabled = false;
+      });
+      add.append(lab, go, said);
+    } else {
+      add.append(make('p', null, 'Make a binder first, then add your cards to it.'));
+      const mk = make('a', 'btn', 'Make A Binder'); mk.href = '/me/collection#new'; add.append(mk);
+    }
+    body.append(pic, facts, add);
+    panel.append(head, body);
+    d.append(panel);
+    document.body.append(d);
+    const close = () => { d.close(); d.remove(); b.focus({ preventScroll: true }); };
+    x.addEventListener('click', close);
+    d.addEventListener('click', (e) => { if (e.target === d) close(); });
+    d.addEventListener('cancel', (e) => { e.preventDefault(); close(); });
+    d.showModal(); panel.focus({ preventScroll: true });
+  }
 
   // The photo while it is read.
   function waiting() {
@@ -87,13 +193,15 @@
     const none = make('span', 'sc-nopic', 'No Picture Yet');
     if (c.image) { const i = make('img'); i.src = c.image; i.alt = ''; i.loading = 'lazy'; i.decoding = 'async'; i.width = 245; i.height = 342; i.onerror = () => i.replaceWith(none); pic.append(i); } else pic.append(none);
     const plus = make('span', 'sc-plus', '+'); plus.setAttribute('aria-hidden', 'true');
-    b.append(pic, plus, make('b', 'sc-name', c.name || 'Card'));
+    if (look) b.append(pic, make('b', 'sc-name', c.name || 'Card'));
+    else b.append(pic, plus, make('b', 'sc-name', c.name || 'Card'));
     if (c.guess) { b.classList.add('guess'); b.append(make('span', 'sc-guess', 'Best Guess')); }
     if (fin) b.append(make('span', 'sc-fin', fin.label));
     b.append(make('small', null, [c.en && c.en !== c.name ? c.en : '', c.set, numberOf(c)].filter(Boolean).join(' · ')));
     if (fin && fin.php > 0) b.append(make('small', 'sc-mk', `Market About ${peso(fin.php)}`));
-    b.setAttribute('aria-label', `Add ${c.name || 'this card'}${fin ? `, ${fin.label}` : ''}, ${[c.set, numberOf(c)].filter(Boolean).join(' ')}, To Your Store`);
+    b.setAttribute('aria-label', look ? `${c.name || 'This Card'}${fin ? `, ${fin.label}` : ''}, ${[c.set, numberOf(c)].filter(Boolean).join(' ')}` : `Add ${c.name || 'this card'}${fin ? `, ${fin.label}` : ''}, ${[c.set, numberOf(c)].filter(Boolean).join(' ')}, To Your Store`);
     b.addEventListener('click', () => {
+      if (look) { info(c, fin, b); return; }
       if (!window.bbvAddCard) { out.prepend(note('Please reload the page and try again.')); return; }
       const pick = { ...c };
       if (fin) { pick.finish = fin.key; pick.finishLabel = fin.label; }
