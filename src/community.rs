@@ -869,9 +869,14 @@ pub async fn member_card(State(app): State<App>, h: HeaderMap, Path((id, cid)): 
     nav.seo = crate::store::listing_seo(&nav, &t, &c);
     // A look at a card in a store counts for its seller (once a day per viewer, never the owner). Under the card, as
     // under a vault card: similar cards for sale anywhere on the site, and how its market price moved.
+    // Only other people count: not the owner, not a program, and not the vault's team signed in with the admin password.
+    let agent = h.get(header::USER_AGENT).and_then(|v| v.to_str().ok()).unwrap_or("").to_owned();
+    let team = me.is_none() && admin::can_moderate(&app, &h);
     let (cid2, who, viewer, card) = (c.id, crate::store::viewer_hash(&h), me.as_ref().map(|m| m.id), c.clone());
     let (related, trend, held) = with_db(&app, move |db| {
-        marcuru_rs::sellers::count_view(db, cid2, &who, viewer).ok();
+        if !team {
+            marcuru_rs::sellers::count_view(db, cid2, &who, viewer, &agent).ok();
+        }
         Ok((marcuru_rs::sellers::related(db, &card, 12)?, marcuru_rs::history::listing_trend(db, &card.card_id, &card.finish)?, marcuru_rs::sellers::held(db, cid2)?))
     })
     .await?;

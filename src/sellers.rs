@@ -168,6 +168,43 @@ pub fn migrate(c: &Connection) -> rusqlite::Result<()> {
     add_column(c, "notifications", "ref", "TEXT NOT NULL DEFAULT ''")?;
     c.execute_batch("CREATE INDEX IF NOT EXISTS idx_notif_ref ON notifications(member_id, ref, is_read)")?;
     views_switch_once(c)?;
+    // The phones and browsers a member has looked at cards on while logged in: a look from one of them at their own
+    // card doesn't count, even after they log out (the owner, 20 Nov 2026: only other pages count).
+    c.execute_batch(
+        "CREATE TABLE IF NOT EXISTS viewer_devices(member_id INTEGER NOT NULL, hash TEXT NOT NULL, at INTEGER NOT NULL, PRIMARY KEY(member_id, hash)) WITHOUT ROWID",
+    )?;
+    own_views_once(c)?;
+    Ok(())
+}
+
+/// Once (20 Nov 2026): take out the looks that weren't other people: a look from a phone or browser that never opened a
+/// page as a person (programs, link previews, the release checks, the team's own accounts). Only from the first day
+/// visitors were counted, so older looks stay. Each card's count drops by what went, and a "People are looking at"
+/// line is taken out of the bell when nothing is left of that card's day.
+fn own_views_once(c: &Connection) -> rusqlite::Result<()> {
+    c.execute_batch("CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY, value TEXT NOT NULL)")?;
+    let done: i64 = c.query_row("SELECT COUNT(*) FROM settings WHERE key='own_views_v'", [], |r| r.get(0))?;
+    if done > 0 {
+        return Ok(());
+    }
+    let has_visits: i64 = c.query_row("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='visits'", [], |r| r.get(0))?;
+    if has_visits == 1 {
+        let first: Option<String> = c.query_row("SELECT MIN(day) FROM visits", [], |r| r.get(0))?;
+        if let Some(first) = first {
+            let gone = "SELECT rowid FROM listing_views WHERE date(created_at,'unixepoch','+8 hours') >= ?1 AND viewer_ip_hash NOT IN (SELECT who FROM visits)";
+            c.execute(
+                &format!("UPDATE member_cards SET view_n = MAX(0, view_n - (SELECT COUNT(*) FROM listing_views v WHERE v.card_id=member_cards.id AND v.rowid IN ({gone}))) WHERE id IN (SELECT card_id FROM listing_views WHERE rowid IN ({gone}))"),
+                [&first],
+            )?;
+            c.execute(&format!("DELETE FROM listing_views WHERE rowid IN ({gone})"), [&first])?;
+            c.execute(
+                "DELETE FROM notifications WHERE kind='view' AND message LIKE 'People are looking at %' AND link LIKE '/me/listings?id=%'
+                   AND NOT EXISTS (SELECT 1 FROM listing_views v WHERE v.card_id = CAST(substr(notifications.link, 17) AS INTEGER) AND v.day = notifications.created_at / 86400)",
+                [],
+            )?;
+        }
+    }
+    c.execute("INSERT INTO settings(key, value) VALUES('own_views_v', '1')", [])?;
     Ok(())
 }
 
@@ -2145,13 +2182,36 @@ fn slug_of(c: &Connection, member: i64) -> rusqlite::Result<String> {
 
 // ---------- views and saves ----------
 
-/// Counts one look at a listing per viewer per day. The owner's own looks don't count. Returns true when it counted.
-pub fn count_view(c: &Connection, card_id: i64, viewer_hash: &str, viewer: Option<i64>) -> rusqlite::Result<bool> {
+/// Counts one look at a listing per viewer per day. Returns true when it counted. Only other people count (the owner,
+/// 20 Nov 2026): never the owner, logged in or not on a phone or browser they have used logged in in the last 60
+/// days, and never a program (`agent`, the browser's name: search engines, link previews, checks).
+pub fn count_view(c: &Connection, card_id: i64, viewer_hash: &str, viewer: Option<i64>, agent: &str) -> rusqlite::Result<bool> {
     let Some(owner) = c.query_row("SELECT member_id FROM member_cards WHERE id=?1", [card_id], |r| r.get::<_, i64>(0)).optional()? else { return Ok(false) };
-    if viewer == Some(owner) || viewer_hash.is_empty() {
+    if viewer_hash.is_empty() || crate::visits::is_bot(agent) {
         return Ok(false);
     }
     let t = now();
+    match viewer {
+        Some(v) => {
+            c.execute(
+                "INSERT INTO viewer_devices(member_id, hash, at) VALUES(?1,?2,?3) ON CONFLICT(member_id, hash) DO UPDATE SET at=excluded.at",
+                rusqlite::params![v, viewer_hash, t],
+            )?;
+            if v == owner {
+                return Ok(false);
+            }
+        }
+        None => {
+            let theirs: i64 = c.query_row(
+                "SELECT COUNT(*) FROM viewer_devices WHERE member_id=?1 AND hash=?2 AND at > ?3",
+                rusqlite::params![owner, viewer_hash, t - 60 * 86400],
+                |r| r.get(0),
+            )?;
+            if theirs > 0 {
+                return Ok(false);
+            }
+        }
+    }
     let n = c.execute("INSERT OR IGNORE INTO listing_views(card_id, viewer_ip_hash, created_at, day) VALUES(?1,?2,?3,?4)", rusqlite::params![card_id, viewer_hash, t, t / 86400])?;
     if n == 1 {
         c.execute("UPDATE member_cards SET view_n=view_n+1 WHERE id=?1", [card_id])?;
@@ -3632,10 +3692,14 @@ mod tests {
     fn views_count_once_a_day_and_never_the_owner() {
         let c = db();
         let (s, b, card) = seller_with_card(&c);
-        assert!(count_view(&c, card, "abc", Some(b)).unwrap());
-        assert!(!count_view(&c, card, "abc", Some(b)).unwrap(), "same viewer, same day");
-        assert!(count_view(&c, card, "xyz", None).unwrap());
-        assert!(!count_view(&c, card, "own", Some(s)).unwrap(), "the owner doesn't count");
+        const UA: &str = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36";
+        assert!(count_view(&c, card, "abc", Some(b), UA).unwrap());
+        assert!(!count_view(&c, card, "abc", Some(b), UA).unwrap(), "same viewer, same day");
+        assert!(count_view(&c, card, "xyz", None, UA).unwrap());
+        assert!(!count_view(&c, card, "own", Some(s), UA).unwrap(), "the owner doesn't count");
+        assert!(!count_view(&c, card, "own", None, UA).unwrap(), "nor the owner's phone once they log out");
+        assert!(!count_view(&c, card, "fb", None, "facebookexternalhit/1.1").unwrap(), "a link preview isn't a person");
+        assert!(!count_view(&c, card, "hl", None, "Mozilla/5.0 HeadlessChrome/130.0").unwrap(), "nor a check");
         assert_eq!(members::card(&c, s, card).unwrap().unwrap().view_n, 2);
         assert_eq!(views_since(&c, s, 7).unwrap(), 2);
         let chart = views_by_day(&c, s, 7).unwrap();
