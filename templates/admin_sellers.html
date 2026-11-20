@@ -17,7 +17,7 @@
       <p class="dash-sub">Oldest first. Approving opens their store straight away. Your answer goes into their chat with the vault.</p>
       <ul class="ap-list">
         {% for a in waiting %}
-        <li class="ap-item" data-app="{{ a.id }}">
+        <li class="ap-item" id="ap{{ a.id }}" data-app="{{ a.id }}">
           <div class="ap-who">
             <a href="/trainers/{{ a.member_id }}" data-float>{% if !a.avatar.is_empty() %}<img class="av" src="{{ a.avatar }}" width="48" height="48" alt="">{% else %}<span class="av">{{ a.initial() }}</span>{% endif %}<b>{{ a.name }}</b></a>
             <small>Applied {{ a.when() }}</small>

@@ -3165,14 +3165,20 @@ pub async fn apply_send(State(app): State<App>, h: HeaderMap, mut mp: Multipart)
         }
     }
     let t2 = t.clone();
+    let who = m.name.clone();
     let words = if note.is_empty() { "No note.".to_string() } else { note.clone() };
     let n = pics.len();
     let text = format!("📝 Seller application\n\n{words}{}", if n > 0 { format!("\n\n📷 {n} photo{} below.", if n == 1 { "" } else { "s" }) } else { String::new() });
     let pics2 = pics.clone();
     let preview = with_db(&app, move |c| {
         let kept: Vec<(String, String)> = pics2.iter().map(|(l, s, _)| (l.clone(), s.clone())).collect();
-        if sellers::add_application(c, id, &note, &kept, t2.id, now).is_err() {
+        let Ok(aid) = sellers::add_application(c, id, &note, &kept, t2.id, now) else {
             return Ok(None);
+        };
+        // The admins hear it in their bell (the owner, 20 Nov 2026: no more checking the Vault Manager for requests);
+        // the line opens the request, and goes read once someone answers it.
+        for a in dm::admins(c)?.into_iter().filter(|a| *a != id) {
+            sellers::notify_from(c, a, id, "staff", &format!("staff:apply:{aid}"), &format!("{who} wants to open a store."), &format!("/admin/sellers#ap{aid}"))?;
         }
         let first = dm::New { kind: "text".into(), text, ..Default::default() };
         dm::post(c, &t2, id, id, &first, now)?;
@@ -3217,6 +3223,7 @@ pub async fn apply_decide(State(app): State<App>, h: HeaderMap, Path(aid): Path<
     let now = crate::unix_now();
     let done = with_db(&app, move |c| {
         let Some(a) = sellers::decide_application(c, aid, approve, &reason, by, now)? else { return Ok(None) };
+        c.execute("UPDATE notifications SET is_read=1 WHERE kind='staff' AND ref=?1", [format!("staff:apply:{aid}")])?;
         let text = if approve {
             "✅ Your seller application is approved! Your store is open: tap Store Manager on your page to put up your first cards.".to_string()
         } else if reason.is_empty() {
