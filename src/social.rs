@@ -11,7 +11,8 @@ use serde_json::{json, Value};
 
 pub const TEXT_MAX: usize = 2000;
 pub const COMMENT_MAX: usize = 600;
-pub const PHOTOS_MAX: usize = 4;
+/// Photos one post can carry (the owner, 20 Nov 2026: 150; it was 4). Each is saved as it arrives (feed.rs).
+pub const PHOTOS_MAX: usize = 150;
 pub const POSTS_PER_HOUR: i64 = 6;
 pub const COMMENTS_PER_HOUR: i64 = 60;
 pub const REACTIONS: [(&str, &str); 6] = [("like", "👍"), ("love", "❤️"), ("fire", "🔥"), ("wow", "😮"), ("haha", "😆"), ("sad", "😢")];

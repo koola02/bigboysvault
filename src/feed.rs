@@ -757,19 +757,28 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
     if recent >= social::POSTS_PER_HOUR {
         return Ok(fail(StatusCode::TOO_MANY_REQUESTS, "That's a lot of posts for one hour. Please take a short break."));
     }
-    let (mut text, mut styled, mut files, mut card, mut as_who) = (String::new(), String::new(), Vec::<Vec<u8>>::new(), messages::CardRef::default(), String::new());
+    let (mut text, mut styled, mut card, mut as_who) = (String::new(), String::new(), messages::CardRef::default(), String::new());
     // Each new photo's caption, in the order the photos come (a JSON list of words).
     let mut captions: Vec<String> = vec![];
+    // A post can carry up to PHOTOS_MAX photos, so each is saved as it arrives rather than all held in memory; if the
+    // post is then turned away, the saved ones are taken back out (`unkeep`).
+    let mut photos: Vec<social::Photo> = vec![];
+    let full_space = room >= photo_cap_mb() * 1024 * 1024;
+    let mut sent_photo = false;
     let bad = |_| (StatusCode::BAD_REQUEST, "That didn't upload. Please try again.".to_string());
-    while let Some(f) = mp.next_field().await.map_err(bad)? {
+    while let Some(f) = match mp.next_field().await { Ok(f) => f, Err(e) => { unkeep(&app, &photos); return Err(bad(e)); } } {
         match f.name().unwrap_or("") {
             "text" => text = f.text().await.map_err(bad)?,
             "rich" => styled = f.text().await.map_err(bad)?,
             "captions" => captions = serde_json::from_str(&f.text().await.map_err(bad)?).unwrap_or_default(),
             "photo" => {
-                let b = f.bytes().await.map_err(bad)?;
-                if !b.is_empty() && files.len() < social::PHOTOS_MAX {
-                    files.push(b.to_vec());
+                let b = match f.bytes().await { Ok(b) => b, Err(e) => { unkeep(&app, &photos); return Err(bad(e)); } };
+                sent_photo |= !b.is_empty();
+                if !b.is_empty() && !full_space && photos.len() < social::PHOTOS_MAX {
+                    match keep_photo(&app, id, b.to_vec()).await? {
+                        Ok(p) => photos.push(p),
+                        Err(why) => { unkeep(&app, &photos); return Ok(fail(StatusCode::BAD_REQUEST, why)); }
+                    }
                 }
             }
             "as" => as_who = f.text().await.map_err(bad)?.trim().to_string(),
@@ -779,31 +788,24 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
         }
     }
     let (text, styled) = words(&text, &styled);
-    if text.is_empty() && files.is_empty() && card.vault.is_none() && card.card.is_none() {
-        return Ok(fail(StatusCode::BAD_REQUEST, "Write something or add a photo first."));
-    }
-    if !files.is_empty() && room >= photo_cap_mb() * 1024 * 1024 {
+    if sent_photo && full_space {
         return Ok(fail(StatusCode::INSUFFICIENT_STORAGE, "The vault's photo space is full right now. Words still work."));
     }
-    let mut photos: Vec<social::Photo> = vec![];
-    for bytes in files {
-        let dir = PathBuf::from(&*app.uploads);
-        let stem = format!("p{id}-{}{}", members::temp_password(), members::temp_password());
-        match gated(move || store_photo(bytes, dir, stem)).await? {
-            Ok((l, s, w, hh, size)) => photos.push((l, s, w, hh, size)),
-            Err(e) if e == TOO_BIG => return Ok(fail(StatusCode::BAD_REQUEST, "One photo is too big. Please use a smaller one.")),
-            Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "One photo couldn't be read. Try a JPEG or PNG.")),
-        }
+    if text.is_empty() && photos.is_empty() && card.vault.is_none() && card.card.is_none() {
+        return Ok(fail(StatusCode::BAD_REQUEST, "Write something or add a photo first."));
     }
     // A full admin may post as the vault itself (the logo and the shop's name), like a Page on Facebook.
     // A seller may post as their store (the owner, 20 Nov 2026: a seller and their store each have their own posts).
     let (as_vault, as_store) = (as_who == "vault", as_who == "store");
     if as_store && !m.seller {
+        unkeep(&app, &photos);
         return Ok(fail(StatusCode::FORBIDDEN, "Only a seller can post as their store."));
     }
     if as_vault && m.role != "admin" {
+        unkeep(&app, &photos);
         return Ok(fail(StatusCode::FORBIDDEN, "Only a full admin can post as the vault."));
     }
+    let kept_photos = photos.clone();
     let author = if as_vault { 0 } else { id };
     let brand_viewer = id;
     let out = with_db(&app, move |c| {
@@ -839,7 +841,29 @@ pub async fn create(State(app): State<App>, h: HeaderMap, mut mp: Multipart) -> 
     match out {
         Ok(Some(v)) => Ok(html(part(vec![Item { post: Some(v), stores: vec![], binder: None }])?)),
         Ok(None) => Ok(fail(StatusCode::INTERNAL_SERVER_ERROR, "That post didn't save. Please try again.")),
-        Err(e) => Ok(fail(StatusCode::BAD_REQUEST, e)),
+        Err(e) => {
+            unkeep(&app, &kept_photos);
+            Ok(fail(StatusCode::BAD_REQUEST, e))
+        }
+    }
+}
+
+/// Saves one photo of a post (large and small) as soon as it arrives. The words come back when it can't be used.
+async fn keep_photo(app: &App, owner: i64, bytes: Vec<u8>) -> Result<Result<social::Photo, &'static str>, (StatusCode, String)> {
+    let dir = PathBuf::from(&*app.uploads);
+    let stem = format!("p{owner}-{}{}", members::temp_password(), members::temp_password());
+    Ok(match gated(move || store_photo(bytes, dir, stem)).await? {
+        Ok((l, s, w, hh, size)) => Ok((l, s, w, hh, size)),
+        Err(e) if e == TOO_BIG => Err("One photo is too big. Please use a smaller one."),
+        Err(_) => Err("One photo couldn't be read. Try a JPEG or PNG."),
+    })
+}
+
+/// Takes back out the photos saved for a post that was then turned away.
+fn unkeep(app: &App, photos: &[social::Photo]) {
+    for (large, small, ..) in photos {
+        admin::remove_upload(&app.uploads, large);
+        admin::remove_upload(&app.uploads, small);
     }
 }
 
@@ -869,11 +893,14 @@ pub async fn edit(State(app): State<App>, h: HeaderMap, Path(pid): Path<i64>, mu
     let Some(p) = with_db(&app, move |c| social::post(c, me, pid)).await?.filter(|p| may_edit(p, me, full)) else {
         return Ok(fail(StatusCode::FORBIDDEN, "That post isn't yours to edit."));
     };
-    let (mut text, mut styled, mut keep, mut files) = (String::new(), String::new(), Vec::<i64>::new(), Vec::<Vec<u8>>::new());
+    let (mut text, mut styled, mut keep) = (String::new(), String::new(), Vec::<i64>::new());
     // Captions: the photos that stay ({ "id": "words" }) and the new ones, in their order.
     let (mut kept_caps, mut captions): (std::collections::HashMap<String, String>, Vec<String>) = (Default::default(), vec![]);
+    let written = p.written();
+    // New photos are saved as they arrive (up to PHOTOS_MAX in all), and taken back out if the edit is turned away.
+    let mut photos: Vec<social::Photo> = vec![];
     let bad = |_| (StatusCode::BAD_REQUEST, "That didn't upload. Please try again.".to_string());
-    while let Some(f) = mp.next_field().await.map_err(bad)? {
+    while let Some(f) = match mp.next_field().await { Ok(f) => f, Err(e) => { unkeep(&app, &photos); return Err(bad(e)); } } {
         match f.name().unwrap_or("") {
             "text" => text = f.text().await.map_err(bad)?,
             "rich" => styled = f.text().await.map_err(bad)?,
@@ -881,31 +908,28 @@ pub async fn edit(State(app): State<App>, h: HeaderMap, Path(pid): Path<i64>, mu
             "kept_captions" => kept_caps = serde_json::from_str(&f.text().await.map_err(bad)?).unwrap_or_default(),
             "captions" => captions = serde_json::from_str(&f.text().await.map_err(bad)?).unwrap_or_default(),
             "photo" => {
-                let b = f.bytes().await.map_err(bad)?;
-                if !b.is_empty() && files.len() < social::PHOTOS_MAX {
-                    files.push(b.to_vec());
+                let b = match f.bytes().await { Ok(b) => b, Err(e) => { unkeep(&app, &photos); return Err(bad(e)); } };
+                if written && !b.is_empty() && keep.len() + photos.len() < social::PHOTOS_MAX {
+                    match keep_photo(&app, p.member_id, b.to_vec()).await? {
+                        Ok(ph) => photos.push(ph),
+                        Err(why) => { unkeep(&app, &photos); return Ok(fail(StatusCode::BAD_REQUEST, why)); }
+                    }
                 }
             }
             _ => {}
         }
     }
     let (text, styled) = words(&text, &styled);
-    let written = p.written();
-    let mut photos: Vec<social::Photo> = vec![];
     if written {
         let has_card = p.payload["card"]["title"].is_string();
-        files.truncate(social::PHOTOS_MAX.saturating_sub(keep.len()));
-        if text.is_empty() && keep.is_empty() && files.is_empty() && !has_card {
-            return Ok(fail(StatusCode::BAD_REQUEST, "A post needs words or a photo. Delete it instead?"));
+        // `keep` may have come after the photos: never more than PHOTOS_MAX in all.
+        let room_left = social::PHOTOS_MAX.saturating_sub(keep.len());
+        if photos.len() > room_left {
+            unkeep(&app, &photos[room_left..]);
+            photos.truncate(room_left);
         }
-        for bytes in files {
-            let dir = PathBuf::from(&*app.uploads);
-            let stem = format!("p{}-{}{}", p.member_id, members::temp_password(), members::temp_password());
-            match gated(move || store_photo(bytes, dir, stem)).await? {
-                Ok((l, s, w, hh, size)) => photos.push((l, s, w, hh, size)),
-                Err(e) if e == TOO_BIG => return Ok(fail(StatusCode::BAD_REQUEST, "One photo is too big. Please use a smaller one.")),
-                Err(_) => return Ok(fail(StatusCode::BAD_REQUEST, "One photo couldn't be read. Try a JPEG or PNG.")),
-            }
+        if text.is_empty() && keep.is_empty() && photos.is_empty() && !has_card {
+            return Ok(fail(StatusCode::BAD_REQUEST, "A post needs words or a photo. Delete it instead?"));
         }
     }
     let (gone, view) = with_db(&app, move |c| {

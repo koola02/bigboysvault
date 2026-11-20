@@ -1,12 +1,12 @@
 {% extends "base.html" %}
-{% block title %}FAQ · {{ nav.brand }}{% endblock %}
+{% block title %}FAQs · {{ nav.brand }}{% endblock %}
 {% block content %}
 {#- FAQ, from the menu (the owner, 20 Nov 2026; the questions as the owner approved them). Three tabs: Everyone,
     Stores (it opens on Stores for someone with a store), and Terms (the Terms And Conditions, terms_body.html; /terms
     and the footer open it). Each question opens when tapped; nothing opens by itself.
     The words are written here, not in the database: change them in this file. -#}
 <section class="wrap faq" id="faq">
-  <div class="tr-head"><h1 class="h1">FAQ</h1></div>
+  <div class="tr-head"><h1 class="h1">FAQs</h1></div>
   <div class="faq-tabs" role="tablist" aria-label="Questions For">
     <button type="button" role="tab" id="faqTabAll" aria-controls="faqAll" data-faq="all"{% if !stores_first %} class="on" aria-selected="true"{% else %} aria-selected="false"{% endif %}>Everyone</button>
     <button type="button" role="tab" id="faqTabStores" aria-controls="faqStores" data-faq="stores"{% if stores_first %} class="on" aria-selected="true"{% else %} aria-selected="false"{% endif %}>Stores</button>
@@ -41,7 +41,7 @@
     <details class="faq-q"><summary>How Do I Leave A Vouch?</summary><div class="faq-a"><p>Open the store's page and go to Vouches. Say how it went, and add photos if you like. Vouches help other trainers know who to trust.</p></div></details>
     <details class="faq-q"><summary>How Do I Save A Store Or A Card For Later?</summary><div class="faq-a"><p>Tap Bookmark. Everything you bookmark is in the Menu under Bookmarks. To hear when a store adds new cards, tap Follow on the store.</p></div></details>
     <h2 class="h2 faq-h">Posts And Messages</h2>
-    <details class="faq-q"><summary>How Do I Post?</summary><div class="faq-a"><p>Write in the box on the Home page or on your own page. You can add up to 4 photos, use bold and three text sizes, and add a caption to each photo. Your post shows on your page and in everyone's feed.</p></div></details>
+    <details class="faq-q"><summary>How Do I Post?</summary><div class="faq-a"><p>Write in the box on the Home page or on your own page. You can add photos, use bold and three text sizes, and add a caption to each photo. Your post shows on your page and in everyone's feed.</p></div></details>
     <details class="faq-q"><summary>How Do I Message Someone?</summary><div class="faq-a"><p>Tap Message on their page, their store or a card. Chats can have photos and voice notes, and you can call from a chat.</p></div></details>
     <h2 class="h2 faq-h">Notifications</h2>
     <details class="faq-q"><summary>How Do I Get Alerts On My Phone?</summary><div class="faq-a"><p>Open Notifications and turn alerts on, then allow them when your phone asks. On an iPhone, first tap Share, then “Add to Home Screen”, open Big Boys Vault from your Home Screen, and turn alerts on there.</p></div></details>

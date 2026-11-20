@@ -58,7 +58,7 @@ S["trainers"] = ("Trainers",
   f'<path d="M21 18.5c2-3 6-4 7-2-1 2-3 3.5-6 3.5z" fill="#f07a2a"/>'
   f'<circle cx="12.3" cy="27.5" r="1.1" fill="{INK}" stroke="none"/><circle cx="17.7" cy="27.5" r="1.1" fill="{INK}" stroke="none"/>')
 # FAQ: a puzzled yellow duck holding its head, with a question mark above.
-S["faq"] = ("FAQ",
+S["faq"] = ("FAQs",
   f'<path d="M18 16c-1-4 0-7 2-8M22 15c0-4 1-7 3-8M26 16c1-4 3-6 5-6" fill="none" stroke="{LIGHT}" stroke-width="4.4"/>'
   f'<path d="M18 16c-1-4 0-7 2-8M22 15c0-4 1-7 3-8M26 16c1-4 3-6 5-6" fill="none" stroke-width="2"/>'
   f'<circle cx="22" cy="30" r="13.5" fill="#f6d34a"/>'

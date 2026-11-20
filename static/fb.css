@@ -533,6 +533,10 @@ a.story:hover { text-decoration: none; }
 .post-cards .price { position: absolute; left: 6px; bottom: 6px; padding: 2px 8px; border-radius: var(--pill); background: rgba(11,13,20,.86); color: var(--gold-hi); font: 800 .8125rem/1.4 var(--display); }
 .post-cards.g2 .price { font-size: .9375rem; }
 .post-media a { display: block; background: var(--surface-2); }
+/* More than four photos: four show, the fourth says how many more; all of them open in the photo window. */
+.post-media a[hidden] { display: none; }
+.post-media.many > a:nth-child(4) { position: relative; }
+.post-media .more { position: absolute; inset: 0; display: grid; place-items: center; background: rgba(3,4,10,.62); color: #fff; font: 700 1.75rem/1 var(--font); }
 .post-media.n1 img { max-height: 640px; object-fit: contain; }
 .post-media.n2 img, .post-media.n3 img, .post-media.n4 img { aspect-ratio: 1; }
 .post-media.n3 > :first-child img { aspect-ratio: auto; height: 100%; }
@@ -830,7 +834,7 @@ html.pv-open { overflow: hidden; }
 @media (max-width: 999px) {
   .pv { display: block; overflow-y: auto; overscroll-behavior: contain; padding-top: calc(68px + var(--sat)); }
   .pv::before { content: ""; position: fixed; inset: 0 0 auto 0; z-index: 3; height: calc(68px + var(--sat)); background: #05060b; }
-  .pv-stage { height: auto; min-height: 200px; padding: 0 0 12px; }
+  .pv-stage { height: auto; min-height: 200px; padding: 0 0 50px; } /* room for the counter under the caption */
   .pv-img { max-height: min(62dvh, 720px); border-radius: 0; }
   .pv-side { height: auto; overflow: visible; box-shadow: none; }
 }

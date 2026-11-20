@@ -33,6 +33,40 @@
     if (!r.ok) throw new Error(j.error || 'That didn’t work. Please try again.');
     return j;
   }
+  // Photos one post can hold (social::PHOTOS_MAX on the server).
+  const PHOTOS_MAX = 150;
+  // A photo made the size the site keeps (1600 on its long side, as the server does): 150 phone photos then go up in
+  // minutes, not hours. A photo that can't be read here goes as it is; the server says if it can't use it.
+  async function shrink(file) {
+    try {
+      const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+      const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+      if (k === 1 && file.size < 1.5e6 && /jpe?g/i.test(file.type)) { bmp.close?.(); return file; }
+      const c = document.createElement('canvas'); c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+      c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height); bmp.close?.();
+      const blob = await new Promise((ok) => c.toBlob(ok, 'image/jpeg', 0.88));
+      return blob || file;
+    } catch (_) { return file; }
+  }
+  // Sends a form and says how much has gone (0–100), for a post with many photos.
+  function upload(url, fd, progress) {
+    return new Promise((resolve, reject) => {
+      const x = new XMLHttpRequest();
+      x.open('POST', url); x.withCredentials = true; x.setRequestHeader('Accept', 'application/json');
+      x.upload.onprogress = (e) => { if (e.lengthComputable) progress(Math.min(100, Math.round((e.loaded / e.total) * 100))); };
+      x.onerror = () => reject(new Error('No connection. Please try again.'));
+      x.onload = () => {
+        // Signed out on the way (the answer is the log-in page): log in again, never "Posted".
+        const landed = (() => { try { return new URL(x.responseURL).pathname; } catch (_) { return ''; } })();
+        if (x.status === 401 || landed === '/login') { toLogin(); reject(new Error('Please log in again.')); return; }
+        const type = x.getResponseHeader('content-type') || '';
+        let j = {};
+        if (type.includes('json')) { try { j = JSON.parse(x.responseText); } catch (_) {} } else j = { html: x.responseText };
+        if (x.status < 200 || x.status >= 300) reject(new Error(j.error || 'That didn’t work. Please try again.')); else resolve(j);
+      };
+      x.send(fd);
+    });
+  }
   const postOf = (n) => n.closest('[data-post]');
   // A photo with its own likes and comments is drawn as a small post of its own (it says which photo: data-image).
   // What is liked or said there goes to that photo, not to the post it came with.
@@ -587,7 +621,7 @@
         sheet.querySelector('[data-name]').textContent = vault ? 'Big Boys Vault' : store ? (me.store_name || me.name) : me.name;
       };
       as.addEventListener('change', sheet.who);
-      sheet.querySelectorAll('[data-add]').forEach((inp) => inp.addEventListener('change', () => { for (const f of inp.files) { if (kept.length + files.length < 4) files.push(f); else toast('Four photos at most.'); } inp.value = ''; paint(); }));
+      sheet.querySelectorAll('[data-add]').forEach((inp) => inp.addEventListener('change', () => { let over = false; for (const f of inp.files) { if (kept.length + files.length < PHOTOS_MAX) files.push(f); else over = true; } if (over) toast(`A post holds up to ${PHOTOS_MAX} photos.`, true); inp.value = ''; paint(); }));
       // Post is there twice (the top bar on a phone, the wide button elsewhere): both say and do the same.
       sheet.go = (label, off) => sheet.querySelectorAll('[data-go]').forEach((g) => { if (label) g.textContent = label; g.disabled = !!off; });
       // The box takes the part of the screen that can be seen: with a phone's keyboard up, the tools sit just above it.
@@ -608,7 +642,7 @@
         const runs = words.runs(), text = runs.map((r) => r.t).join('').trim();
         if (!editing && !text && !files.length) { words.focus(); return; }
         if ([...text].length > RT_MAX) { toast(`That is too long. A post holds ${RT_MAX.toLocaleString()} letters.`, true); return; }
-        const fd = new FormData(); fd.append('text', text); files.forEach((f) => fd.append('photo', f, f.name || 'photo.jpg'));
+        const fd = new FormData(); fd.append('text', text);
         // Styles ride along only when there are some; plain words go as they always did.
         if (runs.some((r) => r.b || r.i || r.u || r.s)) fd.append('rich', JSON.stringify(runs));
         fd.append('captions', JSON.stringify(files.map((f) => f.cap || '')));
@@ -616,9 +650,16 @@
         if (editing) fd.append('keep', kept.map((k) => k.id).join(',')); else if (!as.hidden && as.value !== 'me') fd.append('as', as.value);
         sheet.go(editing ? 'Saving…' : 'Posting…', true);
         try {
-          const j = await api(editing ? `/posts/${editing.id}/edit` : '/posts', fd);
+          // The photos go last, each made phone-sized first (a post can hold up to PHOTOS_MAX).
+          for (let i = 0; i < files.length; i++) {
+            if (files.length > 1) sheet.go(`Getting Photos Ready ${i + 1}/${files.length}`, true);
+            const small = await shrink(files[i]);
+            fd.append('photo', small, 'photo.jpg');
+          }
+          const j = await upload(editing ? `/posts/${editing.id}/edit` : '/posts', fd, (pct) => sheet.go(pct < 100 ? `Uploading ${pct}%` : 'Saving Photos…', true));
           const holder = el('div'); holder.innerHTML = j.html;
           const fresh = holder.querySelector('[data-post]');
+          if (!fresh) throw new Error('That didn’t save. Please try again.');
           if (editing) { const old = feed.querySelector(`[data-post="${editing.id}"]`); if (old && fresh) old.replaceWith(fresh); toast('Saved.'); }
           else { const anchor = feed.querySelector('.composer'); if (fresh) anchor.after(fresh); feed.querySelector('.page-empty')?.remove(); toast('Posted.'); }
           words.set(''); files = []; kept = []; paint(); sheet.close();
